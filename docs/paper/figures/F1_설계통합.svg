@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="680" viewBox="0 0 1280 680" font-family="'Malgun Gothic','Apple SD Gothic Neo',sans-serif">
-  <!-- F1 연구 설계 통합도 · 명세: docs/paper/그림_명세.md §1 · 흰 배경 / 평이어 / 수치는 {} 자리표시자 -->
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="680" viewBox="0 0 1280 680" font-family="'Malgun Gothic','Apple SD Gothic Neo',sans-serif">
+  <!-- F1 연구 설계 통합도 · 명세: docs/paper/그림_명세.md §1 · 흰 배경 / 평이어 / 장수는 2026-08-24 실측 -->
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#444"/>
@@ -22,7 +22,7 @@
   <circle cx="125" cy="85" r="10" fill="none" stroke="#888" stroke-width="1.5"/>
   <path d="M 98 128 L 140 96 L 168 118 L 192 100 L 230 128" fill="none" stroke="#888" stroke-width="1.5"/>
   <text x="165" y="182" text-anchor="middle" font-size="15" font-weight="bold" fill="#222">용접부 방사선 촬영 사진</text>
-  <text x="165" y="203" text-anchor="middle" font-size="14" fill="#222">약 {70,000}장</text>
+  <text x="165" y="203" text-anchor="middle" font-size="14" fill="#222">62,998장</text>
 
   <!-- 데이터 → 학습용 (직행) -->
   <line x1="160" y1="216" x2="160" y2="298" stroke="#444" stroke-width="2" marker-end="url(#arrow)"/>
@@ -114,5 +114,5 @@
   <!-- ============ 각주 ============ -->
   <line x1="40" y1="600" x2="1240" y2="600" stroke="#dddddd" stroke-width="1"/>
   <text x="40" y="626" font-size="12" fill="#555">※ 제외 칸: 회사마다 대형 모델을 단독으로 구축하는 상황은 현실적인 도입 형태가 아니어서 비교에서 뺀다 (사유는 본문에 한 문장으로 명시).</text>
-  <text x="40" y="648" font-size="12" fill="#555">{ } 안의 수치는 데이터 확정(승인·재확인) 후 실측값으로 채운다.</text>
+  <text x="40" y="648" font-size="12" fill="#555">사진 장수는 2026-08-24 전수 실측값이다. 채점용 20%를 먼저 뗀 뒤 남은 학습용을 회사 3곳에 나눈다.</text>
 </svg>
