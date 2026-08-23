@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "연합학습 기반 용접 결함 판정 연구 (weld-fl)"
 readme = "README.md"
 requires-python = "==3.11.*"
+license = { file = "LICENSE" }
 dependencies = [
     # --- 수치·배열 ---
     # numpy>=2.0 필수 — dedup 전수 popcount 가 np.bitwise_count 를 쓴다 (스펙 §6-3)

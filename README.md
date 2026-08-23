@@ -103,6 +103,16 @@ docs/         설계 문서와 개발 기록
 Perri 외(Manufacturing Letters), Intel Robotic Welding을 쓰면 Stemmer 외(2024,
 arXiv:2409.02290)를 인용한다. 상세는 [`docs/논문_리스트.md`](docs/논문_리스트.md)에 있다.
 
+## 라이선스
+
+AGPL-3.0. 전문은 [`LICENSE`](LICENSE)에 있다.
+
+검출에 쓰는 Ultralytics YOLO11이 AGPL-3.0이라 같은 조건을 따른다. 이 코드를 가져다
+쓰면 파생물도 소스를 공개해야 한다. 사업화 단계에서는 검출기를 Apache 계열로 갈아끼우고
+재라이선싱하는 것을 전제로 두었다.
+
+의존 라이브러리는 각자의 조건을 따른다. Flower는 Apache-2.0이다.
+
 ## 팀
 
 조현건(총괄·연합학습), 김예서(통합형·판정 생성), 박상은(데이터·검출·평가)
