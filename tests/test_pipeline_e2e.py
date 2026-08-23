@@ -289,3 +289,41 @@ def test_author_split_dirs_never_become_split_values(splitted) -> None:
     assert set(m["split"].unique()) <= {"train", "val", "eval"}
     # 원본 경로에는 저자 분할이 남아 있다 — 그런데도 split 에는 안 들어갔다
     assert m["rel_path"].str.contains("training").any()
+
+
+# ---- 바이트 동일 복제본 (RIAWELC testing = training 복제) -----------------------------
+
+
+def test_drop_exact_duplicates_keeps_one(ingested, lm) -> None:
+    """복제본은 하나만 남고, 남는 쪽은 rel_path 사전순 첫 번째로 결정론적이다."""
+    from data.ingest.base import drop_exact_duplicates
+
+    _, records = ingested
+    dup = records[0].model_copy(update={
+        "image_id": records[0].image_id + "_copy",
+        "rel_path": records[0].rel_path.replace("/training/", "/testing/"),
+    })
+    kept, dropped = drop_exact_duplicates([*records, dup])
+    assert len(kept) == len(records)
+    assert len(dropped) == 1
+    # 사전순으로 testing < training 이므로 testing 쪽이 남는다 — 순서가 아니라 규칙이 정한다
+    assert {r.rel_path for r in kept} | {r.rel_path for r in dropped} == {
+        r.rel_path for r in [*records, dup]
+    }
+    kept2, _ = drop_exact_duplicates([dup, *records])      # 입력 순서 뒤집어도 동일
+    assert [r.rel_path for r in kept] == [r.rel_path for r in kept2]
+
+
+def test_byte_identical_images_land_in_one_group(ingested, lm, raw_root) -> None:
+    """복제본을 굳이 남기더라도 E1 엣지가 같은 묶음으로 묶어 누수를 막는다."""
+    _, records = ingested
+    m, _ = records_to_frames(records, lm)
+    hexes = [compute_phash(resolve_image_path(p, raw_root)) for p in m["rel_path"]]
+    ids = m["image_id"].tolist() + ["dup:x"]
+    shas = m["sha256"].tolist() + [m["sha256"].iloc[0]]     # 첫 이미지와 바이트 동일
+    hx = hexes + [hexes[0]]
+    mats = m["material"].tolist() + ["UNK"]
+    res = build_groups(ids, shas, hx, mats, threshold=0)
+    gid = dict(zip(ids, res.group_ids))
+    assert gid["dup:x"] == gid[m["image_id"].iloc[0]]
+    assert res.edge_counts["E1"] >= 1
