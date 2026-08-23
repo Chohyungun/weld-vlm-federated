@@ -3,7 +3,6 @@
   "registry_schema_version": 1,
   "dataset_id": "riawelc",
   "kind": "image",
-
   "authoring": {
     "owner": "조현건",
     "written_at": "2026-08-21",
@@ -12,12 +11,17 @@
     "review_status": "pending",
     "basis": "docs/데이터셋_실물확보.md (트랙 F, 2026-08-18 전수 실측)"
   },
-
   "provenance": {
     "publisher": "Universita della Calabria (stefyste)",
-    "title": { "ko": "RIAWELC 방사선 용접 결함 분류 데이터셋", "en": "RIAWELC" },
+    "title": {
+      "ko": "RIAWELC 방사선 용접 결함 분류 데이터셋",
+      "en": "RIAWELC"
+    },
     "landing_url": "https://github.com/stefyste/RIAWELC",
-    "edition": { "label": "main", "retrieved_at": "2026-08-18" },
+    "edition": {
+      "label": "main",
+      "retrieved_at": "2026-08-18"
+    },
     "access": "공개. 로그인 불필요",
     "access_state": "in_hand",
     "license": {
@@ -37,26 +41,26 @@
     "export_restriction": "none",
     "redistribution": "<확인 후 기입>"
   },
-
   "constraints": {
     "cloud_upload": true,
     "external_commercial_api": false,
     "commercial_use": "unverified"
   },
-
   "acquisition": {
     "staging_uri": "gdrive:weld-fl-datasets/RIAWELC",
     "staging_path_hint": "see_local_config",
     "storage_mode": "drive_stream",
     "obtained_at": "2026-08-18",
     "archives": [
-      { "name": "RIAWELC_dataset.part01.rar", "bytes": 26214400,
-        "sha256": "20dca0973ab37814a6fead11633a734409a5e4b90a8e5957d9bdb2507f2905f3" }
+      {
+        "name": "RIAWELC_dataset.part01.rar",
+        "bytes": 26214400,
+        "sha256": "20dca0973ab37814a6fead11633a734409a5e4b90a8e5957d9bdb2507f2905f3"
+      }
     ],
     "archives_note": "19파트 전량 sha256은 docs/데이터셋_실물확보.md 2-1에 기록. part01만 대표로 적는다",
     "extract_verified": "7-Zip 종료코드 0 (CRC 통과). 해제본 24,407 = 아카이브 목록 집계와 일치"
   },
-
   "pipeline": {
     "eligible": false,
     "exclusion_reason": "계약 #1 sources.riawelc.mapping 이 실물 폴더명과 불일치 — 감독 승인 후 해소 (설계 §10 회부 2)",
@@ -67,7 +71,6 @@
     "mount_mode": "<확인 후 기입>",
     "row_note": ""
   },
-
   "layout": {
     "image_glob": "*.png",
     "class_dir_depth": 2,
@@ -75,55 +78,83 @@
     "label_mode": "dirname",
     "label_glob": "not_applicable",
     "pairing_rule": "not_applicable",
-    "exclude_globs": ["_archive/**", "README.md"],
+    "exclude_globs": [
+      "_archive/**",
+      "README.md"
+    ],
     "pairing_verified": true,
     "evidence": "아카이브 전수 목록 24,424 엔트리 확장자 집계 = .png 24,407 + .rar 1. 어노테이션 파일 0건 (F 4-1)",
     "evidence_level": "full_scan"
   },
-
   "label_vocabulary": {
     "label_field": "dirname",
     "labels": [
-      { "raw": "Difetto1",  "is_normal": false, "proposed_l2": "crack",
-        "count_announced": 7635 },
-      { "raw": "Difetto2",  "is_normal": false, "proposed_l2": "porosity",
-        "count_announced": 6320 },
-      { "raw": "Difetto4",  "is_normal": false, "proposed_l2": "lack_of_penetration",
-        "count_announced": 4452 },
-      { "raw": "NoDifetto", "is_normal": true,  "proposed_l2": null,
-        "count_announced": 6000 }
+      {
+        "raw": "Difetto1",
+        "is_normal": false,
+        "proposed_l2": "crack",
+        "count_announced": 7635
+      },
+      {
+        "raw": "Difetto2",
+        "is_normal": false,
+        "proposed_l2": "porosity",
+        "count_announced": 6320
+      },
+      {
+        "raw": "Difetto4",
+        "is_normal": false,
+        "proposed_l2": "lack_of_penetration",
+        "count_announced": 4452
+      },
+      {
+        "raw": "NoDifetto",
+        "is_normal": true,
+        "proposed_l2": null,
+        "count_announced": 6000
+      }
     ],
     "closed_set_verified": true,
     "evidence": "실제 디렉터리 전수. Difetto3 결번. 매핑은 (a) 실측 분포 순위 대조 (b) 방사선 형태 육안 판독 두 독립 방법이 일치 (F 4-3)",
     "evidence_level": "full_scan",
     "warning": "공식 README는 클래스를 'LP, PO, CR, ND' 순으로 나열한다. 번호 순서대로 읽어 Difetto1=LP 로 두면 균열과 용입불량이 통째로 뒤바뀐다"
   },
-
   "fields_declared": {
     "modality": {
-      "status": "constant", "constant_value": "RT",
+      "status": "constant",
+      "constant_value": "RT",
       "evidence": "X선 방사선 투과 이미지. 저장소 제목·논문 제목이 radiographic 명시",
       "evidence_level": "publisher_doc"
     },
     "material": {
-      "status": "constant", "constant_value": "UNK",
+      "status": "constant",
+      "constant_value": "UNK",
       "evidence": "재질 정보를 담은 메타데이터 파일이 아카이브에 존재하지 않는다 (확장자 전수 집계). UNK 는 결측이 아니라 '원본이 안 준다'는 값",
       "evidence_level": "full_scan"
     },
     "label_type": {
-      "status": "constant", "constant_value": "classification",
+      "status": "constant",
+      "constant_value": "classification",
       "evidence": "어노테이션 파일 0건. 라벨이 디렉터리 경로로만 표현된다 (F 4-1)",
       "evidence_level": "full_scan"
     },
     "defect_label": {
-      "status": "present", "source_key": "dirname",
-      "values_seen": ["Difetto1", "Difetto2", "Difetto4"],
+      "status": "present",
+      "source_key": "dirname",
+      "values_seen": [
+        "Difetto1",
+        "Difetto2",
+        "Difetto4"
+      ],
       "evidence": "위 label_vocabulary 와 동일 근거",
       "evidence_level": "full_scan"
     },
     "normal_label": {
-      "status": "present", "source_key": "dirname",
-      "values_seen": ["NoDifetto"],
+      "status": "present",
+      "source_key": "dirname",
+      "values_seen": [
+        "NoDifetto"
+      ],
       "evidence": "동일. 형태 판독에서 균일 질감·무특징 확인",
       "evidence_level": "full_scan"
     },
@@ -157,54 +188,92 @@
       "pipeline_note": "E2 엣지로 투입한다. pHash 는 비겹침 타일을 원리적으로 못 잡으므로(스펙 §6-10) 이것이 이 데이터셋의 실질 누수 방어선이다"
     }
   },
-
   "counts_announced": {
     "basis": "docs/데이터셋_실물확보.md 4-2·4-3 (해제본 전수 실측, 2026-08-18)",
     "verified": false,
     "images_total": 24407,
-    "per_class": { "Difetto1": 7635, "Difetto2": 6320, "Difetto4": 4452, "NoDifetto": 6000 },
-    "author_split_note": "training 15,863 / validation 6,101 / testing 2,443 로 사전 분할돼 있으나 사용하지 않는다. 전량을 단일 풀로 병합한 뒤 재분할한다 (불변조건 1-3). 저자 분할이 타일 묶음 제약을 지켰는지 검증되지 않았다"
+    "per_class": {
+      "Difetto1": 7635,
+      "Difetto2": 6320,
+      "Difetto4": 4452,
+      "NoDifetto": 6000
+    },
+    "author_split_note": "저자 분할(training 15,863 / validation 6,101 / testing 2,443)을 쓰지 않는다. testing 2,443장이 training 의 바이트 동일 복제본이라(전수 sha256 2,443/2,443 일치) 저자 분할을 쓰면 누수율 100% 다. images_total 24,407 은 파일 수이고 고유 이미지는 21,964 다."
   },
-
   "samples": {
-    "image":         { "status": "present" },
-    "class":         { "status": "present", "level": "L2_defect_type" },
-    "guidance_text": { "status": "absent", "produced_by": "track_B",
-                       "contract": "D4 페어 / corpus (c) 판정 추론" },
+    "image": {
+      "status": "present"
+    },
+    "class": {
+      "status": "present",
+      "level": "L2_defect_type"
+    },
+    "guidance_text": {
+      "status": "absent",
+      "produced_by": "track_B",
+      "contract": "D4 페어 / corpus (c) 판정 추론"
+    },
     "examples": [
       {
         "path_in_dataset": "training/Difetto1/RRT-101R_Img1_A80_S1_[12][8].png",
         "raw_label": "Difetto1",
         "is_normal": false,
-        "observed": { "size_px": [227, 227], "bit_depth": 8, "color_type": "grayscale" },
+        "observed": {
+          "size_px": [
+            227,
+            227
+          ],
+          "bit_depth": 8,
+          "color_type": "grayscale"
+        },
         "note": "가늘고 불규칙하게 갈라지며 꺾이는 어두운 선 — 균열 형태. 파일명 접두사 RRT-101R_Img1_A80_S1 이 모원본 ID"
       },
       {
         "path_in_dataset": "training/NoDifetto/<확인 후 기입>",
         "raw_label": "NoDifetto",
         "is_normal": true,
-        "observed": { "size_px": [227, 227], "bit_depth": 8, "color_type": "grayscale" },
+        "observed": {
+          "size_px": [
+            227,
+            227
+          ],
+          "bit_depth": 8,
+          "color_type": "grayscale"
+        },
         "note": "균일한 질감, 특징 없음"
       }
     ]
   },
-
   "open_items": [
-    { "item": "상업 이용 가능 여부. README 'released freely' 만으로는 판정 불가",
+    {
+      "item": "상업 이용 가능 여부. README 'released freely' 만으로는 판정 불가",
       "how_to_verify": "저자에게 문의하거나, 논문 저작권 표시를 확인한다",
-      "owner": "조현건", "due": "2026-08-30", "grade": "D" },
-    { "item": "정션이 Google Drive 가상 드라이브(G:)에 걸리는가",
+      "owner": "조현건",
+      "due": "2026-08-30",
+      "grade": "D"
+    },
+    {
+      "item": "정션이 Google Drive 가상 드라이브(G:)에 걸리는가",
       "how_to_verify": "mklink /J 실행 → 실패 시 mklink /D → 둘 다 실패 시 로컬 반입으로 강등",
-      "owner": "조현건", "due": "2026-08-23", "grade": "B" },
-    { "item": "227×227 은 문서 3곳과 공식 README 의 '224' 와 다르다. 상류 문서 정정 필요",
+      "owner": "조현건",
+      "due": "2026-08-23",
+      "grade": "B"
+    },
+    {
+      "item": "227×227 은 문서 3곳과 공식 README 의 '224' 와 다르다. 상류 문서 정정 필요",
       "how_to_verify": "docs/데이터셋_현황.md · 실험설계.md 부록 정정 (F 남은조치 8)",
-      "owner": "감독 배분", "due": "2026-08-25", "grade": "D" },
-    { "item": "docs/데이터셋_실물확보.md 4-5 의 '모원본 509개' 정정 (실측 479)",
+      "owner": "감독 배분",
+      "due": "2026-08-25",
+      "grade": "D"
+    },
+    {
+      "item": "docs/데이터셋_실물확보.md 4-5 의 '모원본 509개' 정정 (실측 479)",
       "how_to_verify": "느슨한 정규식으로 재집계 완료 (2026-08-21). 문서 정정만 남았다",
-      "owner": "감독 배분", "due": "2026-08-25", "grade": "D" }
+      "owner": "감독 배분",
+      "due": "2026-08-25",
+      "grade": "D"
+    }
   ],
-
   "probe_result": null,
-
-  "notes": "위치 라벨 부재가 확정됐으므로 백업 시나리오에서 mAP·BBox-IoU·BBox 기반 Class-Jaccard 는 산출 불가다 (비교 항목 5→4). 이 확정 덕분에 data/mock/mock_riawelc_v1 이 N1 경로의 실데이터 대표로 계속 유효하다."
+  "notes": "위치 라벨 부재가 확정됐으므로 백업 시나리오에서 mAP·BBox-IoU·BBox 기반 Class-Jaccard 는 산출 불가다 (비교 항목 5→4). 이 확정 덕분에 data/mock/mock_riawelc_v1 이 N1 경로의 실데이터 대표로 계속 유효하다. 바이트 동일 복제본 2,443장은 ingest 의 drop_exact_duplicates 가 걷어내고, 묶음의 E1 엣지가 이중 방어로 남는다 (복제 쌍 25쌍 실측 25/25 동일 묶음)."
 }

@@ -133,7 +133,7 @@ def test_eligible_with_matching_contract_passes(base: dict) -> None:
 
 def test_absolute_path_rejected(base: dict) -> None:
     d = copy.deepcopy(base)
-    d["acquisition"]["staging_path_hint"] = "G:\\내 드라이브\\weld-fl-datasets\\riawelc"
+    d["acquisition"]["staging_path_hint"] = "G:\\공유 드라이브\\대한산업공학회_추계학술대회\\weld-fl-datasets\\riawelc"
     assert any("절대경로" in e for e in _run(d).errors)
 
 

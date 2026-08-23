@@ -168,6 +168,33 @@ def derive_capabilities(records: Sequence[ImageRecord]) -> Capabilities:
     )
 
 
+def drop_exact_duplicates(
+    records: Sequence[ImageRecord],
+) -> tuple[list[ImageRecord], list[ImageRecord]]:
+    """바이트 동일(sha256 일치) 이미지를 하나만 남긴다. (유지분, 폐기분) 을 돌려준다.
+
+    묶음(E1 엣지)이 이미 **누수**는 막는다 — 같은 바이트는 반드시 한 묶음이라 학습·평가로
+    갈리지 않는다. 그런데 묶음은 **개수**를 고치지 않는다. 복제본을 그대로 두면
+
+    - 표본 수가 부풀고(파일 수 ≠ 고유 이미지 수) 논문의 규모 서술이 틀리며,
+    - 복제된 이미지만 학습에서 2회 노출되어 클래스 분포가 조용히 기울고,
+    - `R × E = N` 학습량 등가 계산의 N 이 실제 고유 표본과 어긋난다.
+
+    그래서 누수 방어(묶음)와 별개로 ingest 에서 한 번 걷어낸다.
+    남기는 쪽은 `rel_path` 사전순 첫 번째다 — 입력 순서에 의존하지 않는 결정론적 규칙이다.
+    """
+    seen: dict[str, ImageRecord] = {}
+    kept: list[ImageRecord] = []
+    dropped: list[ImageRecord] = []
+    for rec in sorted(records, key=lambda r: r.rel_path):
+        if rec.sha256 in seen:
+            dropped.append(rec)
+        else:
+            seen[rec.sha256] = rec
+            kept.append(rec)
+    return kept, dropped
+
+
 def records_to_frames(
     records: Sequence[ImageRecord], label_map: LabelMap
 ) -> tuple[pd.DataFrame, pd.DataFrame]:

@@ -17,7 +17,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from data.dedup.phash import THRESHOLD_START, build_groups, compute_phash
-from data.ingest.base import ImageRecord, records_to_frames, resolve_image_path
+from data.ingest.base import (
+    ImageRecord,
+    drop_exact_duplicates,
+    records_to_frames,
+    resolve_image_path,
+)
 from data.ingest.riawelc import RiawelcAdapter
 from data.invariants import check_invariants
 from data.label_map import load_label_map
@@ -59,6 +64,11 @@ def main() -> int:
     if not records:
         print("이미지가 0장이다. 원본 경로를 확인하라.")
         return 1
+    n_files = len(records)
+    records, duplicates = drop_exact_duplicates(records)
+    if duplicates:
+        print(f"      바이트 동일 복제본 {len(duplicates)}장 제외 "
+              f"(파일 {n_files} → 고유 {len(records)})")
     caps = adapter.capabilities(records)
     print(f"      {len(records)}장 파싱, 기각 {rejected}건")
     print(f"      capabilities: localization={caps.localization} "
