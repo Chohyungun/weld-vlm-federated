@@ -39,7 +39,9 @@ detection = ["ultralytics>=8.3", "pycocotools>=2.0.8"]
 vlm = ["transformers>=4.51", "peft>=0.13", "accelerate>=1.0", "bitsandbytes>=0.45", "trl>=0.12", "datasets>=3.0"]
 fl = ["flwr[simulation]>=1.13"]
 # 트랙 B — 코퍼스·합성
-corpus = ["docling>=2.0", "pdfplumber>=0.11"]
+# easyocr: 후보 문서 32건 중 8건이 텍스트 레이어 0인 스캔본이라 OCR 이 필요하다.
+# 한글 인식이 되어야 해서 easyocr(ko+en) 을 쓴다 (RapidOCR 은 한글 미지원).
+corpus = ["docling>=2.0", "pdfplumber>=0.11", "easyocr>=1.7"]
 # 트랙 D — RAG·평가
 rag = ["FlagEmbedding>=1.3", "faiss-cpu>=1.8", "chromadb>=0.5"]
 
