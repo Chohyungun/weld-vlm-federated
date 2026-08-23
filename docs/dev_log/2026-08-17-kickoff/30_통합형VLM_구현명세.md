@@ -410,7 +410,7 @@ micro=2/S=1300은 **확정 OOM**이다. 그리고 동적 패딩이라 2048 토�
 
 ## 판정 14 — 라운드 실패 방어: `accept_failures=False` vs **전략이 직접 검사**
 
-flwr 1.34의 Message API `FedAvg` 생성자에는 **`accept_failures` 파라미터가 없다**(`fraction_train`/`min_train_nodes`/`min_available_nodes`/…). `aggregate_train`은 `valid, _ = self._check_and_log_replies(...)`로 **에러를 버린 뒤** 남은 것으로 집계하고, 흔적은 INFO 로그 한 줄이다. 반대로 레거시 `flwr/server/strategy/fedavg.py`에는 `accept_failures: bool = True`가 있다. 관점 2의 설계는 `configure_fit`/`aggregate_fit`(레거시 이름)을 쓰면서 Message API 배선을 전제해 **둘 중 어느 쪽에서도 호출되지 않는다.**
+flwr **1.33.0**(설치본. 2026-08-23 트랙 C 실측으로 정정 — 원 표기 1.34)의 Message API `FedAvg` 생성자에는 **`accept_failures` 파라미터가 없다**(`fraction_train`/`min_train_nodes`/`min_available_nodes`/…). `aggregate_train`은 `valid, _ = self._check_and_log_replies(...)`로 **에러를 버린 뒤** 남은 것으로 집계하고, 흔적은 INFO 로그 한 줄이다. 반대로 레거시 `flwr/server/strategy/fedavg.py`에는 `accept_failures: bool = True`가 있다. 관점 2의 설계는 `configure_fit`/`aggregate_fit`(레거시 이름)을 쓰면서 Message API 배선을 전제해 **둘 중 어느 쪽에서도 호출되지 않는다.**
 
 **채택**: G0에서 API를 실측 확정하고 문서에 못 박는다. 어느 쪽이든 방어는 **전략 코드가 직접** 한다:
 ```python
@@ -550,7 +550,7 @@ realized_adapter_sha256 = sha256(
 | **F20** | `generation_config.json` 부재를 "위험 없음"으로 읽었다. 이 파일이 없다는 것은 **벤더가 선언한 eos_token_id 목록이 없다**는 뜻이기도 하다. `add_generation_prompt` 기본값도 **False** | eos가 `<|endoftext|>` 단일 id면 모델이 JSON을 끝내고도 안 멈춰 전 샘플이 `length` → "length면 truncated 오답" 규칙이 **28,000 레코드 전건을 오답으로** 만든다. `add_generation_prompt` 누락이면 생성문이 빈 문자열. 두 경우 모두 **"통합형이 구조적으로 열등하다"와 구별되지 않는다** | eos를 chat template **차분에서 유도**해 집합으로 넘기고 `terminator_ids ⊆ gc.eos_token_id` assert. `stop_reason`을 길이가 아니라 **마지막 토큰 정체**로 판정. `assert_generation_prompt`(두 렌더 차분 비어있지 않음 + 실사용이 그 접미사로 끝남). **G5 통과 조건 5번 `eos_stop_rate ≥ 0.9`**, G9에서 `== 1.0` | G5, G9, 4-12, 4-20 |
 | **F21** | "greedy 1회라 백엔드가 바뀌어도 출력 동일"이 SSM 하이브리드에서 성립하지 않는다. `use_kernel_func_from_hub_with_fallback`이 `try/except`로 **로그도 경고도 없이** 커널을 교체하고, `self.norm`은 fla 설치 여부에 따라 **클래스 자체가 바뀐다**. `_attn_implementation`은 32층 중 **8층만** 지배 | batch=1을 "패딩이 argmax를 뒤집는다"로 고정하면서 훨씬 큰 교란인 커널·GPU 교체는 열어 뒀다. 통합 2칸이 다른 환경에서 돌면 차이의 일부가 **"연합 때문"이 아니라 "커널 때문"**인데 MLflow 태그는 동일하다 | **`env_fingerprint`를 5칸 공통 고정 9번째 항목으로 승격**(아래 표) + `check_cells_identical` 대조 필드 + 이관 시 통합 2칸 동시 이관·둘 다 재실행 + 학습 풀 고정 50장 재현 카나리아(두 환경 생성문 바이트 동일) | 레지스트리 #14, 판정 21·22, 4-10 |
 | **F22** | 28,000장 batch=1 단일 프로세스에 **재개 경로가 없는데** 평가셋 접근은 전 실험 통틀어 1회다. 3 s/장이면 23시간, 8 s/장이면 62시간 연속 실행 | 크래시하면 전량 재실행이고 그것이 두 번째 eval 접근이다. **실무에서 유일하게 실행 가능한 선택지가 "`eval_access.json`을 조용히 덮어쓴다"가 되어 격리 증거가 위조된다** | 이미지마다 append+flush + `progress.json`(6해시) + 종료 시 image_id 정렬 정규화본 rewrite. `eval_access.jsonl`을 **재개가 표현 가능한 사실**로 만든다(`reason: initial|resume`). 재개 시 6해시 불일치면 거부. 학습 루프도 K 스텝마다 재개 체크포인트(조기 종료도 best도 아니다 — val을 아예 안 읽는다) | 4-15, 4-20, G9 |
-| **F23** | flwr 1.34 Message API `FedAvg`에 **`accept_failures`가 없고** `aggregate_train`이 에러 응답을 버린 뒤 남은 것으로 집계. `fraction_evaluate` 기본 1.0 | 라운드 4에서 C1이 OOM으로 죽어도 서버가 2클라이언트로 재정규화해 진행하고 정상 종료한다. R×E=N이 깨졌는데 전략이 초록 | 전략이 직접 검사(판정 14) + `fraction_evaluate=0.0`·`min_evaluate_nodes=0` 하드코딩 + `aggregate_evaluate` 대칭 방어 + 회계 빈 셀 = run 무효 | 레지스트리 #19, 판정 14, 4-19 |
+| **F23** | flwr **1.33.0**(설치본, 트랙 C 실측 정정) Message API `FedAvg`에 **`accept_failures`가 없고** `aggregate_train`이 에러 응답을 버린 뒤 남은 것으로 집계. `fraction_evaluate` 기본 1.0 | 라운드 4에서 C1이 OOM으로 죽어도 서버가 2클라이언트로 재정규화해 진행하고 정상 종료한다. R×E=N이 깨졌는데 전략이 초록 | 전략이 직접 검사(판정 14) + `fraction_evaluate=0.0`·`min_evaluate_nodes=0` 하드코딩 + `aggregate_evaluate` 대칭 방어 + 회계 빈 셀 = run 무효 | 레지스트리 #19, 판정 14, 4-19 |
 
 ## 버린 설계와 이유
 
