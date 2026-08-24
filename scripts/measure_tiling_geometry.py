@@ -1,4 +1,4 @@
-"""타일링 선행 측정 M0·M1·M5·M6 — 라벨 JSON 전용. 판정문서 4-2.
+"""타일링 선행 측정 M0·M1·M5·M6 (라벨 JSON 전용).
 
 원천 이미지를 열지 않는다. 라벨 zip 을 **읽기만** 하고 압축도 풀지 않는다(불변조건 1-1).
 
@@ -9,8 +9,8 @@
 
 | # | 무엇을 | 무엇을 결정하는가 |
 |---|---|---|
-| M0 | RT/AL 결함 4종의 해상도 분해 | 비-R1 결함의 클래스 쏠림. 단일 클래스 10% 이상이면 회부 |
-| M1 | 정상 폴리곤 기하 (밴드 폭·높이·면적비·종횡비·중심) | **밴드 높이 중앙값 ≥ 720 이면 τ 규칙 가능, 미만이면 차선안** |
+| M0 | RT/AL 결함 4종의 해상도 분해 | 비-R1 결함의 클래스 쏠림. 단일 클래스 10% 이상이면 재검토 |
+| M1 | 정상 폴리곤 기하 (밴드 폭·높이·면적비·종횡비·중심) | 밴드 높이 중앙값이 720 이상이면 τ 규칙 가능, 미만이면 차선안 |
 | M5 | 결함 폴리곤 중심 (cx/W, cy/H) 분포 | 중앙 사전확률의 크기 |
 | M6 | 정상 묶음(연속 id run) 크기 분포 | 오탐 지표의 유효 표본 수 |
 
@@ -99,7 +99,7 @@ def _q(vals: list[float], p: float) -> float:
 
 def _stat_line(name: str, vals: list[float]) -> str:
     if not vals:
-        return f"| {name} | — | — | — | — | — | 0 |"
+        return f"| {name} | . | . | . | . | . | 0 |"
     return (
         f"| {name} | {min(vals):.1f} | {_q(vals, 0.25):.1f} | "
         f"{statistics.median(vals):.1f} | {_q(vals, 0.75):.1f} | {max(vals):.1f} | {len(vals)} |"
@@ -107,7 +107,7 @@ def _stat_line(name: str, vals: list[float]) -> str:
 
 
 def m0(recs: list[ImageRec], out: list[str]) -> None:
-    out.append("## M0 — RT/AL 결함의 해상도 분해\n")
+    out.append("## M0. RT/AL 결함의 해상도 분해\n")
     al_def = [r for r in recs if r.material == "AL" and not r.is_normal]
     st_def = [r for r in recs if r.material == "ST" and not r.is_normal]
     out.append("| 재질 | 결함 총수 | 1280×720 | 비-R1 | 비-R1 비율 |")
@@ -132,13 +132,13 @@ def m0(recs: list[ImageRec], out: list[str]) -> None:
     for c, n in cls.most_common():
         tot = total_by_cls.get(c, 0)
         ratio = (n / tot * 100) if tot else 0.0
-        hit = "**예 — 회부**" if ratio >= 10.0 else "아니오"
+        hit = "**예 (재검토)**" if ratio >= 10.0 else "아니오"
         if ratio >= 10.0:
             flagged.append(c)
         out.append(f"| {c} | {n} | {tot:,} | {ratio:.3f}% | {hit} |")
     out.append("")
     out.append(
-        f"**판정:** {'감독 회부 필요 — ' + ', '.join(flagged) if flagged else '쏠림 없음. 폐기 진행 가능.'}\n"
+        f"**판정:** {'재검토 필요: ' + ', '.join(flagged) if flagged else '쏠림 없음. 폐기 진행 가능.'}\n"
     )
     res = Counter((r.width, r.height) for r in non_r1)
     out.append("비-R1 결함의 해상도 (상위 10):\n")
@@ -150,7 +150,7 @@ def m0(recs: list[ImageRec], out: list[str]) -> None:
 
 
 def m1(recs: list[ImageRec], out: list[str]) -> None:
-    out.append("## M1 — 정상 폴리곤 기하 (**차선안 분기점**)\n")
+    out.append("## M1. 정상 폴리곤 기하 (**차선안 분기점**)\n")
     normals = [r for r in recs if r.is_normal and r.polys]
     pano = [r for r in normals if r.width > PANORAMA_W]
     out.append(
@@ -183,7 +183,7 @@ def m1(recs: list[ImageRec], out: list[str]) -> None:
             med = statistics.median(heights)
             ge = sum(1 for h in heights if h >= TILE_H) / len(heights) * 100
             out.append(
-                f"> **분기 판정 — 밴드 높이 중앙값 {med:.1f}px** "
+                f"> **분기 판정. 밴드 높이 중앙값 {med:.1f}px** "
                 f"(720 이상 비율 {ge:.1f}%)\n>\n"
             )
             if med >= TILE_H:
@@ -193,15 +193,15 @@ def m1(recs: list[ImageRec], out: list[str]) -> None:
                 )
             else:
                 out.append(
-                    "> 중앙값이 **720 미만**이다. 판정문서 4-9 에 따라 **차선안(밴드 규격 타일링)** 으로\n"
-                    "> 분기한다. 타일 규격을 밴드 높이 분위수 기반 단일 규격으로 낮추고 결함 크롭도\n"
-                    "> 같은 규격으로 중앙 크롭한다. **감독 회부 사항이다.**\n"
+                    "> 중앙값이 **720 미만**이다. 차선안(밴드 규격 타일링)으로 분기한다.\n"
+                    "> 타일 규격을 밴드 높이 분위수 기반 단일 규격으로 낮추고 결함 크롭도\n"
+                    "> 같은 규격으로 중앙 크롭한다. 규격 확정 전 재검토가 필요하다.\n"
                 )
             out.append("")
 
 
 def m5(recs: list[ImageRec], out: list[str]) -> None:
-    out.append("## M5 — 결함 폴리곤 중심 분포 (중앙 사전확률)\n")
+    out.append("## M5. 결함 폴리곤 중심 분포 (중앙 사전확률)\n")
     out.append("> 이 값을 판별 임계 유도에 쓰지 않는다 (규약 1-4). 중앙 사전확률의 크기만 잰다.\n")
     defects = [r for r in recs if not r.is_normal and r.polys]
     for mat in ("ST", "AL"):
@@ -224,7 +224,7 @@ def m5(recs: list[ImageRec], out: list[str]) -> None:
 
 
 def m6(recs: list[ImageRec], out: list[str]) -> None:
-    out.append("## M6 — 정상 묶음(연속 id run) 크기 분포\n")
+    out.append("## M6. 정상 묶음(연속 id run) 크기 분포\n")
     out.append("> 오탐 지표의 유효 표본은 이미지 수가 아니라 묶음 수다.\n")
     buckets: dict[str, list[ImageRec]] = defaultdict(list)
     for r in recs:
@@ -261,10 +261,9 @@ def main() -> int:
     recs = read_labels(args.labels)
     rt = [r for r in recs if r.modality == "RT"]
     print(f"  레코드 {len(recs):,} / RT {len(rt):,}")
-
     out: list[str] = []
-    out.append("# 선행 측정 M0·M1·M5·M6 — 타일링 규격 결정 재료\n")
-    out.append("트랙 A · 라벨 JSON 전수 (원천 이미지 미열람) · 판정문서 4-2\n")
+    out.append("# 선행 측정 M0·M1·M5·M6: 타일링 규격 결정 재료\n")
+    out.append("라벨 JSON 전수 집계. 원천 이미지는 열지 않았다.\n")
     out.append(f"입력 라벨 레코드 **{len(recs):,}건** 중 RT **{len(rt):,}건**을 집계했다.\n")
     n_norm = sum(1 for r in rt if r.is_normal)
     out.append(

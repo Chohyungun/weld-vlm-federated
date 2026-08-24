@@ -1,4 +1,4 @@
-"""M1b — 차선안(밴드 규격 타일링) 규격 후보 산정. 판정문서 4-9.
+"""M1b. 차선안(밴드 규격 타일링)의 규격 후보 산정.
 
 M1 에서 밴드 높이 중앙값이 720 미만으로 나와 채택안(1280×720 k=1)이 분기했다.
 차선안은 타일 규격을 밴드 높이 분위수 기반 `(w_t × h_t)` 로 낮추고 **결함 크롭도 같은
@@ -9,7 +9,7 @@ M1 에서 밴드 높이 중앙값이 720 미만으로 나와 채택안(1280×720
 | 밴드 포함률 | 정상 파노라마 밴드가 높이 `h_t` 타일 안에 **통째로** 들어가는 비율 |
 | 결함 절단율 | 결함 크롭(1280×720)을 높이 `h_t` 로 중앙 크롭할 때 결함 폴리곤이 잘리는 비율 |
 
-**3% 초과 시 감독 회부**(판정문서 4-9). 둘은 반대 방향으로 움직인다 — `h_t` 를 키우면
+결함 절단율 상한은 3% 다. 두 값은 반대 방향으로 움직인다. `h_t` 를 키우면
 밴드는 더 들어가지만 정상 타일에 미검사 영역이 늘고, 줄이면 결함이 잘린다.
 
     uv run python scripts/measure_band_spec.py
@@ -49,8 +49,8 @@ def main() -> int:
 
     recs = [r for r in read_labels(args.labels) if r.modality == "RT"]
     out: list[str] = []
-    out.append("# M1b — 밴드 규격 타일링 규격 후보 (차선안)\n")
-    out.append("트랙 A · 라벨 JSON 전수 · 판정문서 4-9 분기\n")
+    out.append("# M1b: 밴드 규격 타일링 규격 후보 (차선안)\n")
+    out.append("라벨 JSON 전수 집계. 밴드 높이 중앙값이 720 미만이어서 분기했다.\n")
 
     # --- 밴드 높이 (정상 파노라마) --------------------------------------------------
     bands = [
@@ -83,7 +83,7 @@ def main() -> int:
         cut_pct = cut / len(dpolys) * 100
         # 밴드 중앙값이 타일을 채우고 남는 비율 = 미검사(정상 승계 불가) 영역
         uninspected = max(0.0, (1 - statistics.median(heights) / h_t)) * 100
-        ok = "✅" if cut_pct <= 3.0 else "🔴 회부"
+        ok = "통과" if cut_pct <= 3.0 else "초과"
         rows.append((h_t, contained, cut_pct, cut, uninspected, ok))
         out.append(
             f"| **{h_t}** | {contained:.1f}% | **{cut_pct:.2f}%** | {cut:,} | "
@@ -95,13 +95,13 @@ def main() -> int:
     if ok_rows:
         best = max(ok_rows, key=lambda r: r[1])          # 절단율 통과 중 밴드 포함률 최대
         out.append(
-            f"> **후보 권고: h_t = {best[0]}** — 결함 절단율 {best[2]:.2f}% (상한 3% 이내), "
+            f"> **후보 권고: h_t = {best[0]}.** 결함 절단율 {best[2]:.2f}% (상한 3% 이내), "
             f"밴드 포함률 {best[1]:.1f}%.\n>\n"
             f"> 폭은 결함 크롭 폭과 같은 **1280** 을 유지한다(가로는 자르지 않는다). "
             f"규격은 **1280×{best[0]}**.\n"
         )
     else:
-        out.append("> 🔴 **모든 후보가 결함 절단율 3% 를 넘는다. 감독 회부.**\n")
+        out.append("> **모든 후보가 결함 절단율 3% 를 넘는다.**\n")
     out.append("")
 
     out.append("## 밴드 높이 분위수\n")
@@ -112,7 +112,7 @@ def main() -> int:
         out.append(f"| q{int(p*100)} | {s[int(p*(len(s)-1))]:.0f} |")
     out.append("")
 
-    out.append("## 밴드 세로 중심 — 정렬 기준이 성립하는가\n")
+    out.append("## 밴드 세로 중심: 정렬 기준이 성립하는가\n")
     cys = [c for _, c in bands]
     out.append(
         f"cy/H 중앙값 {statistics.median(cys):.3f} · "
