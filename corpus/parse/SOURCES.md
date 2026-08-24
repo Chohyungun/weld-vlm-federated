@@ -1,19 +1,19 @@
 # 코퍼스 원문 출처와 재현 절차
 
-이 저장소는 규정 **원문 전문을 추적하지 않는다** — 무료 공개 문서라도 재배포는 별개
-권리이고, 저장소 Public 전환 시 이력의 전문이 재배포가 되기 때문이다 (2026-08-17 감독
-조치). 아래 절차로 누구든 동일 산출물을 로컬 재현할 수 있다. 기계 판독용 등록부는
-`sources.yaml`(단일 진실), 이 문서는 사람용 재현 안내다.
+이 저장소는 규정 원문 전문을 추적하지 않는다. 무료 공개 문서라도 재배포는 별개
+권리이고, 저장소가 공개로 전환되면 이력에 남은 전문이 곧 재배포가 된다. 아래 절차로
+누구든 동일 산출물을 로컬에서 재현할 수 있다. 기계 판독용 등록부는 `sources.yaml`이
+단일 진실이고, 이 문서는 사람이 읽는 재현 안내다.
 
 ## 원문 확보 (→ `corpus/parse/raw/`, git 미추적)
 
 | doc_id | 판본 | 취득 | sha256 |
 |---|---|---|---|
-| KR-RULES-P2 | 2025 선급 및 강선규칙/적용지침 제2편 재료 및 용접 (합본, 362쪽) | krs.co.kr 공개 PDF — sources.yaml의 url | `46c4ee189f4adef29e42320f9301d8db577946ec96f893be9ff2f1683879552b` |
-| IACS47 | IACS Rec. No.47 Rev.10 Corr.1 (Oct 2025, CLN, 67쪽) | iacs.org.uk → 공식 S3 — sources.yaml의 url | `ac54b7904b3f27d8af830ef2f4ff0ca18967a407aeead67c481b136b542f15a6` |
+| KR-RULES-P2 | 2025 선급 및 강선규칙/적용지침 제2편 재료 및 용접 (합본, 362쪽) | krs.co.kr 공개 PDF (sources.yaml의 url) | `46c4ee189f4adef29e42320f9301d8db577946ec96f893be9ff2f1683879552b` |
+| IACS47 | IACS Rec. No.47 Rev.10 Corr.1 (Oct 2025, CLN, 67쪽) | iacs.org.uk 경유 공식 S3 (sources.yaml의 url) | `ac54b7904b3f27d8af830ef2f4ff0ca18967a407aeead67c481b136b542f15a6` |
 
-다운로드 후 `corpus/parse/raw/RAW.sha256`(추적됨)과 대조하라. 해시 불일치 = 판본이
-다른 것이며, 이후 모든 산출물 재현이 성립하지 않는다.
+다운로드 후 `corpus/parse/raw/RAW.sha256`(추적됨)과 대조한다. 해시가 다르면 판본이
+다른 것이고, 이후 모든 산출물 재현이 성립하지 않는다.
 
 ## 파싱 재현 (→ `corpus/parse/survey/`, meta_*.json 만 추적)
 
@@ -25,7 +25,7 @@ uv run python -m corpus.parse.survey_docling IACS47                # 전문 67�
 ```
 
 - 고정 조건: docling 2.120.1 (uv.lock), TableFormer ACCURATE, OCR off,
-  `TORCHDYNAMO_DISABLE=1` (스크립트 내장 — sm_120/Windows triton 부재 대응).
+  `TORCHDYNAMO_DISABLE=1` (스크립트에 내장. sm_120/Windows에 triton 휠이 없어 필요하다).
 - 재현 검증: 산출 표 수·형상·페이지가 추적되는 `meta_full.json` /
   `meta_p316-336.json`과 일치해야 한다.
 
