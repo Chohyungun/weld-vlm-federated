@@ -50,6 +50,9 @@ class ImageRec:
     is_normal: bool
     cases: tuple[str, ...]
     polys: list[tuple[list[int], list[int]]] = field(default_factory=list)
+    #: polys 와 같은 순서의 결함 종류. 한 이미지에 두 종류가 섞이는 경우가 있어
+    #: 이미지 대표값으로 뭉뚱그리면 안 된다 (실측 180장 이상).
+    poly_cases: list[str] = field(default_factory=list)
 
 
 def read_labels(label_root: Path) -> list[ImageRec]:
@@ -81,6 +84,7 @@ def read_labels(label_root: Path) -> list[ImageRec]:
                         xs, ys = c.get("x") or [], c.get("y") or []
                         if len(xs) >= 3 and len(xs) == len(ys):
                             rec.polys.append((xs, ys))
+                            rec.poly_cases.append(str(a.get("case", "")))
                     recs.append(rec)
                 except (KeyError, ValueError, TypeError, UnicodeDecodeError):
                     failures += 1
