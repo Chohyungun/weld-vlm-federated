@@ -101,4 +101,4 @@
   방향(트랙 경계)을 예고한 셈이다.
 
 **판정 요약: Critical 0 / Important 3 / Minor 3.** 전부 게이트에서 C·D와의 계약 한 줄씩으로
-닫을 수 있고 재실험 불요. Phase E를 막을 Critical은 없다.
+닫을 수 있고 재실험 불요. 계획 수립를 막을 Critical은 없다.
