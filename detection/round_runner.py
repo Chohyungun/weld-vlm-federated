@@ -23,7 +23,14 @@ from detection import serialize
 # `derive_seed` 는 ultralytics 없이도 의미가 있는 순수 데이터·함수이고, 실제로 검출 학습을
 # 돌리지 않는 쪽(회계 감사, 설정 검증)이 이것들만 쓰려고 무거운 optional 의존성을 끌 이유가 없다.
 
-__all__ = ["RoundResult", "train_round", "derive_seed", "FIXED_OVERRIDES"]
+__all__ = [
+    "RoundResult",
+    "train_round",
+    "derive_seed",
+    "FIXED_OVERRIDES",
+    "FIXED_PILOT",
+    "PROFILES",
+]
 
 
 #: 5칸 공통 고정값. 여기 있는 키는 호출자가 덮어쓸 수 없다(§`train_round` 참조).
@@ -49,6 +56,26 @@ FIXED_OVERRIDES: dict[str, Any] = {
     "plots": False,
     # mlflow 가 설치돼 있으면 Ultralytics 가 자동 연동한다. 로깅 경로는 서버 시점 하나로 통일한다.
     "mlflow": False,
+}
+
+
+#: 파일럿 프로파일. **본실험과 값이 다르지만 파일럿 안에서는 다섯 칸이 전부 같은 값을 쓴다.**
+#: 공통 고정이 금지하는 것은 "칸마다 다른 값"이지 "실험마다 다른 값"이 아니다. 프로파일을
+#: 통째로 교체하게 만들어서, 칸별로 몰래 다른 값을 넣는 경로만 계속 막는다.
+#:
+#: 파일럿에서도 풀지 않는 것: patience(조기 종료 금지), optimizer 명시 고정,
+#: mlflow=False, save/val=False. 규칙을 풀면 파일럿이 검증하는 대상이 본실험과 달라진다.
+FIXED_PILOT: dict[str, Any] = {
+    **{k: v for k, v in FIXED_OVERRIDES.items()},
+    "batch": 2,       # 16GB 에서 416px 기준. grad accum 으로 유효 배치를 맞춘다
+    "imgsz": 416,
+    "close_mosaic": 1,  # E=2 라 10 이면 한 번도 발화하지 않는다
+}
+
+#: 이름으로 프로파일을 고른다. 호출자가 dict 을 직접 조립하지 못하게 한다.
+PROFILES: dict[str, dict[str, Any]] = {
+    "main": FIXED_OVERRIDES,
+    "pilot": FIXED_PILOT,
 }
 
 
@@ -117,6 +144,7 @@ def train_round(
     weights_in: Sequence[np.ndarray] | None = None,
     canonical_keys: Sequence[str] | None = None,
     project: str | Path | None = None,
+    profile: str = "main",
     extra_overrides: dict[str, Any] | None = None,
 ) -> RoundResult:
     """라운드 하나를 실행하고 raw 가중치를 돌려준다.
@@ -130,15 +158,19 @@ def train_round(
             센 값을 넘긴다.
         project: 산출물 디렉터리. **절대경로를 준다** — 생략하면 Ultralytics 전역 설정의
             `runs_dir` 로 떨어져 저장소 루트가 오염된다.
+        profile: `"main"` 또는 `"pilot"`. 프로파일 안에서는 다섯 칸이 같은 값을 쓴다.
 
     Raises:
         ValueError: 5칸 공통 고정 항목을 덮어쓰려 하면 실패한다.
     """
     # 공통 고정 위반은 ultralytics 를 로드하기 **전에** 잡는다. 설정 오류를 알아내는 데
     # optional 의존성이 필요할 이유가 없고, 그래야 이 검사가 어느 환경에서든 돈다.
-    overrides: dict[str, Any] = dict(FIXED_OVERRIDES)
+    if profile not in PROFILES:
+        raise ValueError(f"알 수 없는 프로파일: {profile!r}. 허용: {sorted(PROFILES)}")
+    fixed = PROFILES[profile]
+    overrides: dict[str, Any] = dict(fixed)
     if extra_overrides:
-        clashes = sorted(set(extra_overrides) & set(FIXED_OVERRIDES))
+        clashes = sorted(set(extra_overrides) & set(fixed))
         if clashes:
             raise ValueError(
                 f"5칸 공통 고정 항목은 칸별로 덮어쓸 수 없다: {clashes}. "
