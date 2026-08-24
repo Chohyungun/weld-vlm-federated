@@ -51,7 +51,7 @@ JUDGE_ALTERNATIVES = {
 }
 MAX_NEW = 200
 # 추론형 검증기는 생각을 먼저 쓴다. 예산이 짧으면 판정에 도달하지 못해 전건 형식 위반이 된다.
-JUDGE_MAX_NEW = 32
+JUDGE_MAX_NEW = 96   # 판정 + 기각 사유 한 문장
 PAID_STD = re.compile(r"ISO\s*5817|ISO\s*10042|ISO\s*10675|AWS\s+Welding\s+Handbook")
 
 # 결함 코드 → 한국어 명칭. 사상표(계약 #1)에서 읽어 하드코딩을 피한다.
@@ -84,6 +84,56 @@ REMEDY_TABLE = [
 ]
 
 
+# ------------------------------------------------------------------ 직렬화
+# 골격 값을 프롬프트에 넣을 때는 내부 표현이 아니라 사람이 읽는 형태로 쓴다.
+# enum(Unit.MM, InspectionMethod.RT)이나 개구간 인코딩(+0.01)이 그대로 새면 그 문자열이
+# 판정문에 박힌다. 실측에서 기각 사유의 다수가 이것이었다.
+
+def val(x) -> str:
+    """enum 은 값만, 수치는 뒤따르는 0 을 정리해서 쓴다."""
+    v = getattr(x, "value", x)
+    if v is None:
+        return ""
+    txt = str(v)
+    if re.fullmatch(r"-?\d+\.\d+", txt):
+        txt = txt.rstrip("0").rstrip(".")
+    return txt
+
+
+def unit_ko(u) -> str:
+    return {"mm": "mm", "percent": "%"}.get(val(u), val(u) or "mm")
+
+
+def method_ko(m) -> str:
+    return {"RT": "RT(방사선투과)", "VT": "VT(육안)", "ALL": "검사 방식 무관"}.get(
+        val(m), val(m))
+
+
+def num_ko(x) -> str:
+    """개구간 인코딩(+0.01)을 사람이 읽는 경계로 되돌린다."""
+    v = val(x)
+    if not v:
+        return ""
+    try:
+        f = float(v)
+    except ValueError:
+        return v
+    if abs(f - round(f) - 0.01) < 1e-9:      # 10.01 → 10 초과
+        return val(round(f - 0.01, 2))
+    return val(f)
+
+
+def thickness_ko(tmin, tmax) -> str:
+    """두께 구간을 원문 표기(초과·이하)로 쓴다."""
+    lo, hi = val(tmin), val(tmax)
+    lo_f = float(lo) if lo else 0.0
+    left = "" if lo_f == 0 else f"{num_ko(tmin)} mm 초과"
+    if not hi:
+        return left or "모든 두께"
+    right = f"{num_ko(tmax)} mm 이하"
+    return f"{left} {right}".strip() if left else right
+
+
 # ------------------------------------------------------------------ 골격
 
 def build_clause_skeletons(n: int) -> list[dict]:
@@ -98,13 +148,13 @@ def build_clause_skeletons(n: int) -> list[dict]:
     def criterion(r) -> str:
         if r.limit_rule == "none_permitted":
             return "크기와 무관하게 허용하지 않는다"
-        unit = r.unit or "mm"
+        unit = unit_ko(r.unit)
         if r.limit_rule == "const":
-            return f"{r.limit_value} {unit} 이하"
+            return f"{val(r.limit_value)} {unit} 이하"
         if r.limit_rule == "prop_t":
-            return f"모재 두께의 {r.limit_factor} 배 이하"
+            return f"모재 두께의 {val(r.limit_factor)} 배 이하"
         if r.limit_rule == "prop_t_cap":
-            return f"모재 두께의 {r.limit_factor} 배 이하이고 최대 {r.limit_cap} {unit}"
+            return f"모재 두께의 {val(r.limit_factor)} 배 이하이고 최대 {val(r.limit_cap)} {unit}"
         return "표에 정한 값 이하"
 
     framings = [
@@ -118,7 +168,7 @@ def build_clause_skeletons(n: int) -> list[dict]:
     while len(out) < n:
         r = rows[i % len(rows)]
         fr, ask = framings[(i // len(rows)) % len(framings)]
-        tmax = "상한 없음" if r.thickness_max is None else f"{r.thickness_max} mm 미만"
+        thick = thickness_ko(r.thickness_min, r.thickness_max)
         out.append({
             "sample_id": f"clause-{i:04d}",
             "axis": "조항검색_기준서술",
@@ -126,10 +176,12 @@ def build_clause_skeletons(n: int) -> list[dict]:
             "rule_id": r.rule_id,
             "defect_code": r.defect_code,
             "defect_name": names.get(r.defect_code, "해당 결함"),
-            "inspection_method": r.inspection_method,
+            "inspection_method": val(r.inspection_method),
+            "inspection_ko": method_ko(r.inspection_method),
             "clause_id": r.clause_id,
-            "thickness_min": str(r.thickness_min),
-            "thickness_max": tmax,
+            "thickness_min": val(r.thickness_min),
+            "thickness_max": val(r.thickness_max),
+            "thickness_ko": thick,
             "criterion": criterion(r),
             "source_doc": r.source_doc,
         })
@@ -158,10 +210,10 @@ def prompt_clause(sk: dict) -> str:
     return (
         "다음 자료만 사용해 한국어 2~3문장으로 서술한다.\n"
         f"- 결함: {sk['defect_name']} (ISO 6520-1 코드 {sk['defect_code']})\n"
-        f"- 검사 방식: {sk['inspection_method']}\n"
+        f"- 검사 방식: {sk.get('inspection_ko') or sk['inspection_method']}\n"
         f"- 적용 조항: {sk['clause_id']}\n"
         f"- 조항이 정한 기준: {sk['criterion']}\n"
-        f"- 적용 두께 구간: {sk['thickness_min']} mm 이상 {sk['thickness_max']}\n\n"
+        f"- 적용 두께 구간: {sk.get('thickness_ko') or '모든 두께'}\n\n"
         f"요구: {sk['ask']}.\n"
         "반드시 지킬 것:\n"
         f"1. 조항 번호 {sk['clause_id']} 와 결함 코드 {sk['defect_code']} 를 그대로 적는다.\n"
@@ -320,10 +372,52 @@ def judge(records: list[dict], batch: int, model_id: str = None, four_bit: bool 
     for r, o in zip(records, outs):
         r["judge_pass"], r["judge_parse_ok"] = parse_judgement(o)
         r["judge_note"] = " ".join(o.split())[:200]
+        r["judge_reason"] = extract_reason(o, r["judge_pass"])
+
+    # 기각분에 사유를 따로 묻는다. 판정을 한 낱말로 받으면 사유가 안 붙는데,
+    # 사유 없는 기각은 감사가 안 된다. 판정은 위에서 확정됐고 여기서 바뀌지 않는다.
+    rejected = [r for r in records if not r["judge_pass"]]
+    if rejected:
+        rp = []
+        for r in rejected:
+            sk = r["skeleton"]
+            basis = (f"결함 {sk.get('defect_name','')} / 조항 {sk['clause_id']} / "
+                     f"기준 {sk.get('criterion', sk.get('remedy_ko',''))}")
+            rp.append(
+                "아래 [문장]은 [자료] 범위를 벗어난다고 판정됐다.\n"
+                "그 이유를 한국어 한 문장으로 쓴다. 다른 말은 쓰지 않는다.\n\n"
+                f"[자료]\n{basis}\n\n[문장]\n{r['text']}")
+        outs2 = generate(rp, batch, mid, max_new=72, four_bit=four_bit, prefill=prefill)
+        for r, o in zip(rejected, outs2):
+            body = _TAG.sub(" ", _THINK.sub(" ", o))
+            txt = " ".join(body.split()).strip(" .:-")
+            r["judge_reason"] = txt[:200] if txt else "사유 미기재"
     return records
 
 
-_THINK = re.compile(r"<think>.*?</think>", re.S)
+def extract_reason(out: str, passed: bool) -> str:
+    """기각 사유를 뽑는다. 사유 없는 기각은 감사가 안 된다."""
+    if passed:
+        return ""
+    if not out or not out.strip():
+        # 기각인데 출력이 비었어도 공란으로 두지 않는다. 공란은 감사에서 누락과
+        # 구분되지 않는다.
+        return "사유 미기재"
+    body = _TAG.sub(" ", _THINK.sub(" ", out)).strip()
+    lines = [l.strip() for l in body.splitlines() if l.strip()]
+    # 판정어만 있는 줄을 걷어내고 남는 첫 문장이 사유다
+    for l in lines:
+        if _VERD.fullmatch(l.upper().strip(" .:")):
+            continue
+        cleaned = _VERD.sub("", l).strip(" .:-")
+        if cleaned:
+            return cleaned[:200]
+    return "사유 미기재"
+
+
+_THINK = re.compile("<think>.*?</think>", re.S)
+# 프리필로 사고를 막으면 여는 태그 없이 닫는 태그만 새어 나오기도 한다
+_TAG = re.compile("</?think>")
 _VERD = re.compile("(OK|NG)")
 
 
@@ -377,7 +471,8 @@ def write_report(args, recs, survivors, accepted, qa_recs, qa_accepted, stage0_f
                        "retry": "없음 (실패분 폐기)"},
         "validation": {"model": args.judge_model or JUDGE_MODEL,
                        "different_family": True,
-                       "note": "생성 Qwen 계열, 검증 Phi 계열"},
+                       "note": f"생성 {GEN_MODEL.split('/')[0]} 계열, "
+                               f"검증 {(args.judge_model or JUDGE_MODEL).split('/')[0]} 계열"},
         "reasoning": {
             "n_in": len(recs),
             "axis_split": dict(Counter(r["axis"] for r in recs)),
