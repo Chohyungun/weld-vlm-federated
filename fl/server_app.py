@@ -22,6 +22,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover
     ) from exc
 
 from detection.budget_audit import AccountingCell, AccountingMatrix
+from fl.atomic_log import AtomicLog, RoundTimer, new_run_id
 from fl.strategy import METRICS_KEY, RoundFailure, WeldFedAvg
 
 __all__ = ["app", "build_accounting", "cell_to_client_ids"]
@@ -91,9 +92,47 @@ def main(grid: "Grid", context: "Context") -> None:
     # 초기 파라미터·정본 키는 칸마다 다르다. 그 외는 공통 경로다.
     initial_arrays, canonical_keys, reference_sd = _load_initial(cell, cfg)
 
+    atomic = AtomicLog(
+        out_dir / "atomic_log.csv",
+        run_id=new_run_id(cell, int(cfg.get("base-seed", 0)), str(cfg.get("run-stamp", "000000"))),
+        seed=int(cfg.get("base-seed", 0)),
+        cell=cell,
+        split_hash=str(cfg.get("split-hash", "")),
+    )
+    timer = RoundTimer()
+
     def on_round_end(server_round: int, cells: list[dict[str, Any]], agg: Any) -> None:
+        elapsed = timer.lap()
         for m in cells:
             accounting.record(_cell_from_metrics(server_round - 1, m))
+            # 학습 과정의 실측만 남긴다. 성능 지표는 학습이 끝난 뒤 일괄 채점으로 얻는다.
+            up = int(m.get("payload-bytes", 0))
+            atomic.log_round(
+                round_idx=server_round - 1,
+                client_id=int(m.get("client-idx", -1)),
+                n_train_samples=int(m.get("num-examples", 0)),
+                metrics={
+                    "epochs_ran": float(m.get("epochs-ran", 0)),
+                    "optimizer_steps": float(m.get("optimizer-steps", 0)),
+                    "param_l2": float(m.get("param-l2", 0.0)),
+                    "lr": float(m.get("lr", float("nan"))),
+                },
+                bytes_up=up,
+                bytes_down=int(getattr(agg, "payload_bytes_down", 0) or up),
+                wall_time=elapsed,
+            )
+        # 서버 시점 집계 진단도 한 줄로 남긴다(client_id = "server")
+        atomic.log_round(
+            round_idx=server_round - 1,
+            client_id="server",
+            n_train_samples=int(getattr(agg, "total_examples", 0)),
+            metrics={
+                "global_l2": float(getattr(agg, "global_norm", 0.0)),
+                "bn_divergence": float(getattr(agg, "bn_buffer_divergence", 0.0)),
+                "missing_variance_ratio": float(getattr(agg, "missing_variance_ratio", 0.0)),
+            },
+            wall_time=elapsed,
+        )
         _save_round(out_dir, server_round, num_rounds, agg)
 
     strategy = WeldFedAvg(
@@ -115,6 +154,10 @@ def main(grid: "Grid", context: "Context") -> None:
     accounting.to_csv(out_dir / "accounting.csv")
     accounting.to_json(out_dir / "accounting.json")
     report = accounting.audit()
+    gaps = atomic.audit_rounds(num_rounds, list(client_ids) + ["server"])
+    if gaps:
+        report.failures.extend(gaps)
+        report.ok = False
     if not report.ok:
         raise RoundFailure(
             "회계 감사 실패 — run 을 무효로 처리한다. 채점하지 않는다.\n  - "
@@ -136,15 +179,21 @@ def _load_initial(cell: str, cfg: Any) -> tuple["ArrayRecord", list[str], dict]:
 
 
 def _save_round(out_dir: Path, server_round: int, num_rounds: int, agg: Any) -> None:
-    """마일스톤 라운드만 보존하고 최신본은 덮어쓴다.
+    """**매 라운드** 글로벌 모델을 저장한다.
 
-    전 라운드를 남기면 검출 fp32 기준 라운드당 약 38MB × 50 이 쌓인다. 라운드 단위
-    재시작 복구에는 최신본 하나면 충분하다.
+    라운드별 궤적이 RQ3(참여 이득)의 재료이고, 그 궤적은 학습이 전부 끝난 뒤 저장된
+    체크포인트를 단일 채점기로 일괄 채점해 얻는다. 간격을 두고 저장하면 어느 라운드에서
+    무엇이 일어났는지 사후에 볼 수 없다.
+
+    Flower 의 평가 라운드를 켜지 않는 이유도 같다. 켜면 실패 검사와 `R × E = N` 회계가
+    얽히고, 학습 중에 지표를 보게 되어 조기 종료 유혹이 생긴다. 학습 경로와 평가 경로를
+    분리하면 전 라운드가 동일한 채점기를 통과하는 이점도 따라온다.
+
+    용량은 검출 fp32 기준 라운드당 약 38MB다. R=50 이면 1.9GB이고, 파일럿 R=3 이면
+    무시할 수준이다. 궤적을 잃는 비용이 디스크 비용보다 크다.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
-    milestones = {max(1, round(num_rounds * p)) for p in (0.25, 0.5, 0.75)} | {num_rounds}
-    if server_round in milestones:
-        _write_arrays(out_dir / f"global_r{server_round:03d}.npz", agg.ndarrays)
+    _write_arrays(out_dir / f"global_r{server_round:03d}.npz", agg.ndarrays)
     _write_arrays(out_dir / "latest.npz", agg.ndarrays)
 
 

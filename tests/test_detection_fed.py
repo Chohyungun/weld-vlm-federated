@@ -234,3 +234,44 @@ def test_json_요약에_감사결과가_담긴다(tmp_path):
     payload = json.loads(p.read_text(encoding="utf-8"))
     assert payload["audit"]["ok"] is True
     assert payload["local_epochs"] == 2 and payload["total_epochs"] == 4
+
+
+# --------------------------------------------------------------------------
+# 파일럿 프로파일 — 값은 다르되 칸 간 동일은 유지한다
+# --------------------------------------------------------------------------
+
+def test_파일럿_프로파일이_규칙을_풀지_않는다():
+    """축소해도 조기 종료·optimizer·로깅 규칙은 그대로다."""
+    from detection.round_runner import FIXED_PILOT
+
+    assert FIXED_PILOT["patience"] >= 10000
+    assert FIXED_PILOT["optimizer"] == "SGD"
+    assert FIXED_PILOT["mlflow"] is False
+    assert FIXED_PILOT["save"] is False and FIXED_PILOT["val"] is False
+    assert FIXED_PILOT["deterministic"] is True
+
+
+def test_파일럿은_크기만_줄인다():
+    from detection.round_runner import FIXED_OVERRIDES, FIXED_PILOT
+
+    assert FIXED_PILOT["imgsz"] == 416 < FIXED_OVERRIDES["imgsz"]
+    assert FIXED_PILOT["batch"] < FIXED_OVERRIDES["batch"]
+    # 줄인 키 외에는 본실험과 같아야 한다
+    diff = {k for k in FIXED_OVERRIDES if FIXED_PILOT[k] != FIXED_OVERRIDES[k]}
+    assert diff == {"imgsz", "batch", "close_mosaic"}, f"예상 밖 차이: {diff}"
+
+
+def test_파일럿에서도_칸별_덮어쓰기는_막힌다():
+    from detection.round_runner import train_round
+
+    with pytest.raises(ValueError, match="공통 고정"):
+        train_round(data_yaml="x.yaml", model="yolo11n.pt", total_epochs=6,
+                    local_epochs=2, profile="pilot", extra_overrides={"imgsz": 640})
+
+
+def test_알수없는_프로파일은_거부된다():
+    from detection.round_runner import train_round
+
+    with pytest.raises(ValueError, match="알 수 없는 프로파일"):
+        train_round(data_yaml="x.yaml", model="yolo11n.pt", total_epochs=6,
+                    local_epochs=2, profile="quick")
