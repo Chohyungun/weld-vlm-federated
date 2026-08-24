@@ -698,7 +698,7 @@ def denominator_rule() -> str                                 # "shift_labels"
 - 분리형 판정부 주입 경로를 함께 제공한다(`compute_loss_func` 또는 수동 정규화).
 
 **테스트** `tests/test_vlm_loss_norm.py`
-- `test_분모가_shift_후_카운트다` — 마지막 위치가 감독인 샘플에서 1 차이가 나는지
+- `test_분모가_shift_후_카운트다` — 마지막 위치가 총괄인 샘플에서 1 차이가 나는지
 - `test_accum_kxb가_batch_kb와_1e-5_이내다` — **불균형 케이스 필수**
 - `test_기준경로가_프레임워크_loss다` — reference == `model(**batch, labels=...).loss`
 - `test_라벨을_한칸_밀면_기준과_어긋난다` — 방어선 작동 증명
@@ -1071,7 +1071,7 @@ def bucket_by_length(samples, lengths, *, n_buckets: int) -> list[list[int]]
 - `test_프롬프트_구간_라벨이_전부_-100이다` (prefix 일치)
 - `test_mm_token_type_ids가_0이_아닌_위치가_전부_-100이다`
 - `test_vision_start_end_위치도_-100이다`
-- `test_감독토큰수가_0보다_크다` / `test_동적패딩_길이가_배치내_최대다`
+- `test_총괄토큰수가_0보다_크다` / `test_동적패딩_길이가_배치내_최대다`
 - `test_선계산길이와_조립길이_불일치시_절단센티널이_예외를_던진다`
 - `test_position_ids가_3D다` — forward 후크
 - `test_길이버킷이_노출횟수를_바꾸지_않는다`
