@@ -41,7 +41,7 @@ Docling 2.120.1 / TableFormer ACCURATE / OCR off. KR 21쪽 27.8s, IACS 67쪽 27.
 
 | # | 발견 | 처리 |
 |---|---|---|
-| 1 | **점수제 체계** (결함점수 합산 판정) — `limit_rule` enum{const, prop_t, prop_t_cap, none_permitted}에 없는 형태 | v1: 단일 결함 **최대결함크기 행만 active** 전사 (t/5는 prop_t factor=0.2로 표현 가능 — 기존 스키마로 충분). 점수 합산·인접 간격 단서는 `scope=excluded` + 건수 보고 (스펙의 기존 F6 배제 메커니즘 그대로). **점수제 정식 지원 여부는 총괄 판단 회부** — 채택 시 limit_rule 확장은 동결 변경이라 승인 필요 |
+| 1 | **점수제 체계** (결함점수 합산 판정) — `limit_rule` enum{const, prop_t, prop_t_cap, none_permitted}에 없는 형태 | v1: 단일 결함 **최대결함크기 행만 active** 전사 (t/5는 prop_t factor=0.2로 표현 가능 — 기존 스키마로 충분). 점수 합산·인접 간격 단서는 `scope=excluded` + 건수 보고 (스펙의 기존 F6 배제 메커니즘 그대로). **점수제 정식 지원 여부는 총괄 판단 판단 요청** — 채택 시 limit_rule 확장은 동결 변경이라 승인 필요 |
 | 2 | **ratio_basis=a 실물** (필릿 d≤0.25a) | 스펙 `ratio_basis` 컬럼 실증. 열린 질문 #3 기본값(s=t 가정, a 발견 시 보류 큐) 유지 — 단 a가 실재 확인됐으므로 보류 큐 처리 규칙이 실제로 발동될 예정 |
 | 3 | **KR이 KS·ISO 수치를 재수록** | `restated_from` 경로 실증. KS 열람(경로 M) 의존이 줄어들 가능성 — KS-ST 열람 전에 KR 재수록분 커버리지를 먼저 산정한다. ISO 10675-1 위임 표는 등급 매핑만 있고 수치가 없으므로 열린 질문 #1 기본값(유료 전용 수치 미편입) 그대로 |
 | 4 | **∠ 문자가 원문 조판** (Docling 오독 아님 — pdfplumber 원문 대조로 확인) | 변환표(∠→<) 등재 대상. "미등재 문자 중단" 규칙(§3-4)이 실전에서 필요함을 실증 |

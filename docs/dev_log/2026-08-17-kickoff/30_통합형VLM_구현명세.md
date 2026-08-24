@@ -190,7 +190,7 @@ gate_key(*, base_ckpt_sha256, coord_cfg_hash, preproc_sha256, prompt_bundle_sha,
 
 관점 3의 원안은 `probe_sha256`(프로브 프롬프트 + 도형 스펙)이 키에 **없었다.** 그러면 통과할 때까지 프로브를 고쳐 돌릴 수 있고, 성공 레코드가 실패 이력을 남기지 않은 채 같은 키를 덮는다. 좌표 규약 판정이 "실측"이 아니라 "통과할 때까지 조정한 실측"이 되어 하드 게이트의 증명력이 0이 된다. **키에 넣으면 프로브를 고칠 때 키가 바뀌어 이전 기록이 자동 무효가 되고, 두 키의 레코드가 디렉터리에 나란히 남아 재시도 이력이 보존된다.**
 
-추가로 게이트 레코드에 **`attempt_seq`**(단조 증가)와 직전 시도 결과 요약을 필수 필드로 넣고, **시도 3회부터는 승인 필드 없이 `require_canary_pass`가 통과를 거부**한다.
+추가로 게이트 레코드에 **`attempt_seq`**(단조 증가)와 직전 시도 결과 요약을 필수 필드로 넣고, **시도 3판단 요청터는 승인 필드 없이 `require_canary_pass`가 통과를 거부**한다.
 
 레코드 필드: `{passed, tag(1a|1b), argmax_space, iou_table, margin, parse_rate, eos_stop_rate, separability, attempt_seq, prev_attempts, mlflow_run_id, record_sha256}` + 위 gate_key 입력 전부.
 
@@ -250,7 +250,7 @@ D4 페어 전수를 `encode → serialize → parse → decode` 실경로로 통
 **B1을 통과하지 못하면 본학습을 시작하지 않는다.** 추론 OOM에는 사다리가 없으므로(제4부 4-20) 여기가 유일한 발견 지점이다.
 
 ### G8 — 루프 등가
-더미 모델(GPU 불필요)로: `accum k×b`의 누적 그래디언트가 `batch k·b` 단일 스텝과 **1e-5 이내 일치**(마이크로배치마다 감독 토큰 수가 다른 불균형 케이스 필수), R라운드로 쪼갠 `step_offset` 재개 LR 궤적이 단일 cosine 닫힌형과 전 스텝 일치(1e-12), 증인 4종 일치, 첫 스텝 직후 학습 파라미터 496개 전수 `p.grad is not None and p.grad.abs().max() > 0`.
+더미 모델(GPU 불필요)로: `accum k×b`의 누적 그래디언트가 `batch k·b` 단일 스텝과 **1e-5 이내 일치**(마이크로배치마다 총괄 토큰 수가 다른 불균형 케이스 필수), R라운드로 쪼갠 `step_offset` 재개 LR 궤적이 단일 cosine 닫힌형과 전 스텝 일치(1e-12), 증인 4종 일치, 첫 스텝 직후 학습 파라미터 496개 전수 `p.grad is not None and p.grad.abs().max() > 0`.
 
 ### G9 — val 예산 파일럿
 **`split='val'` 전용 진입점**(`vlm/pilot_budget.py`)에서만 `max_new_tokens`를 정한다. `truncated_rate == 0` **and** `eos_stop_rate == 1.0`을 동시에 확인한 뒤에만 eval을 허용하고, `images/s`·p50/p99 latency·peak VRAM·예상 총 wall clock을 게이트 레코드에 남긴다. 확정된 `max_new_tokens`는 `gen.effective_sha256`으로 봉인되어 이후 변경이 게이트를 무효화한다.
@@ -275,10 +275,10 @@ D4 페어 전수를 `encode → serialize → parse → decode` 실경로로 통
 
 단 스펙 §2-1 문면과 다르므로 **승인 항목(Q2)**. 승인 전 기본값으로 진행하되 `run_steps`의 공개 표면을 프레임워크 중립으로 유지해 되돌릴 수 있게 둔다. 코퍼스 담당이 TRL을 쓴다면 레지스트리 #6은 여전히 유효하므로 처방을 폐기하지 않는다. `datasets`(Arrow)도 쓰지 않는다 — 캐시 무효화가 조용히 어긋나는 표면을 하나 더 만든다.
 
-## 판정 2 — 손실 정규화 정의 → **shift 후 감독 토큰 총합 분모, `vlm/loss_norm.py` 단일 소유**
+## 판정 2 — 손실 정규화 정의 → **shift 후 총괄 토큰 총합 분모, `vlm/loss_norm.py` 단일 소유**
 
 세 값이 서로 다르다:
-- 관점 1: 마이크로배치 **평균의 합**을 피하고 "감독 토큰 수 가중 합 ÷ 총 감독 토큰 수"
+- 관점 1: 마이크로배치 **평균의 합**을 피하고 "총괄 토큰 수 가중 합 ÷ 총 총괄 토큰 수"
 - 프레임워크 렌즈: VL 클래스 `.loss`는 **마이크로배치 내 토큰 평균**만 준다. 분리형 판정부가 쓸 `ForCausalLM`은 **토큰 가중 합/총합**을 받는다 → **같은 체크포인트인데 두 구조가 다른 목적함수를 최적화한다**
 - 불변 렌즈: 토큰 평균 + FedAvg `n_k` 가중이면 클라이언트 k의 토큰이 `1/τ_k` 가중을 받아 **통합·중앙(균일)과 통합·연합이 다른 목적함수**
 
@@ -290,15 +290,15 @@ shift_logits = logits[..., :-1, :]
 loss = Σ_micro CE_sum ÷ Σ_micro (shift_labels != -100).sum()
 ```
 - `model(**batch, labels=...)`의 `.loss`를 **쓰지 않는다.** `labels=None`으로 호출해 logits만 받는다.
-- 분모는 **shift 후** 카운트다. shift 전에 세면 마지막 위치가 감독 토큰인 샘플(= 배치 내 최장 샘플, 동적 패딩이라 매 배치 반드시 1개 이상)마다 분모가 1씩 과대해지고, 배치마다 방향이 달라 G8의 1e-5 테스트가 재현 없이 실패한다.
+- 분모는 **shift 후** 카운트다. shift 전에 세면 마지막 위치가 총괄 토큰인 샘플(= 배치 내 최장 샘플, 동적 패딩이라 매 배치 반드시 1개 이상)마다 분모가 1씩 과대해지고, 배치마다 방향이 달라 G8의 1e-5 테스트가 재현 없이 실패한다.
 - **분리형 판정부에도 같은 함수를 주입한다**(TRL이면 `compute_loss_func`). 두 구조의 정규화식 동일성을 교차 테스트로 잠근다 — RQ2가 주 기여인데 손실 정규화 비대칭이 통제되지 않은 교란으로 들어가면 두 구조 모두 재학습이다.
 - `effective_train_config`에 `loss_reduction`·`denominator_rule="shift_labels"`·`model_class`·`accepts_loss_kwargs` 4필드.
 
-## 판정 3 — FedAvg 가중 단위: `n_k` vs `T_k`(총 감독 토큰) → **`n_k_effective` 기본, τ 비 초과 시에만 전환**
+## 판정 3 — FedAvg 가중 단위: `n_k` vs `T_k`(총 총괄 토큰) → **`n_k_effective` 기본, τ 비 초과 시에만 전환**
 
 토큰 평균을 버리고 판정 2의 총합 분모를 쓰면 클라이언트 목적함수가 이미 토큰 단위로 균일해지므로 `1/τ_k` 왜곡의 주 경로가 닫힌다. 남은 것은 라운드 단위 가중이다.
 
-**채택**: 파일럿 100 step에서 클라이언트별 `τ_k`(샘플당 평균 감독 토큰 수)를 실측하고 회계 매트릭스에 `supervised_tokens` 컬럼을 추가한다. `max(τ_k)/min(τ_k) ≤ 1.02`면 `n_k_effective` 유지, 초과하면 `T_k` 전환을 **총괄에 제안**(게이트 #6 결정 F 개정 항목이므로 자동 전환 금지). 어느 쪽이든 `τ̄_w/τ_k` 왜곡 계수를 클라이언트별로 논문에 싣는다.
+**채택**: 파일럿 100 step에서 클라이언트별 `τ_k`(샘플당 평균 총괄 토큰 수)를 실측하고 회계 매트릭스에 `supervised_tokens` 컬럼을 추가한다. `max(τ_k)/min(τ_k) ≤ 1.02`면 `n_k_effective` 유지, 초과하면 `T_k` 전환을 **총괄에 제안**(검토 결정 F 개정 항목이므로 자동 전환 금지). 어느 쪽이든 `τ̄_w/τ_k` 왜곡 계수를 클라이언트별로 논문에 싣는다.
 
 ## 판정 4 — `n_k` 소스: `counts.json` vs 필터 후 → **`n_k_effective`(`train_index`)**
 
@@ -359,7 +359,7 @@ def canonical_json(self): return json.dumps(asdict(self), sort_keys=True, ...)
 
 관점 1은 이 교환을 "허용, 실사용만 기록"으로 분류했다. 두 렌즈가 각각 반박했다:
 - LoRA `dropout > 0`이면 드롭아웃 마스크가 마이크로배치 텐서 shape로 뽑히므로 micro=2/accum=16과 micro=1/accum=32는 **다른 난수열을 소비**한다. 통합형은 1시드라 반복 측정으로 흡수할 수단이 없다
-- 판정 2의 총합 정규화를 쓰더라도 감독 위치 한정 로짓 경로는 micro≥2에서 의미가 달라진다(판정 11)
+- 판정 2의 총합 정규화를 쓰더라도 총괄 위치 한정 로짓 경로는 micro≥2에서 의미가 달라진다(판정 11)
 
 **채택**: (a) **LoRA `dropout = 0.0` 고정** — 어댑터 설정은 5칸 공통 고정 2번이므로 게이트 결정이고, 0으로 두면 micro_batch가 난수 소비 측면에서 진짜로 중립이 된다. (b) **`micro_batch = 1` 고정**(판정 10). (c) 실제로 쓴 레버 조합의 sha256을 **`lever_fingerprint`**로 `REQUIRED_TAGS`에 추가하고 `check_cells_identical` 비교 필드에 넣어, 두 칸이 다른 레버로 돌면 채점 전에 실패시킨다.
 
@@ -378,13 +378,13 @@ micro=2/S=1300은 **확정 OOM**이다. 그리고 동적 패딩이라 2048 토�
 
 **채택**: 시작값 micro=1/accum=32(유효 배치 32 불변). 사다리에서 micro=2 제거. 예산 상한 14.7 GB. 길이 버킷팅으로 최대 길이 배치가 언제 오는지를 결정적으로 만들고, G7-B1이 가장 긴 버킷부터 돈다.
 
-## 판정 11 — 감독 위치 한정 로짓: 선택 레버 vs **착수 전제**
+## 판정 11 — 총괄 위치 한정 로짓: 선택 레버 vs **착수 전제**
 
-관점 1은 "테스트 통과 전에는 켜지 않는다"는 선택 레버로 뒀다. 판정 10의 실측이면 이걸 안 켜고는 S=2048이 14.72 GB 한계선 위아래다. 감독 200/1300 토큰이면 4.22 GB → 약 0.65 GB로 **3.5 GB를 번다.**
+관점 1은 "테스트 통과 전에는 켜지 않는다"는 선택 레버로 뒀다. 판정 10의 실측이면 이걸 안 켜고는 S=2048이 14.72 GB 한계선 위아래다. 총괄 200/1300 토큰이면 4.22 GB → 약 0.65 GB로 **3.5 GB를 번다.**
 
 **채택: 착수 전제로 승격**하되 세 조건을 붙인다.
 1. **공식 경로만 쓴다.** `modeling_qwen3_5.py` L1779가 `slice_indices = slice(...) if isinstance(logits_to_keep, int) else logits_to_keep`이므로 `logits_to_keep`에 **위치 LongTensor**를 넘기면 모델 내부 수술 없이 된다.
-2. **`micro_batch == 1`을 강제한다.** 인덱스 텐서는 dim=1에 대해 **배치 전 행에 동일하게** 적용된다. 샘플 A 감독 [900,1100], 샘플 B 감독 [400,600]이면 합집합 401~701 위치를 통과시켜야 하고 절감이 사라진다. 루프 진입에 `assert cfg.micro_batch == 1 or not use_supervised_logits`.
+2. **`micro_batch == 1`을 강제한다.** 인덱스 텐서는 dim=1에 대해 **배치 전 행에 동일하게** 적용된다. 샘플 A 총괄 [900,1100], 샘플 B 총괄 [400,600]이면 합집합 401~701 위치를 통과시켜야 하고 절감이 사라진다. 루프 진입에 `assert cfg.micro_batch == 1 or not use_supervised_logits`.
 3. **`labels=`를 넘기지 않는다.** `ForCausalLMLoss`는 labels를 받으면 내부에서 pad+shift를 하므로, 이미 gather된 logits에 원본 labels를 넘기면 **예외 없이 1토큰 밀린 손실**이 나온다. gather 위치에 맞춰 미리 shift한 타깃으로 직접 CE를 부른다.
 
 **기준 경로 고정**: 손실 일치 테스트의 reference는 **프레임워크 자체 경로**(`model(**batch, labels=labels).loss`)여야 한다. 우리가 쓴 나이브 CE를 기준으로 삼으면 같은 off-by-one을 공유해 통과한다. 인덱스 이름을 `hidden_positions = label_positions - 1`로 강제한다.
@@ -534,7 +534,7 @@ realized_adapter_sha256 = sha256(
 | **F4** | `BitsAndBytesConfig.llm_int8_skip_modules`를 **명시하는 순간** transformers 기본 보호(lm_head·tied·output embeddings)가 통째로 폐기(`quantizers/base.py` L233-247, `quantizer_bnb_4bit.py` L129-131이 `add_default_skips`를 안 넘김) | `["visual"]`을 적으면 vocab 248,320×2,560 = **635.7M 출력층이 NF4로 눌린다.** `None`으로 두면 비전 타워 전체가 NF4가 되어 카나리아가 검증한 좌표 규약이 본학습 모델의 규약이 아니게 된다. **"5칸이 같은 sha256에서 출발한다"가 거짓이 된다** | skip 목록을 손으로 적지 않고 **합성**: `get_keys_to_not_convert(meta_model) ∪ {"visual"}`. 로드 후 `Linear4bit` 집합 sha256(`quantized_lm_modules_sha256`) + `lm_head` 비양자화 + tie 유지(`data_ptr` 동일) + `visual.*` Linear4bit 0건 assert. **`gate_key`에 포함** | 레지스트리 #8, 4-10, G5, 판정 20·22 |
 | **F5** | `BitsAndBytesConfig` 실제 인자명은 `bnb_4bit_*`. `quant_type=`·`use_double_quant=`·`compute_dtype=`는 **예외도 경고도 없이 무시**되고 fp4 / fp32 compute / double-quant 없음으로 돈다 | 논문 방법 절의 "NF4"가 사실과 다르고, fp32 compute가 활성 메모리를 배로 만들어 F7의 예산을 무너뜨린다. `base_quant_digest` 단일값 assert는 **"전 셀이 똑같이 틀렸다"를 증명할 뿐** | `configs/quant_uni.yaml` 5필드 명시 + `quantization_config.to_dict()` 키 집합 **완전 일치** 대조(교집합 아님) + 실체 3종 assert(`quant_state.quant_type`, `base_layer.compute_dtype`) | 레지스트리 #9, 4-4, 4-10 |
 | **F6** | `from_pretrained`의 `dtype` 기본값이 v5에서 `"auto"`(v4는 fp32) → 비양자화 2.4 GB의 정밀도를 리포 `config.json`에 위임 | 리포가 갱신되면 +2.4 GB로 조용히 OOM, 반대로 두 칸이 다른 리비전을 타면 정밀도가 갈리는데 `base_ckpt_sha256`은 동일하게 찍힌다. dtype 히스토그램을 로깅해도 **선언값이 없으면 대조 대상이 없다** | `QLoraSpec.dtype='bfloat16'` 명시 + `declared_dtype` vs 히스토그램 대조 + 비양자화 파라미터 중 bf16 아닌 것 1건이라도 있으면 실패. `base_ckpt_sha256`에 `config.json` 포함 | 레지스트리 #10, 4-10 |
-| **F7** | 로짓 메모리 추정이 3~4배 과소. vocab 248,320(가정 "약 15만"), `ForCausalLMLoss`가 **무조건 `logits.float()`**, lm_head·embed 비양자화 각 1.19 GB, 가용은 16이 아니라 **14.72 GB** | "micro=2로 시작", "통합·중앙은 16GB에서 돈다"가 실측 이전에 이미 틀렸다. 동적 패딩이라 2048 토큰 샘플이 처음 뽑히는 스텝에서 **비결정적으로** 터진다 | micro=1/accum=32(판정 10), 감독 위치 한정 로짓을 **착수 전제로 승격**(판정 11), 길이 버킷팅, G7-B1 최악 배치 프로브 | 판정 10·11, G7, 9-3 |
+| **F7** | 로짓 메모리 추정이 3~4배 과소. vocab 248,320(가정 "약 15만"), `ForCausalLMLoss`가 **무조건 `logits.float()`**, lm_head·embed 비양자화 각 1.19 GB, 가용은 16이 아니라 **14.72 GB** | "micro=2로 시작", "통합·중앙은 16GB에서 돈다"가 실측 이전에 이미 틀렸다. 동적 패딩이라 2048 토큰 샘플이 처음 뽑히는 스텝에서 **비결정적으로** 터진다 | micro=1/accum=32(판정 10), 총괄 위치 한정 로짓을 **착수 전제로 승격**(판정 11), 길이 버킷팅, G7-B1 최악 배치 프로브 | 판정 10·11, G7, 9-3 |
 | **F8** | 언어부 32층 중 **24층이 linear_attention**인데 Windows sm_120에 고속 커널이 없다(triton 부재, `causal-conv1d`·`fla` Windows 휠 0). 폴백은 fp32 캐스트 + `for i in range(1, chunk_size)` 63회 파이썬 루프 | 실측: linear 0.1509 s/층 대 full 0.0611 s/층(**2.47배**). 32층 4.11 s/마이크로배치 × accum 32 = **132 s/옵티마이저 스텝** → 통합 3종 합계 **15 GPU-일**(bf16 하한), NF4·비전·CE 포함 19~21일. **GPU-일은 "아직 모르는 값"이 아니라 이미 계획을 무효화하는 값이다** | **착수 전 백엔드 확정**(G7-B5): `triton-windows` + `fla-core` 시도 → 되면 `env_fingerprint`에 편입, 안 되면 폴백 확정 사실과 총 GPU 시간을 근거로 48GB 이관을 **파일럿 이전에** 결정. 어느 쪽이든 통합 2칸은 같은 백엔드에서 돌고 이관 시 둘 다 재실행 | G7, 판정 22, Q11·Q12, 9-5 |
 | **F9** | PEFT 접미사 매칭 + 표준 Qwen 레시피 → **linear_attention 24개 층 전부 누락**. 부착 128/248, 어댑터 파라미터 21.2M/32.5M, **35%가 에러 없이 사라진다** | 학습은 정상적으로 돌고 loss도 내려간다. 어댑터 실효 용량이 선언보다 작은데 지표에 흔적이 없다 | `in_proj_qkv|in_proj_z|in_proj_b|in_proj_a|out_proj` 포함한 접미사 앵커 목록(판정 17) + 248 완전 일치 + `realized_adapter_sha256` + **forward 후크로 손실 경로 도달 여부 실측**(죽은 MTP 어댑터 탐지) | 레지스트리 #11, 판정 17·21, G4 |
 | **F10** | buffer 게이트가 **구조적으로 실패할 수 없다.** 학습 모드 + `use_cache=False`면 5스텝 diff는 반드시 0. 게다가 `state_dict ∩ named_buffers` 정의는 bnb quant state를 못 본다(`register_buffer` 없이 state_dict 직접 주입) | **통과할 수밖에 없는 게이트를 통과시키고 논문에 사실 주장을 싣는 것이 게이트가 없는 것보다 나쁘다.** `base_quant_digest`가 rope 상수 3개의 해시가 된다 | P/B/X 3집합(`remove_duplicate=False`) + **교환 폐포 등식**(G2-3) + 라운드 1 비어댑터 키 bit-exact(G2-5) + `base_quant_digest` 재정의 + `n_tensors_examined` 보고 | 레지스트리 #12·#13, **G2** |
@@ -561,7 +561,7 @@ realized_adapter_sha256 = sha256(
 | `audit_buffers(probe_steps=5)` 이름 diff 게이트 | 관점 2 | 구조적으로 실패할 수 없다(F10) → 교환 폐포 등식(G2) |
 | `micro_batch↔grad_accum`을 레시피 중립 레버로 | 관점 1 | LoRA dropout 난수 소비 + 로짓 최적화 의미 변화 → 판정 9(dropout 0.0, micro=1 고정, `lever_fingerprint`) |
 | 시작값 micro=2 / accum=16 | 관점 1 | vocab 248,320 + fp32 upcast 실측이면 확정 OOM(F7) → 판정 10 |
-| `max_pixels`를 OOM 사다리에 포함 | 초기 스펙 | 게이트 #6 결정 C로 이미 금지. 사다리에서 제거되어 있고 이 명세도 유지 |
+| `max_pixels`를 OOM 사다리에 포함 | 초기 스펙 | 검토 결정 C로 이미 금지. 사다리에서 제거되어 있고 이 명세도 유지 |
 | `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` | 관점 1 | Windows에서 **무동작**(`CUDAAllocatorConfig.h` L35-45가 무조건 false) → `garbage_collection_threshold:0.8,max_split_size_mb:512` + 길이 버킷팅(레지스트리 #15) |
 | 서버가 손으로 만드는 글로벌 어댑터 초기값 | 관점 2 | PEFT 기본 초기화와 스케일이 2.449배 갈릴 수 있다(F13) → PEFT 경로 재사용 + 바이트 동일 게이트 |
 | 어댑터 wire의 bf16↔fp32 캐스트 2지점 | 관점 2 | 측정 노이즈(2e-3)가 측정 대상(집계 오차 2차항, ~1e-3)보다 크다 → 판정 13(fp32 전 구간, 캐스트 0지점) |
@@ -1059,8 +1059,8 @@ def bucket_by_length(samples, lengths, *, n_buckets: int) -> list[list[int]]
 
 **핵심 결정**
 - **프로세서가 낸 키는 하나도 버리지 않는다.** `assert set(proc_out) <= set(collated)`. `mm_token_type_ids`가 빠지면 `modeling_qwen3_5.py` L1487-1492가 `ValueError("Multimodal data was passed … but mm_token_type_ids is missing")`로 첫 스텝에 죽는다. 프로세서는 이 키를 돌려주지만 `padding: False`가 기본이라 **패딩은 우리 몫**이다 — `input_ids`와 **같은 길이로 텍스트 값(0)** 우측 패딩하고 `len(mm_token_type_ids) == len(input_ids)`를 절단 센티널과 같은 위치에서 assert.
-- **라벨 마스킹 검증은 `input_ids == image_token_id`가 아니라 `mm_token_type_ids != 0` 기준**으로 한다 — 모델이 멀티모달 위치를 판정하는 것과 같은 신호를 쓴다. `<|vision_start|>`/`<|vision_end|>`는 `image_token_id`가 아니므로 별도 assert가 필요하다. 예측이 자명한 토큰이 감독 집합에 섞이면 손실 분모가 부풀고(판정 2와 직결) 토큰 정확도가 무의미하게 오른다.
-- 마스킹은 문자열 검색이 아니라 **프롬프트-only 인코딩의 prefix 일치 assert**로 만든다. 샘플별 감독 토큰 비율을 로깅한다.
+- **라벨 마스킹 검증은 `input_ids == image_token_id`가 아니라 `mm_token_type_ids != 0` 기준**으로 한다 — 모델이 멀티모달 위치를 판정하는 것과 같은 신호를 쓴다. `<|vision_start|>`/`<|vision_end|>`는 `image_token_id`가 아니므로 별도 assert가 필요하다. 예측이 자명한 토큰이 총괄 집합에 섞이면 손실 분모가 부풀고(판정 2와 직결) 토큰 정확도가 무의미하게 오른다.
+- 마스킹은 문자열 검색이 아니라 **프롬프트-only 인코딩의 prefix 일치 assert**로 만든다. 샘플별 총괄 토큰 비율을 로깅한다.
 - `position_ids`를 직접 만들어 넘기지 않는다 — L1487 검사를 우회해 3D M-RoPE 대신 1D 위치로 학습이 돌고, 좌표 grounding이 주 타깃인 통합형에서 카나리아는 통과한 채 본학습만 망가진다. 검증용으로 `language_model`에 forward 후크를 걸어 `position_ids.shape[0] == 3`을 확인한다.
 - 동적 패딩(**패킹 미사용** — 노출 횟수 등가 유지). **절단 센티널**: 선계산 길이 != 조립된 `input_ids` 길이면 즉시 실패(프로세서 드리프트·캐시 노후 탐지). `max(len) <= max_seq_len` assert.
 - **길이 버킷팅**(판정 10): 최대 길이 배치가 언제 오는지를 결정적으로 만들고 할당 크기 종류를 줄인다. 패킹이 아니므로 노출 횟수 등가는 유지된다.
@@ -1155,7 +1155,7 @@ def load_resume(path) -> ResumeState
 - **NaN/inf 손실은 배치 스킵이 아니라 run 실패** — 스킵은 학습량을 조용히 줄이는 조기 종료의 변형이다.
 - **`clip_grad_norm_(..., error_if_nonfinite=True)`**(레지스트리 #18). 기본 False면 inf 그래디언트에서 클립 계수가 0이 되어 **그 스텝의 모든 그래디언트가 조용히 0으로 눌리는데** 증인 3종이 전부 정상 증가한다. 라운드마다 모멘트를 리셋하는 연합 칸이 초반 큰 그래디언트를 더 자주 겪으므로 발생 빈도가 두 칸에서 다를 수 있고, 학습량 등가가 정확히 이 경로로 깨진다. 반환 `total_norm`을 스텝마다 기록해 회계에 `grad_norm_max`·`clip_hit_count`로 남기고, 발동률 비대칭 자체를 보고 항목으로 올린다.
 - **손실은 `vlm/loss_norm.py`만 쓴다**(판정 2). `labels=None` forward.
-- **감독 위치 한정 로짓**은 착수 전제이되 `micro_batch == 1` 강제, `logits_to_keep`에 위치 LongTensor, `labels=` 미전달(판정 11). 기준 경로는 프레임워크 자체 손실.
+- **총괄 위치 한정 로짓**은 착수 전제이되 `micro_batch == 1` 강제, `logits_to_keep`에 위치 LongTensor, `labels=` 미전달(판정 11). 기준 경로는 프레임워크 자체 손실.
 - **LR**: 자기 총예산 `T_k = R·S_k`에 대한 **단일 cosine**을 `step_offset = (t−1)·S_k`에서 재개(`last_epoch = step_offset − 1`). 라운드마다 재시작하면 유효 LR 총량이 통합·중앙과 어긋나 학습량 등가 주장이 훼손된다(detection의 `scheduler.last_epoch = start_epoch − 1`과 같은 처방).
 - **증인 4종** (하나라도 어긋나면 실패):
   1. 우리 카운터 `steps_ran`
@@ -1227,7 +1227,7 @@ python scripts/step_time_probe.py --n 64                      # B3
 - B3는 동결된 `size` 캡·LoRA 설정으로 micro-pass 시간 중앙값을 재고 `총 micro-pass 수 × t_med`를 출력해 예산표와 대조한다. **100 step 파일럿을 기다리지 말고 9-5의 실측치(0.0611 / 0.1509 s/층)를 지금 GPU-일 재추정에 넣는다.**
 - B4·B5는 `env_fingerprint()`를 산출물로 남긴다.
 - **레버 분류**(OOM 대응):
-  - **레시피 중립(허용, 실사용만 기록)**: gradient checkpointing(`use_reentrant=False`), 감독 위치 한정 로짓·청크 CE, 길이 버킷팅, dataloader worker 수, 라운드 간 actor 정리·`empty_cache`, `garbage_collection_threshold`/`max_split_size_mb`
+  - **레시피 중립(허용, 실사용만 기록)**: gradient checkpointing(`use_reentrant=False`), 총괄 위치 한정 로짓·청크 CE, 길이 버킷팅, dataloader worker 수, 라운드 간 actor 정리·`empty_cache`, `garbage_collection_threshold`/`max_split_size_mb`
   - **레시피 변경(금지)**: `size.shortest_edge/longest_edge`, `max_seq_len`, 유효 배치, LoRA r/target, bf16→fp16, packing, **micro_batch**(판정 9)
   - **경계(전 칸 동시 적용 + 선언 시에만)**: paged AdamW
   - 사다리를 다 써도 안 되면 **48GB 이관이고 통합 2칸을 동시에 옮겨 둘 다 재실행한다**(Q11).
@@ -1395,7 +1395,7 @@ def run_eval(*, cfg_path, cell, seed, ckpt_dir, manifest_csv, out_dir, device="c
 - latency는 `torch.cuda.synchronize()`로 감싼 전처리+생성+후처리 구간을 batch=1로 잰다. 모델 로드 제외.
 - 이 진입점이 `split == "eval"`을 읽는 **유일한 곳**이고 **`limit` 인자가 없다**(F17).
 
-**추론 OOM에는 사다리가 없다.** 12_spec_C §5-1 사다리는 배치↓ → grad accum↑ → gradient checkpointing인데 배치는 이미 1로 고정돼 있고 accum·ckpt는 학습 전용, `max_pixels` 하향은 게이트 #6 결정 C로 금지다. 따라서 추론 OOM은 **G7-B1(최악 배치 프로브)에서 착수 전에 잡아야 하며**, 발생 시 legal한 조정 방향은 `size.longest_edge` 재동결(단 **어느 통합형 칸도 돌기 전에만**) 또는 표본 축소뿐이다. 배치 확대는 디코딩 고정 항목 변경이므로 금지.
+**추론 OOM에는 사다리가 없다.** 12_spec_C §5-1 사다리는 배치↓ → grad accum↑ → gradient checkpointing인데 배치는 이미 1로 고정돼 있고 accum·ckpt는 학습 전용, `max_pixels` 하향은 검토 결정 C로 금지다. 따라서 추론 OOM은 **G7-B1(최악 배치 프로브)에서 착수 전에 잡아야 하며**, 발생 시 legal한 조정 방향은 `size.longest_edge` 재동결(단 **어느 통합형 칸도 돌기 전에만**) 또는 표본 축소뿐이다. 배치 확대는 디코딩 고정 항목 변경이므로 금지.
 
 ### `pilot_budget.py`
 
@@ -1630,7 +1630,7 @@ B' = Q_B @ U[:, :r] @ sqrt(S[:r]);   A' = sqrt(S[:r]) @ Vt[:r] @ Q_A.T
 | **Q5** | 16bit 그레이스케일 RT 원본의 8bit 변환 규칙 | `vlm/coord_runtime.load_image()`에 명시 함수 + mode 화이트리스트. **분리형과 동일 규칙 선언이 필수** | **A·C 공동** — 갈리면 RQ2에 전처리 비대칭이 교란으로 들어간다 |
 | **Q6** | `n_k` 이원화(결정 F 개정) | `n_k_effective`를 `S_k`·FedAvg 가중 분모로. 두 값 모두 회계 기록 | **총괄** |
 | **Q7** | 표본 노출: 단일 가상 순열(Q7 개정) | 전역 커서 슬라이스로 진행 | **총괄** |
-| **Q8** | FedAvg 가중을 `T_k`(총 감독 토큰)로 전환 | `max(τ_k)/min(τ_k) ≤ 1.02`면 `n_k_effective` 유지. 초과 시에만 전환 제안 | **총괄** (파일럿 결과 첨부) |
+| **Q8** | FedAvg 가중을 `T_k`(총 총괄 토큰)로 전환 | `max(τ_k)/min(τ_k) ≤ 1.02`면 `n_k_effective` 유지. 초과 시에만 전환 제안 | **총괄** (파일럿 결과 첨부) |
 | **Q9** | `merger`(`model.visual.merger.linear_fc1/2`) 어댑터 포함 여부 | **제외**(현행 비전 동결 결정 따름). 통합 2칸 동일 적용이라 칸 간 공정성은 유지되나 "통합형 grounding이 약하다"의 귀속이 흐려진다 | **총괄** — 포함 시 어댑터 파라미터가 늘고 공통 고정 2번이 바뀐다 |
 | **Q10** | `linear_attn.in_proj_a`/`in_proj_b`(SSM 게이팅·Δ 프로젝션, 각 995,328 파라미터) 어댑터 부착 | **포함**(언어부 전 층 대칭). 저랭크 갱신 평균의 SSM 안정성에 선행 사례가 없다 | 파일럿에서 제외 변형 1회 비교 후 동결 권고 |
 | **Q11** | 48GB(Linux) 이관 | **G7-B3~B5 결과로 착수 전 결정.** 이관 시 통합 2칸을 **동시에** 옮기고 둘 다 재실행 | **총괄** (GPU-일 실측 첨부) |
@@ -1706,10 +1706,10 @@ B' = Q_B @ U[:, :r] @ sqrt(S[:r]);   A' = sqrt(S[:r]) @ Vt[:r] @ Q_A.T
 | 비전 타워 bf16 (**skip 명시**) | 0.67 | 0.67 |
 | LoRA fp32 + grad + AdamW 2모멘트 | 0.52 | 0.52 |
 | lm_head+CE+backward (나이브) | 4.22 | 6.64 |
-| lm_head+CE+backward (**감독 200토큰 한정**) | ~0.65 | ~0.65 |
+| lm_head+CE+backward (**총괄 200토큰 한정**) | ~0.65 | ~0.65 |
 | 선형어텐션 폴백 그래프 | ~1.3 | 1.97 |
 | 단편화 | 1~2 | 1~2 |
-| **합계 (감독 한정 적용)** | **~8.5** | **~9.3** |
+| **합계 (총괄 한정 적용)** | **~8.5** | **~9.3** |
 
 ## 9-4. 스텝 예산
 
