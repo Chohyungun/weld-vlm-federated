@@ -4082,6 +4082,7 @@ dependencies = [
 
 [package.optional-dependencies]
 corpus = [
+    { name = "bitsandbytes" },
     { name = "docling" },
     { name = "easyocr" },
     { name = "pdfplumber" },
@@ -4118,6 +4119,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "accelerate", marker = "extra == 'vlm'", specifier = ">=1.0" },
+    { name = "bitsandbytes", marker = "extra == 'corpus'", specifier = ">=0.46.1" },
     { name = "bitsandbytes", marker = "extra == 'vlm'", specifier = ">=0.45" },
     { name = "chromadb", marker = "extra == 'rag'", specifier = ">=0.5" },
     { name = "datasets", marker = "extra == 'vlm'", specifier = ">=3.0" },

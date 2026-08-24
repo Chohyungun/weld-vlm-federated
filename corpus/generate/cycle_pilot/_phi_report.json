@@ -8,7 +8,7 @@
   "retry": "없음 (실패분 폐기)"
  },
  "validation": {
-  "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+  "model": "microsoft/Phi-4-mini-instruct",
   "different_family": true,
   "note": "생성 Qwen 계열, 검증 Phi 계열"
  },
@@ -29,13 +29,12 @@
   },
   "stage2_judge": {
    "n_in": 178,
-   "n_pass": 69,
-   "n_fail": 109,
-   "pass_rate": 0.3876,
-   "n_format_violation": 2
+   "n_pass": 170,
+   "n_fail": 8,
+   "pass_rate": 0.9551
   },
-  "n_accepted": 69,
-  "end_to_end_rate": 0.345
+  "n_accepted": 170,
+  "end_to_end_rate": 0.85
  },
  "qa": {
   "n_in": 200,
@@ -47,5 +46,5 @@
   },
   "passage_screen": "유료 표준 전재 의심 구절 제외"
  },
- "git_commit": "32e706ca3c9a6ecda399d12922743e7c2446d58b"
+ "git_commit": "dba1ed3865409f4270d029e11c8cc461edfc77d2"
 }
