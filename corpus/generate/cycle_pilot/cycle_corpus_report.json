@@ -1,0 +1,50 @@
+{
+ "purpose": "한 사이클 파일럿 판정부 입력용 축소본",
+ "axis_note": "치수 합부는 넣지 않았다. 픽셀을 mm로 바꿀 수 없어 측정 크기 기반 합부를 합성하면 근거 없는 수치를 지어내게 된다. 조항 검색 + 기준 서술과 조치 서술 두 축으로만 만들었다.",
+ "generation": {
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "decoding": "greedy",
+  "batch_size": 8,
+  "retry": "없음 (실패분 폐기)"
+ },
+ "validation": {
+  "model": "microsoft/Phi-4-mini-instruct",
+  "different_family": true,
+  "note": "생성 Qwen 계열, 검증 Phi 계열"
+ },
+ "reasoning": {
+  "n_in": 200,
+  "axis_split": {
+   "조항검색_기준서술": 120,
+   "조치서술": 80
+  },
+  "stage0": {
+   "n_pass": 178,
+   "n_fail": 22,
+   "pass_rate": 0.89,
+   "fail_reasons": {
+    "verdict_asserted": 9,
+    "extra_value": 18
+   }
+  },
+  "stage2_judge": {
+   "n_in": 178,
+   "n_pass": 170,
+   "n_fail": 8,
+   "pass_rate": 0.9551
+  },
+  "n_accepted": 170,
+  "end_to_end_rate": 0.85
+ },
+ "qa": {
+  "n_in": 200,
+  "n_accepted": 188,
+  "pass_rate": 0.94,
+  "fail_reasons": {
+   "duplicate_question": 7,
+   "schema_violation": 5
+  },
+  "passage_screen": "유료 표준 전재 의심 구절 제외"
+ },
+ "git_commit": "dba1ed3865409f4270d029e11c8cc461edfc77d2"
+}

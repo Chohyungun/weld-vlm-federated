@@ -88,3 +88,7 @@ _workspace/
 
 # 내부 지시 문서 (공개 대상 아님)
 docs/dev_log/**/50_공개문서_검수방침.md
+
+# --- 파일럿 합성 산출물 (드라이브·로컬 보관, 저장소는 스크립트·보고서만) ---
+corpus/generate/cycle_pilot/*.jsonl
+corpus/generate/cycle_pilot/_raw_generated.json
