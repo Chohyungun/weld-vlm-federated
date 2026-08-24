@@ -1,7 +1,7 @@
 # 통합형 VLM 학습·연합 구현 명세
 
-트랙 C · 2026-08-21 · 세 관점 설계안 + 3렌즈 적대 검증(9회) 종합본
-**이 문서가 트랙 C 통합형 구현의 단일 소스다.** 12_spec_C·12a와 어긋나는 부분은 제2부·제3부에 판정 근거와 함께 적었고, 문면 개정이 필요한 항목은 제7부에 총괄 안건으로 표시했다.
+2026-08-21 · 세 관점 설계안 + 3렌즈 적대 검증(9회) 종합본
+**이 문서가 통합형 구현의 단일 소스다.** 12_spec_C·12a와 어긋나는 부분은 제2부·제3부에 판정 근거와 함께 적었고, 문면 개정이 필요한 항목은 제7부에 표시했다.
 
 대상: 5칸 중 **통합·중앙**, **통합·연합** 두 칸. 배경지식 SFT 2단(D3-(b) QA 2만, D3-(c) 판정추론 1만)은 5칸 공통 출발점이므로 같은 루프·같은 게이트를 통과한다.
 
@@ -76,13 +76,13 @@ X = set(model.state_dict()) - P - B          # "state_dict 잉여물"
 
 | # | 조건 | 실패 시 |
 |---|---|---|
-| G2-1 | `X`의 전 원소가 `{TIED_ALIAS, QUANT_ARTIFACT, CACHE_LIKE, CONST_DERIVED}` 중 하나로 분류된다. `UNKNOWN` 0건 | 착수 차단(유형 D, 총괄 안건) |
+| G2-1 | `X`의 전 원소가 `{TIED_ALIAS, QUANT_ARTIFACT, CACHE_LIKE, CONST_DERIVED}` 중 하나로 분류된다. `UNKNOWN` 0건 | 착수 차단(유형 D, 재검토 안건) |
 | G2-2 | `B` 중 persistent(`= B ∩ set(state_dict)`)인 것 0건 | 유형 A 처방 발동(아래) |
 | G2-3 | **`{n for n,p in model.named_parameters() if p.requires_grad}` == 어댑터 페이로드 키 집합** (부분집합 아님, 완전 일치) | 통합·연합 착수 거부 |
 | G2-4 | 교환 페이로드 키에 buffer·X 원소 0건 | 즉시 실패 |
 | G2-5 | 라운드 1 종료 시 클라이언트 state_dict의 **비어댑터 키 전수가 서버 배포본과 bit-exact** | "어댑터만 바뀐다"의 유일한 직접 증거. 실패 시 착수 거부 |
 | G2-6 | 3클라이언트 독립 로드의 `base_quant_digest` 동일 | "동일 base 사전 배포" 전제 붕괴 |
-| G2-7 | 같은 base를 **두 번 양자화**해 `base_quant_digest` 동일 (NF4 결정론) | 게이트 실패 → 총괄 안건 |
+| G2-7 | 같은 base를 **두 번 양자화**해 `base_quant_digest` 동일 (NF4 결정론) | 실패 시 재검토 안건 |
 | G2-8 | 학습 forward에서 `use_cache`가 실제로 falsy. 5스텝 프로브를 **학습 모드**와 **`use_cache=True` generate 경로** 양쪽에서 돌려 두 모드의 buffer·속성 목록 차이를 보고서에 기록 | 기록 누락 시 미완 |
 
 **`base_quant_digest` 재정의**: `named_buffers` 기반이 아니라 **모든 `Linear4bit`의 packed `weight` 바이트 + `X ∩ QUANT_ARTIFACT`의 (키, dtype, shape, 바이트 sha256)** 을 정렬해 만든 sha256. 이렇게 해야 이 값이 실제로 실패할 수 있다.
@@ -98,7 +98,7 @@ X = set(model.state_dict()) - P - B          # "state_dict 잉여물"
 | A | persistent + 학습 중 변이 + 평가에 사용 | **교환 단위 편입 + 표본수 가중 평균** — 검출 BatchNorm 처방과 동일 논리. FedBN식 로컬 잔존은 금지. 통신량 표·논문 서술 수정 |
 | B | persistent + 불변 | 조치 없음. digest 동일 assert만 |
 | C | 비persistent + 변이 (dynamic rope 등) | 조치 없음. state_dict·교환·병합 어디에도 실리지 않음을 증명 |
-| D | 미분류 | **착수 차단**, 총괄 안건 |
+| D | 미분류 | **착수 차단**, 재검토 안건 |
 
 ### 검출 BatchNorm 처방과의 관계 — 논리는 같고 기제가 반대다
 
@@ -164,7 +164,7 @@ assert_separable(specs, geoms, cfgs, *, max_confusion_iou=0.5, min_images=8) -> 
 | 2 | `median IoU(argmax) ≥ 0.5` | |
 | 3 | **`margin ≥ 0.15`** (1위−2위 median) | 축퇴 상태에서 1위가 우연히 선언과 같아 통과하는 경로 차단 |
 | 4 | `파싱 성공률 ≥ 0.9` | |
-| 5 | `eos_stop_rate ≥ 0.9` | **정지 토큰 미지정을 28,000장 본런 이전에 잡는 유일한 관측 지점**(제3부 F20) |
+| 5 | `eos_stop_rate ≥ 0.9` | **정지 토큰 미지정을 본런 이전에 잡는 유일한 관측 지점**(제3부 F20) |
 | 6 | `assert_separable` 통과 | |
 
 전 후보 실패(argmax IoU < 0.5) 시 **자동 폴백하지 않는다.** 12a의 후퇴안("직전 세대 Qwen3-VL로 후퇴")은 2026-08-21 확정 사실인 "통합형·판정부 동일 체크포인트 공유"와 정면 충돌한다 — 통합형만 모델을 바꾸면 해소됐던 백본 비동일 교란이 되살아나 RQ2 주 기여가 훼손된다. **총괄 에스컬레이션 전용 경로다.**
@@ -178,7 +178,7 @@ assert_separable(specs, geoms, cfgs, *, max_confusion_iou=0.5, min_images=8) -> 
 
 `require_canary_pass`가 대조하는 것은 **1b의 `base_ckpt_sha256`**이다. 1a만 봉인하면 `H(raw) ≠ H_merged`로 모든 통합형 학습이 거부되고, 현장의 자연스러운 대응은 대조 항목에서 `base_ckpt_sha256`을 빼는 것(게이트 약화)이다. 20장×2벌이라 비용이 사실상 0이다.
 
-**1a와 1b의 `argmax_space`가 갈리면 그 자체가 총괄 에스컬레이션 사유다** — 텍스트 전용 SFT가 grounding 규약을 바꿨다는 뜻이므로.
+**1a와 1b의 `argmax_space`가 갈리면 그 자체가 재검토 사유다** — 텍스트 전용 SFT가 grounding 규약을 바꿨다는 뜻이므로.
 
 ### 게이트 키 — 프로브를 고쳐 통과시키는 경로를 막는다
 
@@ -190,7 +190,7 @@ gate_key(*, base_ckpt_sha256, coord_cfg_hash, preproc_sha256, prompt_bundle_sha,
 
 관점 3의 원안은 `probe_sha256`(프로브 프롬프트 + 도형 스펙)이 키에 **없었다.** 그러면 통과할 때까지 프로브를 고쳐 돌릴 수 있고, 성공 레코드가 실패 이력을 남기지 않은 채 같은 키를 덮는다. 좌표 규약 판정이 "실측"이 아니라 "통과할 때까지 조정한 실측"이 되어 하드 게이트의 증명력이 0이 된다. **키에 넣으면 프로브를 고칠 때 키가 바뀌어 이전 기록이 자동 무효가 되고, 두 키의 레코드가 디렉터리에 나란히 남아 재시도 이력이 보존된다.**
 
-추가로 게이트 레코드에 **`attempt_seq`**(단조 증가)와 직전 시도 결과 요약을 필수 필드로 넣고, **시도 3회부터는 총괄 승인 필드 없이 `require_canary_pass`가 통과를 거부**한다.
+추가로 게이트 레코드에 **`attempt_seq`**(단조 증가)와 직전 시도 결과 요약을 필수 필드로 넣고, **시도 3회부터는 승인 필드 없이 `require_canary_pass`가 통과를 거부**한다.
 
 레코드 필드: `{passed, tag(1a|1b), argmax_space, iou_table, margin, parse_rate, eos_stop_rate, separability, attempt_seq, prev_attempts, mlflow_run_id, record_sha256}` + 위 gate_key 입력 전부.
 
@@ -228,7 +228,7 @@ python scripts/vlm_canary1.py --config configs/base.yaml --ckpt <merged> --tag 1
 | P5 | `abs(rw/rh − orig_w/orig_h) ≤ factor 반올림 허용치` | EXIF 회전·manifest W/H 오기 |
 | P6 | `size.longest_edge` 동결값이 `pick_longest_edge.py` 산출 P99.5와 정합 | ceil 식 5% 과대 추정(레지스트리 #21) |
 
-P3가 특히 중요하다 — `geom_from_grid`의 `resized_h = grid_h × patch_size` 가정은 **selfcheck도 오라클 주입도 반증할 수 없다**(encode와 decode에 같은 geom을 넣으므로 2배 틀려도 왕복 오차 0). 프로세서 실호출 교차검증만이 이걸 잡는다.
+P3가 결정적이다. `geom_from_grid`의 `resized_h = grid_h × patch_size` 가정은 **selfcheck도 오라클 주입도 반증할 수 없다**(encode와 decode에 같은 geom을 넣으므로 2배 틀려도 왕복 오차 0). 프로세서 실호출 교차검증만이 이걸 잡는다.
 
 산출물 `outputs/gates/processor_facts.json`의 sha256이 `preproc_sha256`이고 `gate_key` 입력이다.
 
@@ -273,7 +273,7 @@ D4 페어 전수를 `encode → serialize → parse → decode` 실경로로 통
 
 **채택: 직접 루프.** 잃는 독립 증인은 증인 4종(판정 19 아래)으로 더 강하게 대체된다. 새로 지는 위험은 grad accum 손실 정규화 하나뿐이고 G8이 1e-5로 잠근다. **통제 가능한 하나의 위험 대 감사 불가능한 열 개의 기본값이면 교환은 명확하다.**
 
-단 스펙 §2-1 문면과 다르므로 **총괄 승인 항목(Q2)**. 승인 전 기본값으로 진행하되 `run_steps`의 공개 표면을 프레임워크 중립으로 유지해 되돌릴 수 있게 둔다. B 트랙이 TRL을 쓴다면 레지스트리 #6은 여전히 유효하므로 처방을 폐기하지 않는다. `datasets`(Arrow)도 쓰지 않는다 — 캐시 무효화가 조용히 어긋나는 표면을 하나 더 만든다.
+단 스펙 §2-1 문면과 다르므로 **승인 항목(Q2)**. 승인 전 기본값으로 진행하되 `run_steps`의 공개 표면을 프레임워크 중립으로 유지해 되돌릴 수 있게 둔다. 코퍼스 담당이 TRL을 쓴다면 레지스트리 #6은 여전히 유효하므로 처방을 폐기하지 않는다. `datasets`(Arrow)도 쓰지 않는다 — 캐시 무효화가 조용히 어긋나는 표면을 하나 더 만든다.
 
 ## 판정 2 — 손실 정규화 정의 → **shift 후 감독 토큰 총합 분모, `vlm/loss_norm.py` 단일 소유**
 
@@ -302,7 +302,7 @@ loss = Σ_micro CE_sum ÷ Σ_micro (shift_labels != -100).sum()
 
 ## 판정 4 — `n_k` 소스: `counts.json` vs 필터 후 → **`n_k_effective`(`train_index`)**
 
-게이트 #6 결정 F는 `counts.json`(길이 필터 **전**)을 단일 소스로 동결했다. 그대로 두면:
+확정 사항은 `counts.json`(길이 필터 **전**)을 단일 소스로 동결했다. 그대로 두면:
 - `S_k`의 분모와 감사 규칙 ④의 분모가 **같은 값**이라 감사가 3.000을 반드시 출력하는 **항진명제**가 된다
 - 통합·중앙은 필터 후 풀로 3 epoch, 통합·연합은 필터 전 수로 계산한 `S_k`를 돈다 → 총 갱신이 폐기율만큼 어긋난다. RQ1 회복률의 분자가 부풀려진다
 - 폐기는 긴 샘플(결함 많은 이미지)에 집중되고 **C3(알루미늄)이 구조적으로 손해**를 본다 — 하필 RQ3의 주인공
@@ -346,7 +346,7 @@ def canonical_json(self): return json.dumps(asdict(self), sort_keys=True, ...)
 ## 판정 8 — 표본 노출: 라운드별 재셔플(스펙 Q7) vs **단일 가상 순열**
 
 스펙 Q7은 라운드 r의 셔플 시드를 `hash(s,r,c)`로 정한다. E=0.5와 결합하면 각 라운드가 **새 순열의 앞 절반**만 소비한다:
-- 특정 샘플이 6개 순열 모두에서 뒷절반에 떨어질 확률 `(1/2)^6 = 1.5625%` → C3(n_k≈8,000)에서 **약 125개 페어가 한 번도 학습되지 않는다**
+- 특정 샘플이 6개 순열 모두에서 뒷절반에 떨어질 확률 `(1/2)^6 = 1.5625%` → 가장 작은 클라이언트에서 **전체 페어의 약 1.6%가 한 번도 학습되지 않는다**
 - 노출 횟수 분산 6·0.25 = 1.5 (sd 1.22). 통합·중앙은 정확히 3회
 - 검출 칸은 E=2(정수)라 이 문제가 없다 → **분수 E를 쓰는 통합·연합에만 생기는 비대칭**이 RQ2에 그대로 실린다
 - 프레임워크 렌즈가 더 나쁜 변형을 실행으로 확인했다: fresh Trainer가 **매번 같은 순열**을 내면 고유 샘플이 50%다. 그런데 `R·S_k·B_eff/n_k`는 정확히 3.0이라 감사가 통과한다
@@ -667,7 +667,7 @@ def milestone_rounds(R: int, fracs: Sequence[float]) -> tuple[int, ...]
 - ```python
   plan_steps = max(1, int(math.floor(epoch_frac * n_k_effective / effective_batch + 0.5)))
   ```
-  **파이썬 내장 `round`를 쓰지 않는다.** `vlm/coords.py`의 `quantize`가 바로 그 이유로 내장 `round`를 배제하고 `floor(v+0.5)`를 정본 규칙으로 선언해 놓았다("banker's rounding이라 0.5가 값에 따라 위아래로 갈린다. 채점 재현성이 서브픽셀 정밀도보다 우선"). `0.5·n_k/32 = n_k/64`이므로 `n_k ≡ 32 (mod 64)`인 클라이언트에서 정확히 x.5가 나오고, E 트랙이 `numpy.round`나 `math.floor(x+0.5)`로 독립 재계산하면 논문 수치와 실제 run이 어긋난다.
+  **파이썬 내장 `round`를 쓰지 않는다.** `vlm/coords.py`의 `quantize`가 바로 그 이유로 내장 `round`를 배제하고 `floor(v+0.5)`를 정본 규칙으로 선언해 놓았다("banker's rounding이라 0.5가 값에 따라 위아래로 갈린다. 채점 재현성이 서브픽셀 정밀도보다 우선"). `0.5·n_k/32 = n_k/64`이므로 `n_k ≡ 32 (mod 64)`인 클라이언트에서 정확히 x.5가 나오고, 논문 담당이 `numpy.round`나 `math.floor(x+0.5)`로 독립 재계산하면 논문 수치와 실제 run이 어긋난다.
 - **분모는 `n_k_effective`**(판정 4). 감사가 학습과 같은 함수를 부르는 것은 증명이 아니므로, 진짜 방어선은 **잔차 검사(`≤ R·K/2 = 9`)**임을 문서에 명시한다.
 - `milestone_rounds`는 **최종 라운드를 무조건 포함**: `tuple(sorted(set([ceil(R*p) for p in fracs] + [R])))`. R=6 → (2,3,5,6). 이게 없으면 부록 1단의 '최종' 행과 2단 전체가 산출 불가다.
 
@@ -1387,7 +1387,7 @@ def run_eval(*, cfg_path, cell, seed, ckpt_dir, manifest_csv, out_dir, device="c
 - **역변환 정수화 0회**(판정 5). `bbox_px`는 float.
 - `bbox_size_px`: `major_axis = max(w,h)`, `equiv_diameter = sqrt(4·w·h/π)`. **통합형과 분리형이 같은 함수를 써야** size 계열 비교가 성립하므로 `detection/export_preds.py`가 import한다(소유 위치는 Q4).
 - `coord_signature`: 모델 좌표 max 분포·선언 공간 범위 내 비율·역변환 후 경계 밖 비율. **좌표계 사고는 loss에 안 보이므로 이 세 값이 학습 중 유일한 조기 신호다.**
-- `run_eval` 시작 순서: `guard_no_cloud_logging()` → `assert_local_tracking()` → `check_required_tags()`(**추론 전에** 실패하게 한다 — 14,000장을 끝낸 뒤 `MissingRunMetadata`로 죽으면 GPU-시간이 통째로 날아간다) → `reject_best_checkpoint(ckpt_dir)` → `assert_size_not_overridden` → `assert_eval_runtime(model)` → `require_canary_pass` → 프롬프트 SNAPSHOT 대조 → `assert_generation_prompt` → GenerationConfig bind.
+- `run_eval` 시작 순서: `guard_no_cloud_logging()` → `assert_local_tracking()` → `check_required_tags()`(**추론 전에** 실패하게 한다. 평가셋 12,600장을 끝낸 뒤 `MissingRunMetadata`로 죽으면 GPU-시간이 통째로 날아간다) → `reject_best_checkpoint(ckpt_dir)` → `assert_size_not_overridden` → `assert_eval_runtime(model)` → `require_canary_pass` → 프롬프트 SNAPSHOT 대조 → `assert_generation_prompt` → GenerationConfig bind.
 - 출력: `outputs/{cell}/{seed}/generations.jsonl` + `raw_texts.jsonl` + `failrates.json` + `eval_access.jsonl` + `SNAPSHOT.sha256`. **계약 #4 §2-3의 키를 유지한다** — `text`(전문)와 `bbox_px_parsed`. 관점 3이 제안한 `text_ref`/`defects_px` 개명은 D의 `unified.py`가 `rec["text"]`를 읽으면 전량 KeyError, `rec.get("text","")`면 **전 레코드 `no_json`으로 0점이 정상 채점된 것처럼** 보고되는 경로를 만든다. 계약 개정을 코드보다 먼저 확정하되, 기본값은 **키 유지**다. `resized_wh`·`vision_tokens`는 감사용 추가 필드이며 공통 스키마 jsonl로는 넘어가지 않는다(계약 #4는 `additionalProperties: false`).
 - **`raw_output_ref`는 위치가 아니라 내용 주소**: `"raw_texts.jsonl:{image_id}"`. 위치 참조는 재개·부분 재실행이 도입되는 순간 조용히 다른 생성문을 가리키고, 스키마 검증은 형식만 보므로 전부 통과한다. D 어댑터가 두 파일의 `image_id` 집합 일치를 assert한다.
 - **재개**(F22): 이미지마다 append+flush + `progress.json`{run_id, manifest_sha256, prompt_bundle_sha, gen_effective_sha, coord_cfg_hash, env_sha, last_image_id, n_done}. 종료 시 image_id 정렬 정규화본으로 rewrite하고 `SNAPSHOT.sha256`에 기록해 "재실행 비트 일치"는 정규화 시점에서 보장한다. `eval_access.jsonl`은 **append-only 해시 체인**이고 각 줄에 `{ts, run_id, manifest_sha256, rows_read, reason: initial|resume}`. **재개가 "표현 가능한 사실"이어야 격리 증거가 산다 — 표현할 수 없으면 지우게 된다.** 재개 시 6해시 불일치면 거부하고 전량 재실행을 요구한다.
