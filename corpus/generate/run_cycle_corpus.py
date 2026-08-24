@@ -36,8 +36,22 @@ PASSAGE_DOCS = [
     ("IACS47", REPO / "corpus/parse/survey/IACS47/IACS47_full.md"),
 ]
 GEN_MODEL = "Qwen/Qwen2.5-7B-Instruct"
-JUDGE_MODEL = "microsoft/Phi-4-mini-instruct"   # 생성과 다른 계열 (자기검증 금지)
+# 검증기는 생성 모델과 다른 계열이어야 한다(자기검증 금지). 규약이 이름을 박은 것은
+# Gemma 와 DeepSeek 이다. Gemma 는 HF 게이트(라이선스 동의) 때문에 토큰 없이 받을 수 없어
+# DeepSeek 으로 폴백한다.
+#   DeepSeek-R1-Distill-Llama-8B : LlamaForCausalLM. 생성(Qwen2.5)과 계열이 다르다.
+#   deepseek-llm-7b-chat 은 쓰지 않는다 — 토크나이저가 한국어를 표현하지 못해
+#   한글이 통째로 소실된다(실측: "조항 … 기공의 …" → "KRA27-T15.").
+#   DeepSeek-R1-Distill-Qwen : Qwen2ForCausalLM 이라 생성과 같은 계열이다. 쓰지 않는다
+JUDGE_MODEL = "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+JUDGE_ALTERNATIVES = {
+    "gemma": "google/gemma-3-4b-it",            # 게이트 해제 시 우선 사용
+    "deepseek": "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+    "phi": "microsoft/Phi-4-mini-instruct",
+}
 MAX_NEW = 200
+# 추론형 검증기는 생각을 먼저 쓴다. 예산이 짧으면 판정에 도달하지 못해 전건 형식 위반이 된다.
+JUDGE_MAX_NEW = 32
 PAID_STD = re.compile(r"ISO\s*5817|ISO\s*10042|ISO\s*10675|AWS\s+Welding\s+Handbook")
 
 # 결함 코드 → 한국어 명칭. 사상표(계약 #1)에서 읽어 하드코딩을 피한다.
@@ -249,13 +263,21 @@ def check_record(text: str, sk: dict) -> tuple[bool, list[str]]:
 
 # ------------------------------------------------------------------ 생성·검증
 
-def generate(prompts, batch: int, model_id: str, max_new: int = MAX_NEW) -> list[str]:
+def generate(prompts, batch: int, model_id: str, max_new: int = MAX_NEW,
+             four_bit: bool = False, prefill: str = "") -> list[str]:
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
     tok = AutoTokenizer.from_pretrained(model_id, padding_side="left")
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
-    model = AutoModelForCausalLM.from_pretrained(model_id, dtype=torch.bfloat16, device_map="cuda:0")
+    load_kw = {"dtype": torch.bfloat16, "device_map": "cuda:0"}
+    if four_bit:   # 16GB 에 안 들어가면 4bit 로 내린다
+        from transformers import BitsAndBytesConfig
+        load_kw["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_quant_type="nf4")
+        load_kw.pop("dtype")
+    model = AutoModelForCausalLM.from_pretrained(model_id, **load_kw)
     model.eval()
     kw = dict(max_new_tokens=max_new, do_sample=False, temperature=None, top_p=None,
               top_k=None, pad_token_id=tok.eos_token_id)
@@ -264,7 +286,8 @@ def generate(prompts, batch: int, model_id: str, max_new: int = MAX_NEW) -> list
     for i in range(0, len(prompts), batch):
         chunk = prompts[i:i + batch]
         texts = [tok.apply_chat_template([{"role": "user", "content": p}],
-                                         tokenize=False, add_generation_prompt=True) for p in chunk]
+                                         tokenize=False, add_generation_prompt=True) + prefill
+                 for p in chunk]
         ids = tok(texts, return_tensors="pt", padding=True).to("cuda:0")
         with torch.inference_mode():
             o = model.generate(**ids, **kw)
@@ -276,7 +299,8 @@ def generate(prompts, batch: int, model_id: str, max_new: int = MAX_NEW) -> list
     return out
 
 
-def judge(records: list[dict], batch: int) -> list[dict]:
+def judge(records: list[dict], batch: int, model_id: str = None, four_bit: bool = False,
+          max_new: int = JUDGE_MAX_NEW) -> list[dict]:
     """다른 계열 모델의 이진 판정. 생성 모델이 자기 결과를 검증하지 않는다."""
     prompts = []
     for r in records:
@@ -287,14 +311,35 @@ def judge(records: list[dict], batch: int) -> list[dict]:
             "아래 [자료]와 [문장]을 비교한다.\n"
             "문장이 자료에 없는 사실이나 수치를 담고 있으면 NG, 자료 범위 안이면 OK.\n"
             "문장이 특정 용접부의 합격·불합격을 단정하면 NG.\n"
-            "첫 줄에 OK 또는 NG만 쓰고, 둘째 줄에 이유를 한 줄로 쓴다.\n\n"
+            "판정을 OK 또는 NG 한 낱말로만 답한다.\n\n"
             f"[자료]\n{basis}\n\n[문장]\n{r['text']}")
-    outs = generate(prompts, batch, JUDGE_MODEL, max_new=64)
+    mid = model_id or JUDGE_MODEL
+    # 추론형 검증기는 생각을 먼저 쓴다. 사고 블록을 미리 닫아 판정만 받는다.
+    prefill = "<think>\n\n</think>\n\n" if "R1" in mid.upper() else ""
+    outs = generate(prompts, batch, mid, max_new=max_new, four_bit=four_bit, prefill=prefill)
     for r, o in zip(records, outs):
-        head = o.strip().splitlines()[0].upper() if o.strip() else ""
-        r["judge_pass"] = head.startswith("OK")
-        r["judge_note"] = " ".join(o.split())[:160]
+        r["judge_pass"], r["judge_parse_ok"] = parse_judgement(o)
+        r["judge_note"] = " ".join(o.split())[:200]
     return records
+
+
+_THINK = re.compile(r"<think>.*?</think>", re.S)
+_VERD = re.compile("(OK|NG)")
+
+
+def parse_judgement(out: str) -> tuple[bool, bool]:
+    """판정문에서 OK/NG 를 뽑는다.
+
+    첫 줄만 보면 추론 흔적을 앞에 붙이는 모델에서 전건 오판한다. 형식을 못 지킨 출력은
+    통과로 세지 않되 '형식 위반'으로 따로 기록해, 검증기 성능과 하네스 결함을 구분한다.
+    """
+    if not out or not out.strip():
+        return False, False
+    body = _THINK.sub(" ", out).strip()
+    m = _VERD.search(body.upper())
+    if not m:
+        return False, False
+    return m.group(1) == "OK", True
 
 
 # ------------------------------------------------------------------ QA 구절
@@ -330,7 +375,7 @@ def write_report(args, recs, survivors, accepted, qa_recs, qa_accepted, stage0_f
                       "조항 검색 + 기준 서술과 조치 서술 두 축으로만 만들었다."),
         "generation": {"model": GEN_MODEL, "decoding": "greedy", "batch_size": args.batch,
                        "retry": "없음 (실패분 폐기)"},
-        "validation": {"model": JUDGE_MODEL,
+        "validation": {"model": args.judge_model or JUDGE_MODEL,
                        "different_family": True,
                        "note": "생성 Qwen 계열, 검증 Phi 계열"},
         "reasoning": {
@@ -341,7 +386,9 @@ def write_report(args, recs, survivors, accepted, qa_recs, qa_accepted, stage0_f
                        "fail_reasons": dict(stage0_fail)},
             "stage2_judge": {"n_in": len(survivors), "n_pass": len(accepted),
                              "n_fail": len(survivors) - len(accepted),
-                             "pass_rate": rate(len(accepted), len(survivors))},
+                             "pass_rate": rate(len(accepted), len(survivors)),
+                             "n_format_violation": sum(
+                                 1 for r in survivors if not r.get("judge_parse_ok", True))},
             "n_accepted": len(accepted),
             "end_to_end_rate": rate(len(accepted), len(recs)),
         },
@@ -375,6 +422,10 @@ def main() -> None:
     ap.add_argument("--n-reason", type=int, default=200)
     ap.add_argument("--clause-share", type=float, default=0.6)
     ap.add_argument("--batch", type=int, default=8)
+    ap.add_argument("--judge-model", default=None,
+                    help="검증기 모델. 미지정 시 JUDGE_MODEL")
+    ap.add_argument("--judge-4bit", action="store_true",
+                    help="16GB 적재 실패 시 4bit 로 내린다")
     ap.add_argument("--stage", choices=["generate", "judge", "all"], default="all",
                     help="생성과 검증을 다른 프로세스로 나눈다. 큰 모델 둘을 한 프로세스에 "
                          "올리면 적재 도중 죽는다(실측).")
@@ -391,7 +442,7 @@ def main() -> None:
         qa_accepted = [r for r in qa_recs if r["stage0_pass"]]
         print(f"[판정] 중간 파일 로드: 판정추론 {len(recs)} (통과 {len(survivors)}), QA {len(qa_recs)}")
         if survivors:
-            judge(survivors, args.batch)
+            judge(survivors, args.batch, args.judge_model, args.judge_4bit)
         accepted = [r for r in survivors if r.get("judge_pass")]
         write_report(args, recs, survivors, accepted, qa_recs, qa_accepted, stage0_fail)
         return
@@ -465,7 +516,7 @@ def main() -> None:
 
     print(f"[5/5] 2단계 다른 계열 검증 {len(survivors)}건 ({JUDGE_MODEL})")
     if survivors:
-        judge(survivors, args.batch)
+        judge(survivors, args.batch, args.judge_model, args.judge_4bit)
     accepted = [r for r in survivors if r.get("judge_pass")]
 
     write_report(args, recs, survivors, accepted, qa_recs, qa_accepted, stage0_fail)

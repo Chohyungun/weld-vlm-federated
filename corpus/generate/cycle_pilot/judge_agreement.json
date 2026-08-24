@@ -1,0 +1,34 @@
+{
+ "대조 대상": {
+  "A": {
+   "model": "microsoft/Phi-4-mini-instruct",
+   "n_pass": 170,
+   "pass_rate": 0.9551
+  },
+  "B": {
+   "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+   "n_pass": 69,
+   "pass_rate": 0.3876
+  }
+ },
+ "n_common": 178,
+ "agreement": 0.3652,
+ "disagreement": {
+  "A만 통과": 107,
+  "B만 통과": 6
+ },
+ "pass_rate_shift_pp": -56.75,
+ "axis_agreement": {
+  "조항검색_기준서술": {
+   "n": 98,
+   "agree": 45,
+   "agreement": 0.4592
+  },
+  "조치서술": {
+   "n": 80,
+   "agree": 20,
+   "agreement": 0.25
+  }
+ },
+ "note": "같은 생성분에 검증기만 바꿔 걸었다. 생성은 재실행하지 않았다. 검증기 교체는 실패분 재생성 금지 규칙과 별개다."
+}
