@@ -49,6 +49,9 @@ class ImageRec:
     height: int
     is_normal: bool
     cases: tuple[str, ...]
+    #: 원천 이미지 파일명(확장자 제외). **원천을 찾는 유일한 키다.**
+    #: `info.id` 는 10건에서 파일명 꼬리와 다르므로 id 로 파일을 찾으면 안 된다.
+    file_name: str = ""
     polys: list[tuple[list[int], list[int]]] = field(default_factory=list)
     #: polys 와 같은 순서의 결함 종류. 한 이미지에 두 종류가 섞이는 경우가 있어
     #: 이미지 대표값으로 뭉뚱그리면 안 된다 (실측 180장 이상).
@@ -78,6 +81,7 @@ def read_labels(label_root: Path) -> list[ImageRec]:
                         height=int(img["height"]),
                         is_normal=is_normal,
                         cases=cases,
+                        file_name=str(img.get("file_name") or ""),
                     )
                     for a in anns:
                         c = a.get("coordinate") or {}
