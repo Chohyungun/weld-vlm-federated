@@ -205,6 +205,13 @@ def calibrate(manifest: pd.DataFrame, recs_by_id: dict[str, ImageRec]) -> dict:
     per_material_normal: dict[str, int] = defaultdict(int)
     for row in normals.itertuples():
         rec = recs_by_id[row.image_id]
+        # 타일을 실제로 뜨는 대상만 센다. 이미 1280×720 이거나 타일보다 작은 이미지는
+        # 밴드 포함 판정 자체가 일어나지 않는다. 그것까지 세면 이미지 경계를 넘는 이상
+        # 폴리곤이 '밴드 초과'로 잡혀 수치가 부풀려진다 (실측: 1,124 대 94).
+        if (rec.width, rec.height) == (TILE_W, TILE_H):
+            continue
+        if rec.width < TILE_W or rec.height < TILE_H:
+            continue
         per_material_normal[rec.material] += 1
         hs = [max(ys) - min(ys) for _, ys in rec.polys if max(ys) > min(ys)]
         if not hs:
