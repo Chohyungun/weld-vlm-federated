@@ -27,6 +27,11 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import torch
+from PIL import Image
+from torch import nn
+from torch.utils.data import DataLoader, Dataset
+from torchvision.models import resnet18
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -48,35 +53,36 @@ from evaluation.probes.source_probe import (
 )
 
 
+class _ProbeDataset(Dataset):
+    """모듈 수준 클래스여야 한다. Windows 는 spawn 이라 지역 클래스를 pickle 하지 못하고,
+    `num_workers > 0` 에서 로더가 통째로 죽는다."""
+
+    def __init__(self, rows: list[ProbeRow], root: Path, condition: str) -> None:
+        self.rows = rows
+        self.root = root
+        self.condition = condition
+
+    def __len__(self) -> int:
+        return len(self.rows)
+
+    def __getitem__(self, i: int):
+        r = self.rows[i]
+        with Image.open(self.root / r.rel_path) as im:
+            arr = np.asarray(im.convert("L"), dtype=np.uint8)
+        if self.condition == "shuffle":
+            arr = patch_shuffle(arr, PATCH_SIZE, seed=SEED)
+        elif self.condition == "lowres":
+            arr = downscale(arr, LOWRES_SIZE)
+        t = torch.from_numpy(np.ascontiguousarray(arr).copy()).float().div_(255.0)
+        t = t.unsqueeze(0).unsqueeze(0)
+        t = torch.nn.functional.interpolate(
+            t, size=(INPUT_SIZE, INPUT_SIZE), mode="bilinear", align_corners=False
+        )
+        return t.squeeze(0).repeat(3, 1, 1), r.is_tile
+
+
 def make_scorer(root: Path, condition: str, device: str, batch: int, workers: int):
     """ResNet-18 을 학습해 홀드아웃 점수를 낸다. **last 상태로 채점한다.**"""
-    import torch
-    from PIL import Image
-    from torch import nn
-    from torch.utils.data import DataLoader, Dataset
-    from torchvision.models import resnet18
-
-    class Rows(Dataset):
-        def __init__(self, rows: list[ProbeRow]):
-            self.rows = rows
-
-        def __len__(self) -> int:
-            return len(self.rows)
-
-        def __getitem__(self, i: int):
-            r = self.rows[i]
-            with Image.open(root / r.rel_path) as im:
-                arr = np.asarray(im.convert("L"), dtype=np.uint8)
-            if condition == "shuffle":
-                arr = patch_shuffle(arr, PATCH_SIZE, seed=SEED)
-            elif condition == "lowres":
-                arr = downscale(arr, LOWRES_SIZE)
-            t = torch.from_numpy(np.ascontiguousarray(arr).copy()).float().div_(255.0)
-            t = t.unsqueeze(0).unsqueeze(0)
-            t = torch.nn.functional.interpolate(
-                t, size=(INPUT_SIZE, INPUT_SIZE), mode="bilinear", align_corners=False
-            )
-            return t.squeeze(0).repeat(3, 1, 1), r.is_tile
 
     def score(train: list[ProbeRow], test: list[ProbeRow]) -> list[float]:
         torch.manual_seed(SEED)
@@ -84,8 +90,8 @@ def make_scorer(root: Path, condition: str, device: str, batch: int, workers: in
         opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
         lossf = nn.CrossEntropyLoss()
         loader = DataLoader(
-            Rows(train), batch_size=batch, shuffle=True,
-            num_workers=workers, drop_last=False,
+            _ProbeDataset(list(train), root, condition), batch_size=batch,
+            shuffle=True, num_workers=workers, drop_last=False,
         )
         model.train()
         for ep in range(EPOCHS):
@@ -97,13 +103,17 @@ def make_scorer(root: Path, condition: str, device: str, batch: int, workers: in
                 loss.backward()
                 opt.step()
                 total += float(loss.detach()) * len(y)
-            print(f"    [{condition}] epoch {ep + 1}/{EPOCHS} loss {total / len(train):.4f}")
+            print(f"    [{condition}] epoch {ep + 1}/{EPOCHS} "
+                  f"loss {total / len(train):.4f}", flush=True)
         # 조기 종료도 best 선택도 없다. 마지막 상태 그대로 채점한다.
         model.eval()
         out: list[float] = []
+        test_loader = DataLoader(
+            _ProbeDataset(list(test), root, condition),
+            batch_size=batch, num_workers=workers,
+        )
         with torch.no_grad():
-            for x, _unused in DataLoader(Rows(test), batch_size=batch,
-                                        num_workers=workers):
+            for x, _unused in test_loader:
                 p = torch.softmax(model(x.to(device)), dim=1)[:, 1]
                 out.extend(p.detach().cpu().tolist())
         return out
@@ -119,6 +129,13 @@ def main() -> int:
     ap.add_argument("--out", default="outputs/probe/source_v1.json")
     ap.add_argument("--conditions", default="raw,shuffle,lowres")
     ap.add_argument("--holdout-frac", type=float, default=0.2)
+    ap.add_argument(
+        "--subset", default="all", choices=["all", "normals"],
+        help=(
+            "normals 면 정상 이미지만 쓴다. 창원 데이터는 N-tile 이 100%% 정상이고 "
+            "N-crop 이 90.7%% 결함이라, 전체로 재면 출처 판별이 결함 판별과 뒤섞인다"
+        ),
+    )
     ap.add_argument("--batch", type=int, default=64)
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--device", default="cuda")
@@ -127,6 +144,9 @@ def main() -> int:
     root = Path(args.root)
     prov = load_provenance(args.provenance)
     rows, unmatched = load_rows(args.manifest, prov)
+    if args.subset == "normals":
+        rows = [r for r in rows if not r.iso_codes]
+        print("정상 이미지만 사용한다 — 출처와 클래스의 교란을 제거하기 위해서다")
     print(f"학습 풀 표본 {len(rows)} · 출처 조인 실패 {len(unmatched)}")
     print(f"출처 분포 {summarize_sources(rows)}")
     if not rows:
@@ -160,6 +180,7 @@ def main() -> int:
     payload = {
         "manifest": args.manifest,
         "provenance": args.provenance,
+        "subset": args.subset,
         "n_pool": len(rows),
         "source_counts": summarize_sources(rows),
         "n_train": len(train),
