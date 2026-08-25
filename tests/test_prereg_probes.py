@@ -166,6 +166,40 @@ def test_p4_detects_channel_count_drift():
     assert not r.passed
 
 
+def test_read_header_extracts_jpeg_quant_table(tmp_path):
+    """JPEG 양자화표는 `info` 가 아니라 `im.quantization` 에 있다.
+
+    `info` 만 읽으면 전 파일이 빈 지문이 되어 **P4 가 공허하게 통과**한다.
+    실제 tiles_v1 실행에서 이 경로로 잘못된 통과가 나왔고, 그래서 회귀로 고정한다.
+    """
+    from PIL import Image
+
+    from evaluation.probes.deterministic import read_header
+
+    path = tmp_path / "t.jpg"
+    Image.new("L", (1280, 720), color=128).save(path, format="JPEG", quality=85)
+    h = read_header(path, image_id="t")
+    assert h.quant_table_hash, "양자화표 해시가 비어 있으면 P4 가 무력화된다"
+    assert (h.width_px, h.height_px, h.mode) == (1280, 720, "L")
+
+
+def test_p4_separates_different_jpeg_qualities(tmp_path):
+    """압축 세대가 다르면 지문이 갈려야 한다. 갈리지 않으면 P4 가 아무것도 못 잡는다."""
+    from PIL import Image
+
+    from evaluation.probes.deterministic import p4_encoding_fingerprint, read_header
+
+    headers = []
+    for name, q in (("a", 95), ("b", 95), ("c", 40)):
+        fp = tmp_path / f"{name}.jpg"
+        Image.new("L", (1280, 720), color=128).save(fp, format="JPEG", quality=q)
+        headers.append(read_header(fp, image_id=name))
+    r = p4_encoding_fingerprint(headers)
+    assert not r.passed
+    assert r.stats["n_fingerprints"] == 2
+    assert r.violations == ("c",)
+
+
 def test_deterministic_gate_blocks_on_any_failure():
     ok, msg = gate([
         p1_spec_identity([hdr("a")]),
