@@ -11,6 +11,7 @@ N_SEEDS = 3
 
 # c4 보정계수: E[s] = c4 * sigma
 from math import gamma, sqrt
+
 c4 = sqrt(2/(N_SEEDS-1)) * gamma(N_SEEDS/2) / gamma((N_SEEDS-1)/2)
 s = rng.standard_normal((TRIALS, N_SEEDS)).std(axis=1, ddof=1)
 print(f"n={N_SEEDS} 표본 sd 의 성질 (sigma=1 기준)")
@@ -47,6 +48,7 @@ print()
 
 print("대안: D 의 95% 신뢰구간 하한 > 0 (t 기반, 이표본)")
 from scipy import stats
+
 print(f"{'참 D/sigma':>10} {'P(통과)':>9}")
 for ratio in [1, 2, 3, 4, 5, 6, 8, 10]:
     c = rng.standard_normal((TRIALS, N_SEEDS)) + ratio

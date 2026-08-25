@@ -125,25 +125,34 @@ def read_header(path: str | Path, image_id: str | None = None) -> ImageHeader:
 
     호출 측이 `data/raw` 를 수정하지 않도록 **읽기 전용으로만** 연다.
     """
-    from PIL import Image
+    import hashlib
+
+    from PIL import Image, JpegImagePlugin
 
     p = Path(path)
     with Image.open(p) as im:
         info = im.info
-        qt = info.get("quantization")
+        # JPEG 의 양자화표는 `info` 가 아니라 `im.quantization` 에 있다. `info` 만 읽으면
+        # 전 파일이 빈 값이 되어 P4 가 **공허하게 통과**한다. 미도달을 통과처럼 쓰지
+        # 않으려면 여기서 정확한 출처를 읽어야 한다.
+        qt = getattr(im, "quantization", None) or info.get("quantization")
         quant_hash = ""
         if qt:
-            import hashlib
-
             blob = b"".join(bytes(qt[k]) for k in sorted(qt))
             quant_hash = hashlib.sha256(blob).hexdigest()[:16]
+        subsampling = info.get("subsampling")
+        if subsampling is None and im.format == "JPEG":
+            try:
+                subsampling = JpegImagePlugin.get_sampling(im)
+            except Exception:                      # noqa: BLE001
+                subsampling = None
         return ImageHeader(
             image_id=image_id or p.name,
             width_px=im.width,
             height_px=im.height,
             mode=im.mode,
             n_channels=len(im.getbands()),
-            subsampling=str(info.get("subsampling", "")),
+            subsampling="" if subsampling is None else str(subsampling),
             progressive=bool(info.get("progressive", 0)),
             quant_table_hash=quant_hash,
             file_bytes=p.stat().st_size,
