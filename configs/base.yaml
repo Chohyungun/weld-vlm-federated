@@ -29,7 +29,7 @@ preprocess:
     # 폐기율 상한(4-4, 정상 셀 ≤5%)과 충돌한다.
     #
     # 제안: 기준을 **밴드 포함(band ⊆ tile)** 으로 바꾼다. 1280×720 에서 99.6% 충족.
-    tau_mode: "band_containment"  # band_containment | area_ratio   ← 회부 대기
+    tau_mode: "band_containment"  # 2026-08-24 확정 (44_M1분기_검토판정). area_ratio 는 미사용 선택지
     tau: null                     # area_ratio 를 쓸 때만 값이 필요하다
 
     align8: true                  # x0, y0 를 8의 배수로 (JPEG 블록 격자 정렬)
