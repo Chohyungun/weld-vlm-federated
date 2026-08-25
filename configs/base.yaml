@@ -19,17 +19,15 @@ preprocess:
     stride_x: 640                 # 후보 격자 (50% 중첩)
     vertical_anchor: band_center  # 정상 폴리곤(밴드) 세로 중심 정렬
 
-    # τ — 정상 타일의 라벨 승계 기준.
+    # τ. 정상 타일의 라벨 승계 기준. 8/25 게이트에서 band_containment 로 확정됐다.
     #
-    # ⚠ 감독 회부 중 (43_M1분기_감독회부_A.md 회부 2). 확정 전까지 타일링을 돌리지 않는다.
+    # 원안은 "타일 ∩ 밴드폴리곤 면적비 >= τ, 폴백 1.0" 이었으나 달성 불가다. 밴드 높이
+    # 중앙값 205px 가 720px 타일에 들어가면 면적비 상한이 약 0.285 이고, τ 를 그 위로
+    # 두면 정상 타일이 전량 폐기되어 폐기율 상한과 충돌한다.
     #
-    # 판정문서 4-3 의 원안은 "타일 ∩ 밴드폴리곤 **면적비** ≥ τ, 폴백 1.0" 이었다.
-    # 실측상 이 정의는 달성 불가다 — 밴드 높이 중앙값 205px 가 720px 타일에 들어가면
-    # 면적비 상한이 약 0.285 이고, τ 를 그 위로 두면 정상 타일이 전량 폐기되어
-    # 폐기율 상한(4-4, 정상 셀 ≤5%)과 충돌한다.
-    #
-    # 제안: 기준을 **밴드 포함(band ⊆ tile)** 으로 바꾼다. 1280×720 에서 99.6% 충족.
-    tau_mode: "band_containment"  # band_containment | area_ratio   ← 회부 대기
+    # 밴드 포함(band ⊆ tile)은 1280×720 에서 99.6% 가 충족한다. 초과분은 밴드 중심
+    # 크롭으로 살린다. 그때는 tile ⊆ band 라 타일의 전 화소가 검사된 용접부 안이다.
+    tau_mode: "band_containment"  # band_containment | area_ratio
     tau: null                     # area_ratio 를 쓸 때만 값이 필요하다
 
     align8: true                  # x0, y0 를 8의 배수로 (JPEG 블록 격자 정렬)
@@ -42,7 +40,7 @@ preprocess:
 
     encode:
       mode: "L"                   # 그레이스케일 강제 — M2 결과로 확정
-      quality: null               # M2 의 양 모집단 최저치 — 미측정
+      quality: 74                 # M2 전수 스캔: 양 모집단 최저 추정품질 74.6 의 내림
       progressive: false
       optimize: false
       strip_exif: true
