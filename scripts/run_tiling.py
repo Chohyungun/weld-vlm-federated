@@ -37,6 +37,7 @@ for _s in (sys.stdout, sys.stderr):
     except (AttributeError, ValueError):
         pass
 
+from data.convert.encode_runner import build_v1, encode_all
 from data.convert.tiling import (
     REASON_CROPPED_BAND,
     REASON_OK,
@@ -66,18 +67,19 @@ def load_spec() -> dict:
     }
 
 
-def index_zip_members(zip_dir: Path) -> dict[int, tuple[Path, str]]:
-    """이미지 id → (zip 경로, 멤버 이름). 파일명에 id 가 들어 있다."""
-    idx: dict[int, tuple[Path, str]] = {}
+def index_zip_members(zip_dir: Path) -> dict[str, tuple[Path, str]]:
+    """파일명(확장자 제외) → (zip 경로, 멤버 이름).
+
+    **id 로 색인하지 않는다.** 라벨의 `info.id` 는 10건에서 파일명 꼬리와 다르다
+    (예: id 13121 의 파일은 `RT_ST_02_62757373.jpg`). id 로 원천을 찾으면 그 10장을
+    조용히 잃는다. 라벨이 들고 있는 `image_data.file_name` 만이 원천과 이어지는 키다.
+    """
+    idx: dict[str, tuple[Path, str]] = {}
     for zp in sorted(zip_dir.glob("*.zip")):
         with zipfile.ZipFile(zp) as z:
             for name in z.namelist():
-                if not name.lower().endswith((".jpg", ".jpeg", ".png")):
-                    continue
-                stem = Path(name).stem
-                tail = stem.rsplit("_", 1)[-1]
-                if tail.isdigit():
-                    idx[int(tail)] = (zp, name)
+                if name.lower().endswith((".jpg", ".jpeg", ".png")):
+                    idx[Path(name).stem] = (zp, name)
     return idx
 
 
@@ -93,6 +95,8 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=REPO_ROOT / "data/interim/tiles_v1")
     ap.add_argument("--manifest-out", type=Path, default=REPO_ROOT / "data/interim/manifest_v1")
     ap.add_argument("--limit", type=int, default=0, help="시험 실행용. 0 이면 전량")
+    ap.add_argument("--encode", action="store_true",
+                    help="본 실행. 붙이지 않으면 계획만 낸다")
     args = ap.parse_args()
 
     spec = load_spec()
@@ -106,13 +110,17 @@ def main() -> int:
     from scripts.measure_tiling_geometry import read_labels
 
     bands: dict[str, tuple[int, int, int, int]] = {}
+    file_names: dict[str, str] = {}
     for r in read_labels(args.labels):
-        if r.modality != "RT" or not r.is_normal or not r.polys:
+        if r.modality != "RT":
             continue
-        best = max(r.polys, key=lambda p: max(p[1]) - min(p[1]))
-        xs, ys = best
-        bands[f"aihub71761:{r.image_id}"] = (min(xs), min(ys), max(xs), max(ys))
-    print(f"정상 밴드 폴리곤 {len(bands):,}개")
+        image_id = f"aihub71761:{r.image_id}"
+        file_names[image_id] = r.file_name
+        if not r.is_normal or not r.polys:
+            continue
+        xs, ys = max(r.polys, key=lambda p: max(p[1]) - min(p[1]))
+        bands[image_id] = (min(xs), min(ys), max(xs), max(ys))
+    print(f"정상 밴드 폴리곤 {len(bands):,}개 · 원천 파일명 {len(file_names):,}개")
 
     print("멤버 색인 작성 중 (zip 읽기)")
     members = index_zip_members(args.zips)
@@ -156,9 +164,16 @@ def main() -> int:
     print(f"\n회계 기록: {args.manifest_out / 'tile_accounting.json'}")
     if spec["quality"] is None:
         print("\n재인코딩은 아직 못 돈다: configs/base.yaml 의 encode.quality 가 비어 있다.")
-        print("M2 전수 스캔으로 양 모집단 최저 품질을 확정해 넣어야 한다.")
         return 3
-    return 0
+    if not args.encode:
+        print("\n계획만 냈다. 본 실행은 --encode 를 붙인다.")
+        return 0
+
+    plan_by_id = {p.image_id: p for p in plans}
+    rc = encode_all(rows, plan_by_id, members, file_names, spec, args)
+    if rc:
+        return rc
+    return build_v1(args, spec, plan_by_id, report)
 
 
 def accounting_report(rows, plans, limits: dict) -> dict:
