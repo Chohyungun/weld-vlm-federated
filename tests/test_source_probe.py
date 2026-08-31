@@ -6,8 +6,6 @@ GPU 없이 **판정 배관**을 검증한다. 학습 자체는 주입된 `score_
 
 from __future__ import annotations
 
-import json
-
 import numpy as np
 import pytest
 
@@ -36,12 +34,16 @@ def write_manifest(tmp_path, rows):
     return p
 
 
+REASON_TO_PROVENANCE = {"ok": CROP, "tiled": TILE, "oversized_band_cropped": BAND}
+
+
 def write_provenance(tmp_path, items):
-    p = tmp_path / "encode_progress.jsonl"
-    p.write_text(
-        "".join(json.dumps({"image_id": i, "reason": r}) + "\n" for i, r in items),
-        encoding="utf-8",
-    )
+    """동결 정본 tiles.csv 형식으로 쓴다. 진행 로그 형식은 더 이상 받지 않는다."""
+    p = tmp_path / "tiles.csv"
+    lines = ["image_id,provenance,reason\n"]
+    lines += [f"{i},{REASON_TO_PROVENANCE[r]},{r}\n"
+              for i, r in items if r in REASON_TO_PROVENANCE]
+    p.write_text("".join(lines), encoding="utf-8")
     return p
 
 
@@ -57,9 +59,16 @@ def test_provenance_maps_reasons_to_sources(tmp_path):
     assert load_provenance(p) == {"a": CROP, "b": TILE, "c": BAND}
 
 
-def test_unknown_reason_is_dropped_not_guessed(tmp_path):
-    p = write_provenance(tmp_path, [("a", "ok"), ("x", "누락사유")])
-    assert load_provenance(p) == {"a": CROP}
+def test_unknown_provenance_vocab_is_rejected_by_contract(tmp_path):
+    """모르는 출처 값은 계약(read_tiles)이 거부한다 — 조용히 버리지 않는다."""
+    p = tmp_path / "tiles.csv"
+    p.write_text(
+        "image_id,provenance,reason\na,N-crop,ok\nx,이상한값,?\n", encoding="utf-8"
+    )
+    from data.manifest_io import ManifestError
+
+    with pytest.raises(ManifestError):
+        load_provenance(p)
 
 
 # --- 평가셋 격리 ----------------------------------------------------------------

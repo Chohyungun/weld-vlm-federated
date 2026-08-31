@@ -2,7 +2,7 @@
 
     uv run python scripts/probe/run_source_probes.py \
         --manifest data/interim/manifest_v1/manifest.csv \
-        --provenance data/interim/manifest_v1/encode_progress.jsonl \
+        --provenance data/interim/manifest_v1/tiles.csv \
         --root . --out outputs/probe/source_v1.json
 
 **학습 풀 내부 홀드아웃에서만 학습·채점한다.** `split == "eval"` 행은 로더가 아예 읽지
