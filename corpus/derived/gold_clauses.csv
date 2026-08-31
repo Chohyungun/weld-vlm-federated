@@ -1,0 +1,16 @@
+# gold_clauses.csv 는 평가 자산(D6)이다. 채점기와 검색(임베딩) 결정 절차 외 어떤 학습 단계에도 투입하지 않는다. 누출은 논문 철회 사유다(개발규약 1-4).
+# 원천: limits_v0_pilot.csv sha256=334c78811677accb86a2ec14dad24716e16add3b6a14b47abe33ca6fe9e0cccb
+# pilot=True · 파생물 — 수기 수정 금지. 재파생: uv run python -m corpus.rules.materialize_derived
+defect_code,material,inspection_method,thickness_min,thickness_max,quality_scheme,quality_level,limit_type,clause_id,rule_id
+100,ST,RT,0.00,,none,ALL,불허,KRA27-3D,KRA27-3D-01
+2011,ST,RT,0.00,10.01,none,ALL,직경,KRA27-T15,KRA27-T15-01
+2011,ST,RT,10.01,25.01,none,ALL,직경,KRA27-T15,KRA27-T15-02
+2011,ST,RT,25.01,50.01,none,ALL,직경,KRA27-T15,KRA27-T15-03
+2011,ST,RT,50.01,100.01,none,ALL,직경,KRA27-T15,KRA27-T15-04
+2011,ST,VT,0.00,,none,ALL,직경,KRA27-S,KRA27-S-01
+301,ST,RT,0.00,12.01,none,ALL,길이,KRA27-T16,KRA27-T16-01
+301,ST,RT,12.01,50.01,none,ALL,길이,KRA27-T16,KRA27-T16-02
+301,ST,RT,50.01,,none,ALL,길이,KRA27-T16,KRA27-T16-03
+401,ST,RT,0.00,12.01,none,ALL,길이,KRA27-T16,KRA27-T16-04
+401,ST,RT,12.01,50.01,none,ALL,길이,KRA27-T16,KRA27-T16-05
+401,ST,RT,50.01,,none,ALL,길이,KRA27-T16,KRA27-T16-06
