@@ -27,6 +27,8 @@ from evaluation.stats import (
 
 CROP = "N-crop"
 TILE = "N-tile"
+BAND = "N-band"
+"""밴드 중심 크롭. 표본이 적어 P9 집계에서 제외하고 건수만 보고한다."""
 DEFAULT_MARGIN = 0.10
 """§5-2 P9 사전등록 마진 δ."""
 

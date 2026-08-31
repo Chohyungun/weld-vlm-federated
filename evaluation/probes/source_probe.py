@@ -17,19 +17,15 @@
 
 ## 출처 라벨의 출처
 
-타일링 산출물 `encode_progress.jsonl` 의 이미지별 `reason` 에서 온다.
-
-| `reason` | 출처 | 뜻 |
-|---|---|---|
-| `ok` | `N-crop` | 원래부터 1280×720 이던 이미지 |
-| `tiled` | `N-tile` | 파노라마에서 잘라낸 타일 |
-| `oversized_band_cropped` | `N-band` | 밴드가 타일보다 커서 중심 크롭 |
+동결 스냅샷의 `tiles.csv` 에서 온다 (계약 `data.manifest_io.read_tiles`).
+어휘는 `N-crop`(원래 1280×720) / `N-tile`(파노라마 타일) / `N-band`(밴드 중심 크롭).
+진행 로그(`encode_progress.jsonl`)는 정본이 아니며 폴백으로도 읽지 않는다 —
+정본이 둘이면 정본이 아니다.
 """
 
 from __future__ import annotations
 
 import csv
-import json
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -39,12 +35,6 @@ import numpy as np
 CROP = "N-crop"
 TILE = "N-tile"
 BAND = "N-band"
-
-REASON_TO_SOURCE = {
-    "ok": CROP,
-    "tiled": TILE,
-    "oversized_band_cropped": BAND,
-}
 
 SEED = 20260825
 EPOCHS = 3
@@ -70,23 +60,15 @@ class ProbeRow:
 
 
 def load_provenance(path: str | Path) -> dict[str, str]:
-    """`encode_progress.jsonl` 에서 이미지별 출처를 읽는다.
+    """동결 스냅샷의 `tiles.csv` 에서 이미지별 출처를 읽는다.
 
-    **매니페스트에 출처 컬럼이 없어 이 로그가 유일한 출처다.** 진행 로그이지 동결
-    산출물이 아니므로, 스냅샷 안으로 승격하는 것이 옳다(§7-1 `tiles.csv`).
+    파싱은 계약의 `read_tiles()` 에 맡긴다 — 컬럼·어휘 검증이 그쪽에 있고, 여기서
+    다시 구현하면 검증이 두 벌이 된다. 진행 로그 경로는 받지 않는다.
     """
-    out: dict[str, str] = {}
-    with Path(path).open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            rec = json.loads(line)
-            reason = str(rec.get("reason", ""))
-            src = REASON_TO_SOURCE.get(reason)
-            if src is not None:
-                out[str(rec["image_id"])] = src
-    return out
+    from data.manifest_io import read_tiles
+
+    df = read_tiles(path)
+    return dict(zip(df["image_id"].astype(str), df["provenance"].astype(str), strict=True))
 
 
 def load_rows(
