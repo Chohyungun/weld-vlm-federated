@@ -42,6 +42,7 @@ def run_client_round(
     round_idx: int,
     client_idx: int,
     cfg: dict[str, Any],
+    profile: str = "main",
 ) -> tuple[list, dict[str, Any], dict[str, str]]:
     """학습 1라운드. Flower 자료형과 무관한 순수 경로라 테스트가 프레임워크 없이 돈다.
 
@@ -63,6 +64,7 @@ def run_client_round(
         weights_in=weights_in,
         canonical_keys=canonical_keys,
         project=Path(cfg["project"]).resolve(),
+        profile=profile,
     )
     eff = result.effective_optimizer
     metrics: dict[str, Any] = {
@@ -79,6 +81,7 @@ def run_client_round(
         "lr": float(eff.get("lr", float("nan"))),
         "momentum": float(eff.get("momentum", float("nan"))),
         "budget-fired-at": float(result.budget_fired_at if result.budget_fired_at is not None else -1),
+        "peak-vram-gb": float(result.peak_vram_gb),
     }
     strings: dict[str, str] = {
         "keys-digest": serialize.keys_digest(canonical_keys),

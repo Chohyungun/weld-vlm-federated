@@ -38,6 +38,7 @@ def _log_result(log: AtomicLog, result: RoundResult, client_id: int | str, wall:
             "optimizer_steps": float(result.optimizer_steps),
             "param_l2": float(result.param_l2_norm),
             "lr": float(eff.get("lr", float("nan"))),
+            "peak_vram_gb": float(result.peak_vram_gb),
         },
         bytes_up=0,      # 로컬·중앙 칸은 교환이 없다. 통신량 0 이 정의상 참이다
         bytes_down=0,
@@ -70,6 +71,8 @@ def run_local_cell(
     split_hash: str,
     run_stamp: str,
     profile: str = "main",
+    initial_weights: "Sequence" = None,
+    canonical_keys: "Sequence[str]" = None,
 ) -> dict[int, RoundResult]:
     """② 분리·로컬. 클라이언트마다 독립 학습하고 결과를 셋 돌려준다.
 
@@ -96,6 +99,8 @@ def run_local_cell(
             client_idx=client_idx,
             base_seed=base_seed,
             num_examples=client_num_examples[client_idx],
+            weights_in=initial_weights,
+            canonical_keys=canonical_keys,
             project=out,
             profile=profile,
         )
@@ -116,6 +121,8 @@ def run_central_cell(
     split_hash: str,
     run_stamp: str,
     profile: str = "main",
+    initial_weights: "Sequence" = None,
+    canonical_keys: "Sequence[str]" = None,
 ) -> RoundResult:
     """③ 분리·중앙. 학습 풀 전체로 한 번 학습한다.
 
@@ -139,6 +146,8 @@ def run_central_cell(
         client_idx=0,
         base_seed=base_seed,
         num_examples=num_examples,
+        weights_in=initial_weights,
+        canonical_keys=canonical_keys,
         project=out,
         profile=profile,
     )
