@@ -119,6 +119,19 @@ ANNOTATIONS_FILENAME = "annotations.csv"
 CAPABILITIES_FILENAME = "data_capabilities.yaml"
 SNAPSHOT_FILENAME = "SNAPSHOT.sha256"
 
+#: 이미지별 출처(전처리 유래) 표. P9 교차 출처 오탐이 본실험 산출물로 승격되면서
+#: 진행 로그(encode_progress.jsonl)가 아니라 **스냅샷 안**에 있어야 하는 값이 됐다.
+#: 선택적 멤버다 — 있으면 SNAPSHOT 에 함께 잠기고, 없는 옛 스냅샷도 그대로 검증된다.
+TILES_FILENAME = "tiles.csv"
+TILES_COLUMNS: tuple[str, ...] = ("image_id", "provenance", "reason")
+
+#: 타일링 reason → 출처. 결함/정상 구분 없이 전 이미지에 적용된다.
+REASON_TO_PROVENANCE: dict[str, str] = {
+    "ok": "N-crop",                       # 원래부터 1280×720 이던 이미지
+    "tiled": "N-tile",                    # 파노라마에서 잘라낸 타일
+    "oversized_band_cropped": "N-band",   # 밴드가 타일보다 커서 밴드 중심 크롭
+}
+
 #: 하나의 스냅샷에 함께 잠기는 파일 (게이트 조건 1). 순서 = SNAPSHOT.sha256 기록 순서.
 SNAPSHOT_MEMBERS: tuple[str, ...] = (MANIFEST_FILENAME, ANNOTATIONS_FILENAME, CAPABILITIES_FILENAME)
 
@@ -205,6 +218,15 @@ def read_annotations(path: Path | str) -> pd.DataFrame:
     )
 
 
+def read_tiles(path: Path | str) -> pd.DataFrame:
+    """이미지별 출처 표. 컬럼·순서는 계약이다."""
+    df = _read_csv(Path(path), TILES_COLUMNS, TILES_COLUMNS, (), (), ())
+    bad = sorted(set(df["provenance"]) - set(REASON_TO_PROVENANCE.values()))
+    if bad:
+        raise ManifestError(f"{path}: 모르는 출처 값 {bad}")
+    return df
+
+
 def read_capabilities(path: Path | str) -> dict[str, Any]:
     with Path(path).open(encoding="utf-8") as fh:
         return yaml.safe_load(fh)
@@ -219,6 +241,8 @@ class Snapshot:
     manifest: pd.DataFrame
     annotations: pd.DataFrame
     capabilities: dict[str, Any]
+    #: 이미지별 출처. 동결 스냅샷에만 있고 옛 스냅샷은 None 이다.
+    tiles: pd.DataFrame | None = None
 
     @property
     def verdict_mode(self) -> VerdictMode:
@@ -244,12 +268,14 @@ def load_snapshot(root: Path | str, *, verify: bool = True) -> Snapshot:
     if verify:
         verify_snapshot(root)
     caps = read_capabilities(root / CAPABILITIES_FILENAME)
+    tiles_path = root / TILES_FILENAME
     return Snapshot(
         root=root,
         snapshot_id=caps["snapshot_id"],
         manifest=read_manifest(root / MANIFEST_FILENAME),
         annotations=read_annotations(root / ANNOTATIONS_FILENAME),
         capabilities=caps,
+        tiles=read_tiles(tiles_path) if tiles_path.exists() else None,
     )
 
 
@@ -352,10 +378,12 @@ def write_snapshot(
     manifest: pd.DataFrame,
     annotations: pd.DataFrame,
     capabilities: dict[str, Any],
+    tiles: pd.DataFrame | None = None,
 ) -> str:
-    """세 파일을 쓰고 **하나의 SNAPSHOT.sha256 에 함께 잠근다** (게이트 조건 1).
+    """구성 파일을 쓰고 **하나의 SNAPSHOT.sha256 에 함께 잠근다** (게이트 조건 1).
 
-    반환값은 스냅샷 다이제스트(세 파일 해시의 해시)다. 논문에 싣는 값이 이것이다.
+    `tiles` 를 주면 출처 표도 함께 잠긴다 (동결 스냅샷). 반환값은 스냅샷
+    다이제스트(파일 해시들의 해시)다. 논문에 싣는 값이 이것이다.
     """
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
@@ -365,7 +393,12 @@ def write_snapshot(
     with (root / CAPABILITIES_FILENAME).open("w", encoding="utf-8", newline="\n") as fh:
         yaml.safe_dump(capabilities, fh, allow_unicode=True, sort_keys=False)
 
-    lines = [f"{file_sha256(root / name)}  {name}" for name in SNAPSHOT_MEMBERS]
+    members = list(SNAPSHOT_MEMBERS)
+    if tiles is not None:
+        _canonical_csv(tiles, root / TILES_FILENAME, TILES_COLUMNS, "image_id")
+        members.append(TILES_FILENAME)
+
+    lines = [f"{file_sha256(root / name)}  {name}" for name in members]
     digest = hashlib.sha256(("\n".join(lines) + "\n").encode("utf-8")).hexdigest()
     with (root / SNAPSHOT_FILENAME).open("w", encoding="utf-8", newline="\n") as fh:
         fh.write("\n".join(lines) + "\n")
@@ -395,13 +428,16 @@ def verify_snapshot(root: Path | str) -> str:
         digest, name = line.split(maxsplit=1)
         recorded[name.strip()] = digest
 
-    if set(recorded) != set(SNAPSHOT_MEMBERS):
+    # 필수 멤버는 전부 있어야 하고, 허용된 선택 멤버(tiles.csv) 외의 것은 올 수 없다.
+    required, optional = set(SNAPSHOT_MEMBERS), {TILES_FILENAME}
+    if not required <= set(recorded) or set(recorded) - required - optional:
         raise SnapshotVerificationError(
             f"{snap}: 잠긴 파일 목록이 계약과 다르다. 기록={sorted(recorded)} "
-            f"계약={sorted(SNAPSHOT_MEMBERS)}. 두 파일은 함께 잠겨야 한다"
+            f"계약={sorted(required)} (+선택 {sorted(optional)}). 파일은 함께 잠겨야 한다"
         )
+    members = list(SNAPSHOT_MEMBERS) + [n for n in (TILES_FILENAME,) if n in recorded]
 
-    for name in SNAPSHOT_MEMBERS:
+    for name in members:
         actual = file_sha256(root / name)
         if actual != recorded[name]:
             raise SnapshotVerificationError(
@@ -409,7 +445,7 @@ def verify_snapshot(root: Path | str) -> str:
                 "매니페스트가 바뀌었다면 실험 결과가 바뀐 것이다"
             )
 
-    lines = [f"{recorded[name]}  {name}" for name in SNAPSHOT_MEMBERS]
+    lines = [f"{recorded[name]}  {name}" for name in members]
     digest = hashlib.sha256(("\n".join(lines) + "\n").encode("utf-8")).hexdigest()
     if recorded_digest is not None and recorded_digest != digest:
         raise SnapshotVerificationError("snapshot_digest 가 파일별 해시와 정합하지 않다")
