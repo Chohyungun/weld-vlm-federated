@@ -1,0 +1,27 @@
+# RAG 검색 설정 — 다섯 칸 공통 고정. 칸별 override 금지.
+#
+# 이 파일이 단일 소스다. 문서(13_spec_D §5)는 여기를 링크만 한다.
+# 값 변경은 색인 스냅샷 재부여 사유이며 총괄 승인 사항이다.
+
+retrieval:
+  top_k: 3                 # 후보 복수일 때 dense 정렬 후 절단. 5칸 공통
+  thickness_interval: half_open   # [min, max) — 경계 두께 이중 매칭 방지
+  no_hit_output: "해당 조항 없음"  # 검색 0건 시 출력. 환각으로 채우지 않는다
+
+index:
+  chunk_meta: corpus/derived/chunk_meta.jsonl   # B의 derive_chunk_meta 산출물
+  grade_map: configs/grade_map.yaml             # B 소유. 스킴별 등급 대응
+
+embedding:
+  # 질의 100건 top-1 실측으로 선정한다 (BGE-M3 대 Qwen3-Embedding-4B).
+  # 실측 전까지 null — null 이면 dense 정렬이 필요한 질의에서 명시적으로 실패한다.
+  model: null
+  trial_n_queries: 100
+  trial_seed: 20260825
+
+judge:
+  # 통합형·판정부 동일 체크포인트 공유(개발규약). C가 ⑥에서 확정하면 채운다.
+  checkpoint: null
+  prompt_file: rag/prompts/verdict_pilot_v1.txt
+  max_new_tokens: 512
+  # greedy 1회. 재시도·재프롬프트 금지 — 값이 아니라 원칙이라 코드가 강제한다
