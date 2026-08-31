@@ -103,7 +103,11 @@ def main() -> None:
                         {"image_id": image_id, "boxes": boxes,
                          "coord_space": "ABS_ORIG", "coord_cfg_hash": cfg_hash},
                         ensure_ascii=False) + "\n")
-        tmp.unlink(missing_ok=True)
+        del model
+        try:
+            tmp.unlink(missing_ok=True)
+        except PermissionError:
+            pass  # Windows 가 핸들을 놓기 전이다. C: 임시 폴더라 잔류해도 무해하다
         print(f"  {cell}: {len(paths)}장 → 박스 {n_boxes} ({time.perf_counter()-t0:.0f}s) → {out_path}")
 
 
