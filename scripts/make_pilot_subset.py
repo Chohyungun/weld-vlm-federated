@@ -147,7 +147,13 @@ def main() -> int:
             "분할은 원본 스냅샷에서 상속하며 여기서 다시 나누지 않는다."
         ),
     }
-    digest = write_snapshot(args.out, sub_m, sub_a, caps)
+    # tiles.csv 는 동결 때 승격된 선택적 멤버다(이 스크립트 작성 이후). 원본에 있으면
+    # 부분집합을 상속한다 — P9 교차 출처 오탐이 표본 스냅샷만으로 돌 수 있어야 한다.
+    sub_t = None
+    if snap.tiles is not None:
+        sub_t = snap.tiles.loc[snap.tiles["image_id"].isin(set(sub_m["image_id"]))].copy()
+        assert len(sub_t) == len(sub_m), "tiles 부분집합이 매니페스트와 1:1 이 아니다"
+    digest = write_snapshot(args.out, sub_m, sub_a, caps, tiles=sub_t)
     with (args.out / "stratum_accounting.csv").open("w", encoding="utf-8", newline="\n") as fh:
         accounting.to_csv(fh, index=False, lineterminator="\n")
     print(f"\n기록: {args.out}\n  snapshot_digest {digest}")
