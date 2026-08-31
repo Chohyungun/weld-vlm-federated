@@ -164,6 +164,31 @@ def test_all_cells_split_by_cell_and_seed():
     ]
 
 
+def test_sep_local_clients_are_separate_models():
+    """sep_local 은 모델이 3개다. (칸, 시드)로만 묶으면 같은 image_id 가 덮어써져
+    마지막 클라이언트의 예측만 남는다 — 실측에서 발견한 결함의 회귀다."""
+    contexts = make_contexts(10, 10)
+    records = []
+    for client in ("C1", "C2", "C3"):
+        for c in contexts:
+            r = PredictionRecord(
+                schema_version=SCHEMA_VERSION, image_id=c.image_id,
+                cell="sep_local", client=client, seed=0, defects=[],
+                verdict="합격", cited_clauses=[], parse_ok=True,
+            )
+            records.append(r)
+    summary = p9_all_cells(records, contexts)
+    assert len(summary.results) == 3      # 클라이언트마다 하나
+
+
+def test_duplicate_image_records_rejected():
+    """같은 모델 안에서 image_id 중복이면 섞임 신호 — 조용히 덮어쓰지 않는다."""
+    contexts = make_contexts(5, 5)
+    records = [rec("c0"), rec("c0")]
+    with pytest.raises(ValueError):
+        p9_for_cell(records, contexts)
+
+
 def test_summary_carries_no_proof_caveat():
     """'통과 = 신호 없음의 증명'으로 읽히지 않게 하는 문장이 결과에 붙어 다닌다."""
     contexts = make_contexts(30, 30)
