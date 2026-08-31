@@ -111,14 +111,22 @@ def p9_for_cell(
     by_id: dict[str, PredictionRecord] = {}
     cells: set[str] = set()
     seeds: set[int] = set()
+    clients: set[str | None] = set()
     for rec in records:
+        if rec.image_id in by_id:
+            raise ValueError(
+                f"이미지 {rec.image_id} 레코드가 중복이다 — 모델이 섞였을 가능성이 높다. "
+                "P9 는 모델 하나(칸·클라이언트·시드)씩 계산한다"
+            )
         by_id[rec.image_id] = rec
         cells.add(rec.cell)
         seeds.add(rec.seed)
-    if len(cells) > 1 or len(seeds) > 1:
+        clients.add(rec.client)
+    if len(cells) > 1 or len(seeds) > 1 or len(clients) > 1:
         raise ValueError(
-            f"칸/시드가 섞여 있다: cells={sorted(cells)} seeds={sorted(seeds)} — "
-            "P9 는 (칸, 시드) 하나씩 계산한다"
+            f"칸/클라이언트/시드가 섞여 있다: cells={sorted(cells)} "
+            f"clients={sorted(str(c) for c in clients)} seeds={sorted(seeds)} — "
+            "P9 는 모델 하나씩 계산한다. sep_local 은 클라이언트 3모델이 각각 대상이다"
         )
 
     images: list[NormalImage] = []
@@ -190,9 +198,9 @@ def p9_all_cells(
     channel 이 다르면 결과가 다를 뿐, 오탐의 정의와 판정 규칙은 하나다.
     """
     ctx_list = list(contexts)
-    grouped: dict[tuple[str, int], list[PredictionRecord]] = {}
+    grouped: dict[tuple[str, str, int], list[PredictionRecord]] = {}
     for rec in records:
-        grouped.setdefault((rec.cell, rec.seed), []).append(rec)
+        grouped.setdefault((rec.cell, rec.client or "", rec.seed), []).append(rec)
     results = tuple(
         p9_for_cell(grouped[key], ctx_list, margin=margin, min_clusters=min_clusters)
         for key in sorted(grouped)
