@@ -136,3 +136,81 @@ def to_coco_xywh(box: Box) -> tuple[float, float, float, float]:
     """
     x1, y1, x2, y2 = box
     return (x1, y1, x2 - x1, y2 - y1)
+
+
+# --- mAP (pycocotools) ---------------------------------------------------------
+
+def coco_map(
+    pred: Mapping[str, Sequence[tuple[str, Box, float]]],
+    gold: Mapping[str, Sequence[tuple[str, Box]]],
+    classes: Sequence[str],
+) -> dict:
+    """mAP@0.5 / @0.5:0.95 — pycocotools `COCOeval`, 기본 설정 그대로(커스텀 금지).
+
+    좌표 규약(스펙 §3-4): xywh 0-기준 연속, `image_id` 는 정렬 문자열 → 1..N 고정 매핑,
+    `category_id` 는 `classes` 명시 순서 → 1..K. 상수 score 동률의 입력 순서 의존을 없애기
+    위해 이미지·박스 순서를 정렬로 고정한다.
+
+    Args:
+        pred: image_id → [(iso_code, xyxy_box, score)]
+        gold: image_id → [(iso_code, xyxy_box)]
+    """
+    import contextlib
+    import io as _io
+
+    from pycocotools.coco import COCO
+    from pycocotools.cocoeval import COCOeval
+
+    image_ids = sorted(gold)
+    img_map = {iid: i + 1 for i, iid in enumerate(image_ids)}
+    cat_map = {c: i + 1 for i, c in enumerate(classes)}
+
+    gt = {
+        "info": {}, "licenses": [],
+        "images": [{"id": img_map[i], "file_name": i} for i in image_ids],
+        "categories": [{"id": v, "name": k} for k, v in cat_map.items()],
+        "annotations": [],
+    }
+    ann_id = 1
+    for iid in image_ids:
+        for code, box in gold[iid]:
+            if code not in cat_map:
+                continue
+            x, y, w, h = to_coco_xywh(box)
+            gt["annotations"].append({
+                "id": ann_id, "image_id": img_map[iid], "category_id": cat_map[code],
+                "bbox": [x, y, w, h], "area": w * h, "iscrowd": 0,
+            })
+            ann_id += 1
+
+    dt = []
+    for iid in image_ids:
+        for code, box, score in pred.get(iid, ()):
+            if code not in cat_map:
+                continue
+            x, y, w, h = to_coco_xywh(box)
+            dt.append({
+                "image_id": img_map[iid], "category_id": cat_map[code],
+                "bbox": [x, y, w, h], "score": float(score),
+            })
+
+    if not gt["annotations"]:
+        return {"map_50_95": None, "map_50": None, "note": "GT 박스 0건 — 산출 불가"}
+    with contextlib.redirect_stdout(_io.StringIO()):
+        coco_gt = COCO()
+        coco_gt.dataset = gt
+        coco_gt.createIndex()
+        coco_dt = coco_gt.loadRes(dt) if dt else COCO()
+        if not dt:
+            coco_dt.dataset = {**gt, "annotations": []}
+            coco_dt.createIndex()
+        ev = COCOeval(coco_gt, coco_dt, iouType="bbox")
+        ev.evaluate()
+        ev.accumulate()
+        ev.summarize()
+    return {
+        "map_50_95": float(ev.stats[0]),
+        "map_50": float(ev.stats[1]),
+        "n_gt_boxes": len(gt["annotations"]),
+        "n_pred_boxes": len(dt),
+    }
