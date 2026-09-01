@@ -61,10 +61,17 @@ class NoEarlyStopping:
         self.possible_stop: bool = False
         self.best_fitness = 0.0
         self.calls: list[tuple[int, float | None]] = []
+        #: 참을 돌려준 횟수. 이 스텁에서는 0 이 유지되지만 **회계는 이 값을 읽는다** —
+        #: 이전 판은 회계 쪽에 0 을 리터럴로 박아 검사가 공허했다(74번 감사 P9).
+        #: 값이 어디서 오는지가 요점이다. 진짜 stopper 가 끼워지면 `stopper_class` 가
+        #: 그것을 잡는다.
+        self.true_count: int = 0
 
     def __call__(self, epoch: int, fitness: Any = None) -> bool:
         self.calls.append((int(epoch), None if fitness is None else float(fitness)))
-        return False
+        stop = False
+        self.true_count += int(stop)
+        return stop
 
 
 class RoundBudget:

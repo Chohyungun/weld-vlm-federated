@@ -106,6 +106,11 @@ class RoundResult:
     effective_optimizer: dict[str, Any] = field(default_factory=dict)
     lr_trace: list[tuple[int, float]] = field(default_factory=list)
     stopper_calls: list[tuple[int, float | None]] = field(default_factory=list)
+    #: 실제로 끼워진 stopper 의 클래스 이름. 스텁 교체가 실패하면 여기가 달라진다 —
+    #: 회계 검사 (4)가 이 값으로 실패할 수 있게 됐다(74번 감사 P9 정정).
+    stopper_class: str = ""
+    #: stopper 가 참을 돌려준 횟수. 스텁에서 읽은 실측이며 상수가 아니다.
+    stopper_true_count: int | None = None
     budget_fired_at: int | None = None
     peak_vram_gb: float = 0.0
     #: 실제 `optimizer.step()` 횟수. `optimizer_steps`(배치 수)와 다르다 —
@@ -325,6 +330,8 @@ def train_round(
         effective_optimizer=trainer.effective_optimizer(),
         lr_trace=list(lr_trace.trace),
         stopper_calls=list(getattr(trainer.stopper, "calls", [])),
+        stopper_class=type(trainer.stopper).__name__ if getattr(trainer, "stopper", None) else "",
+        stopper_true_count=getattr(trainer.stopper, "true_count", None),
         budget_fired_at=budget.fired_at_epoch if budget else None,
         peak_vram_gb=peak_vram,
         optimizer_updates=int(getattr(trainer, "n_optimizer_updates", 0)),
