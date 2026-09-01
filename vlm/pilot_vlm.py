@@ -32,6 +32,7 @@ from vlm.coords import CoordCfg, ImageGeom, quantize, to_model
 
 MODEL_ID = "Qwen/Qwen3.5-0.8B"
 PROMPT_PATH = Path("vlm/prompts/unified_pilot_v1.txt")
+PAIRS_PATH = Path("data/processed/pairs_pilot_v1/pairs.jsonl")
 COORD_CFG = CoordCfg(coord_space="NORM_1000")
 MICRO_BATCH = 1          # 판정 10 — micro=2 는 사다리에 없다
 GRAD_ACCUM = 32          # 유효 배치 32
@@ -60,24 +61,25 @@ def build_target(row: dict, geom: ImageGeom) -> str:
 
 
 def load_pairs(split: str, client: str | None = None) -> list[dict]:
-    rows = [json.loads(l) for l in open("data/processed/pairs_pilot_v1/pairs.jsonl", encoding="utf-8")]
+    rows = [json.loads(l) for l in open(PAIRS_PATH, encoding="utf-8")]
     out = [r for r in rows if r["split"] == split and (client is None or r["client"] == client)]
     if not out:
         raise ValueError(f"페어 0건: split={split} client={client}")
     return out
 
 
-def _load_model():
+def _load_model(model_id: str | None = None):
     from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
     from peft import LoraConfig, get_peft_model
 
-    proc = AutoProcessor.from_pretrained(MODEL_ID)
+    mid = model_id or MODEL_ID
+    proc = AutoProcessor.from_pretrained(mid)
     bnb = BitsAndBytesConfig(
         load_in_4bit=True, bnb_4bit_quant_type="nf4",
         bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True,
     )
     model = AutoModelForImageTextToText.from_pretrained(
-        MODEL_ID, quantization_config=bnb, device_map={"": 0}
+        mid, quantization_config=bnb, device_map={"": 0}
     )
     lora = LoraConfig(
         r=16, lora_alpha=32, lora_dropout=0.0, bias="none",
@@ -90,6 +92,35 @@ def _load_model():
     if vis:
         raise RuntimeError(f"비전 인코더에 어댑터가 붙었다: {vis[:3]}")
     return model, proc
+
+
+class _StepView:
+    """`ResumeCheckpointer` 가 읽는 스텝 카운터 모양."""
+
+    def __init__(self, n: int) -> None:
+        self.n = int(n)
+
+
+class _AdapterTrainerView:
+    """통합형 학습 루프를 재개 체크포인터에 물리는 어댑터.
+
+    체크포인터는 트레이너 모양(`model`·`optimizer`·`epoch`·`start_epoch`·`device`)을
+    기대한다. 통합형은 자체 루프라 그 모양이 없다. 루프를 트레이너로 바꾸는 대신
+    **필요한 다섯 개만 노출하는 얇은 뷰**를 둔다 — 재개 하나 때문에 학습 루프를
+    프레임워크 모양으로 접을 이유가 없다.
+
+    `start_epoch=0` 으로 고정하는 이유: 통합형은 라운드가 곧 전체 epoch 구간이라
+    저장되는 `epochs_ran_in_round` 가 그대로 누적 epoch 수가 된다.
+    """
+
+    def __init__(self, model, optimizer, epoch: int = 0) -> None:
+        self.model = model
+        self.optimizer = optimizer
+        self.epoch = int(epoch)
+        self.start_epoch = 0
+        self.scaler = None          # bf16 autocast 라 GradScaler 를 쓰지 않는다
+        self.train_loader = None    # 로더가 없다 — 셔플은 `random.Random(seed+ep)` 다
+        self.device = torch.device("cuda")
 
 
 def _encode(proc, row: dict, prompt: str):
@@ -109,8 +140,9 @@ def _encode(proc, row: dict, prompt: str):
         add_generation_prompt=True,
     )
     labels = full["input_ids"].clone()
-    labels[:, : prompt_only["input_ids"].shape[1]] = -100   # 감독은 타깃 토큰만
-    return full, labels
+    prompt_len = int(prompt_only["input_ids"].shape[1])
+    labels[:, :prompt_len] = -100   # 감독은 타깃 토큰만
+    return full, labels, prompt_len
 
 
 def train_rounds(
@@ -123,11 +155,25 @@ def train_rounds(
     adapter_in: list[np.ndarray] | None = None,
     adapter_keys: list[str] | None = None,
     log_cb=None,
+    model_id: str | None = None,
+    supervised_logits_only: bool = True,
+    resume_dir: str | None = None,
+    run_id: str = "",
 ) -> tuple[list[np.ndarray], list[str], dict[str, Any], dict]:
-    """한 라운드(⑥은 라운드 1개 = 전체 epoch). 어댑터 fp32 ndarray 를 돌려준다."""
+    """한 라운드(⑥은 라운드 1개 = 전체 epoch). 어댑터 fp32 ndarray 를 돌려준다.
+
+    Args:
+        model_id: 크기-시간 곡선 프로브용 덮어쓰기. 본실험은 항상 기본값을 쓴다.
+        supervised_logits_only: 판정 11 이행 스위치. `False` 는 **이행 전후 비교를
+            재기 위해서만** 쓴다 — 전 위치 × vocab 로짓을 물질화한다.
+        resume_dir: 재개 전용 체크포인트 디렉터리(어댑터·옵티마이저·epoch·RNG).
+            ⑥ 은 파일럿에서도 10.2시간짜리 단일 런이고 본실험은 칸당 수 주다.
+            `best` 금지 규칙과 무관하다 — 채점 대상이 아니라 재개용이다.
+        run_id: 재개 신원의 일부.
+    """
     from peft import get_peft_model_state_dict, set_peft_model_state_dict
 
-    model, proc = _load_model()
+    model, proc = _load_model(model_id)
     prompt = PROMPT_PATH.read_text(encoding="utf-8")
 
     adapter_sd = get_peft_model_state_dict(model)
@@ -157,19 +203,58 @@ def train_rounds(
     supervised_total = 0
     import time
     t0 = time.perf_counter()
-    for ep in range(epochs):
+
+    # -- 재개 --------------------------------------------------------------
+    # ⑥ 는 10.2시간, 본실험은 칸당 수 주짜리 **단일 런**이다. 검출보다 재개가 더 절실하다.
+    # 통합형은 검출과 달리 **정확히 이어진다** — 셔플이 `random.Random(seed + ep)` 라
+    # 이력이 아니라 `(seed, epoch)` 의 함수이고, 누적 경계도 `(j+1) % GRAD_ACCUM` 이라
+    # epoch 안에서 닫힌다. 프레임워크 지역 변수에 걸린 상태가 없다.
+    ckpt = None
+    start_ep = 0
+    if resume_dir is not None:
+        from detection.resume import (ResumeCheckpointer, ResumeIdentity,
+                                      apply_resume, latest_resume)
+
+        ident = ResumeIdentity(
+            run_id=str(run_id), round_idx=int(round_idx), client_idx=int(client_idx),
+            seed=int(seed), total_epochs=int(epochs), local_epochs=int(epochs),
+            model=str(model_id or MODEL_ID), data=str(PAIRS_PATH),
+        )
+        state = latest_resume(resume_dir, identity=ident)
+        if state is not None:
+            view = _AdapterTrainerView(model, opt)
+            apply_resume(
+                view, state,
+                state_dict_fn=lambda tr: get_peft_model_state_dict(tr.model),
+                load_state_dict_fn=set_peft_model_state_dict,
+            )
+            start_ep = state.next_epoch
+            steps = state.optimizer_steps
+            supervised_total = state.payload.get("supervised_tokens", 0)
+            print(f"[resume] epoch {state.epoch_done} 까지 완료 → epoch {start_ep} 부터 이어 간다",
+                  flush=True)
+        ckpt = ResumeCheckpointer(
+            resume_dir, identity=ident,
+            state_dict_fn=lambda tr: get_peft_model_state_dict(tr.model),
+        )
+
+    for ep in range(start_ep, epochs):
         order = list(range(len(rows)))
         random.Random(seed + ep).shuffle(order)
         ce_sum = torch.zeros((), device="cuda", dtype=torch.float32)
         tok_cnt = 0
         for j, idx in enumerate(order):
-            enc, labels = _encode(proc, rows[idx], prompt)
+            enc, labels, prompt_len = _encode(proc, rows[idx], prompt)
             enc = {k: (v.to("cuda") if hasattr(v, "to") else v) for k, v in enc.items()}
             labels = labels.to("cuda")
-            out = model(**enc)
+            # 판정 11 — 감독 위치의 로짓만 물질화한다. 감독 구간이 접미(prompt 뒤 전부)라
+            # `logits_to_keep` 정수 슬라이스로 정확히 겹친다. 0 을 주면 전 위치를 뽑는다.
+            n_keep = int(labels.shape[1] - prompt_len + 1) if supervised_logits_only else 0
+            out = model(**enc, logits_to_keep=n_keep)
             # 판정 2 — shift 후 감독 토큰 총합 분모. HF 평균 loss 를 쓰지 않는다.
             logits = out.logits[:, :-1]
-            tgt = labels[:, 1:]
+            # 남긴 로짓 j 는 절대 위치 T-n_keep+j 를 예측하므로 타깃은 그 다음 토큰이다.
+            tgt = labels[:, 1:] if n_keep == 0 else labels[:, -(n_keep - 1):]
             mask = tgt != -100
             ce = torch.nn.functional.cross_entropy(
                 logits[mask].float(), tgt[mask], reduction="sum"
@@ -182,6 +267,12 @@ def train_rounds(
         supervised_total += tok_cnt
         if log_cb:
             log_cb(ep, float(ce_sum.item() / max(tok_cnt, 1)), steps, time.perf_counter() - t0)
+        if ckpt is not None:
+            # `epoch=ep, start_epoch=0` 이라 저장되는 값이 곧 **누적치**다 —
+            # epochs_ran_in_round = ep+1, optimizer_steps = steps.
+            ckpt.step_counter = _StepView(steps)
+            ckpt.extra = {"supervised_tokens": supervised_total}
+            ckpt(_AdapterTrainerView(model, opt, epoch=ep))
 
     final_sd = get_peft_model_state_dict(model)
     arrays = serialize.state_dict_to_ndarrays(final_sd, keys)

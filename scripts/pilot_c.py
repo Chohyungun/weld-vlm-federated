@@ -97,6 +97,7 @@ def cmd_cell2() -> None:
         model=MODEL, total_epochs=N, base_seed=BASE_SEED,
         out_dir=OUT_ROOT / "sep_local", split_hash=digest, run_stamp=RUN_STAMP,
         profile=PROFILE, initial_weights=arrays, canonical_keys=keys,
+        resume_root=OUT_ROOT / "_resume" / "sep_local",
     )
     for i, r in results.items():
         print(f"  C{i+1}: {r.epochs_ran}ep steps {r.optimizer_steps} "
@@ -117,6 +118,7 @@ def cmd_cell3() -> None:
         model=MODEL, total_epochs=N, base_seed=BASE_SEED,
         out_dir=OUT_ROOT / "sep_central", split_hash=digest, run_stamp=RUN_STAMP,
         profile=PROFILE, initial_weights=arrays, canonical_keys=keys,
+        resume_root=OUT_ROOT / "_resume" / "sep_central",
     )
     print(f"  central: {r.epochs_ran}ep steps {r.optimizer_steps} peak {r.peak_vram_gb:.2f}GB")
     print(f"③ 완주 {time.perf_counter()-t0:.0f}s")
@@ -174,8 +176,12 @@ def cmd_cell6() -> None:
                       metrics={"mean_ce": mean_ce, "optimizer_steps": float(steps)}, wall_time=wall)
         print(f"  ep{ep}: ce {mean_ce:.4f} steps {steps} ({wall:.0f}s)", flush=True)
 
+    # ⑥ 은 단일 런이라 도중에 죽으면 처음부터다(파일럿에서 10.2시간). 재개 경로를 켠다 —
+    # 산출물 디렉터리 밖에 둬서 채점·내보내기가 훑는 트리에 재개 가중치를 남기지 않는다.
     arrays, keys, m, _ = train_rounds(rows=rows, epochs=N, round_idx=0, client_idx=0,
-                                      base_seed=BASE_SEED, log_cb=cb)
+                                      base_seed=BASE_SEED, log_cb=cb,
+                                      resume_dir=str(OUT_ROOT / "_resume" / "uni_central"),
+                                      run_id=RUN_STAMP)
     np.savez(out / "adapter_last.npz", **{k: a for k, a in zip(keys, arrays)})
     (out / "adapter_last.meta.json").write_text(
         __import__("json").dumps(m, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -220,6 +226,8 @@ def cmd_cell7() -> None:
             arrays, keys, m, ref_sd = train_rounds(
                 rows=shards[i], epochs=E, round_idx=r, client_idx=i, base_seed=BASE_SEED,
                 adapter_in=global_arrays, adapter_keys=keys,
+                resume_dir=str(OUT_ROOT / "_resume" / "uni_fed" / f"r{r:03d}_c{i}"),
+                run_id=RUN_STAMP,
             )
             client_payloads.append(arrays); weights.append(n_train[i])
             log.log_round(round_idx=r, client_id=i, n_train_samples=n_train[i],
@@ -310,7 +318,9 @@ def cmd_cell7resume() -> None:
     for i in sorted(shards):
         arrays, keys, m, ref_sd = train_rounds(
             rows=shards[i], epochs=E, round_idx=r, client_idx=i, base_seed=BASE_SEED,
-            adapter_in=global_arrays, adapter_keys=keys)
+            adapter_in=global_arrays, adapter_keys=keys,
+            resume_dir=str(OUT_ROOT / "_resume" / "uni_fed" / f"r{r:03d}_c{i}"),
+            run_id=RUN_STAMP)
         client_payloads.append(arrays); weights.append(n_train[i])
         log.log_round(round_idx=r, client_id=i, n_train_samples=n_train[i],
                       metrics={"optimizer_steps": float(m["optimizer_steps"]),
@@ -344,7 +354,15 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=["views", "init", "cell2", "cell3", "cell4",
                                     "cell6", "cell7", "cell7resume"])
+    # 승격 어블레이션은 **같은 코드 경로**로 다른 스냅샷을 돌려야 한다. 별도 실행기를
+    # 만들면 두 팔의 차이가 표본 때문인지 코드 때문인지 구분되지 않는다.
+    ap.add_argument("--snapshot", default=None, help="스냅샷 디렉터리 덮어쓰기 (어블레이션용)")
+    ap.add_argument("--out", default=None, help="산출 루트 덮어쓰기 (어블레이션용)")
     args = ap.parse_args()
+    if args.snapshot:
+        SNAPSHOT_DIR = args.snapshot
+    if args.out:
+        OUT_ROOT = Path(args.out).resolve()
     {"views": cmd_views, "init": cmd_init, "cell2": cmd_cell2, "cell3": cmd_cell3,
      "cell4": cmd_cell4, "cell6": cmd_cell6, "cell7": cmd_cell7,
      "cell7resume": cmd_cell7resume}[args.cmd]()

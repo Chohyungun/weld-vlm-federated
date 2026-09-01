@@ -36,6 +36,7 @@ def _log_result(log: AtomicLog, result: RoundResult, client_id: int | str, wall:
         metrics={
             "epochs_ran": float(result.epochs_ran),
             "optimizer_steps": float(result.optimizer_steps),
+            "optimizer_updates": float(getattr(result, "optimizer_updates", 0) or 0),
             "param_l2": float(result.param_l2_norm),
             "lr": float(eff.get("lr", float("nan"))),
             "peak_vram_gb": float(result.peak_vram_gb),
@@ -73,6 +74,7 @@ def run_local_cell(
     profile: str = "main",
     initial_weights: "Sequence" = None,
     canonical_keys: "Sequence[str]" = None,
+    resume_root: str | Path | None = None,
 ) -> dict[int, RoundResult]:
     """② 분리·로컬. 클라이언트마다 독립 학습하고 결과를 셋 돌려준다.
 
@@ -103,6 +105,11 @@ def run_local_cell(
             canonical_keys=canonical_keys,
             project=out,
             profile=profile,
+            # ② 는 클라이언트마다 N epoch 단일 런이다. 본실험에서 12시간대이므로
+            # 재개 경로를 켠다 — 채점 대상이 아니라 재개용이다(detection/resume.py).
+            resume_dir=(Path(resume_root).resolve() / f"sep_local_c{client_idx}"
+                        if resume_root else None),
+            run_id=run_stamp,
         )
         _log_result(log, result, client_idx, timer.lap())
         save_cell_weights(out, f"sep_local_c{client_idx}", result)
@@ -123,6 +130,7 @@ def run_central_cell(
     profile: str = "main",
     initial_weights: "Sequence" = None,
     canonical_keys: "Sequence[str]" = None,
+    resume_root: str | Path | None = None,
 ) -> RoundResult:
     """③ 분리·중앙. 학습 풀 전체로 한 번 학습한다.
 
@@ -150,6 +158,10 @@ def run_central_cell(
         canonical_keys=canonical_keys,
         project=out,
         profile=profile,
+        # ③ 은 학습 풀 전체로 도는 N epoch **단일 런**이다. 본실험에서 가장 긴 검출 런이고
+        # 도중에 죽으면 처음부터다. 재개 경로를 켠다 — 채점 대상이 아니다.
+        resume_dir=(Path(resume_root).resolve() / "sep_central" if resume_root else None),
+        run_id=run_stamp,
     )
     _log_result(log, result, "central", timer.lap())
     save_cell_weights(out, "sep_central", result)
