@@ -28,6 +28,12 @@ class Interval:
     hi: float
     n_resamples: int
     n_clusters: int
+    n_undefined: int = 0
+    """통계량이 정의되지 않은 재표집 수(`drop_undefined=True` 일 때만 0 이 아니다).
+
+    **버린 사실을 숨기지 않는다** — 이 값이 크면 CI 가 좁아 보이는 것이 표본 성질이지
+    정밀도가 아니다.
+    """
 
     @property
     def half_width(self) -> float:
@@ -38,6 +44,7 @@ class Interval:
             "point": self.point, "ci_lo": self.lo, "ci_hi": self.hi,
             "half_width": self.half_width,
             "n_resamples": self.n_resamples, "n_clusters": self.n_clusters,
+            "n_undefined_resamples": self.n_undefined,
         }
 
     def __str__(self) -> str:
@@ -51,6 +58,7 @@ def cluster_bootstrap(
     n_resamples: int = BOOTSTRAP_N,
     seed: int = BOOTSTRAP_SEED,
     alpha: float = 0.05,
+    drop_undefined: bool = False,
 ) -> Interval:
     """묶음 단위 재표집으로 통계량의 CI 를 낸다.
 
@@ -59,6 +67,10 @@ def cluster_bootstrap(
             따로 두는 이유다.
         statistic: 재표집된 묶음 ID 목록을 받아 통계량을 내는 함수. 같은 묶음이 여러 번
             뽑히면 그 묶음의 이미지가 그만큼 중복 계산돼야 한다.
+        drop_undefined: 통계량이 `nan` 을 돌려준 재표집을 백분위 계산에서 뺀다.
+            **두 부분모집단의 차** 같은 통계량은 한쪽이 통째로 안 뽑히면 정의되지 않는데,
+            그때 0 으로 대치하면 CI 가 0 쪽으로 끌려가 판정이 뒤집힌다. 기본값은 False 라
+            기존 호출부(P9)의 동작은 바뀌지 않는다.
 
     시드를 고정하므로 같은 입력에 같은 CI 가 나온다 — `check-scorer` 의 비트 단위 일치
     요구와 어긋나지 않는다.
@@ -73,8 +85,16 @@ def cluster_bootstrap(
     for i in range(n_resamples):
         idx = rng.integers(0, n, size=n)
         draws[i] = statistic([arr[j] for j in idx])
+    n_undefined = 0
+    if drop_undefined:
+        ok = np.isfinite(draws)
+        n_undefined = int((~ok).sum())
+        draws = draws[ok]
+        if draws.size == 0:
+            return Interval(float(point), float("nan"), float("nan"),
+                            n_resamples, n, n_undefined)
     lo, hi = np.percentile(draws, [100 * alpha / 2, 100 * (1 - alpha / 2)])
-    return Interval(float(point), float(lo), float(hi), n_resamples, n)
+    return Interval(float(point), float(lo), float(hi), n_resamples, n, n_undefined)
 
 
 @dataclass(frozen=True)
