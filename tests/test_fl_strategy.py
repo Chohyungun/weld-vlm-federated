@@ -180,7 +180,7 @@ def test_전원_응답하면_우리_규약으로_집계된다():
 def test_평가_라운드는_열리지_않는다():
     strat = _strategy()
     assert strat.configure_evaluate(1, None, None, None) == []
-    assert strat.aggregate_evaluate(1, []) == (None, None)
+    assert strat.aggregate_evaluate(1, []) is None
 
 
 def test_평가_응답이_오면_실패한다():

@@ -169,14 +169,18 @@ class WeldFedAvg(FedAvg):
         """평가 라운드를 만들지 않는다."""
         return []
 
-    def aggregate_evaluate(
-        self, server_round: int, replies: Iterable[Any]
-    ) -> tuple[Any | None, Any | None]:
-        """열리지 않는 경로라도 열렸다면 조용히 통과시키지 않는다."""
+    def aggregate_evaluate(self, server_round: int, replies: Iterable[Any]) -> Any | None:
+        """열리지 않는 경로라도 열렸다면 조용히 통과시키지 않는다.
+
+        반환은 상위 규약대로 **MetricRecord 하나(또는 None)** 다. aggregate_train 처럼
+        튜플을 돌려주면 Strategy.start 가 그 튜플을 라운드 결과 dict 에 그대로 넣고,
+        실행 끝의 결과 요약 출력에서 `.items()` 를 불러 죽는다(파일럿 실측 — 학습은
+        완주됐는데 요약에서 크래시해 뒤의 회계 마감이 날아갔다).
+        """
         replies = list(replies)
         if replies:
             raise RoundFailure(
                 f"라운드 {server_round}: 평가 라운드는 쓰지 않는데 응답 {len(replies)}개가 왔다. "
                 "클라이언트 평가 경로가 열려 있다면 평가셋 접근 경로가 하나 더 생긴 것이다."
             )
-        return None, None
+        return None

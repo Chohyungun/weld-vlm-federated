@@ -97,6 +97,7 @@ class RoundResult:
     lr_trace: list[tuple[int, float]] = field(default_factory=list)
     stopper_calls: list[tuple[int, float | None]] = field(default_factory=list)
     budget_fired_at: int | None = None
+    peak_vram_gb: float = 0.0
 
 
 def derive_seed(base_seed: int, round_idx: int, client_idx: int) -> int:
@@ -194,6 +195,18 @@ def train_round(
 
     from detection.fed_trainer import FedDetectionTrainer  # 지연 import (detection extra)
 
+    # `mlflow` 는 train 인자가 아니라 Ultralytics 전역 settings 키다. 트레이너에 넘기면
+    # 알 수 없는 키로 거부되며 CLI 도움말을 뿜고 죽는다(실측). 정책 선언은 FIXED 에 두고
+    # 적용은 settings 로 한다 — 자동 MLflow 연동 차단이라는 의도는 동일하다.
+    mlflow_off = overrides.pop("mlflow", None)
+    if mlflow_off is False:
+        from ultralytics import settings as _ul_settings
+        _ul_settings.update({"mlflow": False})
+
+    import torch
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
+
     trainer = FedDetectionTrainer(
         overrides=overrides,
         weights_in=weights_in,
@@ -214,6 +227,9 @@ def train_round(
     trainer._canonical_keys = keys
     out = trainer.export_weights()
 
+    peak_vram = (
+        torch.cuda.max_memory_allocated() / 1e9 if torch.cuda.is_available() else 0.0
+    )
     budget = trainer.budget
     return RoundResult(
         ndarrays=out,
@@ -230,4 +246,5 @@ def train_round(
         lr_trace=list(lr_trace.trace),
         stopper_calls=list(getattr(trainer.stopper, "calls", [])),
         budget_fired_at=budget.fired_at_epoch if budget else None,
+        peak_vram_gb=peak_vram,
     )
