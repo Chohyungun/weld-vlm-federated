@@ -50,9 +50,16 @@ def build_prompt(
     defects: Sequence[Mapping[str, object]],
     clauses: Sequence[Chunk],
 ) -> str:
-    """프롬프트 조립. 결함·조항을 결정론적 직렬화로 채운다."""
+    """프롬프트 조립. 결함·조항을 결정론적 직렬화로 채운다.
+
+    **없는 값은 `미상` 으로 적는다.** `dict.get(key, 기본값)` 은 키가 있고 값이 `None`
+    이면 `None` 을 그대로 돌려주므로, 크기 없는 결함(생성 모델 출력·스케일 부재)이
+    프롬프트에 `크기(px) None` 으로 실린다. 모델은 그것을 근거 문장에 그대로 옮긴다 —
+    실측(66번 시운전)에서 확인했다.
+    """
     defect_lines = "\n".join(
-        f"- 결함코드 {d.get('iso_code')} / 크기(px) {d.get('size_px', '미상')}"
+        f"- 결함코드 {d.get('iso_code')} / 크기(px) "
+        f"{'미상' if d.get('size_px') is None else d.get('size_px')}"
         for d in defects
     ) or "- (검출된 결함 없음)"
     clause_lines = "\n".join(
