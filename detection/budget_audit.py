@@ -48,6 +48,11 @@ _CSV_COLUMNS = [
     "arg_momentum",
     "budget_fired_at",
     "stopper_true_count",
+    # 배치 수(`optimizer_steps`)와 실제 갱신 횟수는 다르다 — Ultralytics 가 nbs=64 기준으로
+    # 누적한다(숨은 기본값 #10). 논문의 "총 갱신 횟수"는 아래 컬럼이다.
+    "optimizer_updates",
+    # 재개해서 이어 간 칸인가. 이어 간 런은 무중단 런과 다른 궤적을 그린다.
+    "resumed_from_epoch",
 ]
 
 
@@ -71,6 +76,8 @@ class AccountingCell:
     arg_momentum: float = float("nan")
     budget_fired_at: int | None = None
     stopper_true_count: int = 0
+    optimizer_updates: int = 0
+    resumed_from_epoch: int | None = None
     participated: bool = True
 
     @classmethod
@@ -93,6 +100,8 @@ class AccountingCell:
             arg_momentum=float(eff.get("arg_momentum", float("nan"))),
             budget_fired_at=result.budget_fired_at,
             stopper_true_count=0,  # 스텁 stopper 는 True 를 돌려줄 수 없다
+            optimizer_updates=int(getattr(result, "optimizer_updates", 0) or 0),
+            resumed_from_epoch=getattr(result, "resumed_from_epoch", None),
         )
 
 
@@ -104,6 +113,11 @@ class AuditReport:
     failures: list[str] = field(default_factory=list)
     total_epochs_by_client: dict[int, int] = field(default_factory=dict)
     total_optimizer_steps: int = 0
+    #: 실제 갱신 횟수 합. 배치 수와 다르다(숨은 기본값 #10).
+    total_optimizer_updates: int = 0
+    #: 재개해서 이어 간 셀 목록. **실패가 아니다** — 재개는 정당한 복구 수단이다.
+    #: 다만 이어 간 런은 무중단 런과 다른 궤적을 그리므로 보고서에 드러나 있어야 한다.
+    resumed_cells: list[list[int]] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -186,6 +200,13 @@ class AccountingMatrix:
             failures=failures,
             total_epochs_by_client=totals,
             total_optimizer_steps=sum(cell.optimizer_steps for cell in self.cells.values()),
+            total_optimizer_updates=sum(
+                cell.optimizer_updates for cell in self.cells.values()
+            ),
+            resumed_cells=sorted(
+                [r, c] for (r, c), cell in self.cells.items()
+                if cell.resumed_from_epoch is not None
+            ),
         )
 
     # -- 산출물 -------------------------------------------------------------

@@ -92,3 +92,6 @@ docs/dev_log/**/50_공개문서_검수방침.md
 # --- 파일럿 합성 산출물 (드라이브·로컬 보관, 저장소는 스크립트·보고서만) ---
 corpus/generate/cycle_pilot/*.jsonl
 corpus/generate/cycle_pilot/_raw_generated.json
+
+# --- 분리 실행 로그 (프로브·학습). 실측 결과는 outputs/ 와 보고서에 남는다 ---
+logs/

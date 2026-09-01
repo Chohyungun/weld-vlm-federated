@@ -29,6 +29,7 @@ __all__ = [
     "derive_seed",
     "FIXED_OVERRIDES",
     "FIXED_PILOT",
+    "FIXED_PROBE_NONDET",
     "PROFILES",
 ]
 
@@ -72,10 +73,19 @@ FIXED_PILOT: dict[str, Any] = {
     "close_mosaic": 1,  # E=2 라 10 이면 한 번도 발화하지 않는다
 }
 
+#: **계측 전용.** `deterministic=False` 하나만 다르다. 결정성 비용이 얼마인지는 실측 없이는
+#: 알 수 없고, 그 값은 GPU 부하 판단의 입력이다. 그렇다고 `extra_overrides` 로 공통 고정을
+#: 뚫는 구멍을 내면 칸별로 몰래 값을 바꾸는 경로가 함께 열린다 — 프로파일을 통째로 바꾸는
+#: 기존 방식을 그대로 쓰고, **이름으로 산출물에 표시가 남게** 한다.
+#:
+#: **이 프로파일로 만든 가중치는 실험 산출물이 아니다.** 다섯 칸 중 어디에도 쓰지 않는다.
+FIXED_PROBE_NONDET: dict[str, Any] = {**FIXED_OVERRIDES, "deterministic": False}
+
 #: 이름으로 프로파일을 고른다. 호출자가 dict 을 직접 조립하지 못하게 한다.
 PROFILES: dict[str, dict[str, Any]] = {
     "main": FIXED_OVERRIDES,
     "pilot": FIXED_PILOT,
+    "probe_nondet": FIXED_PROBE_NONDET,
 }
 
 
@@ -98,6 +108,12 @@ class RoundResult:
     stopper_calls: list[tuple[int, float | None]] = field(default_factory=list)
     budget_fired_at: int | None = None
     peak_vram_gb: float = 0.0
+    #: 실제 `optimizer.step()` 횟수. `optimizer_steps`(배치 수)와 다르다 —
+    #: Ultralytics 가 `nbs=64` 기준으로 누적하기 때문이다(숨은 기본값 #10).
+    optimizer_updates: int = 0
+    #: 재개해서 이어 간 실행인가. 이어 간 런은 무중단 런과 다른 궤적을 그리므로
+    #: 회계에 남겨야 한다(`detection/resume.py` 참조).
+    resumed_from_epoch: int | None = None
 
 
 def derive_seed(base_seed: int, round_idx: int, client_idx: int) -> int:
@@ -147,6 +163,11 @@ def train_round(
     project: str | Path | None = None,
     profile: str = "main",
     extra_overrides: dict[str, Any] | None = None,
+    callbacks: dict[str, Any] | None = None,
+    resume_dir: str | Path | None = None,
+    run_id: str = "",
+    clear_resume_on_success: bool = True,
+    loader_reseed_per_epoch: bool = False,
 ) -> RoundResult:
     """라운드 하나를 실행하고 raw 가중치를 돌려준다.
 
@@ -160,6 +181,22 @@ def train_round(
         project: 산출물 디렉터리. **절대경로를 준다** — 생략하면 Ultralytics 전역 설정의
             `runs_dir` 로 떨어져 저장소 루트가 오염된다.
         profile: `"main"` 또는 `"pilot"`. 프로파일 안에서는 다섯 칸이 같은 값을 쓴다.
+        callbacks: 계측 전용 훅 `{이벤트명: 콜러블}`. 계측은 학습을 바꾸지 않으므로
+            공통 고정 검사 대상이 아니다. 학습 경로에 영향을 주는 콜백을 여기로 넣지 마라.
+        resume_dir: 재개 전용 체크포인트 디렉터리. 주면 **epoch 경계마다 덤프하고, 같은
+            신원의 상태가 이미 있으면 거기서 이어 간다.** `best` 금지 규칙과 충돌하지
+            않는다 — 고를 수 있는 후보가 아니라 `last` 를 만들어 가는 도중의 상태이고,
+            읽는 쪽이 이 재개 경로 하나뿐이다(`detection/resume.py` 참조).
+            **학습 산출물(`project`)과 다른 경로를 줘라.** 채점·내보내기가 훑는 트리에
+            재개 가중치를 두지 않는다.
+        run_id: 재개 신원의 일부. 같은 라운드·클라이언트라도 다른 실행이면 이어 가지
+            않게 하려면 여기에 실행 식별자를 준다.
+        clear_resume_on_success: 정상 완주 시 재개 파일을 지운다. 끄면 다음 실행이 이미
+            끝난 라운드를 재개 상태로 오인할 수 있다.
+        loader_reseed_per_epoch: epoch 진입마다 로더 셔플 생성기를 `f(seed, epoch)` 으로
+            다시 시드한다. **다섯 칸 공통 고정 항목(데이터 순서·증강 난수열)을 바꾸므로
+            켜려면 다섯 칸 전부에 켜고 첫 런 착수 전에 확정해야 한다.** 켜면 시드가 실제로
+            데이터 순서를 통제하고(숨은 기본값 #9) 재개가 정확해진다.
 
     Raises:
         ValueError: 5칸 공통 고정 항목을 덮어쓰려 하면 실패한다.
@@ -207,17 +244,55 @@ def train_round(
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
 
+    # 재개 상태는 트레이너를 만들기 **전에** 읽는다. 신원이 어긋나면 학습을 시작조차
+    # 하지 않는 것이 맞다 — 시작한 뒤에 거부하면 GPU 시간만 버린다.
+    resume_state = None
+    identity = None
+    if resume_dir is not None:
+        from detection.resume import ResumeCheckpointer, ResumeIdentity, clear_resume, latest_resume
+
+        identity = ResumeIdentity(
+            run_id=str(run_id),
+            round_idx=int(round_idx),
+            client_idx=int(client_idx),
+            seed=int(seed),
+            total_epochs=int(total_epochs),
+            local_epochs=int(local_epochs),
+            model=str(model),
+            data=str(Path(data_yaml).resolve()),
+        )
+        resume_state = latest_resume(resume_dir, identity=identity)
+
     trainer = FedDetectionTrainer(
         overrides=overrides,
         weights_in=weights_in,
         canonical_keys=canonical_keys,
         round_idx=round_idx,
         local_epochs=local_epochs,
+        resume_state=resume_state,
+        loader_reseed_per_epoch=loader_reseed_per_epoch,
     )
     lr_trace = _LRTrace()
     steps = _StepCounter()
     trainer.add_callback("on_fit_epoch_end", lr_trace)
     trainer.add_callback("on_train_batch_end", steps)
+    for event, fn in (callbacks or {}).items():
+        trainer.add_callback(event, fn)
+
+    resumed_steps = int(getattr(resume_state, "optimizer_steps", 0) or 0)
+    checkpointer = None
+    if resume_dir is not None:
+        checkpointer = ResumeCheckpointer(
+            resume_dir,
+            identity=identity,
+            canonical_keys=canonical_keys,
+            step_counter=steps,
+            resumed_epochs=int(getattr(resume_state, "epochs_ran_in_round", 0) or 0),
+            resumed_steps=resumed_steps,
+        )
+        # 예산 콜백보다 **뒤에** 등록한다. 예산이 `stop` 을 켠 마지막 epoch 에서도
+        # 체크포인트가 남아야, 그 직후 죽었을 때 라운드를 다시 돌지 않는다.
+        trainer.add_callback("on_fit_epoch_end", checkpointer)
 
     trainer.train()
 
@@ -231,6 +306,9 @@ def train_round(
         torch.cuda.max_memory_allocated() / 1e9 if torch.cuda.is_available() else 0.0
     )
     budget = trainer.budget
+    if resume_dir is not None and clear_resume_on_success:
+        # 정상 완주. 재개 파일은 산출물이 아니므로 남기지 않는다.
+        clear_resume(resume_dir)
     return RoundResult(
         ndarrays=out,
         num_examples=int(num_examples),
@@ -238,7 +316,9 @@ def train_round(
         client_idx=int(client_idx),
         epochs_ran=int(budget.epochs_ran) if budget else int(total_epochs),
         seed=seed,
-        optimizer_steps=steps.n,
+        # 재개했다면 이전 프로세스의 스텝을 잇는다. 잇지 않으면 회계 매트릭스의
+        # R×E=N 감사가 재개한 라운드에서만 미달로 보인다 — 실제로는 밟은 스텝인데.
+        optimizer_steps=resumed_steps + steps.n,
         param_l2_norm=serialize.params_l2_norm(out),
         payload_bytes=serialize.payload_nbytes(out),
         injection_digest=list(trainer.injection_digest),
@@ -247,4 +327,6 @@ def train_round(
         stopper_calls=list(getattr(trainer.stopper, "calls", [])),
         budget_fired_at=budget.fired_at_epoch if budget else None,
         peak_vram_gb=peak_vram,
+        optimizer_updates=int(getattr(trainer, "n_optimizer_updates", 0)),
+        resumed_from_epoch=(resume_state.next_epoch if resume_state is not None else None),
     )
