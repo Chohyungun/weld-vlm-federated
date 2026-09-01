@@ -12,9 +12,11 @@
 
 from __future__ import annotations
 
+import csv
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
+from pathlib import Path
 
 from evaluation.metrics.clause import GoldPair
 
@@ -67,6 +69,17 @@ class GoldEntry:
 
 def _dec(v: object) -> Decimal | None:
     return None if v is None or v == "" else Decimal(str(v))
+
+
+def read_derived_csv(path: str | Path) -> tuple[dict[str, str], ...]:
+    """B 파생물 CSV 를 읽는다. **선두 `#` 주석 줄을 건너뛴다.**
+
+    `gold_clauses.csv` 는 격리 경고·원천 sha256·재파생 명령을 `#` 주석 3줄로 이고 있다
+    (62번). 그대로 `DictReader` 에 넣으면 첫 주석이 헤더가 되어 컬럼이 통째로 어긋난다.
+    """
+    text = Path(path).read_text(encoding="utf-8")
+    body = [ln for ln in text.splitlines() if not ln.startswith("#")]
+    return tuple(csv.DictReader(body))
 
 
 def entries_from_derived(rows: Iterable[Mapping[str, object]]) -> tuple[GoldEntry, ...]:

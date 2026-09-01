@@ -88,6 +88,9 @@ class BBoxIoUReport:
     coord_suspect: bool
     """매칭쌍 median IoU ≤ 0.1 이면 True. **실패가 아니라 플래그다** — 진짜 저성능을
     채점기가 기각하면 안 되므로 판단은 사람이 오버레이로 한다(§3-3c)."""
+    n_matched_ge_50: int = 0
+    """매칭쌍 중 IoU ≥ 0.5 인 건수. mAP@0.5 가 세는 것과 같은 문턱이라, mAP 가 낮을 때
+    "위치가 나쁜 것"과 "점수 순위가 없는 것"을 가르는 재료가 된다."""
 
     def as_dict(self) -> dict:
         return {
@@ -95,6 +98,7 @@ class BBoxIoUReport:
             "bbox_iou_matched_only": self.mean_matched,
             "n_gold": self.n_gold,
             "n_matched": self.n_matched,
+            "n_matched_ge_50": self.n_matched_ge_50,
             "coord_suspect": self.coord_suspect,
         }
 
@@ -125,6 +129,7 @@ def score_bbox_iou(
         n_gold=len(matches),
         n_matched=len(matched),
         coord_suspect=bool(matched) and median <= COORD_SUSPECT_MEDIAN,
+        n_matched_ge_50=sum(1 for v in matched if v >= 0.5),
     )
 
 
