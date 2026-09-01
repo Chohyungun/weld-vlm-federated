@@ -97,10 +97,58 @@ dedup:
   pair_budget: 50000000
 
 # --------------------------------------------------------------------------------------
-# 사전등록 상수 — 결과표 머리행에 박는다 (판정문서 5-1). 학습 착수 후 수정 금지.
+# 본실험 착수 전 확정 상수 — 결과표 머리행에 박는다. 착수 후 수정 금지.
+#
+# **키 이름이 `preregistered` 가 아니다.** 파일럿 채점이 2026-09-01 에 끝났고 이 상수는
+# 그 뒤에 확정된다. 사전등록으로 표기하면 날짜만으로 무너진다. 탐색적 파일럿 → 확증적
+# 본실험으로 정직하게 쓴다. 선후는 의사결정로그에 적었다.
+#
+# **모집단을 키에 박는다.** 62,998 / 12,461 / 7,740 세 모집단 상수가 한 표에 섞이면
+# 어느 값이 무엇의 기준인지 사라진다. 옛 키(N=62,998 기준 0.2081·0.3025)는 동결본
+# (이미지 62,308 · 평가셋 12,461)과 모집단이 달라 폐기했다.
+#
+# 산출: `scripts/recompute_baselines.py` — 다섯 칸과 **같은 채점기**(evaluation/score.py).
+# 원자료 `data/interim/manifest_v1/baselines_recomputed.json`.
 # --------------------------------------------------------------------------------------
-preregistered:
-  trivial_all_positive_macro_f1: 0.2081   # 전량양성 자명하한 (4결함, N=62,998)
-  geometry_only_best_macro_f1: 0.3025     # 규격전용 최적 (처리 전)
-  geometry_shortcut_contribution: 0.0944  # 위 둘의 차
+fixed_before_main_runs:
+  snapshot_id: aihub71761_rt_v1
+  snapshot_digest: 1f80e98b151372e3fa44c754d0c5ab2cf06bd731d3dfdb8f2515d05383834899
+
+  # content-free 예측기 — 화소를 보지 않고 메타데이터(출처·재질)만 쓰는 규칙.
+  # 게이트는 자명하한 단일선이 아니라 **이 계열의 최댓값**으로 잡는다. 자명하한 하나로는
+  # 지름길 구간이 안 걸러진다는 것이 66번의 소득인데, 하한만 갈아끼우면 되돌아간다.
+  content_free__eval12461:
+    trivial_all_positive_macro_f1: 0.2160
+    constant_porosity_macro_f1: 0.1523
+    source_conditional_porosity_macro_f1: 0.2068
+    material_only_best_macro_f1: 0.2454
+    source_only_best_macro_f1: 0.3066
+    source_x_material_best_macro_f1: 0.3465
+    max_macro_f1: 0.3465            # ← 게이트 선. 출처×재질 전용 최적
+  content_free__eval_ncrop7740:
+    trivial_all_positive_macro_f1: 0.3066
+    material_only_best_macro_f1: 0.3465
+    source_x_material_best_macro_f1: 0.3465
+    max_macro_f1: 0.3465
+
+  # 놓침 축. **전량양성이 0.0000 을 달성한다** — 놓침만으로는 어떤 게이트도 세울 수 없다.
+  # 놓침은 반드시 Macro-F1 계열과 짝으로 읽는다.
+  miss_rate__eval12461:
+    trivial_all_positive: 0.0000
+    content_free_min: 0.0000
+
+  # 위치 축. 상수 박스 하나를 전 이미지에 주장한다. 박스는 **train+val GT 중앙값**에서
+  # 유도했다 — 평가셋 화소·통계에서 뽑으면 불변조건 1-4 가 실질에서 깨진다.
+  constant_box__eval12461:
+    box_xyxy: [589.0, 335.0, 666.0, 383.0]
+    derived_from: "train+val GT 중앙값 (eval 미사용, n=86,560)"
+    n_gold: 22549
+    frac_iou_ge_50: 0.0502
+    bbox_iou_mean_all: 0.0796        # 미매칭 GT 를 0 으로 포함 (주 보고 정의)
+    per_image_max_iou_mean: 0.2533
+    map_50: 0.0015
+
+  gate_tolerance: 0.005              # 통과선 = max_macro_f1 + 이 값
+
+  # 참고값. 게이트로 쓰지 않는다.
   sds_binary_accuracy: { RT: 0.9484, ST: 0.9613, AL: 0.871 }
