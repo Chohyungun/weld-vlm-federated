@@ -253,9 +253,98 @@ def cmd_cell7() -> None:
           f"/ 결측 {gaps or '없음'}")
 
 
+
+
+
+def cmd_cell7resume() -> None:
+    """⑦ r2 재개 — adapter_r002.npz 주입, 마지막 라운드만.
+
+    회계 매트릭스는 인메모리라 중단으로 r0·r1 셀이 사라졌다. 원자 로그가 정확히 이런
+    복구를 위해 존재한다 — r0·r1 셀을 로그에서 재구성해 전 라운드 감사를 완성한다.
+    """
+    import json as _json
+    import numpy as np
+    import pandas as pd
+    import torch
+    from detection.budget_audit import AccountingCell, AccountingMatrix
+    from detection.round_runner import derive_seed
+    from fl.aggregate import weighted_fedavg
+    from fl.atomic_log import AtomicLog, RoundTimer, new_run_id
+    from vlm.pilot_vlm import load_pairs, train_rounds
+
+    _, digest = _snapshot()
+    clients = ["C1", "C2", "C3"]
+    shards = {i: load_pairs("train", client=c) for i, c in enumerate(clients)}
+    n_train = {i: len(shards[i]) for i in shards}
+    out = OUT_ROOT / "uni_fed"
+
+    loaded = np.load(out / "adapter_r002.npz")
+    keys = list(loaded.files)                      # np.savez 키드 저장 — 순서 보존
+    global_arrays = [loaded[k] for k in keys]
+    print(f"재개: adapter_r002 주입 ({len(keys)} 텐서), r2 만 실행", flush=True)
+
+    log = AtomicLog(out / "atomic_log.csv", run_id=new_run_id("uni_fed", BASE_SEED, RUN_STAMP),
+                    seed=BASE_SEED, cell="uni_fed", split_hash=digest)
+    acc = AccountingMatrix(num_rounds=R, client_ids=list(shards), local_epochs=E, total_epochs=N)
+
+    # r0·r1 셀을 원자 로그에서 복원 — 시드는 파생 공식으로 재계산(결정론)
+    df = pd.read_csv(out / "atomic_log.csv")
+    hist = df[df.client_id != "server"].pivot_table(
+        index=["round", "client_id"], columns="metric_name", values="metric_value", aggfunc="last")
+    up = df[df.client_id != "server"].groupby(["round", "client_id"])["bytes_up"].last()
+    for (r, c), row in hist.iterrows():
+        c = int(c)
+        acc.record(AccountingCell(
+            round_idx=int(r), client_idx=c, epochs_ran=E,
+            optimizer_steps=int(row["optimizer_steps"]), num_examples=n_train[c],
+            seed=derive_seed(BASE_SEED, int(r), c), param_l2_norm=float(row["param_l2"]),
+            payload_bytes=int(up.loc[(r, str(c))]), optimizer="AdamW", lr=1e-4,
+            momentum=float("nan"), arg_optimizer="AdamW", arg_lr0=1e-4,
+            arg_momentum=float("nan")))
+    print(f"원자 로그에서 셀 {len(acc.cells)}개 복원", flush=True)
+
+    timer = RoundTimer()
+    r = R - 1  # r2
+    client_payloads, weights = [], []
+    ref_sd = None
+    for i in sorted(shards):
+        arrays, keys, m, ref_sd = train_rounds(
+            rows=shards[i], epochs=E, round_idx=r, client_idx=i, base_seed=BASE_SEED,
+            adapter_in=global_arrays, adapter_keys=keys)
+        client_payloads.append(arrays); weights.append(n_train[i])
+        log.log_round(round_idx=r, client_id=i, n_train_samples=n_train[i],
+                      metrics={"optimizer_steps": float(m["optimizer_steps"]),
+                               "supervised_tokens": float(m["supervised_tokens"]),
+                               "param_l2": m["param_l2"], "peak_vram_gb": m["peak_vram_gb"]},
+                      bytes_up=m["payload_bytes"], bytes_down=m["payload_bytes"],
+                      wall_time=m["wall_s"])
+        acc.record(AccountingCell(
+            round_idx=r, client_idx=i, epochs_ran=E, optimizer_steps=m["optimizer_steps"],
+            num_examples=n_train[i], seed=m["seed"], param_l2_norm=m["param_l2"],
+            payload_bytes=m["payload_bytes"], optimizer="AdamW", lr=1e-4,
+            momentum=float("nan"), arg_optimizer="AdamW", arg_lr0=1e-4,
+            arg_momentum=float("nan")))
+        print(f"  r{r} c{i}: steps {m['optimizer_steps']} tok {m['supervised_tokens']:,} "
+              f"peak {m['peak_vram_gb']:.2f}GB ({m['wall_s']:.0f}s)", flush=True)
+    agg = weighted_fedavg(client_payloads, weights, keys,
+                          {k: torch.as_tensor(v) for k, v in ref_sd.items()})
+    np.savez(out / f"adapter_r{r+1:03d}.npz", **{k: a for k, a in zip(keys, agg.ndarrays)})
+    np.savez(out / "adapter_last.npz", **{k: a for k, a in zip(keys, agg.ndarrays)})
+    log.log_round(round_idx=r, client_id="server", n_train_samples=agg.total_examples,
+                  metrics={"global_l2": agg.global_norm}, wall_time=timer.lap())
+    rep = acc.audit()
+    acc.to_csv(out / "accounting.csv"); acc.to_json(out / "accounting.json")
+    gaps = log.audit_rounds(R, list(shards) + ["server"])
+    print(f"  r{r} 집계: global_l2 {agg.global_norm:.3f}", flush=True)
+    print(f"⑦ 완주(재개) / 회계 ok={rep.ok and not gaps} 총 스텝 {rep.total_optimizer_steps} "
+          f"/ 결측 {gaps or '없음'}", flush=True)
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["views", "init", "cell2", "cell3", "cell4", "cell6", "cell7"])
+    ap.add_argument("cmd", choices=["views", "init", "cell2", "cell3", "cell4",
+                                    "cell6", "cell7", "cell7resume"])
     args = ap.parse_args()
     {"views": cmd_views, "init": cmd_init, "cell2": cmd_cell2, "cell3": cmd_cell3,
-     "cell4": cmd_cell4, "cell6": cmd_cell6, "cell7": cmd_cell7}[args.cmd]()
+     "cell4": cmd_cell4, "cell6": cmd_cell6, "cell7": cmd_cell7,
+     "cell7resume": cmd_cell7resume}[args.cmd]()
