@@ -17,7 +17,6 @@ import argparse
 import csv
 import json
 import sys
-from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -28,11 +27,11 @@ sys.path.insert(0, str(REPO))
 
 from data.label_map import load_label_map
 from detection import serialize
-from evaluation.metrics.detection import class_jaccard, score_detection
-from evaluation.metrics.localization import coco_map, score_bbox_iou
+from evaluation.eval_set import read_gold, read_manifest
 from evaluation.probes.metadata_probe import MetaSample, trivial_bound
 from evaluation.probes.p9_runner import contexts_from_snapshot, p9_all_cells
 from evaluation.schema import SCHEMA_VERSION, PredictionRecord
+from evaluation.score import score_records
 from tracking.mlflow_local import reject_best_checkpoint
 
 SEED = 20260828        # C 의 파일럿 시드 (meta.json 실측)
@@ -60,30 +59,6 @@ def load_yolo_from_npz(npz_path: Path, class_names: list[str]):
     yolo = YOLO(str(tmp))
     tmp.unlink(missing_ok=True)
     return yolo
-
-
-def read_manifest(snapshot: Path):
-    with (snapshot / "manifest.csv").open(encoding="utf-8", newline="") as fh:
-        return list(csv.DictReader(fh))
-
-
-def read_gold(snapshot: Path, eval_ids: set[str]):
-    """평가셋 GT — 이미지 수준 클래스 집합과 bbox 목록."""
-    codes: dict[str, set[str]] = defaultdict(set)
-    boxes: dict[str, list[tuple[str, tuple[float, float, float, float]]]] = defaultdict(list)
-    with (snapshot / "annotations.csv").open(encoding="utf-8", newline="") as fh:
-        for r in csv.DictReader(fh):
-            iid = r["image_id"]
-            if iid not in eval_ids:
-                continue
-            codes[iid].add(r["iso_code"])
-            if r.get("bbox_x1_px"):
-                boxes[iid].append((
-                    r["iso_code"],
-                    (float(r["bbox_x1_px"]), float(r["bbox_y1_px"]),
-                     float(r["bbox_x2_px"]), float(r["bbox_y2_px"])),
-                ))
-    return codes, boxes
 
 
 def predict_cell(
@@ -122,31 +97,6 @@ def predict_cell(
             coord_space="ABS_ORIG",       # Ultralytics 표준 predict, Q20 봉인 경로
         ))
     return records
-
-
-def score_records(records, gold_codes, gold_boxes, classes):
-    pred_codes = {r.image_id: sorted(r.iso_codes) for r in records}
-    pred_boxes = {
-        r.image_id: [(d.iso_code, tuple(d.bbox_px)) for d in r.defects if d.bbox_px]
-        for r in records
-    }
-    pred_scored = {
-        r.image_id: [
-            (d.iso_code, tuple(d.bbox_px), d.score or 0.0)
-            for d in r.defects if d.bbox_px
-        ]
-        for r in records
-    }
-    det = score_detection(pred_codes, {k: sorted(v) for k, v in gold_codes.items()}, classes)
-    loc = score_bbox_iou(pred_boxes, gold_boxes)
-    ap = coco_map(pred_scored, gold_boxes, classes)
-    return {
-        **det.as_dict(),
-        "miss_rate": 1.0 - det.defect_recall,
-        "class_jaccard": class_jaccard(pred_codes, gold_codes),
-        **loc.as_dict(),
-        **ap,
-    }
 
 
 def main() -> int:
