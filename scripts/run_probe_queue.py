@@ -7,28 +7,26 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
 from pathlib import Path
 
+#: 콘솔 기본 인코딩이 cp949 라 한글·기호가 섞이면 `UnicodeEncodeError` 로 **큐 자체가
+#: 죽는다.** 실제로 한 번 죽었다(em dash). 자식 프로세스에도 물려준다.
+sys.stdout.reconfigure(encoding="utf-8")
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+
 STEPS = [
-    ("프로브 2 — 모델 크기-시간 곡선 + 판정 11", ["scripts/probe_vlm_scale.py"]),
-    ("프로브 1c — 결정성 비용·동시 실행", ["scripts/probe_det_load.py"]),
+    ("프로브 1d: 첫 epoch 대 둘째 epoch (콜드 읽기 분리)", ["scripts/probe_det_warm.py"]),
+    ("프로브 2: 모델 크기-시간 곡선 + 판정 11", ["scripts/probe_vlm_scale.py"]),
+    ("프로브 1c: 결정성 비용·동시 실행", ["scripts/probe_det_load.py"]),
     ("승격 어블레이션 두 팔", ["scripts/run_ablation.py"]),
 ]
 
 
-#: 앞선 GPU 작업이 끝나기를 기다린다. 겹치면 첫 항목(크기-시간 곡선)이 오염된다.
-WAIT_FOR = Path("outputs/probe_c/probe1b_fullepoch.json")
-
-
 def main() -> None:
-    if WAIT_FOR.name and not WAIT_FOR.exists():
-        print(f"[queue] {WAIT_FOR} 를 기다린다 (앞선 실측과 겹치지 않게)", flush=True)
-        while not WAIT_FOR.exists():
-            time.sleep(20)
-        time.sleep(30)   # 프로세스가 GPU 를 놓을 여유
     py = sys.executable
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
