@@ -32,6 +32,8 @@ from pathlib import Path
 
 import numpy as np
 
+from evaluation.eval_set import parse_iso_codes
+
 CROP = "N-crop"
 TILE = "N-tile"
 BAND = "N-band"
@@ -95,7 +97,7 @@ def load_rows(
             if src is None:
                 unmatched.append(r["image_id"])
                 continue
-            codes = tuple(c for c in (r.get("iso_codes") or "").split("|") if c)
+            codes = parse_iso_codes(r.get("iso_codes"))
             rows.append(
                 ProbeRow(r["image_id"], r["rel_path"], r["group_id"], src, codes)
             )

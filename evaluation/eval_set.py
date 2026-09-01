@@ -13,6 +13,20 @@ from pathlib import Path
 
 Box = tuple[float, float, float, float]
 
+ISO_SEP = ";"
+"""매니페스트 `iso_codes` 열의 구분자. 정본은 `data/ingest/base.py`(트랙 A)의
+`";".join(codes)` 이고 `scripts/build_manifest_v0.py` 도 같다.
+
+**`|` 는 `strata_key` 의 구분자다**(예: `AL|__normal__`). 두 열이 같은 파일에 있어서
+헷갈리기 쉽고, 잘못 쪼개면 다중 라벨 이미지가 `"2011;301"` 이라는 없는 코드 하나로
+집계돼 클래스 수가 조용히 틀어진다 — 유병률에만 의존하는 자명하한이 그대로 어긋난다.
+"""
+
+
+def parse_iso_codes(value: str | None) -> tuple[str, ...]:
+    """매니페스트 `iso_codes` 셀 → 코드 튜플. **구분자를 코드에 하드코딩하지 않는다.**"""
+    return tuple(c for c in (value or "").split(ISO_SEP) if c)
+
 
 def read_manifest(snapshot: str | Path) -> list[dict[str, str]]:
     with (Path(snapshot) / "manifest.csv").open(encoding="utf-8", newline="") as fh:

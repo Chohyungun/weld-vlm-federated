@@ -28,6 +28,7 @@ from evaluation.probes.cross_source import (
     fp_breakdown_by_source,
     p9_cross_source,
 )
+from evaluation.discrimination import fires
 from evaluation.schema import PredictionRecord
 
 P9_MARGIN = 0.10
@@ -67,8 +68,13 @@ def contexts_from_snapshot(
 
 
 def is_false_positive(record: PredictionRecord) -> bool:
-    """정상 이미지에 대한 오탐 여부. **다섯 칸 공통 단일 정의.**"""
-    return record.parse_ok and bool(record.iso_codes)
+    """정상 이미지에 대한 오탐 여부. **다섯 칸 공통 단일 정의.**
+
+    발화 판정은 `evaluation.discrimination.fires` 한 곳에 있다 — P9(정상 이미지)와
+    출처 고정 판별력(결함·정상 양쪽)이 같은 함수를 쓰지 않으면, 두 지표의 차가
+    모델 차이가 아니라 정의 차이를 재게 된다.
+    """
+    return fires(record)
 
 
 @dataclass(frozen=True)
