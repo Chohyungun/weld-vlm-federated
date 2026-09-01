@@ -33,11 +33,13 @@ class RagConfig:
     trial_n_queries: int
     trial_seed: int
     no_hit_output: str
+    judge_checkpoint: str | None = None
+    judge_max_new_tokens: int = 512
 
 
 def load_rag_config(path: str | Path = CONFIG_PATH) -> RagConfig:
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-    r, i, e = raw["retrieval"], raw["index"], raw["embedding"]
+    r, i, e, j = raw["retrieval"], raw["index"], raw["embedding"], raw["judge"]
     return RagConfig(
         top_k=int(r["top_k"]),
         chunk_meta=str(i["chunk_meta"]),
@@ -46,6 +48,8 @@ def load_rag_config(path: str | Path = CONFIG_PATH) -> RagConfig:
         trial_n_queries=int(e["trial_n_queries"]),
         trial_seed=int(e["trial_seed"]),
         no_hit_output=str(r["no_hit_output"]),
+        judge_checkpoint=j.get("checkpoint"),
+        judge_max_new_tokens=int(j["max_new_tokens"]),
     )
 
 
@@ -56,16 +60,26 @@ def load_chunks(
 
     `texts` 는 조항 본문(파싱 문서 유래). 없으면 메타만으로 색인한다 — 1차 필터와
     후보 0~1 경로는 본문 없이도 성립한다.
+
+    **첫 줄 `_meta` 헤더 레코드는 건너뛴다.** B 의 파생물은 원천 sha256·재파생 명령을
+    담은 헤더 한 줄로 시작한다(62번). 조항 레코드가 아니므로 청크로 만들지 않는다 —
+    그대로 넣으면 `clause_id` 부재로 죽거나, 최악의 경우 빈 조항이 색인에 실린다.
     """
     chunks: list[Chunk] = []
+    n_meta = 0
     with Path(chunk_meta_path).open("r", encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
             if not line:
                 continue
             meta = json.loads(line)
+            if "_meta" in meta:
+                n_meta += 1
+                continue
             text = (texts or {}).get(str(meta.get("clause_id", "")), "")
             chunks.append(chunk_from_meta(meta, text))
+    if n_meta > 1:
+        raise ValueError(f"_meta 헤더가 {n_meta}줄이다 — 파생물이 이어붙여졌을 수 있다")
     ids = [c.chunk_id for c in chunks]
     dup = sorted({i for i in ids if ids.count(i) > 1})
     if dup:
