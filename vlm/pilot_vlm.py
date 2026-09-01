@@ -28,12 +28,17 @@ import torch
 
 from detection import serialize
 from detection.round_runner import derive_seed
+from fl.seeding import seeded, shared_init_seed
 from vlm.coords import CoordCfg, ImageGeom, quantize, to_model
 
 MODEL_ID = "Qwen/Qwen3.5-0.8B"
 PROMPT_PATH = Path("vlm/prompts/unified_pilot_v1.txt")
 PAIRS_PATH = Path("data/processed/pairs_pilot_v1/pairs.jsonl")
 COORD_CFG = CoordCfg(coord_space="NORM_1000")
+#: LoRA A 초기화 기본 시드. 파일럿 상수(`scripts/pilot_c.py:BASE_SEED`)와 같은 값이며
+#: 검출 칸 `build_initial_weights(seed=BASE_SEED)` 와도 같다 — 두 칸의 "동일 출발"이
+#: 같은 상수에서 나와야 사후 대조가 한 번에 된다. 호출부가 명시하면 그 값이 이긴다.
+DEFAULT_INIT_SEED = 20260828
 MICRO_BATCH = 1          # 판정 10 — micro=2 는 사다리에 없다
 GRAD_ACCUM = 32          # 유효 배치 32
 LR = 1e-4
@@ -68,7 +73,16 @@ def load_pairs(split: str, client: str | None = None) -> list[dict]:
     return out
 
 
-def _load_model(model_id: str | None = None):
+def _load_model(model_id: str | None = None, *, init_seed: int = DEFAULT_INIT_SEED):
+    """QLoRA 4bit 모델 + LoRA 어댑터. **어댑터 초기화는 반드시 시드 아래에서 일어난다.**
+
+    peft 는 `lora_B` 를 0 으로, `lora_A` 를 난수로 놓는다. `init_seed` 를 고정하지 않으면
+    클라이언트마다 다른 A 로 출발하고, 그러면 r0 가중 평균이 "같은 기저의 평균"이 아니라
+    **독립 난수의 상쇄**가 된다(74번 감사 C-1 · 함정 #3). 실제로 그렇게 났다.
+
+    `seed_all` 이 아니라 `seeded()` 컨텍스트를 쓰는 이유는 `fl/seeding.py` 에 적었다 —
+    초기화 한 번 때문에 그 뒤 학습 전체의 난수 흐름이 호출 순서에 묶이면 안 된다.
+    """
     from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
     from peft import LoraConfig, get_peft_model
 
@@ -85,7 +99,8 @@ def _load_model(model_id: str | None = None):
         r=16, lora_alpha=32, lora_dropout=0.0, bias="none",
         task_type="CAUSAL_LM", target_modules=TARGET_SUFFIXES,
     )
-    model = get_peft_model(model, lora)
+    with seeded(shared_init_seed(init_seed)):
+        model = get_peft_model(model, lora)
     model.gradient_checkpointing_enable()
     # 비전 어댑터 0건 확인 — 붙었다면 동결 원칙 위반이므로 즉시 실패
     vis = [n for n, p in model.named_parameters() if p.requires_grad and "visual" in n]
@@ -159,6 +174,7 @@ def train_rounds(
     supervised_logits_only: bool = True,
     resume_dir: str | None = None,
     run_id: str = "",
+    init_seed: int | None = None,
 ) -> tuple[list[np.ndarray], list[str], dict[str, Any], dict]:
     """한 라운드(⑥은 라운드 1개 = 전체 epoch). 어댑터 fp32 ndarray 를 돌려준다.
 
@@ -170,14 +186,24 @@ def train_rounds(
             ⑥ 은 파일럿에서도 10.2시간짜리 단일 런이고 본실험은 칸당 수 주다.
             `best` 금지 규칙과 무관하다 — 채점 대상이 아니라 재개용이다.
         run_id: 재개 신원의 일부.
+        init_seed: LoRA A 초기화 시드. **라운드·클라이언트에 따라 달라지면 안 된다** —
+            `derive_seed` 와 헷갈리지 않도록 별도 인자로 뒀다. None 이면 `base_seed`.
     """
     from peft import get_peft_model_state_dict, set_peft_model_state_dict
 
-    model, proc = _load_model(model_id)
+    model, proc = _load_model(
+        model_id, init_seed=shared_init_seed(base_seed if init_seed is None else init_seed)
+    )
     prompt = PROMPT_PATH.read_text(encoding="utf-8")
 
     adapter_sd = get_peft_model_state_dict(model)
     keys = adapter_keys or serialize.canonical_keys(adapter_sd)
+
+    # 주입 **전** 초기 어댑터 증빙. 세 클라이언트가 같은 A 로 출발했음을 사후에 대조하는
+    # 근거이며, 검출 칸의 `injection_digest` 와 같은 역할이다(74번 감사 C-1).
+    from vlm.init_adapter import adapter_proof
+
+    init_proof = adapter_proof(serialize.state_dict_to_ndarrays(adapter_sd, keys), keys)
 
     # G2-3 교환 폐포 — 학습되는 것과 교환되는 것이 완전히 같은가.
     # peft 어댑터 sd 키는 "...lora_A.weight", named_parameters 는 "...lora_A.default.weight".
@@ -189,10 +215,14 @@ def train_rounds(
     if not ok:
         raise RuntimeError("교환 폐포 등식 실패 (G2-3):\n  " + "\n  ".join(fails))
 
+    injected_proof = None
     if adapter_in is not None:
         ref = get_peft_model_state_dict(model)
         sd = serialize.ndarrays_to_state_dict(adapter_in, keys, ref)
         set_peft_model_state_dict(model, sd)
+        # 주입이 실제로 먹었는지 확인한다 — 서버가 보낸 값과 대조 가능한 형태로 남긴다.
+        after = serialize.state_dict_to_ndarrays(get_peft_model_state_dict(model), keys)
+        injected_proof = adapter_proof(after, keys)
 
     opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=LR)
     torch.cuda.reset_peak_memory_stats()
@@ -238,6 +268,7 @@ def train_rounds(
             state_dict_fn=lambda tr: get_peft_model_state_dict(tr.model),
         )
 
+    epochs_done = int(start_ep)          # 이 라운드에서 완료한 epoch 누적 수(재개분 포함)
     for ep in range(start_ep, epochs):
         order = list(range(len(rows)))
         random.Random(seed + ep).shuffle(order)
@@ -265,6 +296,7 @@ def train_rounds(
             if (j + 1) % GRAD_ACCUM == 0 or (j + 1) == len(order):
                 opt.step(); opt.zero_grad(); steps += 1
         supervised_total += tok_cnt
+        epochs_done += 1
         if log_cb:
             log_cb(ep, float(ce_sum.item() / max(tok_cnt, 1)), steps, time.perf_counter() - t0)
         if ckpt is not None:
@@ -276,6 +308,9 @@ def train_rounds(
 
     final_sd = get_peft_model_state_dict(model)
     arrays = serialize.state_dict_to_ndarrays(final_sd, keys)
+    # 회계에 실리는 값은 **실측**이어야 한다. `epochs_ran`·`optimizer`·`lr` 을 호출부에서
+    # 상수로 재구성하던 것이 74번 감사 P9 의 절반이다 — 여기서 실물을 읽어 넘긴다.
+    opt_group = opt.param_groups[0]
     metrics = {
         "optimizer_steps": steps,
         "supervised_tokens": supervised_total,
@@ -284,6 +319,19 @@ def train_rounds(
         "param_l2": serialize.params_l2_norm(arrays),
         "wall_s": time.perf_counter() - t0,
         "seed": seed,
+        # -- 실측 회계 --------------------------------------------------------
+        # epoch 루프 안에서 센 값이다. `epochs` 인자를 되돌려 주면 "예산을 다 돌았다"가
+        # 아니라 "예산을 다 돌았다고 적었다"가 되어 검사가 공허해진다(74번 P9).
+        "epochs_ran": int(epochs_done),
+        "epochs_this_process": int(epochs_done - start_ep),
+        "resumed_from_epoch": int(start_ep) if start_ep else None,
+        "optimizer": type(opt).__name__,
+        "lr": float(opt_group["lr"]),
+        "betas": [float(b) for b in opt_group.get("betas", ())],
+        "weight_decay": float(opt_group.get("weight_decay", float("nan"))),
+        "init_seed": shared_init_seed(base_seed if init_seed is None else init_seed),
+        "init_proof": dict(init_proof),
+        "injected_proof": None if injected_proof is None else dict(injected_proof),
     }
     ref_sd = {k: v.detach().cpu() for k, v in final_sd.items()}
     del model

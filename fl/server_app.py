@@ -72,6 +72,13 @@ def _cell_from_metrics(round_idx: int, m: dict[str, Any]) -> AccountingCell:
         optimizer_updates=int(m.get("optimizer-updates", 0)),
         resumed_from_epoch=(None if float(m.get("resumed-from-epoch", -1)) < 0
                             else int(m["resumed-from-epoch"])),
+        # 조기 종료 계측을 클라이언트 실측에서 받는다. -1 은 "계측 없음"이라 None 으로
+        # 옮긴다 — 0 으로 접으면 재지 않은 셀이 통과한다(74번 감사 P9).
+        stopper_class=str(m.get("stopper-class", "")),
+        stopper_true_count=(None if float(m.get("stopper-true-count", -1)) < 0
+                            else int(m["stopper-true-count"])),
+        stopper_calls=(None if m.get("stopper-calls") is None
+                       else int(float(m["stopper-calls"]))),
     )
 
 

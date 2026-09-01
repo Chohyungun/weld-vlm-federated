@@ -94,11 +94,19 @@ def run_client_round(
         "momentum": float(eff.get("momentum", float("nan"))),
         "budget-fired-at": float(result.budget_fired_at if result.budget_fired_at is not None else -1),
         "peak-vram-gb": float(result.peak_vram_gb),
+        # 조기 종료 계측. 서버 회계가 이 값을 읽는다 — 리터럴 0 을 박아 두면 검사가
+        # 공허해진다(74번 감사 P9). -1 은 "계측 없음"이며 0 과 다르다.
+        "stopper-true-count": float(
+            result.stopper_true_count if result.stopper_true_count is not None else -1
+        ),
+        "stopper-calls": float(len(result.stopper_calls)),
     }
     strings: dict[str, str] = {
         "keys-digest": serialize.keys_digest(canonical_keys),
         "optimizer": str(eff.get("optimizer", "")),
         "arg-optimizer": str(eff.get("arg_optimizer", "")),
+        # 스텁 교체가 실패하면 여기가 달라지고 서버 회계가 실패한다.
+        "stopper-class": str(result.stopper_class),
     }
     return result.ndarrays, metrics, strings
 
