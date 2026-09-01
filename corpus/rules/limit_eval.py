@@ -12,8 +12,9 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Optional, Sequence, Union
+from typing import Mapping, Optional, Sequence, Union
 
+from corpus.rules.clause_text import clause_text
 from corpus.rules.schema import (
     FAIL,
     PASS,
@@ -248,8 +249,10 @@ def rows_for_clause(table: RowSource, clause_id: str) -> tuple[LimitRow, ...]:
     )
 
 
-def derive_chunk_meta(table: RowSource) -> tuple[dict, ...]:
-    """`corpus/derived/chunk_meta.jsonl` 내용 (§1-4). D RAG 청크의 메타 필터 축.
+def derive_chunk_meta(
+    table: RowSource, defect_names: Optional[Mapping[str, str]] = None
+) -> tuple[dict, ...]:
+    """`corpus/derived/chunk_meta.jsonl` 내용 (§1-4). D RAG 청크의 메타 필터 축 + 본문.
 
     clause_id 로 groupby 하고 집계는 합집합이다: defect_codes[], quality_levels[],
     **inspection_methods[]** (게이트 #13 신설 — 이 축이 없으면 D 검색이 표면·내부 조항을
@@ -258,6 +261,12 @@ def derive_chunk_meta(table: RowSource) -> tuple[dict, ...]:
 
     scope=excluded 행도 scope 플래그와 함께 **포함**한다 — 빼면 그 조항이 영구 미검색이
     되고, 모델이 그 조항을 인용했을 때 무근거 인용인지 판정할 수 없다.
+
+    `text` 는 조항 본문이다 (`clause_text.clause_text` — 원문 전재가 아니라 구조 필드
+    재서술). 본문이 비면 dense 정렬이 걸려도 정렬할 재료가 없어 임베딩 선정이 변별
+    불가가 된다 (74번 감사 후속 과제 4). `defect_names` 는 사상표(계약 #1) 유래
+    {ISO 코드: 명칭} 이며 없으면 본문이 코드만 쓴다 — 라벨 문자열을 여기에 하드코딩하지
+    않는다 (불변조건 8).
     """
     groups: dict[str, list[LimitRow]] = {}
     for r in _rows_of(table):
@@ -283,6 +292,7 @@ def derive_chunk_meta(table: RowSource) -> tuple[dict, ...]:
             "thickness_max": _dec_str(t_max),  # null = +∞
             "scope": scopes.pop().value if len(scopes) == 1 else "mixed",
             "rule_ids": [r.rule_id for r in rows],
+            "text": clause_text(rows, dict(defect_names) if defect_names else None),
         })
     return tuple(out)
 
