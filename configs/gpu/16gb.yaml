@@ -2,8 +2,30 @@
 #
 # 검출 값은 2026-08-24 실측으로 확정했다(파일 하단 pilot_measured).
 # VLM 값은 통합형 착수 시 재측정한다 — 비전 토큰 때문에 검출과 프로파일이 다르다.
-# 코드는 이 파일을 읽을 뿐 GPU 사양을 가정하지 않는다. 48gb.yaml 과 키 집합이 완전히 같아야 한다.
+# 48gb.yaml 과 키 집합이 완전히 같아야 한다.
 # 실측 근거: scripts/check_env.py — torch 2.11.0+cu128 / sm_120 / 15.9 GiB / bf16 autocast 정상.
+#
+# ======================================================================================
+# 이 파일의 지위 — **참고 프로파일이다. 학습 실행값의 정본이 아니다.** (74번 감사 P11)
+# ======================================================================================
+#
+# 이전 판은 머리글에 "코드는 이 파일을 읽을 뿐"이라고 적었지만 사실이 아니었다.
+# `detection:` 블록을 읽는 코드가 저장소에 하나도 없다. 그래서 `detection.workers: 0` 이
+# 아무 효과 없이 놓여 있었고, 파일럿 13개 런은 전부 ultralytics 기본 8 로 돌았다
+# (`outputs/pilot_c/**/args.yaml` 13건 전수 확인 — 예외 0). C 가 "설정이 정본"이라는
+# 전제로 "workers=0 · Windows spawn 이 GPU 저활용 원인"이라는 §5-1 진단을 썼고,
+# 그것이 감사 M2 오진이 됐다. 설정과 실행값이 갈라진 상태가 낳은 사고다.
+#
+# 배선하는 쪽으로 정리할 수도 있었으나 **배선 지점이 `detection/round_runner.py` 라
+# 트랙 C 소관이다.** A 가 남의 트랙 파일을 고치지 않는다는 규칙이 우선한다.
+# 따라서 이 파일은 문서로 강등하고, 아래에 실행값 정본의 위치를 명시한다.
+#
+#   학습 실행값 정본:  detection/round_runner.py  ·  PROFILES / FIXED_OVERRIDES / FIXED_PILOT
+#   (호출자가 덮어쓸 수 없는 5칸 공통 고정값이 거기 있다. 프로파일을 통째로 교체하는
+#    방식이라 칸별로 몰래 다른 값을 넣는 경로가 막혀 있다 — 그 설계를 존중한다.)
+#
+# 아래 `detection:` 값은 그 정본과 **일치하는지 확인한 사본**이다(2026-09-02 대조).
+# 값을 여기서 고쳐도 학습은 바뀌지 않는다. 실제로 바꾸려면 C 에 요청해야 한다.
 
 profile: "16gb"
 device: cuda
@@ -19,10 +41,15 @@ precision:
   matmul_tf32: true
   # 결정론 설정은 base.yaml 의 seed 절에서 관리한다 (cudnn.deterministic).
 
+# ⚠ 미배선. 읽는 코드가 없다. 정본은 detection/round_runner.py:PROFILES (트랙 C 소관).
 detection:                       # YOLO11s (본실험) / YOLO11n (파일럿)
-  batch: 32                      # 실측 근거는 아래 pilot_measured. 16GB 에서 메모리는 병목이 아니다
-  imgsz: 640
-  workers: 0                     # Windows 는 spawn 이라 워커를 늘리면 라운드마다 재기동 비용이 붙는다
+  wired: false                   # 이 블록이 실행에 영향을 주지 않는다는 사실을 값으로 박는다
+  runtime_source_of_truth: "detection/round_runner.py:PROFILES"
+  batch: 32                      # = FIXED_OVERRIDES["batch"]. 실측 근거는 아래 pilot_measured
+  imgsz: 640                     # = FIXED_OVERRIDES["imgsz"]
+  # ultralytics 기본값 8 이 그대로 실행된다. 이전 판은 0 을 적어 두고 0 이 실행된다고
+  # 믿었다 — 그 착오가 감사 M2 다. 여기에는 **실제로 돌아간 값**을 적는다.
+  workers: 8                     # 파일럿 13개 런 args.yaml 전수 실측. 배선되면 재검토 대상
   amp: true
 
 vlm:                             # Qwen 계열 QLoRA
