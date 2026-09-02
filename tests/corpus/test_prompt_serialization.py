@@ -6,10 +6,6 @@
 
 from __future__ import annotations
 
-import re
-
-import pytest
-
 from corpus.generate import run_cycle_corpus as M
 
 
@@ -50,19 +46,30 @@ def test_open_interval_encoding_is_decoded():
 
 
 def test_prompt_has_no_internal_representation():
-    sks = M.build_clause_skeletons(12)
-    assert sks, "골격이 비었다"
-    for sk in sks:
-        p = M.prompt_clause(sk)
-        assert "Unit." not in p, f"단위 enum 노출: {sk['rule_id']}"
-        assert "InspectionMethod." not in p, f"검사 방식 enum 노출: {sk['rule_id']}"
-        # 개구간 인코딩(정수+.01)이 그대로 노출되면 안 된다
-        assert not re.search(r"\b\d+\.01\b", p), f"개구간 인코딩 노출: {sk['rule_id']}"
+    """자료에 내부 표현이 새면 그 문자열이 생성문에 박힌다 (80번 B1: 채택 69건 중 49건).
+
+    골격이 정본 생성기 산출로 바뀌었으므로 자료도 정본 표기(`clause_text`)를 지난다.
+    """
+    from corpus.generate import basis as B
+
+    recs = M.build_clause_records(12, "full") + M.build_remedy_records(4)
+    assert recs
+    for rec in recs:
+        p = M.prompt_generate(rec)
+        assert "Unit." not in p, rec["sample_id"]
+        assert "InspectionMethod." not in p, rec["sample_id"]
+        assert "None" not in B.render_basis(rec), rec["sample_id"]
+        # 개구간 인코딩은 표집 실측값과 모양이 같을 수 있어 자료 기준으로 본다
+        from corpus.generate.numeric_lock import find_artifacts
+        b = B.render_basis(rec)
+        assert find_artifacts(b, basis=b) == (), rec["sample_id"]
 
 
 def test_rejection_reason_is_recorded_or_marked():
-    # 사유 없는 기각은 감사가 안 된다. 빈 문자열이 아니라 표시가 남아야 한다.
-    assert M.extract_reason("", False) == "사유 미기재"
-    assert M.extract_reason("NG", False) == "사유 미기재"
-    assert M.extract_reason("NG\n조항 번호가 자료와 다르다", False).startswith("조항")
-    assert M.extract_reason("OK", True) == ""
+    """사유 없는 기각은 감사가 안 된다. 되풀이도 사유가 아니다 (B17)."""
+    cfg = M.load_config()
+    src = "KRA27-T15 조항에 따르면 기공의 크기는 4 mm 이하로 제한된다"
+    assert M.clean_reason("", src, cfg) == ("사유 미기재", True)
+    assert M.clean_reason("NG", src, cfg) == ("사유 미기재", True)
+    txt, echo = M.clean_reason("NG\n조항 번호가 자료와 다르다", src, cfg)
+    assert not echo and txt.startswith("조항")

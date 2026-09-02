@@ -40,23 +40,30 @@ SNAPSHOT = "SNAPSHOT.sha256"
 EVIDENCE = "EVIDENCE.jsonl"
 SUMMARY = "EVIDENCE_SUMMARY.json"
 
-# 스냅샷 대상. 순서를 고정한다 — 결합 다이제스트가 순서에 의존한다.
-MEMBERS = (
-    "_raw_generated.json",
-    "_phi_discarded.jsonl",
-    "_phi_reasoning.jsonl",
-    "_phi_report.json",
-    "cycle_corpus_report.json",
-    "discarded.jsonl",
-    "judge_agreement.json",
-    "qa_accepted.jsonl",
-    "reasoning_accepted.jsonl",
-)
+#: 이 스크립트가 만드는 파생물. 스냅샷 대상에서 뺀다 (자기 해시를 자기가 담을 수 없다).
+DERIVED = (SNAPSHOT, EVIDENCE, SUMMARY)
+
+#: 스냅샷에 반드시 있어야 하는 것. 없으면 사이클이 끝나지 않은 것이다.
+REQUIRED = ("cycle_corpus_report.json", "discarded.jsonl", "qa_accepted.jsonl",
+            "reasoning_accepted.jsonl")
+
+
+def members(out_dir: Path) -> tuple[str, ...]:
+    """스냅샷 대상 파일. **디렉터리에서 찾아 정렬한다.**
+
+    고정 목록으로 두면 실행기가 산출을 하나 더 내도(조치 축 `remedy_accepted.jsonl`)
+    스냅샷이 그것을 덮지 않고, 그 사실이 조용히 지나간다. 정렬 순서는 결정론이므로
+    결합 다이제스트는 여전히 재현된다.
+    """
+    return tuple(sorted(p.name for p in out_dir.iterdir()
+                        if p.is_file() and p.name not in DERIVED
+                        and p.suffix in (".json", ".jsonl")))
 
 # 항목 축약본을 뜨는 파일과 그 배출 단계. 판정기 두 벌(deepseek 정본 · phi 대조)을
 # 구분해 담는다 — judge_agreement.json 의 일치도가 이 둘의 대조값이다.
 ITEM_FILES = (
     ("reasoning_accepted.jsonl", "deepseek", "accepted"),
+    ("remedy_accepted.jsonl", "-", "accepted"),
     ("discarded.jsonl", "deepseek", "discarded"),
     ("_phi_reasoning.jsonl", "phi", "accepted"),
     ("_phi_discarded.jsonl", "phi", "discarded"),
@@ -117,10 +124,18 @@ def build_evidence(out_dir: Path) -> list[dict]:
             if kind == "reasoning":
                 sk = r.get("skeleton") or {}
                 rec["axis"] = r.get("axis")
+                if "stage1_pass" in r:
+                    rec["stage1_pass"] = r["stage1_pass"]
                 rec["clause_id"] = sk.get("clause_id")
                 rec["rule_id"] = sk.get("rule_id")
                 rec["judge_pass"] = r.get("judge_pass")
                 rec["judge_parse_ok"] = r.get("judge_parse_ok")
+                # 재실행분은 후보별 키(`judge_<id>_*`)를 쓴다 — 후보끼리 덮어쓰지 않아야
+                # 같은 파일에서 일치도를 잰다. 축약본도 그대로 담는다.
+                for k, v in r.items():
+                    if k.startswith("judge_") and k.endswith(("_pass", "_parse_ok",
+                                                              "_reason_is_echo")):
+                        rec[k] = v
                 if stage == "discarded":
                     rec["judge_reason"] = (r.get("judge_reason") or "")[:REASON_CAP]
             else:
@@ -187,6 +202,46 @@ def recompute(items: list[dict]) -> dict:
     return out
 
 
+def recompute_axes(items: list[dict]) -> dict:
+    """재실행분 축약본 → 축별 단계·후보별 통과 수. 원본 jsonl 없이 성립해야 한다."""
+    out: dict = {}
+    for axis in sorted({r.get("axis") for r in items if r.get("axis")}):
+        rs = [r for r in items if r.get("axis") == axis]
+        s0 = [r for r in rs if r["stage0_pass"]]
+        s1 = [r for r in s0 if r.get("stage1_pass")]
+        stages = {"stage0_numeric_lock": {"n_in": len(rs), "n_pass": len(s0)}}
+        if any("stage1_pass" in r for r in rs):
+            stages["stage1_rule"] = {"n_in": len(s0), "n_pass": len(s1)}
+        judges: dict[str, dict] = {}
+        cids = {k[len("judge_"):-len("_pass")] for r in rs for k in r
+                if k.startswith("judge_") and k.endswith("_pass")}
+        for cid in sorted(c for c in cids if c):   # `judge_pass`(v1 키)는 후보가 아니다
+            judged = [r for r in s1 if r.get(f"judge_{cid}_pass") is not None]
+            j_pass = [r for r in judged if r[f"judge_{cid}_pass"]]
+            judges[cid] = {
+                "n_in": len(judged), "n_pass": len(j_pass),
+                "n_fail": len(judged) - len(j_pass),
+                "pass_rate": round(len(j_pass) / len(judged), 4) if judged else None,
+                "n_format_violation": sum(1 for r in judged
+                                          if r.get(f"judge_{cid}_parse_ok") is False),
+                "n_reason_is_echo": sum(1 for r in judged
+                                        if r.get(f"judge_{cid}_reason_is_echo")),
+            }
+        out[f"axis:{axis}"] = {"n_in": len(rs), "stages": stages, "judges": judges}
+
+    qa = [r for r in items if r["kind"] == "qa"]
+    seen: dict[str, dict] = {}
+    for r in qa:
+        seen.setdefault(f"{r['stage']}|{r['sample_id']}", r)
+    uniq = list(seen.values())
+    acc = [r for r in uniq if r["stage"] == "accepted"]
+    out["axis:QA"] = {"n_in": len(uniq),
+                      "stages": {"stage1_rule": {"n_in": len(uniq), "n_pass": len(acc)}},
+                      "judges": {}}
+    out["qa"] = {"n_in": len(uniq), "n_accepted": len(acc),
+                 "pass_rate": round(len(acc) / len(uniq), 4) if uniq else None}
+    return out
+
 def _dig(d, path):
     cur = d
     for k in path:
@@ -195,22 +250,61 @@ def _dig(d, path):
         cur = cur.get(k)
     return cur
 
-
 def crosscheck(recomputed: dict, out_dir: Path) -> list[str]:
-    """보고서에 실린 수치와 축약본 재계산값을 대조한다. 어긋나면 사유 문자열을 낸다."""
+    """보고서에 실린 수치와 축약본 재계산값을 대조한다. 어긋나면 사유 문자열을 낸다.
+
+    보고 스키마가 두 벌이다 — v1 은 `reasoning`/`qa` 평면 구조, 재실행분은 `axes` 아래
+    축별 구조(G6-1: 축마다 검증 수준을 말한다). **어느 쪽인지 자동으로 가른다.**
+    스키마를 못 알아보고 조용히 통과하면 스냅샷이 틀린 수치를 고정한다.
+    """
+    rep_path = out_dir / "cycle_corpus_report.json"
+    if not rep_path.exists():
+        return ["cycle_corpus_report.json: 없음"]
+    rep = json.loads(rep_path.read_text(encoding="utf-8"))
+    if "axes" in rep:
+        return _crosscheck_axes(recomputed, rep)
+    return _crosscheck_flat(recomputed, out_dir)
+
+
+def _crosscheck_axes(recomputed: dict, rep: dict) -> list[str]:
+    """재실행분 스키마 — 축별 stages + 후보별 stage2."""
     problems: list[str] = []
-    pairs = (
-        ("cycle_corpus_report.json", "reasoning:deepseek"),
-        ("_phi_report.json", "reasoning:phi"),
-    )
+    for axis, block in rep["axes"].items():
+        key = f"axis:{axis}"
+        got = recomputed.get(key)
+        if got is None:
+            problems.append(f"{axis}: 축약본에 대응 축이 없다")
+            continue
+        if block["n_in"] != got["n_in"]:
+            problems.append(f"{axis} n_in: 보고서 {block['n_in']} ≠ 재계산 {got['n_in']}")
+        for name, st in block["stages"].items():
+            if st.get("status") != "ran":
+                continue
+            cur = got["stages"].get(name)
+            if cur is None:
+                problems.append(f"{axis}.{name}: 축약본에 없다")
+            elif st["n_pass"] != cur["n_pass"]:
+                problems.append(
+                    f"{axis}.{name} n_pass: 보고서 {st['n_pass']} ≠ 재계산 {cur['n_pass']}")
+        for cid, cand in (block.get("stage2_judges") or {}).items():
+            cur = got["judges"].get(cid)
+            if cur is None:
+                problems.append(f"{axis} 후보 {cid}: 축약본에 없다")
+            elif cand["n_pass"] != cur["n_pass"]:
+                problems.append(
+                    f"{axis} 후보 {cid} n_pass: 보고서 {cand['n_pass']} ≠ 재계산 {cur['n_pass']}")
+    return problems
+
+
+def _crosscheck_flat(recomputed: dict, out_dir: Path) -> list[str]:
+    """v1 스키마 — `reasoning`/`qa` 평면 구조. 판정기 두 벌이 보고서 두 개로 갈려 있다."""
+    problems: list[str] = []
     checked = (
-        ("stage0", "n_pass"),
-        ("stage0", "n_fail"),
-        ("stage2_judge", "n_pass"),
-        ("stage2_judge", "n_fail"),
-        ("n_accepted",),
+        ("stage0", "n_pass"), ("stage0", "n_fail"),
+        ("stage2_judge", "n_pass"), ("stage2_judge", "n_fail"), ("n_accepted",),
     )
-    for fname, key in pairs:
+    for fname, key in (("cycle_corpus_report.json", "reasoning:deepseek"),
+                       ("_phi_report.json", "reasoning:phi")):
         p = out_dir / fname
         if not p.exists() or key not in recomputed:
             problems.append(f"{fname}: 대조 대상 없음")
@@ -218,8 +312,7 @@ def crosscheck(recomputed: dict, out_dir: Path) -> list[str]:
         rep = json.loads(p.read_text(encoding="utf-8"))
         got = recomputed[key]
         for path in checked:
-            want = _dig(rep, ("reasoning",) + path)
-            cur = _dig(got, path)
+            want, cur = _dig(rep, ("reasoning",) + path), _dig(got, path)
             if want != cur:
                 problems.append(
                     f"{fname} reasoning.{'.'.join(path)}: 보고서 {want} ≠ 재계산 {cur}")
@@ -256,27 +349,31 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true",
                     help="쓰지 않고 기존 스냅샷·축약본과 현재 산출물의 일치만 검사")
+    ap.add_argument("--dir", default=str(OUT_DIR), help="사이클 산출 디렉터리")
     args = ap.parse_args()
+    out_dir = Path(args.dir)
 
-    missing = [n for n in MEMBERS if not (OUT_DIR / n).exists()]
+    missing = [n for n in REQUIRED if not (out_dir / n).exists()]
     if missing:
         print(f"스냅샷 대상이 없다: {missing}", file=sys.stderr)
         print("원본은 드라이브 보관분이다 — 워크트리에 복원한 뒤 실행하라", file=sys.stderr)
         return 2
 
-    entries = [(sha256_file(OUT_DIR / n), n) for n in MEMBERS]
-    items = build_evidence(OUT_DIR)
-    recomputed = recompute(items)
-    problems = crosscheck(recomputed, OUT_DIR)
+    entries = [(sha256_file(out_dir / n), n) for n in members(out_dir)]
+    items = build_evidence(out_dir)
+    new_schema = "axes" in json.loads(
+        (out_dir / "cycle_corpus_report.json").read_text(encoding="utf-8"))
+    recomputed = recompute_axes(items) if new_schema else recompute(items)
+    problems = crosscheck(recomputed, out_dir)
     if problems:
         # 조용히 지나가면 스냅샷이 틀린 수치를 고정한다.
         print("보고서 대조 불일치:", *problems, sep="\n  ", file=sys.stderr)
         return 3
 
     rendered = {
-        OUT_DIR / SNAPSHOT: render_snapshot(entries),
-        OUT_DIR / EVIDENCE: render_evidence(items),
-        OUT_DIR / SUMMARY: render_summary(recomputed, entries, problems, len(items)),
+        out_dir / SNAPSHOT: render_snapshot(entries),
+        out_dir / EVIDENCE: render_evidence(items),
+        out_dir / SUMMARY: render_summary(recomputed, entries, problems, len(items)),
     }
 
     if args.check:
@@ -296,7 +393,13 @@ def main() -> int:
     print(f"스냅샷 {len(entries)}개 파일 / 축약 {len(items)}건")
     print(f"snapshot_digest {snapshot_digest(entries)}")
     for k, v in recomputed.items():
-        print(f"  {k}: 통과율 {v.get('end_to_end_rate', v.get('pass_rate'))}")
+        rate = v.get("end_to_end_rate", v.get("pass_rate"))
+        if rate is None and "stages" in v:
+            last = list(v["stages"].values())[-1]
+            rate = (round(last["n_pass"] / v["n_in"], 4) if v["n_in"] else None)
+        print(f"  {k}: 통과 {rate}"
+              + (f" | 후보 {[(c, d['n_pass']) for c, d in v['judges'].items()]}"
+                 if v.get("judges") else ""))
     return 0
 
 

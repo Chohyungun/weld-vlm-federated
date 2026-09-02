@@ -43,6 +43,8 @@ from corpus.generate.numeric_lock import (
     check_normal_lock,
     check_numeric_lock,
     check_pair_lock,
+    find_artifacts,
+    find_verdict_implying,
     to_decimal,
 )
 from corpus.rules.limit_eval import aggregate_verdicts, applicable_row, effective_limit, judge
@@ -60,6 +62,7 @@ __all__ = [
     "R_LONG",
     "R_NORMAL",
     "R_PAIR",
+    "R_ARTIFACT",
     "RecordResult",
     "Stage1Report",
     "normalize_question",
@@ -84,6 +87,9 @@ R_DUP = "duplicate_question"
 R_LONG = "too_long"
 R_NORMAL = "normal_schema_violation"
 R_PAIR = "pair_assembly_violation"
+#: 생성문 아티팩트 (80번 G3-1). 값은 맞는데 **표기**가 [자료] 밖인 경우다 —
+#: 수치 검사는 후행 0 동치라 원리적으로 못 잡는다.
+R_ARTIFACT = "artifact_violation"
 
 _LOCK_PREFIX = "numeric_lock:"
 
@@ -339,6 +345,29 @@ def _check_skeleton(
     return row
 
 
+
+def _artifact_checks(text: str, basis: Optional[str], gated: bool, ck: "_Check") -> None:
+    """생성문 아티팩트 + clause_only 판정 함의 표현 (80번 G3-1·G2-6).
+
+    `basis` 는 그 레코드의 [자료] 문자열이다. 자료에 있는 표기는 아티팩트가 아니다 —
+    자료가 그렇게 줬으면 옮겨 적은 것이 맞고, 고칠 곳은 자료 쪽이다.
+
+    **`None` 이면 검사하지 않는다.** 자료 없이 표기만 막으면 판정 기준이 없어 "무엇에
+    비해 아티팩트인가"를 말할 수 없다. 빈 문자열은 다르다 — 자료가 비었다는 뜻이라 어떤
+    표기도 면제되지 않는다. 생성 경로가 자료를 넘기는지는 배선 시험이 강제한다
+    (`tests/corpus/test_canonical_wiring.py`).
+    """
+    if basis is None:
+        return
+    hits = find_artifacts(text, basis=basis)
+    if hits:
+        ck.add(R_ARTIFACT, f"생성문 아티팩트: {list(hits)}")
+    if gated:
+        imply = find_verdict_implying(text)
+        if imply:
+            ck.add(R_ARTIFACT, f"clause_only 인데 판정 함의 표현: {list(imply)}")
+
+
 def _check_length(text: str, ck: _Check, max_len: Optional[int], length_fn: Callable[[str], int]) -> None:
     if max_len is not None and length_fn(text) > max_len:
         ck.add(R_LONG, f"길이 초과: {length_fn(text)} > {max_len} (자르지 않고 폐기)")
@@ -353,6 +382,8 @@ def check_record_c(
     record: Mapping,
     table: LimitsTable,
     *,
+    verdict_mode: str = "full",
+    basis: Optional[str] = None,
     label_codes: Optional[Collection[str]] = None,
     clause_registry: Optional[Collection[str]] = None,
     allowed_standards: Optional[Collection[str]] = None,
@@ -361,16 +392,26 @@ def check_record_c(
     length_fn: Callable[[str], int] = len,
     index: int = 0,
 ) -> RecordResult:
-    """(c) 판정추론 레코드 = 골격 + 생성문. (c) 경로 골격은 항상 full 이다 (§4-7).
+    """(c) 판정추론 레코드 = 골격 + 생성문.
 
     inspection_method 를 주면 그 축의 레코드만 통과시킨다 (§1-2 5a). 주지 않으면 골격에
     실린 축으로 행을 조회한다 — 어느 쪽이든 축 없는 조회는 없으므로, RT·VT 가 병존하는
     테이블을 그대로 넘겨도 정상 레코드가 '복수 행 매칭'으로 폐기되지 않는다.
+
+    verdict_mode 는 기본 full 이다 (§4-7: (c) 경로 골격은 full 이 정본). `clause_only` 는
+    합부를 말하지 않는 축의 corpus 를 같은 검사기로 받기 위한 게이트이며, verdict·margin
+    null 강제 + 판정 함의 표현 금지가 함께 걸린다.
+
+    basis 는 그 레코드의 [자료] 문자열이다 (`corpus.generate.basis.render_basis`).
+    아티팩트 게이트가 "자료에 없는 표기"를 판정하는 기준이라 비워 두면 검사가 헐거워진다.
     """
+    if verdict_mode not in ("full", "conditional", "clause_only"):
+        raise ValueError(f"verdict_mode 위반: {verdict_mode!r}")
+    gated = verdict_mode == "clause_only"
     ck = _Check()
     _check_skeleton(
         record, table, ck, label_codes=label_codes, clause_registry=clause_registry,
-        gated=False, inspection_method=inspection_method,
+        gated=gated, inspection_method=inspection_method,
     )
     text = record.get("text")
     if not isinstance(text, str) or not text.strip():
@@ -378,6 +419,7 @@ def check_record_c(
     else:
         std = STANDARD_WHITELIST_DEFAULT if allowed_standards is None else allowed_standards
         ck.merge_lock(check_numeric_lock(text, record, allowed_standards=std))
+        _artifact_checks(text, basis, gated, ck)
         _check_length(text, ck, max_len, length_fn)
     return ck.result(index, record.get("sample_id"))
 
@@ -387,6 +429,7 @@ def check_record_pair(
     table: LimitsTable,
     *,
     verdict_mode: str = "clause_only",
+    basis: Optional[str] = None,
     label_codes: Optional[Collection[str]] = None,
     clause_registry: Optional[Collection[str]] = None,
     defect_lexicon: Collection[str] = (),
@@ -438,6 +481,7 @@ def check_record_pair(
                     allowed_standards=() if allowed_standards is None else allowed_standards,
                 )
             )
+            _artifact_checks(text, basis, gated, ck)
             _check_length(text, ck, max_len, length_fn)
         return ck.result(index, record.get("sample_id"))
 
@@ -484,6 +528,7 @@ def check_record_pair(
                 ),
             )
         )
+        _artifact_checks(text, basis, gated, ck)
         _check_length(text, ck, max_len, length_fn)
     return ck.result(index, record.get("sample_id"))
 
@@ -549,12 +594,13 @@ def run_stage1(
     *,
     asset: str,
     table: Optional[LimitsTable] = None,
+    basis_fn: Optional[Callable[[Mapping], str]] = None,
     label_codes: Optional[Collection[str]] = None,
     clause_registry: Optional[Collection[str]] = None,
     defect_lexicon: Collection[str] = (),
     allowed_standards: Optional[Collection[str]] = None,
     passage_ids: Optional[Collection[str]] = None,
-    verdict_mode: str = "clause_only",
+    verdict_mode: Optional[str] = None,
     inspection_method: Optional[str] = None,
     max_len: Optional[int] = None,
     length_fn: Callable[[str], int] = len,
@@ -562,24 +608,33 @@ def run_stage1(
     """자산(asset ∈ {c, d4, b}) 전수 1단계 검사. 실패분은 폐기 대상 (재생성 금지).
 
     inspection_method: 기대 검사 방법 축 (§1-2 5a). 주면 다른 축의 레코드를 폐기한다.
+    basis_fn: 레코드 → [자료] 문자열. 아티팩트 게이트의 판정 기준이다 (80번 G3-1).
+      생성기가 `corpus.generate.basis.render_basis` 를 넘긴다 — 생성 프롬프트·판정
+      프롬프트·이 검사가 **같은 자료**를 보게 하는 것이 요점이다 (G4-1).
     """
     if asset not in ("c", "d4", "b"):
         raise ValueError(f"asset 위반: {asset!r} (c | d4 | b)")
     if asset in ("c", "d4") and table is None:
         raise ValueError("(c)·D4 검사는 LimitsTable 주입 필수 (limits.csv 직접 읽기 금지)")
+    # 자산별 기본 모드. (c) 는 full 이 정본이고(§4-7) D4 는 clause_only 가 현재 축이다.
+    # 한 값을 두 자산에 공유하면 (c) 골격의 verdict 가 통째로 스키마 위반이 된다.
+    if verdict_mode is None:
+        verdict_mode = "clause_only" if asset == "d4" else "full"
 
     results: list[RecordResult] = []
     seen: set[str] = set()
     for i, rec in enumerate(records):
+        basis = basis_fn(rec) if basis_fn is not None else None
         if asset == "c":
             r = check_record_c(
-                rec, table, label_codes=label_codes, clause_registry=clause_registry,
+                rec, table, verdict_mode=verdict_mode, basis=basis,
+                label_codes=label_codes, clause_registry=clause_registry,
                 allowed_standards=allowed_standards, inspection_method=inspection_method,
                 max_len=max_len, length_fn=length_fn, index=i,
             )
         elif asset == "d4":
             r = check_record_pair(
-                rec, table, verdict_mode=verdict_mode, label_codes=label_codes,
+                rec, table, verdict_mode=verdict_mode, basis=basis, label_codes=label_codes,
                 clause_registry=clause_registry, defect_lexicon=defect_lexicon,
                 allowed_standards=allowed_standards, inspection_method=inspection_method,
                 max_len=max_len, length_fn=length_fn, index=i,
