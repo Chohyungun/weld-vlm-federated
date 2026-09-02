@@ -28,11 +28,17 @@ import torch
 
 from detection import serialize
 from detection.round_runner import derive_seed
+from fl.seeding import seeded, shared_init_seed
 from vlm.coords import CoordCfg, ImageGeom, quantize, to_model
 
 MODEL_ID = "Qwen/Qwen3.5-0.8B"
 PROMPT_PATH = Path("vlm/prompts/unified_pilot_v1.txt")
+PAIRS_PATH = Path("data/processed/pairs_pilot_v1/pairs.jsonl")
 COORD_CFG = CoordCfg(coord_space="NORM_1000")
+#: LoRA A 초기화 기본 시드. 파일럿 상수(`scripts/pilot_c.py:BASE_SEED`)와 같은 값이며
+#: 검출 칸 `build_initial_weights(seed=BASE_SEED)` 와도 같다 — 두 칸의 "동일 출발"이
+#: 같은 상수에서 나와야 사후 대조가 한 번에 된다. 호출부가 명시하면 그 값이 이긴다.
+DEFAULT_INIT_SEED = 20260828
 MICRO_BATCH = 1          # 판정 10 — micro=2 는 사다리에 없다
 GRAD_ACCUM = 32          # 유효 배치 32
 LR = 1e-4
@@ -60,36 +66,76 @@ def build_target(row: dict, geom: ImageGeom) -> str:
 
 
 def load_pairs(split: str, client: str | None = None) -> list[dict]:
-    rows = [json.loads(l) for l in open("data/processed/pairs_pilot_v1/pairs.jsonl", encoding="utf-8")]
+    rows = [json.loads(l) for l in open(PAIRS_PATH, encoding="utf-8")]
     out = [r for r in rows if r["split"] == split and (client is None or r["client"] == client)]
     if not out:
         raise ValueError(f"페어 0건: split={split} client={client}")
     return out
 
 
-def _load_model():
+def _load_model(model_id: str | None = None, *, init_seed: int = DEFAULT_INIT_SEED):
+    """QLoRA 4bit 모델 + LoRA 어댑터. **어댑터 초기화는 반드시 시드 아래에서 일어난다.**
+
+    peft 는 `lora_B` 를 0 으로, `lora_A` 를 난수로 놓는다. `init_seed` 를 고정하지 않으면
+    클라이언트마다 다른 A 로 출발하고, 그러면 r0 가중 평균이 "같은 기저의 평균"이 아니라
+    **독립 난수의 상쇄**가 된다(74번 감사 C-1 · 함정 #3). 실제로 그렇게 났다.
+
+    `seed_all` 이 아니라 `seeded()` 컨텍스트를 쓰는 이유는 `fl/seeding.py` 에 적었다 —
+    초기화 한 번 때문에 그 뒤 학습 전체의 난수 흐름이 호출 순서에 묶이면 안 된다.
+    """
     from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
     from peft import LoraConfig, get_peft_model
 
-    proc = AutoProcessor.from_pretrained(MODEL_ID)
+    mid = model_id or MODEL_ID
+    proc = AutoProcessor.from_pretrained(mid)
     bnb = BitsAndBytesConfig(
         load_in_4bit=True, bnb_4bit_quant_type="nf4",
         bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True,
     )
     model = AutoModelForImageTextToText.from_pretrained(
-        MODEL_ID, quantization_config=bnb, device_map={"": 0}
+        mid, quantization_config=bnb, device_map={"": 0}
     )
     lora = LoraConfig(
         r=16, lora_alpha=32, lora_dropout=0.0, bias="none",
         task_type="CAUSAL_LM", target_modules=TARGET_SUFFIXES,
     )
-    model = get_peft_model(model, lora)
+    with seeded(shared_init_seed(init_seed)):
+        model = get_peft_model(model, lora)
     model.gradient_checkpointing_enable()
     # 비전 어댑터 0건 확인 — 붙었다면 동결 원칙 위반이므로 즉시 실패
     vis = [n for n, p in model.named_parameters() if p.requires_grad and "visual" in n]
     if vis:
         raise RuntimeError(f"비전 인코더에 어댑터가 붙었다: {vis[:3]}")
     return model, proc
+
+
+class _StepView:
+    """`ResumeCheckpointer` 가 읽는 스텝 카운터 모양."""
+
+    def __init__(self, n: int) -> None:
+        self.n = int(n)
+
+
+class _AdapterTrainerView:
+    """통합형 학습 루프를 재개 체크포인터에 물리는 어댑터.
+
+    체크포인터는 트레이너 모양(`model`·`optimizer`·`epoch`·`start_epoch`·`device`)을
+    기대한다. 통합형은 자체 루프라 그 모양이 없다. 루프를 트레이너로 바꾸는 대신
+    **필요한 다섯 개만 노출하는 얇은 뷰**를 둔다 — 재개 하나 때문에 학습 루프를
+    프레임워크 모양으로 접을 이유가 없다.
+
+    `start_epoch=0` 으로 고정하는 이유: 통합형은 라운드가 곧 전체 epoch 구간이라
+    저장되는 `epochs_ran_in_round` 가 그대로 누적 epoch 수가 된다.
+    """
+
+    def __init__(self, model, optimizer, epoch: int = 0) -> None:
+        self.model = model
+        self.optimizer = optimizer
+        self.epoch = int(epoch)
+        self.start_epoch = 0
+        self.scaler = None          # bf16 autocast 라 GradScaler 를 쓰지 않는다
+        self.train_loader = None    # 로더가 없다 — 셔플은 `random.Random(seed+ep)` 다
+        self.device = torch.device("cuda")
 
 
 def _encode(proc, row: dict, prompt: str):
@@ -109,8 +155,9 @@ def _encode(proc, row: dict, prompt: str):
         add_generation_prompt=True,
     )
     labels = full["input_ids"].clone()
-    labels[:, : prompt_only["input_ids"].shape[1]] = -100   # 감독은 타깃 토큰만
-    return full, labels
+    prompt_len = int(prompt_only["input_ids"].shape[1])
+    labels[:, :prompt_len] = -100   # 감독은 타깃 토큰만
+    return full, labels, prompt_len
 
 
 def train_rounds(
@@ -123,15 +170,40 @@ def train_rounds(
     adapter_in: list[np.ndarray] | None = None,
     adapter_keys: list[str] | None = None,
     log_cb=None,
+    model_id: str | None = None,
+    supervised_logits_only: bool = True,
+    resume_dir: str | None = None,
+    run_id: str = "",
+    init_seed: int | None = None,
 ) -> tuple[list[np.ndarray], list[str], dict[str, Any], dict]:
-    """한 라운드(⑥은 라운드 1개 = 전체 epoch). 어댑터 fp32 ndarray 를 돌려준다."""
+    """한 라운드(⑥은 라운드 1개 = 전체 epoch). 어댑터 fp32 ndarray 를 돌려준다.
+
+    Args:
+        model_id: 크기-시간 곡선 프로브용 덮어쓰기. 본실험은 항상 기본값을 쓴다.
+        supervised_logits_only: 판정 11 이행 스위치. `False` 는 **이행 전후 비교를
+            재기 위해서만** 쓴다 — 전 위치 × vocab 로짓을 물질화한다.
+        resume_dir: 재개 전용 체크포인트 디렉터리(어댑터·옵티마이저·epoch·RNG).
+            ⑥ 은 파일럿에서도 10.2시간짜리 단일 런이고 본실험은 칸당 수 주다.
+            `best` 금지 규칙과 무관하다 — 채점 대상이 아니라 재개용이다.
+        run_id: 재개 신원의 일부.
+        init_seed: LoRA A 초기화 시드. **라운드·클라이언트에 따라 달라지면 안 된다** —
+            `derive_seed` 와 헷갈리지 않도록 별도 인자로 뒀다. None 이면 `base_seed`.
+    """
     from peft import get_peft_model_state_dict, set_peft_model_state_dict
 
-    model, proc = _load_model()
+    model, proc = _load_model(
+        model_id, init_seed=shared_init_seed(base_seed if init_seed is None else init_seed)
+    )
     prompt = PROMPT_PATH.read_text(encoding="utf-8")
 
     adapter_sd = get_peft_model_state_dict(model)
     keys = adapter_keys or serialize.canonical_keys(adapter_sd)
+
+    # 주입 **전** 초기 어댑터 증빙. 세 클라이언트가 같은 A 로 출발했음을 사후에 대조하는
+    # 근거이며, 검출 칸의 `injection_digest` 와 같은 역할이다(74번 감사 C-1).
+    from vlm.init_adapter import adapter_proof
+
+    init_proof = adapter_proof(serialize.state_dict_to_ndarrays(adapter_sd, keys), keys)
 
     # G2-3 교환 폐포 — 학습되는 것과 교환되는 것이 완전히 같은가.
     # peft 어댑터 sd 키는 "...lora_A.weight", named_parameters 는 "...lora_A.default.weight".
@@ -143,10 +215,14 @@ def train_rounds(
     if not ok:
         raise RuntimeError("교환 폐포 등식 실패 (G2-3):\n  " + "\n  ".join(fails))
 
+    injected_proof = None
     if adapter_in is not None:
         ref = get_peft_model_state_dict(model)
         sd = serialize.ndarrays_to_state_dict(adapter_in, keys, ref)
         set_peft_model_state_dict(model, sd)
+        # 주입이 실제로 먹었는지 확인한다 — 서버가 보낸 값과 대조 가능한 형태로 남긴다.
+        after = serialize.state_dict_to_ndarrays(get_peft_model_state_dict(model), keys)
+        injected_proof = adapter_proof(after, keys)
 
     opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=LR)
     torch.cuda.reset_peak_memory_stats()
@@ -157,19 +233,59 @@ def train_rounds(
     supervised_total = 0
     import time
     t0 = time.perf_counter()
-    for ep in range(epochs):
+
+    # -- 재개 --------------------------------------------------------------
+    # ⑥ 는 10.2시간, 본실험은 칸당 수 주짜리 **단일 런**이다. 검출보다 재개가 더 절실하다.
+    # 통합형은 검출과 달리 **정확히 이어진다** — 셔플이 `random.Random(seed + ep)` 라
+    # 이력이 아니라 `(seed, epoch)` 의 함수이고, 누적 경계도 `(j+1) % GRAD_ACCUM` 이라
+    # epoch 안에서 닫힌다. 프레임워크 지역 변수에 걸린 상태가 없다.
+    ckpt = None
+    start_ep = 0
+    if resume_dir is not None:
+        from detection.resume import (ResumeCheckpointer, ResumeIdentity,
+                                      apply_resume, latest_resume)
+
+        ident = ResumeIdentity(
+            run_id=str(run_id), round_idx=int(round_idx), client_idx=int(client_idx),
+            seed=int(seed), total_epochs=int(epochs), local_epochs=int(epochs),
+            model=str(model_id or MODEL_ID), data=str(PAIRS_PATH),
+        )
+        state = latest_resume(resume_dir, identity=ident)
+        if state is not None:
+            view = _AdapterTrainerView(model, opt)
+            apply_resume(
+                view, state,
+                state_dict_fn=lambda tr: get_peft_model_state_dict(tr.model),
+                load_state_dict_fn=set_peft_model_state_dict,
+            )
+            start_ep = state.next_epoch
+            steps = state.optimizer_steps
+            supervised_total = state.payload.get("supervised_tokens", 0)
+            print(f"[resume] epoch {state.epoch_done} 까지 완료 → epoch {start_ep} 부터 이어 간다",
+                  flush=True)
+        ckpt = ResumeCheckpointer(
+            resume_dir, identity=ident,
+            state_dict_fn=lambda tr: get_peft_model_state_dict(tr.model),
+        )
+
+    epochs_done = int(start_ep)          # 이 라운드에서 완료한 epoch 누적 수(재개분 포함)
+    for ep in range(start_ep, epochs):
         order = list(range(len(rows)))
         random.Random(seed + ep).shuffle(order)
         ce_sum = torch.zeros((), device="cuda", dtype=torch.float32)
         tok_cnt = 0
         for j, idx in enumerate(order):
-            enc, labels = _encode(proc, rows[idx], prompt)
+            enc, labels, prompt_len = _encode(proc, rows[idx], prompt)
             enc = {k: (v.to("cuda") if hasattr(v, "to") else v) for k, v in enc.items()}
             labels = labels.to("cuda")
-            out = model(**enc)
+            # 판정 11 — 감독 위치의 로짓만 물질화한다. 감독 구간이 접미(prompt 뒤 전부)라
+            # `logits_to_keep` 정수 슬라이스로 정확히 겹친다. 0 을 주면 전 위치를 뽑는다.
+            n_keep = int(labels.shape[1] - prompt_len + 1) if supervised_logits_only else 0
+            out = model(**enc, logits_to_keep=n_keep)
             # 판정 2 — shift 후 감독 토큰 총합 분모. HF 평균 loss 를 쓰지 않는다.
             logits = out.logits[:, :-1]
-            tgt = labels[:, 1:]
+            # 남긴 로짓 j 는 절대 위치 T-n_keep+j 를 예측하므로 타깃은 그 다음 토큰이다.
+            tgt = labels[:, 1:] if n_keep == 0 else labels[:, -(n_keep - 1):]
             mask = tgt != -100
             ce = torch.nn.functional.cross_entropy(
                 logits[mask].float(), tgt[mask], reduction="sum"
@@ -180,11 +296,21 @@ def train_rounds(
             if (j + 1) % GRAD_ACCUM == 0 or (j + 1) == len(order):
                 opt.step(); opt.zero_grad(); steps += 1
         supervised_total += tok_cnt
+        epochs_done += 1
         if log_cb:
             log_cb(ep, float(ce_sum.item() / max(tok_cnt, 1)), steps, time.perf_counter() - t0)
+        if ckpt is not None:
+            # `epoch=ep, start_epoch=0` 이라 저장되는 값이 곧 **누적치**다 —
+            # epochs_ran_in_round = ep+1, optimizer_steps = steps.
+            ckpt.step_counter = _StepView(steps)
+            ckpt.extra = {"supervised_tokens": supervised_total}
+            ckpt(_AdapterTrainerView(model, opt, epoch=ep))
 
     final_sd = get_peft_model_state_dict(model)
     arrays = serialize.state_dict_to_ndarrays(final_sd, keys)
+    # 회계에 실리는 값은 **실측**이어야 한다. `epochs_ran`·`optimizer`·`lr` 을 호출부에서
+    # 상수로 재구성하던 것이 74번 감사 P9 의 절반이다 — 여기서 실물을 읽어 넘긴다.
+    opt_group = opt.param_groups[0]
     metrics = {
         "optimizer_steps": steps,
         "supervised_tokens": supervised_total,
@@ -193,6 +319,19 @@ def train_rounds(
         "param_l2": serialize.params_l2_norm(arrays),
         "wall_s": time.perf_counter() - t0,
         "seed": seed,
+        # -- 실측 회계 --------------------------------------------------------
+        # epoch 루프 안에서 센 값이다. `epochs` 인자를 되돌려 주면 "예산을 다 돌았다"가
+        # 아니라 "예산을 다 돌았다고 적었다"가 되어 검사가 공허해진다(74번 P9).
+        "epochs_ran": int(epochs_done),
+        "epochs_this_process": int(epochs_done - start_ep),
+        "resumed_from_epoch": int(start_ep) if start_ep else None,
+        "optimizer": type(opt).__name__,
+        "lr": float(opt_group["lr"]),
+        "betas": [float(b) for b in opt_group.get("betas", ())],
+        "weight_decay": float(opt_group.get("weight_decay", float("nan"))),
+        "init_seed": shared_init_seed(base_seed if init_seed is None else init_seed),
+        "init_proof": dict(init_proof),
+        "injected_proof": None if injected_proof is None else dict(injected_proof),
     }
     ref_sd = {k: v.detach().cpu() for k, v in final_sd.items()}
     del model
