@@ -52,6 +52,23 @@ def test_gold_csv_주석줄을_헤더로_읽지_않는다(tmp_path) -> None:
     assert entries[0].inspection_method == "RT"
 
 
+def test_iso_codes_구분자는_세미콜론이다() -> None:
+    """`|` 로 쪼개면 다중 라벨이 `"2011;301"` 이라는 없는 코드 하나로 집계된다.
+
+    같은 매니페스트의 `strata_key` 가 `|` 를 쓰기 때문에 실제로 한 번 틀렸다 —
+    동결 평가셋 자명하한이 0.2160 대신 0.2142 로 나왔다(71번 §10).
+    """
+    from evaluation.eval_set import ISO_SEP, parse_iso_codes
+
+    assert ISO_SEP == ";"
+    assert parse_iso_codes("2011;301") == ("2011", "301")
+    assert parse_iso_codes("2011") == ("2011",)
+    assert parse_iso_codes("") == ()
+    assert parse_iso_codes(None) == ()
+    # strata_key 의 구분자를 그대로 넣어도 쪼개지지 않는다 — 열을 바꿔 읽으면 티가 난다
+    assert parse_iso_codes("AL|__normal__") == ("AL|__normal__",)
+
+
 def test_크기_없는_결함은_프롬프트에_미상으로_실린다() -> None:
     """`None` 이 그대로 실리면 모델이 'None' 을 근거 문장에 옮긴다(66번 시운전 실측)."""
     from rag.judge import build_prompt
