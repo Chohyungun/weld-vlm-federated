@@ -298,3 +298,62 @@ def test_클라이언트를_죽이면_실패하되_회계는_디스크에_남는
     assert audit["failures"], "실패 사유가 비어 있다"
     # 1라운드는 정상이었으므로 그 셀은 남아 있어야 한다 — 어디까지 갔는지가 산출물이다.
     assert (out / "accounting.csv").exists()
+
+
+# ==========================================================================
+# 15항 — ⑦ 경로의 설정 키 계약
+#
+# 스모크는 더미 칸으로 돌므로 통합형 분기의 **키 이름**을 지나가지 않는다. F1 이
+# 정확히 그 형태였다 — 서버가 보내는 키와 클라이언트가 읽는 키가 어긋나 라운드 1 에서
+# 죽었고, 그 경로를 아무도 안 돌려 봐서 몰랐다. 실물 학습 없이 계약만 대조한다.
+# ==========================================================================
+
+def test_uni_fed_서버가_보내는_키와_클라이언트가_읽는_키가_맞는다():
+    import ast
+
+    from fl.pilot_sim import _cell_train_config
+
+    cfg = {"client_tags": ["C1", "C2", "C3"]}
+    sent = set(_cell_train_config("uni_fed", cfg, Path("/tmp/out")))
+    # 서버 공통부가 함께 싣는 키
+    sent |= {"cell", "canonical-keys", "local-epochs", "total-epochs", "num-rounds",
+             "base-seed", "run-stamp", "resume-root"}
+
+    # 클라이언트 분기가 실제로 읽는 키를 소스에서 뽑는다.
+    src = Path("fl/pilot_sim.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    fn = next(n for n in ast.walk(tree)
+              if isinstance(n, ast.FunctionDef) and n.name == "_client_train")
+    read: set[str] = set()
+    for node in ast.walk(fn):
+        # cfg["x"] / cfg.get("x")
+        if isinstance(node, ast.Subscript) and getattr(node.value, "id", "") == "cfg":
+            if isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str):
+                read.add(node.slice.value)
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "get" and getattr(node.func.value, "id", "") == "cfg"
+                and node.args and isinstance(node.args[0], ast.Constant)):
+            read.add(node.args[0].value)
+
+    # f-string 으로 만드는 키(client-tag-N, num-examples-N)는 위 추출에 안 잡힌다.
+    read |= {"client-tag-0", "client-tag-1", "client-tag-2"}
+    read -= {"views-root", "model", "project", "profile", "num-examples-0"}   # sep_fed 전용
+
+    missing = read - sent
+    assert not missing, f"클라이언트가 읽는데 서버가 안 보내는 키: {sorted(missing)}"
+
+
+def test_uni_fed_클라이언트가_감독_토큰을_가중으로_싣는다():
+    """총괄 판정 2 — 소스 계약으로 고정한다(실물 학습 없이)."""
+    src = Path("fl/client_vlm.py").read_text(encoding="utf-8")
+    assert 'WEIGHT_KEY: float(m["supervised_tokens"])' in src, (
+        "가중이 감독 토큰 총합이어야 한다(판정 2)"
+    )
+    assert '"weight-unit": "supervised_tokens"' in src
+    assert '"num-examples": float(len(rows))' in src, "페어 수도 회계용으로 함께 실어야 한다"
+
+
+def test_uni_fed_클라이언트가_주입을_서버_기준으로_검증한다():
+    """G2-5 — 클라이언트끼리 비교로는 셋 다 no-op 일 때 통과한다."""
+    src = Path("fl/client_vlm.py").read_text(encoding="utf-8")
+    assert "assert_injected_matches" in src

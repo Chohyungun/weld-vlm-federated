@@ -283,103 +283,25 @@ def cmd_cell7() -> None:
         print(f"  note: {n}")
 
 
-def cmd_cell7resume() -> None:
-    """⑦ r2 재개 — adapter_r002.npz 주입, 마지막 라운드만.
-
-    회계 매트릭스는 인메모리라 중단으로 r0·r1 셀이 사라졌다. 원자 로그가 정확히 이런
-    복구를 위해 존재한다 — r0·r1 셀을 로그에서 재구성해 전 라운드 감사를 완성한다.
-    """
-    import json as _json
-    import numpy as np
-    import pandas as pd
-    import torch
-    from detection.budget_audit import AccountingCell, AccountingMatrix
-    from detection.round_runner import derive_seed
-    from fl.aggregate import weighted_fedavg
-    from fl.atomic_log import AtomicLog, RoundTimer, new_run_id
-    from vlm.pilot_vlm import LR as VLM_LR
-    from vlm.pilot_vlm import load_pairs, train_rounds
-
-    _, digest = _snapshot()
-    clients = ["C1", "C2", "C3"]
-    shards = {i: load_pairs("train", client=c) for i, c in enumerate(clients)}
-    n_train = {i: len(shards[i]) for i in shards}
-    out = OUT_ROOT / "uni_fed"
-
-    loaded = np.load(out / "adapter_r002.npz")
-    keys = list(loaded.files)                      # np.savez 키드 저장 — 순서 보존
-    global_arrays = [loaded[k] for k in keys]
-    print(f"재개: adapter_r002 주입 ({len(keys)} 텐서), r2 만 실행", flush=True)
-
-    log = AtomicLog(out / "atomic_log.csv", run_id=new_run_id("uni_fed", BASE_SEED, RUN_STAMP),
-                    seed=BASE_SEED, cell="uni_fed", split_hash=digest)
-    acc = AccountingMatrix(num_rounds=R, client_ids=list(shards), local_epochs=E, total_epochs=N)
-
-    # r0·r1 셀을 원자 로그에서 복원 — 시드는 파생 공식으로 재계산(결정론)
-    df = pd.read_csv(out / "atomic_log.csv")
-    hist = df[df.client_id != "server"].pivot_table(
-        index=["round", "client_id"], columns="metric_name", values="metric_value", aggfunc="last")
-    up = df[df.client_id != "server"].groupby(["round", "client_id"])["bytes_up"].last()
-    # **여기서 만드는 셀은 실측이 아니라 재구성이다.** 원자 로그에 있는 것은
-    # optimizer_steps·param_l2·bytes_up 셋뿐이고, epochs_ran·optimizer·lr 은 코드 상수로
-    # 채운다. `value_source="reconstructed"` 가 그 표식이며, 회계 산출물이 두 종류를
-    # 구분해 싣는다(74번 감사 P9 두 번째 항목).
-    for (r, c), row in hist.iterrows():
-        c = int(c)
-        acc.record(AccountingCell(
-            round_idx=int(r), client_idx=c, epochs_ran=E,
-            optimizer_steps=int(row["optimizer_steps"]), num_examples=n_train[c],
-            seed=derive_seed(BASE_SEED, int(r), c), param_l2_norm=float(row["param_l2"]),
-            payload_bytes=int(up.loc[(r, str(c))]), optimizer="AdamW", lr=VLM_LR,
-            momentum=float("nan"), arg_optimizer="AdamW", arg_lr0=VLM_LR,
-            arg_momentum=float("nan"), value_source="reconstructed"))
-    print(f"원자 로그에서 셀 {len(acc.cells)}개 복원", flush=True)
-
-    timer = RoundTimer()
-    r = R - 1  # r2
-    client_payloads, weights = [], []
-    ref_sd = None
-    for i in sorted(shards):
-        arrays, keys, m, ref_sd = train_rounds(
-            rows=shards[i], epochs=E, round_idx=r, client_idx=i, base_seed=BASE_SEED,
-            adapter_in=global_arrays, adapter_keys=keys,
-            resume_dir=str(OUT_ROOT / "_resume" / "uni_fed" / f"r{r:03d}_c{i}"),
-            run_id=RUN_STAMP)
-        client_payloads.append(arrays); weights.append(n_train[i])
-        log.log_round(round_idx=r, client_id=i, n_train_samples=n_train[i],
-                      metrics={"optimizer_steps": float(m["optimizer_steps"]),
-                               "supervised_tokens": float(m["supervised_tokens"]),
-                               "param_l2": m["param_l2"], "peak_vram_gb": m["peak_vram_gb"]},
-                      bytes_up=m["payload_bytes"], bytes_down=m["payload_bytes"],
-                      wall_time=m["wall_s"])
-        acc.record(AccountingCell(
-            round_idx=r, client_idx=i, epochs_ran=m["epochs_ran"],
-            optimizer_steps=m["optimizer_steps"],
-            num_examples=n_train[i], seed=m["seed"], param_l2_norm=m["param_l2"],
-            payload_bytes=m["payload_bytes"],
-            optimizer=m["optimizer"], lr=m["lr"], momentum=float("nan"),
-            arg_optimizer="AdamW", arg_lr0=VLM_LR, arg_momentum=float("nan"),
-            resumed_from_epoch=m["resumed_from_epoch"], value_source="measured"))
-        print(f"  r{r} c{i}: steps {m['optimizer_steps']} tok {m['supervised_tokens']:,} "
-              f"peak {m['peak_vram_gb']:.2f}GB ({m['wall_s']:.0f}s)", flush=True)
-    agg = weighted_fedavg(client_payloads, weights, keys,
-                          {k: torch.as_tensor(v) for k, v in ref_sd.items()})
-    np.savez(out / f"adapter_r{r+1:03d}.npz", **{k: a for k, a in zip(keys, agg.ndarrays)})
-    np.savez(out / "adapter_last.npz", **{k: a for k, a in zip(keys, agg.ndarrays)})
-    log.log_round(round_idx=r, client_id="server", n_train_samples=agg.total_examples,
-                  metrics={"global_l2": agg.global_norm}, wall_time=timer.lap())
-    rep = acc.audit()
-    acc.to_csv(out / "accounting.csv"); acc.to_json(out / "accounting.json")
-    gaps = log.audit_rounds(R, list(shards) + ["server"])
-    print(f"  r{r} 집계: global_l2 {agg.global_norm:.3f}", flush=True)
-    print(f"⑦ 완주(재개) / 회계 ok={rep.ok and not gaps} 총 스텝 {rep.total_optimizer_steps} "
-          f"/ 결측 {gaps or '없음'}", flush=True)
+#: `cmd_cell7resume` 는 삭제했다 (80번 F7).
+#:
+#: 인프로세스 루프 시절의 복구 경로였다. 회계 매트릭스가 메모리에만 있어 중단되면 앞
+#: 라운드 셀이 사라졌고, 그것을 원자 로그에서 되살리면서 로그에 없는 필드
+#: (`epochs_ran`·`optimizer`·`lr`)를 **상수로 채웠다.** 9칸 중 6칸이 그렇게 만들어져
+#: 회계 검사 (2)(3)이 그 6칸에서 통과가 보장됐다 — 검사받아야 할 값을 검사자가 채운 셈이다.
+#:
+#: ⑦ 이 Flower 경로로 옮겨가면서 그 상황 자체가 없어졌다.
+#:   - 라운드 중간 사망은 `resume_root` 가 epoch 경계에서 정확히 잇는다.
+#:   - 회계는 `finalize_accounting` 이 `finally` 에서 마감하므로 중단돼도 디스크에 남는다.
+#:
+#: 남겨 두면 "쓸 수 있는 복구 수단"으로 보이지만 실제로는 리터럴로 채운 회계를 만드는
+#: 유일한 경로다. 지운다.
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=["views", "init", "initvlm", "cell2", "cell3", "cell4",
-                                    "cell6", "cell7", "cell7resume"])
+                                    "cell6", "cell7"])
     # 승격 어블레이션은 **같은 코드 경로**로 다른 스냅샷을 돌려야 한다. 별도 실행기를
     # 만들면 두 팔의 차이가 표본 때문인지 코드 때문인지 구분되지 않는다.
     ap.add_argument("--snapshot", default=None, help="스냅샷 디렉터리 덮어쓰기 (어블레이션용)")
@@ -391,5 +313,5 @@ if __name__ == "__main__":
         OUT_ROOT = Path(args.out).resolve()
     {"views": cmd_views, "init": cmd_init, "initvlm": cmd_initvlm,
      "cell2": cmd_cell2, "cell3": cmd_cell3,
-     "cell4": cmd_cell4, "cell6": cmd_cell6, "cell7": cmd_cell7,
-     "cell7resume": cmd_cell7resume}[args.cmd]()
+     "cell4": cmd_cell4, "cell6": cmd_cell6,
+     "cell7": cmd_cell7}[args.cmd]()
