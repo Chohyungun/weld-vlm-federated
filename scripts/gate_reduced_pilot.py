@@ -302,6 +302,17 @@ def cmd_score() -> None:
     gold, _gold_boxes = read_gold(SNAPSHOT_DIR, eval_ids)
     print(f"평가셋 {len(rows):,}장 / 정답 라벨 {len(gold):,}건", flush=True)
 
+    # 추론 결과를 먼저 디스크에 남긴다. 12,461장 추론이 17분인데 하류 한 줄이 틀리면
+    # 그걸 다시 치르게 된다 — 실제로 한 번 그랬다. 재실행 시 캐시를 읽는다.
+    cache = OUT / "predictions.jsonl"
+    if cache.exists():
+        from evaluation.schema import PredictionRecord
+
+        preds = [PredictionRecord.model_validate_json(l)
+                 for l in cache.read_text(encoding="utf-8").splitlines() if l.strip()]
+        print(f"예측 캐시 재사용 {len(preds):,}건 → {cache}", flush=True)
+        return _verdict_from(preds, rows, gold, eval_ids, params, classes, gates)
+
     yolo = _load_yolo(last, params.class_names, params.imgsz)
     t0 = time.perf_counter()
     # **묶어서 부른다.** `predict_cell` 은 받은 행 전부의 경로를 한 번에 Ultralytics 에
@@ -326,9 +337,24 @@ def cmd_score() -> None:
                   f"({time.perf_counter()-t0:.0f}s)", flush=True)
     print(f"추론 {len(preds):,}건 / {time.perf_counter()-t0:.0f}s "
           f"(conf {params.conf.value}, 출처 {params.conf.source})", flush=True)
+    with cache.open("w", encoding="utf-8") as fh:
+        for r in preds:
+            fh.write(r.model_dump_json() + "\n")
+    print(f"예측 저장 → {cache}", flush=True)
+    return _verdict_from(preds, rows, gold, eval_ids, params, classes, gates)
+
+
+def _verdict_from(preds, rows, gold, eval_ids, params, classes, gates) -> None:
+    """예측에서 통과 기준 3종을 판정한다. 추론과 분리해 두어 재실행이 싸다."""
+    import numpy as np
+
+    from evaluation.metrics.detection import score_detection
+    from evaluation.stats import cluster_bootstrap
 
     by_id = {r["image_id"]: r for r in rows}
-    pred_codes = {p.image_id: [d["iso_code"] for d in p.defects] for p in preds}
+    # `PredictionRecord.defects` 는 pydantic `Defect` 객체다(dict 아님).
+    # D 의 `evaluation/score.py:32` 와 같은 추출을 쓴다.
+    pred_codes = {p.image_id: sorted(p.iso_codes) for p in preds}
     # D9 대응 — 정상 이미지도 모집단에 남는다. `gold` 는 결함 있는 이미지만 키를 갖는
     # 경우가 있으므로 평가셋 전량으로 back-fill 한다(빈 집합 = 정상).
     gold_codes = {i: sorted(gold.get(i, set())) for i in sorted(eval_ids)}
@@ -356,14 +382,22 @@ def cmd_score() -> None:
     far = (sum(1 for i in normals if pred_codes.get(i)) / len(normals)) if normals else float("nan")
 
     # 기준 3 — 출처별 FPR 격차. **값만 기록한다**(명세가 이 시점 판정을 금지한다).
-    def _src(i):
-        return str(by_id.get(i, {}).get("source", ""))
+    #
+    # 축은 `manifest.source`(데이터셋 출처, 전부 aihub71761)가 아니라 **`tiles.provenance`**
+    # (N-crop / N-tile / N-band)다. 40번이 말한 "크롭 출신 정상 대 타일 출신 정상"이
+    # 이 축이고, 함정표 #11(결함/정상 이미지 규격 지름길)이 겨냥하는 것도 여기다.
+    from data.manifest_io import load_snapshot
+
+    tiles = load_snapshot(SNAPSHOT_DIR).tiles
+    prov = ({str(r.image_id): str(r.provenance) for r in tiles.itertuples()}
+            if tiles is not None else {})
 
     src_groups: dict[str, list[str]] = {}
     for i in normals:
-        src_groups.setdefault(_src(i), []).append(i)
+        src_groups.setdefault(prov.get(i, "unknown"), []).append(i)
     fpr_by_src = {k: round(sum(1 for i in v if pred_codes.get(i)) / len(v), 6)
                   for k, v in sorted(src_groups.items()) if v}
+    n_by_src = {k: len(v) for k, v in sorted(src_groups.items())}
     crop = [k for k in fpr_by_src if "crop" in k.lower()]
     tile = [k for k in fpr_by_src if "tile" in k.lower()]
     gap = (abs(fpr_by_src[crop[0]] - fpr_by_src[tile[0]])
@@ -394,8 +428,10 @@ def cmd_score() -> None:
             "값": round(far, 6), "상한": FAR_MAX, "정상_이미지": len(normals), "통과": c2,
         },
         "기준3_출처별_FPR": {
-            "출처별": fpr_by_src, "격차": gap,
-            "설명": "이 시점에서는 판정하지 않고 값만 기록한다(명세 §4-6 기준 3)",
+            "축": "tiles.provenance (N-crop / N-tile / N-band)",
+            "출처별_FPR": fpr_by_src, "출처별_정상장수": n_by_src, "격차": gap,
+            "설명": "이 시점에서는 판정하지 않고 값만 기록한다(명세 §4-6 기준 3). "
+                    "함정표 #11 이 겨냥하는 축이다.",
         },
         "클래스별": [
             {"iso_code": c.iso_code, "support": c.support, "tp": c.tp, "fp": c.fp,
