@@ -158,6 +158,7 @@ def cmd_cell4() -> None:
     t0 = time.perf_counter()
     run_pilot_fed(
         {
+            "cell": "sep_fed",
             "out_dir": OUT_ROOT / "sep_fed",
             "views_root": OUT_ROOT / "views",
             "model": MODEL,
@@ -173,6 +174,7 @@ def cmd_cell4() -> None:
             "initial_arrays": arrays,
             "reference_sd": ref,
             "num_examples": [n_ex[0], n_ex[1], n_ex[2]],
+            "resume_root": str(OUT_ROOT / "_resume" / "sep_fed"),
         }
     )
     audit = json.loads((OUT_ROOT / "sep_fed" / "audit.json").read_text(encoding="utf-8"))
@@ -221,109 +223,64 @@ def cmd_cell6() -> None:
 
 
 def cmd_cell7() -> None:
-    """⑦ 통합·연합 — R 라운드 x E epochs, 어댑터 행렬별 가중 평균.
+    """⑦ 통합·연합 — **Flower `WeldFedAvg` 경로로 돈다** (80번 체크리스트 15항).
 
-    전송 계층(Flower)은 ④에서 검증됐다. 여기서는 함정 #3(집계)이 대상이라
-    인프로세스 순차 루프로 돈다 — 라운드마다 GPU 에 클라이언트 하나만 올라가는
-    실행 형태는 시뮬레이션과 동일하다(동시성 1).
+    파일럿에서는 인프로세스 순차 루프였다. 전송 계층을 건너뛰었으므로 전략의 실패 검사
+    셋(에러 응답·응답 수 대조·키 다이제스트)이 한 번도 발화하지 않았고, 회계가 실패해도
+    예외를 올리지 않고 `audit.json` 도 쓰지 않았다(80번 F6 — `sep_fed/audit.json` 은
+    있는데 `uni_fed/` 에는 없었다). 이제 ④와 같은 배선을 탄다.
+
+    가중은 **감독 토큰 총합**이다(총괄 판정 2). 클라이언트가 `WEIGHT_KEY` 에 그 값을
+    싣고, 회계가 페어 수와 함께 남긴다.
     """
     import json as _json
-    import numpy as np
+
     import torch
-    from detection.budget_audit import AccountingCell, AccountingMatrix
-    from fl.aggregate import weighted_fedavg
-    from fl.atomic_log import AtomicLog, RoundTimer, new_run_id
-    from vlm.init_adapter import assert_same_start
-    from vlm.pilot_vlm import LR as VLM_LR
-    from vlm.pilot_vlm import load_pairs, train_rounds
+
+    from fl.pilot_sim import run_pilot_fed
+    from vlm.pilot_vlm import load_pairs
 
     _, digest = _snapshot()
-    counts = _json.loads(Path("data/processed/pairs_pilot_v1/counts.json").read_text(encoding="utf-8"))
     clients = ["C1", "C2", "C3"]
-    shards = {i: load_pairs("train", client=c) for i, c in enumerate(clients)}
-    # n_k: counts.json 이 단일 소스(선언값). 실측(train 페어 수)과 함께 회계에 남긴다.
+    n_train = {i: len(load_pairs("train", client=c)) for i, c in enumerate(clients)}
+    counts = _json.loads(
+        Path("data/processed/pairs_pilot_v1/counts.json").read_text(encoding="utf-8"))
     n_declared = {i: counts["clients"][c]["n_total"] for i, c in enumerate(clients)}
-    n_train = {i: len(shards[i]) for i in shards}
-    print(f"n_k 선언(counts.json n_total) {n_declared} / 실측(train) {n_train}")
+    print(f"n_k 선언(counts.json n_total) {n_declared} / 실측(train 페어) {n_train}")
+    print("  ※ FedAvg 가중은 페어 수가 아니라 **감독 토큰 총합**이다(총괄 판정 2). "
+          "위 값은 회계 기록용이다.", flush=True)
 
-    out = OUT_ROOT / "uni_fed"; out.mkdir(parents=True, exist_ok=True)
-    log = AtomicLog(out / "atomic_log.csv", run_id=new_run_id("uni_fed", BASE_SEED, RUN_STAMP),
-                    seed=BASE_SEED, cell="uni_fed", split_hash=digest)
-    acc = AccountingMatrix(num_rounds=R, client_ids=list(shards), local_epochs=E, total_epochs=N)
-    timer = RoundTimer()
+    out = OUT_ROOT / "uni_fed"
+    out.mkdir(parents=True, exist_ok=True)
 
-    # r0 부터 **명시 주입**한다. 시드 고정(`fl.seeding`)만으로도 A 는 같아지지만, 파일로
-    # 떨궈 주입하면 "같은 것을 받았다"가 파일 해시 하나로 사후 검증된다 — 검출 칸의
-    # `initial.npz` 와 같은 구조다(74번 감사 C-1 의 비대칭 지적).
-    global_arrays, keys, ref_sd = *_initial_adapter()[:2], None
-    print(f"초기 어댑터 주입: {len(keys)} 텐서 → {OUT_ROOT / VLM_INITIAL}", flush=True)
+    # 다섯 칸 공통 초기 어댑터. 캐시 분기가 ref 를 비워 돌려주므로(80번 F11) 배열에서
+    # 복원해 `assert_compatible` 의 기준으로 쓴다.
+    arrays, keys, ref = _initial_adapter()
+    if not ref:
+        ref = {k: torch.as_tensor(a) for k, a in zip(keys, arrays)}
+    print(f"초기 어댑터 {len(keys)} 텐서 → {OUT_ROOT / VLM_INITIAL}", flush=True)
 
-    for r in range(R):
-        client_payloads, weights = [], []
-        init_proofs, injected_proofs = {}, {}
-        for i in sorted(shards):
-            arrays, keys, m, ref_sd = train_rounds(
-                rows=shards[i], epochs=E, round_idx=r, client_idx=i, base_seed=BASE_SEED,
-                adapter_in=global_arrays, adapter_keys=keys,
-                resume_dir=str(OUT_ROOT / "_resume" / "uni_fed" / f"r{r:03d}_c{i}"),
-                run_id=RUN_STAMP,
-            )
-            init_proofs[i] = m["init_proof"]
-            injected_proofs[i] = m["injected_proof"]
-            client_payloads.append(arrays); weights.append(n_train[i])
-            log.log_round(round_idx=r, client_id=i, n_train_samples=n_train[i],
-                          metrics={"optimizer_steps": float(m["optimizer_steps"]),
-                                   "supervised_tokens": float(m["supervised_tokens"]),
-                                   "param_l2": m["param_l2"], "peak_vram_gb": m["peak_vram_gb"]},
-                          bytes_up=m["payload_bytes"], bytes_down=m["payload_bytes"],
-                          wall_time=m["wall_s"])
-            # 회계에 싣는 값은 **실측**이다. `epochs_ran`·`optimizer`·`lr` 을 여기서
-            # 상수로 재구성하던 것이 74번 감사 P9 의 절반이다. `arg_*` 는 코드에 선언된
-            # 값이고 `optimizer`·`lr` 은 옵티마이저 객체에서 읽은 값이라, 둘이 갈라지면
-            # 검사 (5)가 잡는다.
-            acc.record(AccountingCell(
-                round_idx=r, client_idx=i, epochs_ran=m["epochs_ran"],
-                optimizer_steps=m["optimizer_steps"],
-                num_examples=n_train[i], seed=m["seed"], param_l2_norm=m["param_l2"],
-                payload_bytes=m["payload_bytes"],
-                optimizer=m["optimizer"], lr=m["lr"], momentum=float("nan"),
-                arg_optimizer="AdamW", arg_lr0=VLM_LR, arg_momentum=float("nan"),
-                resumed_from_epoch=m["resumed_from_epoch"], value_source="measured"))
-            print(f"  r{r} c{i}: steps {m['optimizer_steps']} tok {m['supervised_tokens']:,} "
-                  f"peak {m['peak_vram_gb']:.2f}GB ({m['wall_s']:.0f}s) "
-                  f"‖A0‖ {m['init_proof']['l2']:.4f}", flush=True)
+    run_pilot_fed({
+        "cell": "uni_fed",
+        "out_dir": out,
+        "num_rounds": R,
+        "local_epochs": E,
+        "total_epochs": N,
+        "num_clients": len(clients),
+        "base_seed": BASE_SEED,
+        "run_stamp": RUN_STAMP,
+        "split_hash": digest,
+        "canonical_keys": keys,
+        "initial_arrays": arrays,
+        "reference_sd": ref,
+        "client_tags": clients,
+        "resume_root": str(OUT_ROOT / "_resume" / "uni_fed"),
+    })
 
-        # **집계 직전 가드.** 세 클라이언트가 같은 A 에서 출발했는가. 아니면 가중 평균이
-        # "같은 기저의 평균"이 아니라 독립 난수의 상쇄가 된다(함정 #3). 10시간 뒤가 아니라
-        # 여기서 죽는 편이 낫다.
-        assert_same_start(init_proofs)
-        if all(v is not None for v in injected_proofs.values()):
-            assert_same_start(injected_proofs)
-
-        agg = weighted_fedavg(client_payloads, weights, keys,
-                              {k: torch.as_tensor(v) for k, v in ref_sd.items()})
-        client_l2 = [c.param_l2_norm for c in
-                     (acc.cells[(r, i)] for i in sorted(shards))]
-        global_arrays = agg.ndarrays
-        np.savez(out / f"adapter_r{r+1:03d}.npz", **{k: a for k, a in zip(keys, global_arrays)})
-        log.log_round(round_idx=r, client_id="server", n_train_samples=agg.total_examples,
-                      metrics={"global_l2": agg.global_norm}, wall_time=timer.lap())
-        # global_l2 가 클라이언트 norm 근처면 공유 초기값, sqrt(Σw²) 배로 줄어들면 상쇄다.
-        # 이 한 줄이 74번 C-1 을 곧바로 드러냈을 진단이다.
-        mean_l2 = sum(client_l2) / len(client_l2)
-        print(f"  r{r} 집계: global_l2 {agg.global_norm:.3f} "
-              f"(클라이언트 평균 {mean_l2:.3f}, 비 {agg.global_norm / mean_l2:.4f})", flush=True)
-
-    # 병합은 라운드 중 금지 — 최종 어댑터만 저장. 평가용 병합은 채점 단계 몫.
-    np.savez(out / "adapter_last.npz", **{k: a for k, a in zip(keys, global_arrays)})
-    rep = acc.audit()
-    acc.to_csv(out / "accounting.csv"); acc.to_json(out / "accounting.json")
-    gaps = log.audit_rounds(R, list(shards) + ["server"])
-    print(f"⑦ 완주 / 회계 ok={rep.ok and not gaps} 총 스텝 {rep.total_optimizer_steps} "
-          f"/ 결측 {gaps or '없음'}")
-
-
-
+    audit = _json.loads((out / "audit.json").read_text(encoding="utf-8"))
+    print(f"⑦ 완주 / 회계 ok={audit['ok']} 총 스텝 {audit['total_optimizer_steps']}")
+    for n in audit.get("notes", []):
+        print(f"  note: {n}")
 
 
 def cmd_cell7resume() -> None:

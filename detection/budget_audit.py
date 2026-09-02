@@ -88,6 +88,12 @@ _CSV_COLUMNS = [
     "optimizer_updates",
     # 재개해서 이어 간 칸인가. 이어 간 런은 무중단 런과 다른 궤적을 그린다.
     "resumed_from_epoch",
+    # FedAvg 가 실제로 쓴 가중과 그 단위. 총괄 판정 2(2026-09-02)로 통합형은 감독 토큰
+    # 총합이 됐고, 검출은 표본 수다. **어느 단위로 잰 값인지 산출물이 말해야** RQ3 을
+    # 해석할 수 있다 — 단위가 바뀌면 C3 비중이 1.52배 움직인다.
+    "fedavg_weight",
+    "fedavg_weight_unit",
+    "supervised_tokens",
 ]
 
 
@@ -122,6 +128,13 @@ class AccountingCell:
     participated: bool = True
     #: "measured" | "reconstructed". 재구성 셀은 감사 보고서에 따로 센다.
     value_source: str = "measured"
+    #: FedAvg 가 실제로 쓴 가중. **`None` 은 "0" 이 아니라 "미기록" 이다** — 0 을 기본값으로
+    #: 두면 아무도 기록하지 않은 셀이 "가중 0" 으로 읽히고, 그것이 P9 와 같은 종류의 혼동이다.
+    fedavg_weight: float | None = None
+    #: "num_examples"(검출) | "supervised_tokens"(통합형, 총괄 판정 2). 빈 문자열은 미기록.
+    fedavg_weight_unit: str = ""
+    #: 감독 토큰 총합. 통합형에서는 가중 그 자체이고, 검출에서는 0 이다.
+    supervised_tokens: int = 0
 
     @classmethod
     def from_round_result(cls, result: Any) -> "AccountingCell":
@@ -149,6 +162,8 @@ class AccountingCell:
                            if getattr(result, "stopper_calls", None) is not None else None),
             optimizer_updates=int(getattr(result, "optimizer_updates", 0) or 0),
             resumed_from_epoch=getattr(result, "resumed_from_epoch", None),
+            fedavg_weight=float(result.num_examples),
+            fedavg_weight_unit="num_examples",
         )
 
 
@@ -255,6 +270,28 @@ class AccountingMatrix:
                 "이 셀들에 대해 검사 (4)는 통과가 아니라 **미적용**이다. 조기 종료 부재의 "
                 "증거는 results.csv 행 수와 optimizer_steps(및 검사 (2)(3)의 "
                 "epochs_ran==E · 합계==N)에 있다."
+            )
+
+        # (4'') 가중 단위 일관성 — 같은 run 안에서 단위가 갈리면 집계가 두 목적함수를
+        #      섞은 것이다. 총괄 판정 2 가 통합형을 감독 토큰으로 옮겼으므로 **칸 안에서**
+        #      단위가 하나인지 여기서 지킨다.
+        units = {c.fedavg_weight_unit for c in self.cells.values() if c.fedavg_weight_unit}
+        if len(units) > 1:
+            failures.append(f"FedAvg 가중 단위가 셀마다 다르다: {sorted(units)}")
+        zero_w = sorted([r, c] for (r, c), cell in self.cells.items()
+                        if cell.fedavg_weight is not None and cell.fedavg_weight <= 0)
+        if zero_w:
+            failures.append(
+                f"가중이 0 이하인 셀 {len(zero_w)}개 {zero_w[:6]} — 그 클라이언트의 학습이 "
+                "집계에 반영되지 않았다는 뜻이다"
+            )
+        unweighted = sorted([r, c] for (r, c), cell in self.cells.items()
+                            if cell.fedavg_weight is None)
+        if unweighted:
+            # 통과도 실패도 아니다. 연합 칸이 아니면(로컬·중앙) 가중 자체가 없다.
+            notes.append(
+                f"FedAvg 가중이 기록되지 않은 셀 {len(unweighted)}개 {unweighted[:6]} — "
+                "연합 칸이 아니거나 클라이언트가 단위를 싣지 않았다. **0 으로 읽지 마라.**"
             )
 
         # (4') 재구성 값 표식
