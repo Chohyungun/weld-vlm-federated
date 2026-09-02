@@ -190,7 +190,28 @@ def test_pyproject_에_flwr_앱이_등록돼_있다():
     # 85번 ⑤·⑥ — 등록 클라이언트는 칸 디스패처 하나다. 구판의 fl.client_det:app 은
     # train 핸들러가 죽어 있었다("등록된 것은 죽어 있고 도는 것은 등록돼 있지 않다").
     assert flwr["app"]["components"]["clientapp"] == "fl.client_app:app"
-    assert flwr["federations"]["local-sim"]["options"]["num-supernodes"] == 3
+
+    # SuperLink 연결 설정은 pyproject 에 **없어야 한다.** flwr 1.33 CLI 가 이 절을
+    # 발견하면 pyproject 를 스스로 재작성해 사용자 저장소로 이관한다(실측 — 그 재작성이
+    # 착수 커밋에 딸려 들어가 이 시험이 KeyError 로 죽었다). 절이 되살아나면 다음
+    # flwr run 이 실험 도중 또 파일을 고친다.
+    assert "federations" not in flwr, (
+        "[tool.flwr.federations] 가 되살아났다 — flwr run 이 pyproject 를 재작성한다. "
+        "연결 설정은 scripts/main_det.py FEDERATION_CONFIG 로만 준다."
+    )
+    # --run-config 덮어쓰기가 허용되려면 키가 기본값에 선언돼 있어야 한다(flwr 실측).
+    for key in ("resume-root", "smoke-fail-at"):
+        assert key in flwr["app"]["config"], f"app.config 에 {key} 기본값이 없다"
+
+    # 연결 설정 값의 정본은 이제 러너다 — num-supernodes=3 과 GPU 동시성 1 을 고정한다.
+    from scripts.main_det import FEDERATION_CONFIG
+
+    assert "options.num-supernodes=3" in FEDERATION_CONFIG
+    assert "options.backend.client-resources.num-gpus=1.0" in FEDERATION_CONFIG
+    src = Path("scripts/main_det.py").read_text(encoding="utf-8")
+    assert '"--federation-config", FEDERATION_CONFIG' in src, (
+        "러너가 연결 설정을 명시하지 않으면 값이 사용자 저장소(저장소 밖)에 산다"
+    )
 
 
 def test_라운드_키를_리터럴로_쓰지_않는다():

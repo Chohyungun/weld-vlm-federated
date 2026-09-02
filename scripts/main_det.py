@@ -288,9 +288,20 @@ def _flwr_run_config(seed_no: int, *, cell: str, rounds: int, local_epochs: int,
     return " ".join(f"{k}={v}" for k, v in items.items())
 
 
+#: SuperLink 연결 설정 — flwr 1.33 이 pyproject 의 [tool.flwr.federations] 를 사용자
+#: 레벨 저장소로 이관해 버리므로(첫 flwr run 이 pyproject 를 재작성했다, 실측) 값이
+#: 저장소 밖에 살게 된다. 매 실행 명시해 **여기(버전 관리)가 정본**이 되게 한다.
+#: GPU 1.0 = 클라이언트 동시성 1 — VLM 은 물론 검출도 batch 32 에서 7.7GB 라
+#: 두 클라이언트를 동시에 못 올린다.
+FEDERATION_CONFIG = ("options.num-supernodes=3 "
+                     "options.backend.client-resources.num-cpus=2 "
+                     "options.backend.client-resources.num-gpus=1.0")
+
+
 def _flwr_run(run_config: str, log_path: Path) -> None:
     """정식 진입점. pyproject [tool.flwr] 의 등록 앱을 CLI 로 띄운다."""
-    cmd = ["flwr", "run", ".", "local-sim", "--run-config", run_config, "--stream"]
+    cmd = ["flwr", "run", ".", "local-sim", "--run-config", run_config,
+           "--federation-config", FEDERATION_CONFIG, "--stream"]
     print("  $", " ".join(cmd[:5]), "…", flush=True)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     import os
