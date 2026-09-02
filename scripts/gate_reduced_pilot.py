@@ -235,8 +235,17 @@ def cmd_score() -> None:
 
     gates = apply_run_gates(cell="gate46_score")
 
+    # **imgsz 는 학습과 같아야 한다.** `ScoringParams.IMGSZ` 기본값은 416(파일럿
+    # 프로파일)인데 이 게이트는 본실험 프로파일 640 으로 학습했다. 다른 해상도로 추론하면
+    # 그 차이가 곧 게이트 판정의 오차가 된다.
     params = ScoringParams(snapshot=Path(SNAPSHOT_DIR), pilot=OUT, out=OUT,
-                           seed=BASE_SEED)
+                           seed=BASE_SEED, imgsz=640)
+    # `params.class_names` 는 표시명('crack'…)이고 채점기가 비교하는 것은 ISO 코드다
+    # (`predict_cell` 도 `lm.iso_code` 로 쓴다). `evaluation/cells.py:83` 과 같은 변환.
+    from data.label_map import load_label_map
+
+    lm = load_label_map()
+    classes = [lm.iso_code(n) for n in params.class_names]
     rows_all = read_manifest(SNAPSHOT_DIR)
     rows = eval_rows(rows_all)
     eval_ids = {r["image_id"] for r in rows}
@@ -265,7 +274,7 @@ def cmd_score() -> None:
     for i, g in group_of.items():
         ids_by_group.setdefault(g, []).append(i)
 
-    rep = score_detection(pred_codes, gold_codes, list(params.class_names))
+    rep = score_detection(pred_codes, gold_codes, classes)
     macro = float(rep.macro_f1)
 
     # 기준 1 — 묶음 단위 클러스터 부트스트랩. 이미지 단위로 재표집하면 CI 가 좁아져
@@ -274,7 +283,7 @@ def cmd_score() -> None:
         ids = [i for g in groups for i in ids_by_group[g]]
         return float(score_detection({i: pred_codes.get(i, []) for i in ids},
                                      {i: gold_codes.get(i, []) for i in ids},
-                                     list(params.class_names)).macro_f1)
+                                     classes).macro_f1)
 
     ci = cluster_bootstrap(sorted(ids_by_group), macro_of, seed=BASE_SEED)
 
@@ -308,6 +317,8 @@ def cmd_score() -> None:
             "epochs": EPOCHS, "profile": PROFILE, "model": MODEL, "seeds": 1,
             "eval_images": len(rows), "conf": params.conf.value,
             "conf_source": params.conf.source,
+            "imgsz": params.imgsz, "classes_iso": classes,
+            "device": params.device, "max_det": params.max_det,
         },
         "기준1_macro_f1": {
             "값": round(macro, 6), "CI_하한": round(ci.lo, 6), "CI_상한": round(ci.hi, 6),
