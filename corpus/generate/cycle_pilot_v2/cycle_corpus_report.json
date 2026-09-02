@@ -1,0 +1,147 @@
+{
+ "purpose": "합성 corpus 사이클 — 정본 검사기 배선 후 재실행 (체크리스트 19)",
+ "verdict_mode": "full",
+ "generation": {
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "decoding": "greedy",
+  "max_new_tokens": 200,
+  "batch_size": 8,
+  "retry": "없음 (실패분 폐기)",
+  "batch_note": "배치는 재현 조건의 일부다 — 좌측 패딩 때문에 배치가 다르면 같은 프롬프트도 다른 문장이 나온다 (B22)."
+ },
+ "validator_prereg": {
+  "path": "configs\\corpus_validation.yaml",
+  "version": 1
+ },
+ "axes": {
+  "조항검색_기준서술": {
+   "n_in": 120,
+   "validated_by": "cross_family",
+   "measures": [
+    "format",
+    "groundedness"
+   ],
+   "stages": {
+    "stage0_numeric_lock": {
+     "n_in": 120,
+     "n_pass": 25,
+     "n_fail": 95,
+     "pass_rate": 0.2083,
+     "fail_reasons": {
+      "extra_value": 6,
+      "missing_value": 90
+     },
+     "status": "ran"
+    },
+    "stage1_rule": {
+     "n_in": 25,
+     "n_pass": 25,
+     "n_fail": 0,
+     "pass_rate": 1.0,
+     "fail_reasons": {},
+     "status": "ran"
+    }
+   },
+   "n_accepted": 25,
+   "end_to_end_pass_rate": 0.2083,
+   "stage2_judges": {
+    "deepseek": {
+     "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+     "family": "llama",
+     "n_in": 25,
+     "n_pass": 18,
+     "n_fail": 7,
+     "pass_rate": 0.72,
+     "n_format_violation": 0,
+     "n_reason_is_echo": 5,
+     "budget": {
+      "max_new_tokens": 96,
+      "reason_max_new_tokens": 72
+     },
+     "thinking_policy": "suppress",
+     "quantization": "4bit"
+    },
+    "phi": {
+     "model": "microsoft/Phi-4-mini-instruct",
+     "family": "phi",
+     "n_in": 25,
+     "n_pass": 7,
+     "n_fail": 18,
+     "pass_rate": 0.28,
+     "n_format_violation": 18,
+     "n_reason_is_echo": 0,
+     "budget": {
+      "max_new_tokens": 96,
+      "reason_max_new_tokens": 72
+     },
+     "thinking_policy": "suppress",
+     "quantization": "4bit"
+    }
+   },
+   "canonical_judge": null,
+   "canonical_note": "정본 미정 — 사람 라벨 100건 비교 전까지 어느 후보도 정본이 아니다. 후보별 통과율은 judge_agreement 로만 읽는다 (G12-3)."
+  },
+  "조치서술": {
+   "n_in": 80,
+   "validated_by": "rule",
+   "measures": [
+    "format"
+   ],
+   "stages": {
+    "stage0_numeric_lock": {
+     "n_in": 80,
+     "n_pass": 80,
+     "n_fail": 0,
+     "pass_rate": 1.0,
+     "fail_reasons": {},
+     "status": "ran"
+    },
+    "stage2_judge": {
+     "n_in": 0,
+     "n_pass": null,
+     "n_fail": null,
+     "status": "not_run",
+     "fail_reasons": {}
+    }
+   },
+   "n_accepted": 80,
+   "end_to_end_pass_rate": 1.0
+  },
+  "QA": {
+   "n_in": 200,
+   "validated_by": "none",
+   "measures": [
+    "format"
+   ],
+   "stages": {
+    "stage1_rule": {
+     "n_in": 200,
+     "n_pass": 188,
+     "n_fail": 12,
+     "pass_rate": 0.94,
+     "fail_reasons": {
+      "duplicate_question": 7,
+      "schema_violation": 5
+     },
+     "status": "ran"
+    },
+    "stage2_judge": {
+     "n_in": 0,
+     "n_pass": null,
+     "n_fail": null,
+     "status": "not_run",
+     "fail_reasons": {}
+    }
+   },
+   "n_accepted": 188,
+   "end_to_end_format_rate": 0.94,
+   "n_source_passages": 79,
+   "n_aspects": 3,
+   "reuse_factor": 2.532,
+   "capacity": 237,
+   "note": "근거성·사실성 검증 없음 — 형식(질문/답 두 줄 + 중복 제거)만 잰 값이다. pass_rate 로 읽으면 안 된다 (B8).",
+   "passage_screen": "유료 표준 전재 의심 구절 제외"
+  }
+ },
+ "git_commit": "47c4dbc22e134d6c2cad9438f2038eef5d29d4fc"
+}

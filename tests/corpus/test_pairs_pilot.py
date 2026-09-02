@@ -55,10 +55,49 @@ def test_파일럿_허용치표는_강재만_덮는다():
     assert M.covered_materials(table) == {"ST"}
 
 
-def test_clause_basis_는_재질을_보지_않는다():
-    """P4 의 실체. 이 사실이 재질 축 가드의 존재 이유다 — 가드를 지우면 다시 샌다."""
+def test_clause_basis_가_재질_축을_본다():
+    """P4 의 정정. v1 은 재질을 안 보고 알루미늄에 강재 조항을 붙였다 (219건 전량)."""
     table = limits_loader.load_limits(str(M.LIMITS_CSV), pilot=True)
-    basis = M.clause_basis(table)
-    # 강재 전용 조항이 코드만으로 잡힌다. 알루미늄 이미지에도 그대로 붙는다.
-    assert basis["2011"]["clause_id"] == "KRA27-T15"
-    assert all("재질" not in c for b in basis.values() for c in b["criteria"])
+    st = M.clause_basis(table, "ST")
+    al = M.clause_basis(table, "AL")
+    assert st["2011"]["clause_id"] == "KRA27-T15"
+    assert al == {}, "알루미늄을 덮는 허용치 행이 없는데 조항이 잡혔다"
+
+
+def test_덮지_않는_재질은_조항을_특정하지_않는다():
+    """격리(안 A)하면 C3 결함 페어가 0건이 되어 RQ3 이 인위적으로 바뀐다 — 서술로 닫는다."""
+    defects = [{"type": "2011", "bbox_px": [0, 0, 10, 10], "size_px": {}, "size_mm": None}]
+    text = M.defect_target_text(defects, NAMES, {})
+    assert "적용 조항을 특정하지 않는다" in text
+    assert "KRA27" not in text
+    assert "기공(ISO 6520-1 코드 2011) 1개" in text
+
+
+def test_합계길이_조항은_미표현_단서를_부기한다():
+    """KRA27-T16 은 합계 길이 기준인데 개별 결함 한계로 서술돼 286건에 실렸다 (B12)."""
+    table = limits_loader.load_limits(str(M.LIMITS_CSV), pilot=True)
+    base = M.clause_basis(table, "ST")
+    defects = [{"type": "301", "bbox_px": [0, 0, 10, 10], "size_px": {}, "size_mm": None}]
+    text = M.defect_target_text(defects, NAMES, base)
+    assert "KRA27-T16" in text
+    assert "기계 표현으로 옮기지 못한 단서" in text
+
+
+def test_v1_회계가_실측과_맞는다():
+    """219 + 286 − 84 = 421. 산출물이 이 숫자를 들고 다녀야 RQ2·RQ3 을 그 위에서 읽는다."""
+    acc = M.v1_accounting()
+    kinds = {k["kind"]: k["n"] for k in acc["kinds"]}
+    assert kinds == {"material_axis": 219, "aggregate_length": 286}
+    assert acc["n_defective_citations"] == 421
+    assert round(421 / acc["n_defect_pairs"], 4) == acc["share_of_defect_pairs"]
+
+
+def test_v1_은_덮어쓸_수_없다(monkeypatch):
+    """규약 1-6 — 동결본 경로로 재생성하면 회계가 가리키는 실물이 사라진다."""
+    monkeypatch.setattr(
+        "sys.argv",
+        ["make_pairs_pilot", "--out", str(M.FROZEN_V1)],
+    )
+    with pytest.raises(SystemExit) as e:
+        M.main()
+    assert "동결" in str(e.value)

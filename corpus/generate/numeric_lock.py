@@ -57,6 +57,8 @@ __all__ = [
     "LockResult",
     "to_decimal",
     "find_defect_tokens",
+    "find_artifacts",
+    "find_verdict_implying",
     "check_numeric_lock",
     "check_normal_lock",
     "check_pair_lock",
@@ -174,6 +176,9 @@ _NUM_UNIT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# 판정어. **분리자를 지운 뒤** 센다 — "불 합격"처럼 공백·중점이 하나만 끼면 한 글자
+# lookbehind 가 뚫려 실제 뒤집힘이 뒤집힘으로 잡히지 않았다 (80번 B21).
+_VERDICT_SEP_RE = re.compile(r"[\s·ㆍ・\-_~]+")
 _FAIL_RE = re.compile(r"불합격")
 _PASS_RE = re.compile(r"(?<!불)합격")
 
@@ -229,8 +234,9 @@ def _scan(text: str) -> _Scan:
     "KR-3.2.1" 의 접두 KR 이 발행기관으로 잡혀 정상 인용이 환각으로 몰린다.
     """
     t = _normalize(text)
-    n_fail = len(_FAIL_RE.findall(t))
-    n_pass = len(_PASS_RE.findall(t))
+    verdict_view = _VERDICT_SEP_RE.sub("", t)
+    n_fail = len(_FAIL_RE.findall(verdict_view))
+    n_pass = len(_PASS_RE.findall(verdict_view))
     standards = list(_STD_REF_RE.findall(t))
     t = _STD_REF_RE.sub(" ", t)
     clauses = tuple(c for c in _CLAUSE_RE.findall(t) if _is_clause_token(c))
@@ -248,6 +254,98 @@ def _scan(text: str) -> _Scan:
         except InvalidOperation:  # pragma: no cover - \d 정규식상 도달 불능
             continue
     return _Scan(clauses, tuple(standards), tuple(tokens), n_pass, n_fail)
+
+
+# ---------------------------------------------------------------------------
+# 생성문 아티팩트 게이트 (80번 G3-1) — 내부 표현이 문장으로 샌 흔적
+# ---------------------------------------------------------------------------
+#
+# 채택 corpus 69건 중 49건(71.0%)이 프롬프트 직렬화 버그의 산물이었고 전 단계를 통과했다
+# (B1): `Unit.MM` 26건, 개구간 인코딩 `X.01` 43건, 후행 0 `4.00` 27건. 이 셋은 값으로는
+# 골격과 같아서 화이트리스트 대조를 통과한다 — **표기가 틀린 것이라 값 검사로는 안 잡힌다.**
+# 그래서 표기 자체를 사유로 만든다. 정본은 여기 하나다 (호출자가 자기 정규식을 두지 않는다).
+#
+# 수사(십이·十二·twelve)도 같은 자리에서 본다 (G2-7) — 값 파싱 없이 우회하는 경로다.
+
+_ARTIFACT_SPECS: tuple[tuple[str, "re.Pattern[str]"], ...] = (
+    ("내부 enum 노출",
+     re.compile(r"\b(?:Unit|InspectionMethod|LimitRule|LimitOp|LimitType|Material"
+                r"|QualityScheme|Scope|RatioBasis|VerdictMode|Verdict|Judgment)"
+                r"\.[A-Za-z_]+")),
+    ("개구간 인코딩 노출",
+     re.compile(r"(?<![\d.])(?P<n>\d+)\.01(?![\d])")),
+    ("후행 0 표기",
+     re.compile(r"(?<![\d.])\d+\.\d*0(?![\d])")),
+    ("파이썬 리터럴 노출",
+     re.compile(r"\b(?:None|True|False|Decimal\(|\[\s*'|\{\s*')")),
+)
+
+#: 수사 어휘 (G2-7). 값 파싱을 거치지 않으므로 화이트리스트가 못 잡는다.
+_NUMERAL_WORDS: tuple[str, ...] = (
+    "하나", "둘", "셋", "넷", "다섯", "여섯", "일곱", "여덟", "아홉", "열",
+    "일점", "이점", "삼점", "사점", "오점",
+    "십일", "십이", "십오", "이십", "이십오", "삼십", "오십", "백",
+    "一", "二", "三", "四", "五", "六", "七", "八", "九", "十", "百",
+    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+    "eleven", "twelve", "fifteen", "twenty", "thirty", "fifty", "hundred",
+)
+#: 수량을 세는 단위. 한글·한자 수사는 **단위와 붙어 있을 때만** 수사로 본다 —
+#: 낱말 경계가 없는 언어라 맨 부분문자열로 잡으면 "균열"의 '열', "배열"의 '열'이
+#: 걸려 정상 문장이 전량 폐기된다 (실측: D4 페어 89건).
+_COUNTER = r"(?:개|건|장|번|회|차|배|겹|군데|곳|mm|밀리미터|퍼센트|%|도|초|분|시간)"
+_KO_NUMERALS = tuple(w for w in _NUMERAL_WORDS if not w.isascii())
+_EN_NUMERALS = tuple(w for w in _NUMERAL_WORDS if w.isascii())
+_NUMERAL_RE = re.compile(
+    "|".join(
+        [rf"(?:{'|'.join(re.escape(w) for w in sorted(_KO_NUMERALS, key=len, reverse=True))})"
+         rf"\s*{_COUNTER}"]
+        + [rf"\b{re.escape(w)}\b" for w in sorted(_EN_NUMERALS, key=len, reverse=True)]
+    ),
+    re.IGNORECASE,
+)
+
+#: 판정 함의 표현 (G2-6). `clause_only` 게이트에서는 합격·불합격 낱말을 피해 같은 뜻을
+#: 전달하는 표현도 폐기 사유다 — 축이 "합부를 말하지 않는다" 이기 때문이다.
+_VERDICT_IMPLYING: tuple[str, ...] = (
+    "적합하다", "부적합", "적합함", "합치한다", "만족한다", "만족하지",
+    "충족한다", "충족하지", "허용된다", "허용되지", "허용한다",
+    "통과한다", "통과하지", "기준을 넘는다", "기준을 초과한다", "기준 이내",
+    "판정한다", "판정된다", "판정할 수 있다",
+)
+_VERDICT_IMPLYING_RE = re.compile("|".join(re.escape(w) for w in _VERDICT_IMPLYING))
+
+
+def find_artifacts(text: str, *, basis: str = "") -> tuple[str, ...]:
+    """생성문에 남은 내부 표현·수사 흔적. 빈 튜플이면 깨끗하다.
+
+    **판정 기준은 [자료]다.** `basis` 에 그 토큰이 문자 그대로 있으면 아티팩트가 아니다 —
+    자료가 그렇게 줬으면 그대로 옮겨 적은 것이 맞다. 자료에 없는 표기가 생성문에만 있으면
+    그것은 내부 표현이 다른 경로로 샌 흔적이다.
+
+    이 구분이 필요한 이유: 값 검사는 `4.00 ≡ 4` 로 보므로(§5-4 2단계 후행 0 동치) 표기
+    오염을 원리적으로 못 잡는다. 반대로 자료를 안 보고 표기만 막으면, 자료가 정당하게
+    `4.00` 을 준 경로에서 정상 출력이 전량 폐기된다.
+    """
+    t = _normalize(text)
+    b = _normalize(basis)
+    hits: list[str] = []
+    for label, pat in _ARTIFACT_SPECS:
+        for m in pat.finditer(t):
+            if m.group(0) in b:
+                continue
+            hits.append(f"{label}: {m.group(0)!r}")
+            break
+    for m in _NUMERAL_RE.finditer(t):
+        if m.group(0) in b:
+            continue
+        hits.append(f"수사 표기: {m.group(0)!r}")
+        break
+    return tuple(hits)
+
+
+def find_verdict_implying(text: str) -> tuple[str, ...]:
+    """판정 함의 표현 (clause_only 전용 검사)."""
+    return tuple(sorted({m.group(0) for m in _VERDICT_IMPLYING_RE.finditer(_normalize(text))}))
 
 
 # ---------------------------------------------------------------------------
@@ -406,6 +504,8 @@ def _verdict_reasons(
         detail.append(f"판정어 불일치: 생성문={text_verdict} ↔ 골격={expected}")
         return [REASON_VERDICT_FLIP]
     return []
+
+
 
 
 def _classify_sets(
