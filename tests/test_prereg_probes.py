@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from evaluation.prereg import (
+    BEFORE_PREPROCESS,
     PREREG,
     R1_COUNT,
     RT_TOTAL,
@@ -34,8 +35,9 @@ from evaluation.probes.metadata_probe import (
 
 CLASSES = ("100", "2011", "301", "401")
 
-# §1-2 클래스별 값에서 역산한 RT 결함 이미지 수 (ST+AL).
-COUNTS = {"100": 2349, "2011": 26967, "301": 2062, "401": 3229}
+#: **동결 스냅샷 실측** 클래스별 결함 이미지 수 (`prereg_recomputed_v1.json`).
+#: 이전 값 {2349, 26967, 2062, 3229} 은 동결 전 집계이고 전량도 62,998 로 690 많았다.
+COUNTS = {"100": 2376, "2011": 26970, "301": 2108, "401": 3327}
 
 
 # --- 사전등록 상수 재현 ---------------------------------------------------------
@@ -56,37 +58,74 @@ def test_shortcut_contribution_reproduces():
     )
 
 
-def test_spec_only_exceeds_trivial_lower_bound():
-    """이 부등식이 곧 '규격이 지름길'이라는 정량 증거다."""
-    base, _ = all_positive_macro_f1(COUNTS)
-    spec, _ = spec_only_macro_f1(COUNTS)
-    assert spec > base
+def test_shortcut_was_real_before_preprocessing():
+    """**처리 전** 부등식이 '규격이 지름길'이라는 정량 증거였다. 기록으로 남긴다."""
+    assert BEFORE_PREPROCESS["spec_only_macro_f1"] > BEFORE_PREPROCESS[
+        "all_positive_macro_f1"]
+    assert BEFORE_PREPROCESS["shortcut_contribution"] == pytest.approx(0.0944, abs=1e-9)
 
 
-def test_untreated_original_fails_p1_prime_gate():
-    """미처리 원본(0.3025)이 통과선(0.2131)을 넘지 못하는 것이 게이트의 존재 이유다."""
-    assert PREREG.spec_only_macro_f1 > PREREG.p1_prime_gate
+def test_shortcut_is_dead_after_preprocessing():
+    """**처리 후** 규격전용 규칙이 전량양성과 같아진다 — 함정 #11 대응의 성공 조건.
+
+    재인코딩으로 전 이미지가 1280×720 이 되어 "1280×720 에만 주장하는 규칙"이
+    "전부에 주장하는 규칙"과 구별되지 않는다. 순 기여 0 이 목표값이었다.
+    """
+    base, _ = all_positive_macro_f1(COUNTS, RT_TOTAL)
+    spec, _ = spec_only_macro_f1(COUNTS, R1_COUNT)
+    assert spec == pytest.approx(base, abs=1e-12)
+    assert PREREG.shortcut_contribution == 0.0
+
+
+def test_untreated_original_would_have_cleared_the_gate():
+    """미처리 원본이 통과선을 넘었다는 것이 게이트가 필요했던 이유다(처리 전 값)."""
+    assert BEFORE_PREPROCESS["spec_only_macro_f1"] > BEFORE_PREPROCESS[
+        "all_positive_macro_f1"] + 0.005
+
+
+def test_treated_shortcut_no_longer_clears_the_gate():
+    """처리 후에는 규격 규칙이 통과선을 넘지 못한다."""
+    assert PREREG.spec_only_macro_f1 < PREREG.p1_prime_gate
 
 
 def test_p1_prime_gate_is_lower_bound_plus_tolerance():
-    assert PREREG.p1_prime_gate == pytest.approx(0.2131, abs=1e-9)
+    assert PREREG.p1_prime_gate == pytest.approx(0.2161, abs=1e-9)
+
+
+def test_gate_line_sits_above_the_scoring_population_bound():
+    """**등록 통과선이 채점 모집단 자명하한 아래에 있으면 안 된다**(80번 D2).
+
+    이전 판은 통과선 0.2131 이 동결 평가셋 자명하한 0.21595 보다 낮았다 — 자명하한도
+    못 넘는 예측기가 "통과"로 찍히는 상태였다.
+    """
+    from evaluation.prereg import EVAL_ALL_POSITIVE, pass_line_for
+
+    assert pass_line_for(EVAL_ALL_POSITIVE) > EVAL_ALL_POSITIVE
+    assert BEFORE_PREPROCESS["all_positive_macro_f1"] + 0.005 < EVAL_ALL_POSITIVE
 
 
 def test_verify_accepts_reproduced_values():
-    ok, msg = verify_against_prereg(0.2081, 0.3025)
+    ok, msg = verify_against_prereg(
+        PREREG.all_positive_macro_f1, PREREG.spec_only_macro_f1)
     assert ok and "재현 확인" in msg
 
 
 def test_verify_rejects_drifted_measurement():
     """재현 실패는 지름길 판정 이전에 계측이 틀렸다는 뜻이다."""
-    ok, msg = verify_against_prereg(0.2081, 0.2500)
+    ok, msg = verify_against_prereg(PREREG.all_positive_macro_f1, 0.2500)
     assert not ok and "계측을 먼저" in msg
+
+
+def test_verify_rejects_the_pre_freeze_constants():
+    """**이빨 시험.** 낡은 상수(0.2081/0.3025)를 넣으면 반드시 실패해야 한다."""
+    ok, _ = verify_against_prereg(0.2081, 0.3025)
+    assert not ok
 
 
 def test_header_rows_carry_all_three_constants():
     rows = PREREG.as_header_rows()
     joined = " ".join(v for _, v in rows)
-    assert "0.2081" in joined and "0.3025" in joined and "0.0944" in joined
+    assert "0.2111" in joined and "+0.0000" in joined
 
 
 # --- 회복률 분모 규칙 (§5-4) -----------------------------------------------------

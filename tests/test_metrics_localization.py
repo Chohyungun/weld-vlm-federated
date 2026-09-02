@@ -43,23 +43,27 @@ def test_iou_is_not_clipped_to_image():
 # --- 매칭 -----------------------------------------------------------------------
 
 def test_different_class_never_matches():
-    m = match_image([("100", [0, 0, 10, 10])], [("2011", [0, 0, 10, 10])])
+    m, n_unmatched = match_image([("100", [0, 0, 10, 10])], [("2011", [0, 0, 10, 10])])
     assert [x.matched for x in m] == [False]
     assert m[0].iou == pytest.approx(0.0)
+    # 클래스가 다른 예측은 짝을 못 찾은 예측으로 센다 — 위치 축 분모에 들어간다(80번 D6).
+    assert n_unmatched == 1
 
 
 def test_unmatched_gold_included_with_zero():
     """분모에서 빼면 못 찾은 결함이 지표에서 사라진다."""
-    m = match_image([], [("2011", [0, 0, 10, 10])])
+    m, n_unmatched = match_image([], [("2011", [0, 0, 10, 10])])
     assert len(m) == 1 and m[0].iou == pytest.approx(0.0)
+    assert n_unmatched == 0
 
 
 def test_hungarian_picks_global_optimum_not_greedy():
     """greedy 는 순서에 따라 다른 답을 낸다. 밀집 이미지에서 재현성이 깨진다."""
     gold = [("2011", [0, 0, 10, 10]), ("2011", [100, 100, 110, 110])]
     pred = [("2011", [100, 100, 110, 110]), ("2011", [0, 0, 10, 10])]
-    m = match_image(pred, gold)
+    m, n_unmatched = match_image(pred, gold)
     assert all(x.iou == pytest.approx(1.0) for x in m)
+    assert n_unmatched == 0
 
 
 def test_box_order_does_not_change_result():

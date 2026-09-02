@@ -40,12 +40,32 @@ DET_TAGS: tuple[str, ...] = tuple(cell_tag(c, cl) for c, cl, _ in CHECKPOINTS)
 UNI_TAGS: tuple[str, ...] = ("uni_central", "uni_fed")
 ALL_TAGS: tuple[str, ...] = DET_TAGS + UNI_TAGS
 
-REGRESSION_KEYS: tuple[str, ...] = (
-    "macro_f1", "defect_recall", "miss_rate", "class_jaccard",
-    "bbox_iou", "bbox_iou_matched_only", "n_gold", "n_matched",
-    "coord_suspect", "map_50", "map_50_95",
-)
-"""채점기를 옮겨도 변하면 안 되는 키. 부동소수 근사 비교를 하지 않고 완전 일치를 본다."""
+REDEFINED_KEYS: dict[str, str] = {
+    "bbox_iou": "bbox_iou_gold_anchored",
+    "bbox_iou_matched_only": "",
+    "n_matched": "",
+    "n_gold": "",
+    "class_jaccard": "",
+    "map_50": "",
+    "map_50_95": "",
+    "n_pred_boxes": "",
+}
+"""**정의가 바뀐 키.** 값 → 새 키 이름(빈 문자열이면 대응 없음, 대조에서 제외).
+
+체크리스트 10~13 이 지표 정의를 고쳤으므로 이 키들은 65·66번 값과 달라지는 것이 정상이다.
+어긋남을 조용히 통과시키지 않으려고 **명시 목록으로 남긴다** — 목록에 없는 키가 달라지면
+그것은 의도치 않은 회귀다.
+
+- `bbox_iou`: 남는 예측 벌점 도입(D6). 옛 정의는 `bbox_iou_gold_anchored` 로 살아 있다.
+- `bbox_iou_matched_only`·`n_matched`: 겹침 0 배정을 매칭에서 뺐다(D5).
+- `n_gold`: 정상 이미지 복귀로 매칭 목록 길이가 바뀐다(D9).
+- `class_jaccard`: 채점 클래스 밖 코드를 분모에서 뺐다(D8).
+- `map_50`·`map_50_95`: 모집단 복귀(D9) + 생성형 칸 `NOT_APPLICABLE`(D16).
+- `n_pred_boxes`: 정상 이미지 복귀로 mAP 입력에 들어가는 예측 박스가 늘었다. **이 델타가
+  D9 의 크기다** — 실측: sep_central 165→166 · sep_local_C2 427→428 ·
+  uni_central 611→667(+56) · uni_fed 347→377(+30). 생성형 두 칸에서 8~9% 의 예측이
+  위치·mAP 모집단 밖에 있었고, 검출 칸은 0.2~0.6% 였다. **누락이 대칭이 아니었다.**
+"""
 
 
 @dataclass(frozen=True)
@@ -69,13 +89,26 @@ class Population:
 
 
 def load_population(params: ScoringParams) -> Population:
-    """동결 스냅샷 → 평가 모집단. 정답을 만드는 경로가 여기 하나뿐이다."""
+    """동결 스냅샷 → 평가 모집단. 정답을 만드는 경로가 여기 하나뿐이다.
+
+    **정상 이미지도 모집단이다.** 이전 판은 `gold_codes` 만 back-fill 하고 `gold_boxes`
+    는 하지 않아, 위치·mAP 축이 `sorted(gold_boxes)` = 결함 이미지만 돌았다. 653장 중
+    265장(40.6%)이 빠졌고 그 결과 **위치 축이 오탐에 면역**이었다 — 정상 이미지에 박스를
+    아무리 뿌려도 지표가 안 움직인다. 계약 #4 와 정면 충돌이다(80번 D9).
+    """
     lm = load_label_map()
     rows = select_eval(read_manifest(params.snapshot))
     eval_ids = {r["image_id"] for r in rows}
     gold_codes, gold_boxes = read_gold(params.snapshot, eval_ids)
     for iid in eval_ids:
         gold_codes.setdefault(iid, set())
+        gold_boxes.setdefault(iid, [])
+    if len(gold_boxes) != len(eval_ids) or len(gold_codes) != len(eval_ids):
+        raise AssertionError(
+            f"채점 모집단이 평가셋과 다르다 — gold_boxes {len(gold_boxes)} · "
+            f"gold_codes {len(gold_codes)} · eval {len(eval_ids)}. "
+            "정상 이미지가 빠지면 위치 축이 오탐에 면역이 된다(80번 D9)"
+        )
     return Population(
         rows=rows, eval_ids=eval_ids,
         gold_codes=gold_codes, gold_boxes=gold_boxes,
@@ -110,7 +143,8 @@ def load_unified_records(
         raise FileNotFoundError(f"통합형 원시 출력 없음: {src}")
     return adapt_unified_generations(
         src.read_text(encoding="utf-8").splitlines(),
-        cell=cell, seed=params.seed, known_iso_codes=known_codes, image_size=pop.sizes,
+        cell=cell, seed=params.seed, known_iso_codes=known_codes,
+        scoring_iso_codes=pop.classes, image_size=pop.sizes,
     )
 
 
@@ -118,15 +152,34 @@ def regression_diffs(stored: dict, fresh: dict, tags: Sequence[str]) -> list[dic
     """저장된 지표와 새 지표의 완전 일치 대조.
 
     **값이 바뀌면 옮긴 코드가 같은 코드가 아니다.** 리팩토링의 통과 조건이 이것이다.
+
+    두 군데가 새고 있었다(80번 D20). ① 고정 키 11개만 봐서 지표가 추가돼도 "완전 일치"가
+    나왔다. ② 저장본에 칸이 통째로 없으면 `continue` 로 넘겨 통과했다. 이제
+    **저장본의 키 전량**을 보고 **빠진 칸은 불일치로 올린다.**
+
+    `REDEFINED_KEYS` 에 있는 키는 정의가 의도적으로 바뀐 것이라 새 이름과 대조하거나
+    (대응이 없으면) 건너뛴다. 그 목록 자체가 감사 대상이다.
     """
     diffs = []
     for tag in tags:
         if tag not in stored:
+            diffs.append({"cell": tag, "key": "*", "stored": "칸 없음", "fresh": "있음"})
             continue
-        for k in REGRESSION_KEYS:
-            a, b = stored[tag].get(k), fresh[tag].get(k)
-            if a != b:
-                diffs.append({"cell": tag, "key": k, "stored": a, "fresh": b})
+        for k, a in stored[tag].items():
+            if k in REDEFINED_KEYS:
+                new_key = REDEFINED_KEYS[k]
+                if not new_key:
+                    continue
+                b = fresh[tag].get(new_key)
+                if a != b:
+                    diffs.append({"cell": tag, "key": f"{k}→{new_key}",
+                                  "stored": a, "fresh": b})
+                continue
+            if k not in fresh[tag]:
+                diffs.append({"cell": tag, "key": k, "stored": a, "fresh": "키 없음"})
+                continue
+            if a != fresh[tag][k]:
+                diffs.append({"cell": tag, "key": k, "stored": a, "fresh": fresh[tag][k]})
     return diffs
 
 

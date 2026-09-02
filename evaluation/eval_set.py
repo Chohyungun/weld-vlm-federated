@@ -28,7 +28,36 @@ def parse_iso_codes(value: str | None) -> tuple[str, ...]:
     return tuple(c for c in (value or "").split(ISO_SEP) if c)
 
 
+_DIGESTS: dict[str, str] = {}
+VERIFIED: set[str] = set()
+"""이번 프로세스에서 이미 검증한 스냅샷 경로. 같은 스냅샷을 여러 번 열어도 해시는 한 번만
+다시 센다 — 검증을 건너뛰기 위한 장치가 아니라 **매번 부르되 비싸지 않게** 하는 장치다."""
+
+
+def ensure_verified(snapshot: str | Path, *, force: bool = False) -> str:
+    """스냅샷 해시를 대조한다. **채점 리더는 이 함수를 지나서만 파일을 연다.**
+
+    이전 판은 `manifest.csv` 를 직접 열었고, 저장소 전체에서 `verify_snapshot` 호출처가
+    `manifest_io` 내부와 시험뿐이었다. 변조 사본으로 실증됐다 — 승인 로더는 거부하는데
+    채점 리더는 eval 653장·gold 388장을 경고 없이 반환했다(80번 D1).
+
+    "잠금은 OS 읽기 전용이 아니라 이 검증이다"(Q7 확정)라고 계약이 못 박아 두고, 정작
+    채점 경로가 그 검증을 지나지 않았다. 여기가 그 배선이다.
+    """
+    from data.manifest_io import verify_snapshot
+
+    key = str(Path(snapshot).resolve())
+    cached = _DIGESTS.get(key)
+    if cached is not None and not force:
+        return cached
+    digest = verify_snapshot(snapshot)
+    VERIFIED.add(key)
+    _DIGESTS[key] = digest
+    return digest
+
+
 def read_manifest(snapshot: str | Path) -> list[dict[str, str]]:
+    ensure_verified(snapshot)
     with (Path(snapshot) / "manifest.csv").open(encoding="utf-8", newline="") as fh:
         return list(csv.DictReader(fh))
 
@@ -40,6 +69,7 @@ def read_gold(
 
     bbox 는 원본 픽셀 그대로다. 정규화·클리핑을 하지 않는다.
     """
+    ensure_verified(snapshot)
     codes: dict[str, set[str]] = defaultdict(set)
     boxes: dict[str, list[tuple[str, Box]]] = defaultdict(list)
     with (Path(snapshot) / "annotations.csv").open(encoding="utf-8", newline="") as fh:

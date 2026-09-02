@@ -138,18 +138,28 @@ def confusion_pairs(
 def class_jaccard(
     pred: Mapping[str, Iterable[str]],
     gold: Mapping[str, Iterable[str]],
+    classes: Sequence[str] | None = None,
 ) -> float:
     """이미지별 |∩|/|∪| 의 평균. 스펙 §4-7.
 
     **양쪽 공집합(정상을 정상으로 예측)이면 1.0 으로 정의한다.** 이 규약을 안 정하면
     정상 이미지 비율(RT 강재 44%)이 지표를 통째로 좌우한다.
+
+    `classes` 를 주면 **채점 공간 안으로 제한한다.** 안 주던 시절, 통합형이 낸 채점
+    클래스 밖 코드(2012·402)가 합집합 분모만 키웠다 — `score_detection` 은 그 코드를
+    순회하지 않아 FP 로도 세지 않는데 여기서만 벌점이 붙었고, 분리형은 nc=4 라 물리적으로
+    그런 코드를 못 내므로 **통합형에만 붙는 벌점**이었다(80번 D8). 어댑터도 같은 코드를
+    버리지만(`evaluation.policy`), 지표 쪽에도 걸어 둔다 — 한 겹이 뚫려도 대칭이 유지된다.
     """
     image_ids = sorted(set(gold))
     if not image_ids:
         return 0.0
+    scope = frozenset(classes) if classes is not None else None
     total = 0.0
     for img in image_ids:
         a, b = frozenset(pred.get(img, ())), frozenset(gold.get(img, ()))
+        if scope is not None:
+            a, b = a & scope, b & scope
         union = a | b
         total += 1.0 if not union else len(a & b) / len(union)
     return total / len(image_ids)

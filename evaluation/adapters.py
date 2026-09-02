@@ -12,11 +12,11 @@
 from __future__ import annotations
 
 import json
-import math
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import get_args
 
+from evaluation.policy import DEFECT_ITEM_POLICY, filter_defect_items
 from evaluation.schema import (
     SCHEMA_VERSION,
     Cell,
@@ -45,6 +45,13 @@ class AdaptReport:
     """원본 이미지 경계를 벗어난 박스 수. 좌표계 진단 신호이며 채점에는 개입하지 않는다."""
     citations: dict[str, list[str]] = field(default_factory=dict)
     """image_id → 생성문이 인용한 조항 ID. 무근거 인용률의 입력이다."""
+    n_bad_items: int = 0
+    """형식이 깨져 **항목만** 버린 결함 수. 레코드는 살아 있다(80번 D7)."""
+    n_unknown_code: int = 0
+    """`label_map` 에 없는 코드. 환각 신호다."""
+    n_out_of_scope: int = 0
+    """`label_map` 에는 있으나 채점 4클래스 밖. 버리되 센다(80번 D8)."""
+    out_of_scope_codes: dict[str, int] = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return {
@@ -55,6 +62,11 @@ class AdaptReport:
             "n_boxes": self.n_boxes,
             "n_boxes_out_of_bounds": self.n_boxes_out_of_bounds,
             "n_images_with_citation": sum(1 for v in self.citations.values() if v),
+            "discard_policy": DEFECT_ITEM_POLICY,
+            "n_bad_items_dropped": self.n_bad_items,
+            "n_unknown_code_dropped": self.n_unknown_code,
+            "n_out_of_scope_dropped": self.n_out_of_scope,
+            "out_of_scope_codes": dict(sorted(self.out_of_scope_codes.items())),
         }
 
 
@@ -64,6 +76,7 @@ def adapt_unified_generations(
     cell: Cell,
     seed: int,
     known_iso_codes: Iterable[str],
+    scoring_iso_codes: Iterable[str] | None = None,
     image_size: Mapping[str, tuple[int, int]] | None = None,
 ) -> AdaptReport:
     """통합형 `generations.jsonl` → 계약 #4 레코드.
@@ -79,6 +92,7 @@ def adapt_unified_generations(
     **어떤 필드값도 보정하지 않는다.**
     """
     codes = set(known_iso_codes)
+    scoring = set(scoring_iso_codes) if scoring_iso_codes is not None else codes
     rep = AdaptReport()
 
     for raw in lines:
@@ -128,32 +142,30 @@ def adapt_unified_generations(
             fail("schema_violation", upstream=False)
             continue
 
-        defects: list[dict] = []
-        reason: str | None = None
-        for d in raw_defects:
-            code = str(d.get("iso_code", ""))
-            box = d.get("bbox_px")
-            if code not in codes:
-                reason = "unknown_iso_code"
-                break
-            if not isinstance(box, (list, tuple)) or len(box) != 4:
-                reason = "bbox_invalid"
-                break
-            x1, y1, x2, y2 = (float(v) for v in box)
-            if not all(math.isfinite(v) for v in (x1, y1, x2, y2)) or x1 >= x2 or y1 >= y2:
-                reason = "bbox_invalid"
-                break
-            defects.append({
-                "iso_code": code,
-                "bbox_px": [x1, y1, x2, y2],
+        # **항목 단위 폐기.** 이전 판은 결함 하나가 깨지면 `break` 로 레코드 전체를
+        # 폐기했다. 분리형은 그 박스만 건너뛰고 나머지를 살리므로, 같은 이미지가 칸에
+        # 따라 "전량 미검출" 또는 "일부 검출"이 됐다(80번 D7). 정책은 이제
+        # `evaluation.policy` 한 곳에 있고 두 계열이 같은 함수를 부른다.
+        filt = filter_defect_items(
+            raw_defects, known_codes=codes, scoring_codes=scoring,
+        )
+        defects = [
+            {
+                "iso_code": d["iso_code"],
+                "bbox_px": d["bbox_px"],
                 "score": None,          # 생성 모델은 신뢰도를 내지 않는다. 지어내지 않는다
-                "size_px": max(x2 - x1, y2 - y1),
+                "size_px": max(d["bbox_px"][2] - d["bbox_px"][0],
+                               d["bbox_px"][3] - d["bbox_px"][1]),
                 "size_basis": "major_axis",
                 "retrieved": None,      # 통합형은 검색을 붙이지 않는다(스키마 교차검증)
-            })
-        if reason is not None:
-            fail(reason, upstream=False)
-            continue
+            }
+            for d in filt.kept
+        ]
+        rep.n_bad_items += filt.n_bad_item
+        rep.n_unknown_code += filt.n_unknown_code
+        rep.n_out_of_scope += filt.n_out_of_scope
+        for c, k in filt.out_of_scope_codes.items():
+            rep.out_of_scope_codes[c] = rep.out_of_scope_codes.get(c, 0) + k
 
         wh = (image_size or {}).get(image_id)
         for d in defects:
