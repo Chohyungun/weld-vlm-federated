@@ -83,14 +83,23 @@ views-root = "outputs/pilot_c/views"
 profile = "main"
 num-examples = "1,1,1"
 client-tags = "C1,C2,C3"
+# 아래 둘은 실행별 덮어쓰기 전용이다. flwr run 은 여기 없는 키의 --run-config 덮어쓰기를
+# "Invalid run configuration" 으로 거부하므로 기본값을 선언해 둔다(실측).
+resume-root = ""
+smoke-fail-at = ""
 
-[tool.flwr.federations]
-default = "local-sim"
 
-[tool.flwr.federations.local-sim]
-options.num-supernodes = 3
-options.backend.client-resources.num-cpus = 2
-options.backend.client-resources.num-gpus = 1.0
+# --- SuperLink 연결 설정은 pyproject 에 두지 않는다 (flwr 1.33 이관, 실측) ---
+#
+# 구판의 [tool.flwr.federations] 절은 flwr CLI 가 첫 `flwr run` 에서 **pyproject 를
+# 스스로 재작성**하며 사용자 레벨 Flower 설정 파일로 이관했다(그 재작성이 게이트 반려
+# 원인이었다). 절을 되살리면 다음 flwr run 이 실험 도중 또 파일을 고쳐 작업트리가
+# 더러워지므로 되살리지 않는다.
+#
+# 연결 설정(num-supernodes=3 · client-resources cpus=2/gpus=1.0)은 사용자 저장소에
+# 맡기지 않고 **scripts/main_det.py 의 FEDERATION_CONFIG 가 `--federation-config` 로
+# 매 실행 명시한다** — 값이 저장소 밖에 사는 상태를 만들지 않기 위해서다.
+# 값 고정은 tests/test_fl_round_wiring.py 가 한다.
 
 # --- sm_120 (Blackwell) 전용: cu128 이상 휠만 사용 ---
 # RTX 5060 Ti는 compute capability 12.0 이라 cu121 계열 휠에서 커널이 없다.
