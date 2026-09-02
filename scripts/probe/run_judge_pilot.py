@@ -32,7 +32,7 @@ import torch
 
 from evaluation.adapters import read_records
 from evaluation.eval_set import eval_rows as select_eval
-from evaluation.eval_set import read_manifest
+from evaluation.eval_set import parse_iso_codes, read_manifest
 from evaluation.gold import build_gold_pairs, entries_from_derived, read_derived_csv
 from evaluation.gold import ImageContext
 from evaluation.metrics.clause import score_citation, score_retrieval
@@ -119,7 +119,7 @@ def main() -> int:
     ]
     gt_codes: dict[str, list[str]] = {}
     for r in ev:
-        gt_codes[r["image_id"]] = [c for c in (r["iso_codes"] or "").split("|") if c]
+        gt_codes[r["image_id"]] = list(parse_iso_codes(r["iso_codes"]))
     gold_pairs, gold_skipped = build_gold_pairs(entries, contexts, gt_codes)
     print(f"정답 조항 쌍 {len(gold_pairs)}건 · 조회 실패 {gold_skipped}", flush=True)
 
