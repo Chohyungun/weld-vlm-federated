@@ -191,20 +191,68 @@ def test_토큰_가중이_짧은_답을_과대평가하지_않는다():
 # 단일 정본 — 다른 곳에서 같은 산술을 다시 짜지 않는다
 # --------------------------------------------------------------------------
 
+#: 손실을 만들 수 있는 함수·클래스 전부. 85번 ⑧ — 구판은 `cross_entropy` 호출명 하나만
+#: 금지해서 `nn.CrossEntropyLoss()`·`F.nll_loss` 우회를 전부 통과시켰다.
+_LOSS_BYPASS = {
+    "cross_entropy", "nll_loss", "kl_div", "gaussian_nll_loss",
+    "binary_cross_entropy", "binary_cross_entropy_with_logits",
+    "CrossEntropyLoss", "NLLLoss", "KLDivLoss", "BCELoss", "BCEWithLogitsLoss",
+}
+
+
 def test_학습_루프가_loss_norm_만_쓴다():
     """C1 은 '같은 산술이 두 곳에 있었다'가 아니라 '한 곳뿐인데 선언과 달랐다'였다.
-    정본을 만든 뒤의 위험은 반대다 — 호출부가 자체 산술로 되돌아가는 것."""
+    정본을 만든 뒤의 위험은 반대다 — 호출부가 자체 산술로 되돌아가는 것.
+
+    85번 ⑧ 이 구판의 구멍을 지적했다: `cross_entropy` 호출명만 금지해
+    `nn.CrossEntropyLoss()`·`F.nll_loss`·`model(labels=…)`(HF 내부 mean) 우회가 전부
+    통과했다. 셋 다 막는다 — 손실 계열 호출명 전수 + `labels=` 키워드 전수 금지.
+    `**enc` 로 스며드는 labels 는 AST 로 못 잡으므로 학습 루프의 런타임 assert 가 막고,
+    그 assert 의 존재를 여기서 고정한다.
+    """
     import ast
 
     src = Path("vlm/pilot_vlm.py").read_text(encoding="utf-8")
     tree = ast.parse(src)
-    calls = {
-        node.func.attr
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-    }
-    assert "cross_entropy" not in calls, (
-        "학습 루프가 cross_entropy 를 직접 부른다 — 정본 우회다. "
-        "vlm.loss_norm.supervised_ce_sum 을 써라."
-    )
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = (node.func.attr if isinstance(node.func, ast.Attribute)
+                else node.func.id if isinstance(node.func, ast.Name) else "")
+        assert name not in _LOSS_BYPASS, (
+            f"vlm/pilot_vlm.py:{node.lineno} 가 {name} 을 부른다 — 정본 우회다. "
+            "vlm.loss_norm.supervised_ce_sum 을 써라."
+        )
+        for kw in node.keywords:
+            assert kw.arg != "labels", (
+                f"vlm/pilot_vlm.py:{node.lineno} 가 labels= 를 넘긴다 — HF 내부 "
+                "**평균** loss 채널이다(판정 2 의 토큰 총합 분모 우회)."
+            )
+
     assert "supervised_ce_sum" in src and "rescale_grads_" in src
+    # `**enc` 밀반입은 AST 밖이다 — 런타임 방어선이 있어야 한다.
+    assert 'assert "labels" not in enc' in src, (
+        "labels 밀반입 런타임 방어선이 사라졌다(85번 ⑧)"
+    )
+
+
+def test_우회_검사가_실제로_잡는다__이빨():
+    """검사 자체를 깨진 입력으로 확인한다 — 통과만 하는 검사는 P9 다."""
+    import ast
+
+    bad_snippets = [
+        "loss = torch.nn.functional.nll_loss(x, y)",
+        "crit = torch.nn.CrossEntropyLoss()",
+        "out = model(input_ids=i, labels=y)",
+    ]
+    for snip in bad_snippets:
+        tree = ast.parse(snip)
+        caught = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                name = (node.func.attr if isinstance(node.func, ast.Attribute)
+                        else getattr(node.func, "id", ""))
+                if name in _LOSS_BYPASS or any(kw.arg == "labels" for kw in node.keywords):
+                    caught = True
+        assert caught, f"우회 패턴을 못 잡았다: {snip}"

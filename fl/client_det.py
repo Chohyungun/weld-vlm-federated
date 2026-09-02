@@ -1,4 +1,10 @@
-"""검출 클라이언트 — `train_round` 를 부르는 얇은 배선.
+"""검출 클라이언트 — `train_round` 를 부르는 순수 함수.
+
+**이 파일에는 Flower 핸들러가 없다.** 이전의 `@app.train()` 은 죽어 있었다 —
+구판 키 이름(round)을 읽는데 서버는 SERVER_ROUND_KEY 값을 보내고, 서버가 보내지 않는 키
+(`data-yaml`·`num-examples`)를 읽고, 실제로 오는 키는 무시했다. pyproject 가 등록한
+유일한 앱이 그 상태였다(85번 ⑤). 핸들러는 `fl/client_app.py` 하나로 모았고, 이 파일은
+자료형과 무관한 학습 경로만 판다 — 시험이 프레임워크 없이 도는 이유이기도 하다.
 
 이 파일은 얇아야 한다. 학습 자체는 `detection/round_runner.train_round` 가 하고, 그 함수는
 로컬·중앙·연합 세 칸이 **모두 통과하는 유일한 진입점**이다. 클라이언트가 자기 학습 경로를
@@ -17,22 +23,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-try:
-    from flwr.clientapp import ClientApp
-    from flwr.common import (ArrayRecord, ConfigRecord, Context, Message,
-                             MetricRecord, RecordDict)
-except ModuleNotFoundError as exc:  # pragma: no cover
-    raise ModuleNotFoundError(
-        "fl extra 가 설치되지 않았다. `uv sync --extra fl` 로 flwr 를 설치해야 한다."
-    ) from exc
-
 from detection import serialize
 from detection.round_runner import train_round
-from fl.strategy import ARRAYS_KEY, CONFIG_KEY, METRICS_KEY, WEIGHT_KEY
+from fl.strategy import WEIGHT_KEY
 
-__all__ = ["app", "run_client_round"]
-
-app = ClientApp()
+__all__ = ["run_client_round"]
 
 
 def run_client_round(
@@ -74,8 +69,10 @@ def run_client_round(
     )
     eff = result.effective_optimizer
     metrics: dict[str, Any] = {
-        # 상위 전략의 weighted_by_key 기본값과 같은 이름이어야 가중 평균이 성립한다
+        # 가중 키와 의미 키는 **다른 키**다(85번 ①). 검출은 가중 == 표본 수라 값이 같지만
+        # 키를 겹쳐 쓰면 통합형에서처럼 dict 리터럴 충돌로 가중이 조용히 바뀐다.
         WEIGHT_KEY: float(result.num_examples),
+        "num-examples": float(result.num_examples),
         "epochs-ran": float(result.epochs_ran),
         "optimizer-steps": float(result.optimizer_steps),
         # 배치 수와 실제 갱신 횟수는 다르다(숨은 기본값 #10). 논문의 "총 갱신 횟수"는 아래다.
@@ -107,52 +104,7 @@ def run_client_round(
         "arg-optimizer": str(eff.get("arg_optimizer", "")),
         # 스텁 교체가 실패하면 여기가 달라지고 서버 회계가 실패한다.
         "stopper-class": str(result.stopper_class),
+        # 가중 단위를 클라이언트가 스스로 밝힌다 — 회계의 단위 일치 감사가 이걸 대조한다.
+        "weight-unit": "num_examples",
     }
     return result.ndarrays, metrics, strings
-
-
-@app.train()
-def train(msg: "Message", context: "Context") -> "Message":
-    """서버가 보낸 가중치로 로컬 학습을 돌리고 raw 가중치를 돌려준다."""
-    run_cfg = context.run_config
-    node_cfg = context.node_config
-
-    # 서버가 보낸 설정은 ConfigRecord 에 있다. 정본 키 리스트가 여기 실리는 이유는
-    # MetricRecord 가 문자열 리스트를 받지 않기 때문이다(실측).
-    in_cfg = msg.content[CONFIG_KEY] if CONFIG_KEY in msg.content else {}
-    if "canonical-keys" not in in_cfg:
-        raise RuntimeError(
-            "서버가 정본 키 리스트를 보내지 않았다. ArrayRecord 는 리스트 경로에서 키를 "
-            "인덱스 문자열로 바꾸므로 이름은 별도로 전달돼야 한다."
-        )
-    canonical_keys = list(in_cfg["canonical-keys"])
-
-    weights_in = msg.content[ARRAYS_KEY].to_numpy_ndarrays()
-    round_idx = int(in_cfg["round"])
-    client_idx = int(node_cfg.get("partition-id", 0))
-
-    cfg = {
-        "data_yaml": run_cfg["data-yaml"],
-        "model": run_cfg["model"],
-        "total_epochs": run_cfg["total-epochs"],
-        "local_epochs": run_cfg["local-epochs"],
-        "base_seed": run_cfg["base-seed"],
-        "num_examples": node_cfg["num-examples"],
-        "project": run_cfg["project"],
-    }
-
-    arrays_out, metrics, strings = run_client_round(
-        weights_in=weights_in,
-        canonical_keys=canonical_keys,
-        round_idx=round_idx,
-        client_idx=client_idx,
-        cfg=cfg,
-    )
-    content = RecordDict(
-        {
-            ARRAYS_KEY: ArrayRecord(arrays_out),
-            METRICS_KEY: MetricRecord(metrics),
-            CONFIG_KEY: ConfigRecord(strings),
-        }
-    )
-    return Message(content=content, reply_to=msg)
