@@ -1,0 +1,68 @@
+{
+ "_meta": {
+  "purpose": "cycle_pilot 통과율의 근거 보존 (규약 1-6 · 74번 감사 P5)",
+  "note": "원본 jsonl 은 용량 때문에 미추적. 항목 축약본 EVIDENCE.jsonl 과 이 요약이 근거다. 원본이 있으면 SNAPSHOT.sha256 으로 대조한다.",
+  "regenerate": "uv run python -m corpus.generate.snapshot_cycle_pilot",
+  "n_evidence_items": 400,
+  "snapshot_digest": "05ed538ff5aa9f5a68ebd4366fb856f93b05a87e2d35b49f599d6fb1f183397b"
+ },
+ "recomputed": {
+  "axis:조치서술": {
+   "n_in": 80,
+   "stages": {
+    "stage0_numeric_lock": {
+     "n_in": 80,
+     "n_pass": 80
+    }
+   },
+   "judges": {}
+  },
+  "axis:조항검색_기준서술": {
+   "n_in": 120,
+   "stages": {
+    "stage0_numeric_lock": {
+     "n_in": 120,
+     "n_pass": 25
+    },
+    "stage1_rule": {
+     "n_in": 25,
+     "n_pass": 25
+    }
+   },
+   "judges": {
+    "deepseek": {
+     "n_in": 25,
+     "n_pass": 18,
+     "n_fail": 7,
+     "pass_rate": 0.72,
+     "n_format_violation": 0,
+     "n_reason_is_echo": 5
+    },
+    "phi": {
+     "n_in": 25,
+     "n_pass": 7,
+     "n_fail": 18,
+     "pass_rate": 0.28,
+     "n_format_violation": 18,
+     "n_reason_is_echo": 0
+    }
+   }
+  },
+  "axis:QA": {
+   "n_in": 200,
+   "stages": {
+    "stage1_rule": {
+     "n_in": 200,
+     "n_pass": 188
+    }
+   },
+   "judges": {}
+  },
+  "qa": {
+   "n_in": 200,
+   "n_accepted": 188,
+   "pass_rate": 0.94
+  }
+ },
+ "crosscheck_vs_reports": "일치"
+}
