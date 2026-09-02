@@ -20,6 +20,7 @@ from pathlib import Path
 import yaml
 
 from data.convert.tiling import encode_tile
+from data.frozen_guard import assert_writable
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -66,6 +67,8 @@ def encode_all(rows, plan_by_id, members, file_names, spec, args) -> int:
 
     zip 은 한 번씩만 연다. 6만 장을 장마다 여닫으면 그 비용이 인코딩보다 커진다.
     """
+    # --manifest-out 을 동결본으로 겨누면 정본이 사라진다. 진입에서 막는다 (80번 G11-1).
+    assert_writable(args.manifest_out, what="--manifest-out 대상")
     args.manifest_out.mkdir(parents=True, exist_ok=True)
     prog_path = args.manifest_out / "encode_progress.jsonl"
 
@@ -146,6 +149,8 @@ def encode_all(rows, plan_by_id, members, file_names, spec, args) -> int:
 
 
 def build_v1(args, spec, plan_by_id, report) -> int:
+    # 매니페스트·분할 메타를 쓴다. 동결본을 겨누면 여기서 멈춘다 (80번 G11-1).
+    assert_writable(args.manifest_out, what="--manifest-out 대상")
     """매니페스트 v1 + 최종 분할. **잠그지 않는다.**"""
     from data.invariants import check_invariants
     from data.label_map import load_label_map
