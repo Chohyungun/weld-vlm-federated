@@ -3,7 +3,9 @@
 파일럿 전용 배선이다. 함정 겨냥 규약은 그대로 지킨다:
 
 - **좌표는 `vlm/coords.py` 만 통과한다** (함정 #4). 타깃 bbox 는 원본 픽셀 →
-  `to_model`(NORM_1000) → `quantize` 로 만들고, 모델 좌표는 어떤 파일에도 저장하지 않는다.
+  `to_model`(ABS_ORIG) → `quantize` 로 만들고, 모델 좌표는 어떤 파일에도 저장하지 않는다.
+  ABS_ORIG 에서 정변환은 항등이지만 **경로는 그대로 유지한다** — 규약이 다시 바뀌어도
+  호출부가 아니라 설정값 하나만 움직이게 하기 위해서다.
 - **어댑터 교환은 fp32 행렬별 가중 평균** (함정 #3). 집계는 검출과 같은
   `fl.aggregate.weighted_fedavg` 를 쓴다 — LoRA A·B 도 float 텐서라 같은 산술이다.
 - **교환 폐포** (30번 명세 G2-3): 학습되는 파라미터 집합과 교환 페이로드 키 집합의
@@ -32,9 +34,16 @@ from fl.seeding import seeded, shared_init_seed
 from vlm.coords import CoordCfg, ImageGeom, quantize, to_model
 
 MODEL_ID = "Qwen/Qwen3.5-0.8B"
-PROMPT_PATH = Path("vlm/prompts/unified_pilot_v1.txt")
+#: 프롬프트는 다섯 칸 공통 고정 항목이라 **한 글자도 달라선 안 된다**(개발규약 3-3).
+#: 그래서 좌표 문장을 고칠 때 v1 을 덮어쓰지 않고 새 파일을 만들었다 — v1 로 돈 파일럿
+#: 산출물과 v2 로 돌 본실험을 `prompt_sha256` 으로 구분할 수 있어야 한다.
+PROMPT_PATH = Path("vlm/prompts/unified_v2_absorig.txt")
 PAIRS_PATH = Path("data/processed/pairs_pilot_v1/pairs.jsonl")
-COORD_CFG = CoordCfg(coord_space="NORM_1000")
+#: **ABS_ORIG** — 카나리아-1 실측(75번 §5)에서 0.8B·4B 두 모델이 판별 가능한 3장 전부에서
+#: 절대 원본 픽셀로 답했다. 총괄 판정 1(2026-09-02)로 전환 확정. 개발규약 3-8("학습 타깃은
+#: 채택 모델의 네이티브 좌표계를 따른다")의 이행이며, 라벨측 왕복 IoU 손실도 사라진다
+#: (NORM_1000 은 실페어 4,560 박스에서 median 0.98119·IoU<0.95 가 379건, ABS_ORIG 는 전부 1.0).
+COORD_CFG = CoordCfg(coord_space="ABS_ORIG")
 #: LoRA A 초기화 기본 시드. 파일럿 상수(`scripts/pilot_c.py:BASE_SEED`)와 같은 값이며
 #: 검출 칸 `build_initial_weights(seed=BASE_SEED)` 와도 같다 — 두 칸의 "동일 출발"이
 #: 같은 상수에서 나와야 사후 대조가 한 번에 된다. 호출부가 명시하면 그 값이 이긴다.
