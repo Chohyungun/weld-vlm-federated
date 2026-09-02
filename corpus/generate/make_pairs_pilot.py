@@ -33,6 +33,9 @@ import subprocess
 from collections import Counter, defaultdict
 from pathlib import Path
 
+# 결함 어휘 락의 정본 (§4-6-1 ④). 재구현 금지 — skeleton_gen.py:34-38.
+from corpus.generate.numeric_lock import find_defect_tokens
+
 REPO = Path(__file__).resolve().parents[2]
 SNAP = REPO / "data/processed/aihub71761_rt_v1_pilot3000"
 OUT = REPO / "data/processed/pairs_pilot_v1"
@@ -50,7 +53,7 @@ def clause_basis(table) -> dict[str, dict]:
     나열한다 — 파일럿 축(조항 검색 + 기준 서술)에는 이것으로 충분하며, 합부를
     말하지 않으므로 행 특정이 필요 없다.
     """
-    from corpus.generate.run_cycle_corpus import num_ko, thickness_ko, unit_ko, val
+    from corpus.generate.run_cycle_corpus import thickness_ko, unit_ko, val
 
     by_code: dict[str, dict] = {}
     rows = [r for r in table.rows
@@ -113,7 +116,8 @@ NORMAL_TEXT = ("방사선투과 영상에서 검출 한계 내 특기할 지시�
 # ------------------------------------------------------------------ 검증
 
 def check_pair(rec: dict, names: dict[str, str], valid_clauses: set[str],
-               limit_texts: dict[str, list[str]], wh: tuple[int, int]) -> list[str]:
+               limit_texts: dict[str, list[str]], wh: tuple[int, int],
+               lexicon: frozenset[str]) -> list[str]:
     bad: list[str] = []
     for k in ("image_id", "image_path", "client", "split", "skeleton", "target_text"):
         if not rec.get(k):
@@ -142,11 +146,13 @@ def check_pair(rec: dict, names: dict[str, str], valid_clauses: set[str],
                     bad.append("criterion_mismatch")
                     break
     if not sk.get("defects"):
-        # 정상 페어 — 결함 어휘 금지 (부정 문맥 포함, §4-6-1 규약)
-        for w in list(names.values()) + list(names.keys()):
-            if w and w in rec["target_text"]:
-                bad.append("defect_word_in_normal")
-                break
+        # 정상 페어 — 결함 어휘 금지 (부정 문맥 포함, §4-6-1 ③④).
+        # 검출은 **정본 하나**만 쓴다 — `numeric_lock.find_defect_tokens`
+        # (`skeleton_gen` 이 재수출). 여기서 맨 부분문자열 루프로 재구현했더니
+        # NFKC 정규화·대소문자 불문·숫자 경계가 빠졌고, 그것은 skeleton_gen.py:34-38
+        # 이 명시적으로 금지한 것이다 (74번 감사 P6).
+        if find_defect_tokens(rec["target_text"], lexicon):
+            bad.append("defect_word_in_normal")
         if sk.get("clauses"):
             bad.append("normal_has_clauses")
     return sorted(set(bad))
@@ -154,14 +160,25 @@ def check_pair(rec: dict, names: dict[str, str], valid_clauses: set[str],
 
 # ------------------------------------------------------------------ 본체
 
+def covered_materials(table) -> set[str]:
+    """`clause_basis` 가 고르는 행 묶음이 덮는 재질 집합."""
+    from corpus.generate.run_cycle_corpus import val
+
+    return {val(r.material) for r in table.rows
+            if getattr(r, "scope", "active") == "active"
+            and val(r.inspection_method) in ("RT", "ALL")}
+
+
 def main() -> None:
     from corpus.generate.run_cycle_corpus import defect_names
     from corpus.rules import limits_loader
+    from corpus.rules.skeleton_gen import load_defect_lexicon
     from data.manifest_io import load_snapshot
 
     snap = load_snapshot(SNAP)
     table = limits_loader.load_limits(str(LIMITS_CSV), pilot=True)
     names = defect_names()
+    lexicon = load_defect_lexicon()
     basis = clause_basis(table)
     valid_clauses = {b["clause_id"] for b in basis.values()}
     limit_texts = {b["clause_id"]: [c.split(": ", 1)[-1] for c in b["criteria"]]
@@ -169,6 +186,29 @@ def main() -> None:
 
     m = snap.manifest
     tv = m[m["split"].isin(["train", "val"])]
+
+    # 재질 축 fail-closed (74번 감사 P4 소급 검토 결과).
+    #
+    # clause_basis 는 scope 와 검사 방식만 보고 **재질을 보지 않는다.** 정본 행 선택기
+    # `limit_eval.applicable_row` 는 재질 축을 보고 해당 행이 없으면 fallback 없이 거절한다.
+    # 파일럿 limits CSV 는 12행 전부 material=ST 라, 이 생성기를 그대로 돌리면 알루미늄
+    # 이미지에 강재 조항이 붙는다 — v1 산출물에서 실제로 219건이 그렇게 나갔다.
+    # 알루미늄 허용치 근거(KS-AL)는 아직 미확보다(sources.yaml status=pending).
+    #
+    # 어떻게 처리할지 — 격리 / "적용 가능한 조항 없음" 서술 / KS-AL 확보 대기 — 는
+    # C3 이질성과 RQ3 에 걸리는 판단이라 함정 #6 미니스펙의 게이트 사항이다. 여기서
+    # 정하지 않는다. 다만 **조용히 틀린 것을 다시 만들지는 않는다.**
+    covered = covered_materials(table)
+    seen = {str(x) for x in tv["material"].unique()}
+    missing = sorted(seen - covered)
+    if missing:
+        raise SystemExit(
+            f"재질 {missing} 을 덮는 허용치 행이 없다 (CSV 재질 축: {sorted(covered)}).\n"
+            "그대로 진행하면 그 재질 이미지에 다른 재질의 조항이 붙는다 — v1 에서 219건이"
+            " 그렇게 나갔다(74번 감사 P4 소급 검토).\n"
+            "처리 방침은 함정 #6 미니스펙(docs/dev_log/2026-08-22-데이터확정/"
+            "minispec_B_D4페어_판정논리통합.md)의 게이트 사항이다."
+        )
     eval_ids = set(m[m["split"] == "eval"]["image_id"])
     anns = defaultdict(list)
     for _, a in snap.annotations.iterrows():
@@ -214,7 +254,7 @@ def main() -> None:
                             if defects else NORMAL_TEXT),
         }
         bad = check_pair(rec, names, valid_clauses, limit_texts,
-                         (int(row["width_px"]), int(row["height_px"])))
+                         (int(row["width_px"]), int(row["height_px"])), lexicon)
         if bad:
             discarded.append({"image_id": iid, "reasons": bad})
             for b in bad:
