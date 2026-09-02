@@ -83,17 +83,37 @@ views-root = "outputs/pilot_c/views"
 profile = "main"
 num-examples = "1,1,1"
 client-tags = "C1,C2,C3"
+# 아래 둘은 실행별 덮어쓰기 전용이다. flwr run 은 여기 없는 키의 --run-config 덮어쓰기를
+# "Invalid run configuration" 으로 거부하므로 기본값을 선언해 둔다(실측).
+resume-root = ""
+smoke-fail-at = ""
 
-[tool.flwr.federations]
-default = "local-sim"
 
-[tool.flwr.federations.local-sim]
-options.num-supernodes = 3
-options.backend.client-resources.num-cpus = 2
-options.backend.client-resources.num-gpus = 1.0
+#######################################################################
+# CONFIGURATION MIGRATION NOTICE:
+#
+# What was previously called "federation config" for SuperLink
+# connections in pyproject.toml has been renamed and moved.
+#
+# These settings are now **SuperLink connection configuration**
+# and are defined in the Flower configuration file.
+#
+# The entries below are commented out intentionally and are kept
+# only as a migration reference.
+#
+# Docs: https://flower.ai/docs/framework/ref-flower-configuration.html
+#######################################################################
 
-# --- sm_120 (Blackwell) 전용: cu128 이상 휠만 사용 ---
-# RTX 5060 Ti는 compute capability 12.0 이라 cu121 계열 휠에서 커널이 없다.
+# [tool.flwr.federations]
+# default = "local-sim"
+
+# [tool.flwr.federations.local-sim]
+# options.num-supernodes = 3
+# options.backend.client-resources.num-cpus = 2
+# options.backend.client-resources.num-gpus = 1.0
+
+# # --- sm_120 (Blackwell) 전용: cu128 이상 휠만 사용 ---
+# # RTX 5060 Ti는 compute capability 12.0 이라 cu121 계열 휠에서 커널이 없다.
 [tool.uv.sources]
 torch = { index = "pytorch-cu128" }
 torchvision = { index = "pytorch-cu128" }
