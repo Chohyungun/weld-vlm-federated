@@ -286,7 +286,16 @@ def train_rounds(
             )
             start_ep = state.next_epoch
             steps = state.optimizer_steps
-            supervised_total = state.payload.get("supervised_tokens", 0)
+            if "supervised_tokens" not in state.payload:
+                # 기본값 0 으로 접으면 안 된다(85번 ① 부수 결함). 판정 2 에서 이 값이
+                # **FedAvg 가중**이 됐으므로, 구판 체크포인트로 재개하면 재개 이전 구간의
+                # 토큰이 통째로 빠진 가중이 조용히 전송된다. 시끄럽게 죽는 쪽이 맞다.
+                raise RuntimeError(
+                    "재개 체크포인트에 supervised_tokens 가 없다 — 판정 2(토큰 가중) 이전 "
+                    "판으로 만든 상태다. 이 상태로 이어 가면 가중이 과소 전송된다. "
+                    "체크포인트를 지우고 라운드를 처음부터 돌려라."
+                )
+            supervised_total = state.payload["supervised_tokens"]
             print(f"[resume] epoch {state.epoch_done} 까지 완료 → epoch {start_ep} 부터 이어 간다",
                   flush=True)
         ckpt = ResumeCheckpointer(
@@ -316,6 +325,10 @@ def train_rounds(
         for j, idx in enumerate(order):
             enc, labels, prompt_len = _encode(proc, rows[idx], prompt)
             enc = {k: (v.to("cuda") if hasattr(v, "to") else v) for k, v in enc.items()}
+            # `model(**enc, labels=...)` 는 HF 내부의 **평균** loss 를 계산한다 — 판정 2
+            # (토큰 총합 분모)의 우회 채널이다. AST 시험은 명시적 `labels=` 만 잡으므로
+            # dict 로 스며드는 경로는 여기서 막는다(85번 ⑧).
+            assert "labels" not in enc, "labels 가 모델 입력에 스며들면 HF 평균 loss 가 돈다"
             labels = labels.to("cuda")
             # 판정 11 — 감독 위치의 로짓만 물질화한다. 감독 구간이 접미(prompt 뒤 전부)라
             # `logits_to_keep` 정수 슬라이스로 정확히 겹친다. 0 을 주면 전 위치를 뽑는다.

@@ -23,7 +23,8 @@ except ModuleNotFoundError as exc:  # pragma: no cover
 
 from detection.budget_audit import AccountingCell, AccountingMatrix
 from fl.atomic_log import AtomicLog, RoundTimer, new_run_id
-from fl.round_wiring import (CANONICAL_KEYS_KEY, SERVER_ROUND_KEY,
+from fl.round_wiring import (ALL_CELLS, CANONICAL_KEYS_KEY, FED_CELLS,
+                             SERVER_ROUND_KEY, SMOKE_CELL, WEIGHT_KEY,
                              finalize_accounting, make_round_recorder)
 from fl.strategy import METRICS_KEY, RoundFailure, WeldFedAvg
 
@@ -31,13 +32,12 @@ __all__ = ["app", "build_accounting", "cell_to_client_ids"]
 
 app = ServerApp()
 
-#: 지원하는 칸. 라운드 루프는 공통이고 분기는 준비 단계에만 있다.
-FED_CELLS = ("sep_fed", "uni_fed")
-
-
 def cell_to_client_ids(cell: str, num_clients: int = 3) -> tuple[int, ...]:
-    if cell not in FED_CELLS:
-        raise ValueError(f"연합 칸이 아니다: {cell!r}. 허용: {FED_CELLS}")
+    """칸 검증 + 클라이언트 id. 스모크 칸도 받는다 — `flwr run` 진입점 자체를 더미로
+    끝까지 돌리는 시험이 이 경로를 지나야 하기 때문이다(85번 ④: server_app 고유 구간이
+    실행 이력 0 인 채로 커밋돼 있었다)."""
+    if cell not in ALL_CELLS:
+        raise ValueError(f"연합 칸이 아니다: {cell!r}. 허용: {ALL_CELLS}")
     return tuple(range(num_clients))
 
 
@@ -81,8 +81,9 @@ def _cell_from_metrics(round_idx: int, m: dict[str, Any]) -> AccountingCell:
                             else int(m["stopper-true-count"])),
         stopper_calls=(None if m.get("stopper-calls") is None
                        else int(float(m["stopper-calls"]))),
-        # 판정 2 — 실제 집계 가중과 그 단위를 회계가 들고 있어야 RQ3 을 해석할 수 있다.
-        fedavg_weight=(float(m["num-examples"]) if m.get("num-examples") is not None else None),
+        # 판정 2 — 실제 집계 가중은 **가중 키**에서 읽는다. "num-examples" 는 의미 키
+        # (표본/페어 수)라 여기서 읽으면 85번 ① 의 거짓 단위가 재발한다.
+        fedavg_weight=(float(m[WEIGHT_KEY]) if m.get(WEIGHT_KEY) is not None else None),
         fedavg_weight_unit=str(m.get("weight-unit", "")),
         supervised_tokens=int(float(m.get("supervised-tokens", 0))),
     )
@@ -98,6 +99,12 @@ def main(grid: "Grid", context: "Context") -> None:
     out_dir = Path(str(cfg["project"])).resolve() / "fl" / cell
 
     client_ids = cell_to_client_ids(cell, int(cfg.get("num-clients", 3)))
+    if cell == SMOKE_CELL:
+        # 배선 검사 산출물이 실험 결과로 인용되는 경로를 막는다.
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "DO_NOT_CITE.md").write_text(
+            "# 인용 금지\n\n배선 스모크(`SMOKE_CELL`) 산출물이다. 더미 2텐서로 돌았고 "
+            "학습이 일어나지 않았다. 실험 결과가 아니다.\n", encoding="utf-8")
     accounting = build_accounting(
         num_rounds=num_rounds,
         client_ids=client_ids,
@@ -160,7 +167,9 @@ def main(grid: "Grid", context: "Context") -> None:
 
 
 def _cell_train_config(cell: str, cfg: Any, out_dir: Path) -> dict[str, Any]:
-    """칸별로만 다른 설정. 라운드 루프는 두 칸이 같은 코드를 탄다."""
+    """칸별로만 다른 설정. 라운드 루프는 칸이 무엇이든 같은 코드를 탄다."""
+    if cell == SMOKE_CELL:
+        return {"smoke-fail-at": str(cfg.get("smoke-fail-at", ""))}
     if cell == "sep_fed":
         return {
             "views-root": str(cfg["views-root"]),
@@ -195,7 +204,17 @@ def _load_initial(cell: str, cfg: Any) -> tuple["ArrayRecord", list[str], dict]:
     seed = int(cfg.get("base-seed", 0))
     cache = Path(str(cfg["project"])).resolve() / "fl" / cell / "initial.npz"
 
-    if cell == "sep_fed":
+    if cell == SMOKE_CELL:
+        # 더미 2텐서 — `fl.client_app.smoke_client_round` 가 돌려주는 것과 같은 모양이어야
+        # `assert_compatible` 이 성립한다.
+        import numpy as np
+        import torch
+
+        arrays = [np.arange(12, dtype=np.float32).reshape(4, 3),
+                  np.arange(3, dtype=np.float32)]
+        keys = ["smoke.w", "smoke.b"]
+        ref = {k: torch.as_tensor(a) for k, a in zip(keys, arrays)}
+    elif cell == "sep_fed":
         from detection.init_weights import build_initial_weights
 
         arrays, keys, ref = build_initial_weights(
@@ -217,7 +236,7 @@ def _load_initial(cell: str, cfg: Any) -> tuple["ArrayRecord", list[str], dict]:
 
             ref = {k: torch.as_tensor(a) for k, a in zip(keys, arrays)}
     else:
-        raise ValueError(f"연합 칸이 아니다: {cell!r}. 허용: {FED_CELLS}")
+        raise ValueError(f"연합 칸이 아니다: {cell!r}. 허용: {ALL_CELLS}")
 
     serialize.assert_compatible(arrays, keys, ref)
     return ArrayRecord(list(arrays)), list(keys), ref

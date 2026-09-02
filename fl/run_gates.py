@@ -90,7 +90,7 @@ def apply_run_gates(
         results["cudnn_benchmark"] = None
 
     prints = list(fingerprints or [])
-    if prints:
+    if len(prints) >= 2:
         from tracking.mlflow_local import check_cells_identical
 
         diverged = check_cells_identical(prints)
@@ -104,10 +104,14 @@ def apply_run_gates(
                 f"전제 위의 평균이 된다: {detail}"
             )
     else:
-        # **통과로 적지 않는다.** 지문이 하나뿐이면 대조할 것이 없다는 사실을 남긴다.
+        # **통과로 적지 않는다 — 지문이 2개 미만이면.** 구판은 `if prints:` 라서 지문
+        # 1개짜리 호출(통합형 학습이 정확히 그렇다)이 대조 없이 `cells_identical: true`
+        # 를 기록했다(85번 ⑦). 대조는 두 개부터 성립한다. 하나는 자기 자신과 같을
+        # 뿐이고, 그것을 통과로 적는 것이 이 게이트가 잡으려던 무이빨 형태다.
         results["cells_identical"] = None
         results["cells_identical_note"] = (
-            "지문이 1개 이하라 대조 미적용. 다섯 칸 대조는 채점 단계(D)의 몫이다."
+            f"지문 {len(prints)}개 — 대조 미적용(2개부터 성립). "
+            "다섯 칸 대조는 채점 단계(D)의 몫이다."
         )
 
     return {

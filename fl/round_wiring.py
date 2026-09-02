@@ -26,9 +26,17 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+# 순환이 아니다 — strategy 는 round_wiring 을 import 하지 않는다. 같은 값을 두 곳에
+# 따로 적어 두는 것(구판의 지역 상수)이야말로 한쪽만 바뀌는 사고의 씨앗이었다(85번 ①).
+from fl.strategy import WEIGHT_KEY
+
 __all__ = [
     "SERVER_ROUND_KEY",
     "CANONICAL_KEYS_KEY",
+    "WEIGHT_KEY",
+    "FED_CELLS",
+    "SMOKE_CELL",
+    "ALL_CELLS",
     "make_round_recorder",
     "finalize_accounting",
 ]
@@ -36,6 +44,15 @@ __all__ = [
 #: 서버가 클라이언트에 내려보내는 라운드 번호 키. **flwr 는 1부터 센다.**
 #: 리터럴로 쓰지 마라 — 두 배선이 다른 이름을 쓰다가 `flwr run` 경로가 죽었다(F1).
 SERVER_ROUND_KEY = "server-round"
+
+#: 실험 연합 칸. 라운드 루프는 칸이 무엇이든 같은 코드를 탄다.
+FED_CELLS = ("sep_fed", "uni_fed")
+
+#: 배선 자체를 검사하는 칸 — **실험 칸이 아니다.** 더미 2텐서로 서버 루프·전략 검사·
+#: 회계 마감을 끝까지 돌린다(80번 G10-2). 이 칸의 산출물 디렉터리에는 반드시
+#: `DO_NOT_CITE.md` 가 함께 쓰인다.
+SMOKE_CELL = "smoke"
+ALL_CELLS = FED_CELLS + (SMOKE_CELL,)
 
 #: 정본 키 리스트 전달 키. `ArrayRecord` 가 리스트 경로에서 이름을 인덱스로 바꾸므로
 #: 키 이름은 반드시 따로 실려야 한다.
@@ -77,7 +94,7 @@ def make_round_recorder(
                     "peak_vram_gb": float(m.get("peak-vram-gb", 0.0)),
                     # 판정 2 — 가중 단위를 산출물이 말하게 한다(RQ3 해석 재료).
                     "supervised_tokens": float(m.get("supervised-tokens", 0.0)),
-                    "fedavg_weight": float(m.get(WEIGHT_METRIC, 0.0)),
+                    "fedavg_weight": float(m.get(WEIGHT_KEY, 0.0)),
                 },
                 bytes_up=up,
                 bytes_down=int(getattr(agg, "payload_bytes_down", 0) or up),
@@ -100,8 +117,7 @@ def make_round_recorder(
     return on_round_end
 
 
-#: `fl.strategy.WEIGHT_KEY` 와 같은 값. 순환 import 를 피하려고 여기서 다시 적는다.
-WEIGHT_METRIC = "num-examples"
+
 
 
 def finalize_accounting(

@@ -6,9 +6,9 @@
 (80번 F6). 80번 체크리스트 15항이 그 우회를 닫는다 — 이제 두 연합 칸이 같은
 `WeldFedAvg` 경로를 탄다.
 
-**검출과 같은 모양으로 짰다.** `run_client_round` 가 Flower 자료형과 무관한 순수 함수이고
-`@app.train()` 은 자료형 변환만 한다. 두 칸의 클라이언트가 다른 모양이면 "구조 내 동일"
-주장이 문면으로만 남는다.
+**검출과 같은 모양으로 짰다.** `run_client_round` 가 Flower 자료형과 무관한 순수 함수다.
+Flower 핸들러는 이 파일에 없다 — 등록 핸들러는 `fl/client_app.py` 하나이고 거기서 칸을
+분기한다(85번 ⑥: 이 모듈의 자체 앱은 어디에도 등록돼 있지 않아 죽은 진입점이었다).
 
 ## 검출과 무엇이 다른가
 
@@ -43,22 +43,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Sequence
 
-try:
-    from flwr.clientapp import ClientApp
-    from flwr.common import (ArrayRecord, ConfigRecord, Context, Message,
-                             MetricRecord, RecordDict)
-except ModuleNotFoundError as exc:  # pragma: no cover
-    raise ModuleNotFoundError(
-        "fl extra 가 설치되지 않았다. `uv sync --extra fl` 로 flwr 를 설치해야 한다."
-    ) from exc
-
 from detection import serialize
-from fl.round_wiring import CANONICAL_KEYS_KEY, SERVER_ROUND_KEY
-from fl.strategy import ARRAYS_KEY, CONFIG_KEY, METRICS_KEY, WEIGHT_KEY
+from fl.strategy import WEIGHT_KEY
 
-__all__ = ["app", "adapter_exchange_contract", "run_client_round"]
-
-app = ClientApp()
+__all__ = ["adapter_exchange_contract", "run_client_round", "payload_metrics"]
 
 
 def adapter_exchange_contract(
@@ -129,11 +117,33 @@ def run_client_round(
         assert_injected_matches(list(adapter_in), list(canonical_keys),
                                 m["injected_proof"], who=f"c{client_idx} r{round_idx}")
 
-    # 판정 2 — 가중은 감독 토큰 총합. 페어 수는 회계용으로 함께 싣는다.
+    metrics, strings = payload_metrics(m, n_pairs=len(rows),
+                                       canonical_keys=canonical_keys,
+                                       client_idx=client_idx)
+    return arrays, metrics, strings
+
+
+def payload_metrics(m: dict[str, Any], *, n_pairs: int, canonical_keys: list[str],
+                    client_idx: int) -> tuple[dict[str, Any], dict[str, str]]:
+    """전송 페이로드의 (수치, 문자열) 두 dict. **순수 함수라 시험이 실구성을 검사한다.**
+
+    85번 ① 이 잡은 사고가 정확히 여기서 났다: `WEIGHT_KEY` 가 "num-examples" 이던 시절
+    dict 리터럴이 같은 키를 두 번 써서 뒤(페어 수)가 이겼고, 실제 전송 가중이 페어 수인데
+    `weight-unit` 은 supervised_tokens 로 남아 **회계가 단위를 거짓말했다.** 그때의 판정 2
+    고정 시험은 소스 문자열 포함 검사라 깨진 코드에서 통과했다.
+
+    그래서 지금은 셋으로 막는다.
+    1. 가중 키가 의미 키와 분리됐다(`fl/strategy.WEIGHT_KEY == "fedavg-weight"`).
+    2. 구성 직후 **단위 일치를 단언**한다 — 전송될 가중이 감독 토큰 총합과 다르면
+       여기서 죽는다(아래). dict 가 어떤 경로로 만들어졌든 마지막에 잡힌다.
+    3. 시험이 문자열이 아니라 이 함수를 **실행해** 반환 dict 를 검사한다.
+    """
+    tokens = float(m["supervised_tokens"])
     metrics: dict[str, Any] = {
-        WEIGHT_KEY: float(m["supervised_tokens"]),
-        "num-examples": float(len(rows)),
-        "supervised-tokens": float(m["supervised_tokens"]),
+        # 판정 2 — 가중은 감독 토큰 총합. 페어 수는 의미 키로 따로 싣는다.
+        WEIGHT_KEY: tokens,
+        "num-examples": float(n_pairs),
+        "supervised-tokens": tokens,
         "epochs-ran": float(m["epochs_ran"]),
         "optimizer-steps": float(m["optimizer_steps"]),
         "optimizer-updates": float(m["optimizer_steps"]),   # micro=1 — 배치 수 = 갱신 수
@@ -151,6 +161,13 @@ def run_client_round(
         "stopper-true-count": -1.0,
         "init-l2": float(m["init_proof"]["l2"]),
     }
+    # **단위 일치 단언.** 키 충돌·키 개명·구성 순서 어느 사고로든 전송 가중이 감독 토큰
+    # 총합과 어긋나면 라운드가 여기서 죽는다 — 회계가 거짓 단위를 싣는 것보다 낫다.
+    if metrics[WEIGHT_KEY] != tokens or metrics["num-examples"] != float(n_pairs):
+        raise AssertionError(
+            f"판정 2 위반: 전송 가중 {metrics[WEIGHT_KEY]} != 감독 토큰 {tokens} "
+            f"또는 페어 수 {metrics['num-examples']} != {n_pairs} — 키 충돌이 재발했다"
+        )
     strings: dict[str, str] = {
         "keys-digest": serialize.keys_digest(canonical_keys),
         "optimizer": str(m["optimizer"]),
@@ -158,47 +175,4 @@ def run_client_round(
         "stopper-class": "",
         "weight-unit": "supervised_tokens",
     }
-    return arrays, metrics, strings
-
-
-@app.train()
-def train(msg: "Message", context: "Context") -> "Message":
-    """서버가 보낸 어댑터로 로컬 학습을 돌리고 어댑터를 돌려준다."""
-    in_cfg = msg.content[CONFIG_KEY] if CONFIG_KEY in msg.content else {}
-    if CANONICAL_KEYS_KEY not in in_cfg:
-        raise RuntimeError(
-            "서버가 정본 키 리스트를 보내지 않았다. ArrayRecord 는 리스트 경로에서 키를 "
-            "인덱스 문자열로 바꾸므로 이름은 별도로 전달돼야 한다."
-        )
-    node_cfg = dict(context.node_config or {})
-    if "partition-id" not in node_cfg:
-        raise RuntimeError(
-            "시뮬레이션 백엔드가 partition-id 를 넣지 않았다. 클라이언트를 식별할 수 없으므로 "
-            "추측하지 않고 멈춘다 — 세 클라이언트가 같은 데이터를 돌면 지표는 초록인 채 "
-            "연합이 무의미해진다."
-        )
-    client_idx = int(node_cfg["partition-id"])
-    round_idx = int(in_cfg[SERVER_ROUND_KEY]) - 1     # flwr 는 1부터 센다
-
-    arrays_out, metrics, strings = run_client_round(
-        adapter_in=msg.content[ARRAYS_KEY].to_numpy_ndarrays(),
-        canonical_keys=list(in_cfg[CANONICAL_KEYS_KEY]),
-        round_idx=round_idx,
-        client_idx=client_idx,
-        cfg={
-            "client_tag": str(in_cfg[f"client-tag-{client_idx}"]),
-            "local_epochs": int(in_cfg["local-epochs"]),
-            "num_rounds": int(in_cfg["num-rounds"]),
-            "base_seed": int(in_cfg["base-seed"]),
-            "resume_root": str(in_cfg["resume-root"]) if in_cfg.get("resume-root") else None,
-            "run_id": str(in_cfg.get("run-stamp", "")),
-        },
-    )
-    return Message(
-        content=RecordDict({
-            ARRAYS_KEY: ArrayRecord(arrays_out),
-            METRICS_KEY: MetricRecord(metrics),
-            CONFIG_KEY: ConfigRecord(strings),
-        }),
-        reply_to=msg,
-    )
+    return metrics, strings
