@@ -17,13 +17,28 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-TRACKING_DIR = Path("tracking")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+TRACKING_DIR = REPO_ROOT / "tracking"
+"""**절대경로다.** 상대경로면 DB 위치가 CWD 에 따라 갈려 run 이 어디 기록됐는지
+사후에 증명할 수 없다(80번 D12 부수). 저장소 루트 기준으로 못 박는다."""
+
 DB_PATH = TRACKING_DIR / "mlruns.db"
 ARTIFACT_DIR = TRACKING_DIR / "artifacts"
 EXPERIMENT = "weld-fl"
 
-CLOUD_ENV_PREFIXES = ("WANDB_", "COMET_", "NEPTUNE_", "CLEARML_")
-"""기본이 외부 클라우드 로깅인 도구들. 존재만 해도 실패시킨다."""
+CLOUD_ENV_PREFIXES = ("WANDB_", "COMET_", "NEPTUNE_", "CLEARML_", "MLFLOW_")
+"""기본이 외부 클라우드 로깅인 도구들. 존재만 해도 실패시킨다.
+
+**`MLFLOW_` 가 빠져 있었다.** 이 프로젝트가 채택한 추적기가 MLflow 이고 반출 경로는
+`MLFLOW_TRACKING_URI=https://…` 다. 환경변수 하나로 전 run 이 외부로 나가는데 가드가
+통과시켰다 — 불변조건 2-3 직결이고, 가드가 정작 채택한 도구만 안 막고 있었다(80번 D12).
+
+로컬 sqlite 를 쓰려고 `MLFLOW_TRACKING_URI` 를 **로컬 경로로** 설정하는 것도 막는다.
+`tracking_uri()` 를 코드에서 부르면 되고, 환경변수 경유는 값이 바뀌어도 흔적이 안 남는다.
+"""
+
+CLOUD_URI_SCHEMES = ("http://", "https://", "databricks", "wasbs://", "gs://", "s3://")
+"""원격 추적 스토어 URI 접두. `detect_cloud_logging` 이 값까지 본다."""
 
 REQUIRED_TAGS = (
     "git_commit",
@@ -52,9 +67,18 @@ class MissingRunMetadata(ValueError):
 
 
 def detect_cloud_logging(env: Mapping[str, str] | None = None) -> tuple[str, ...]:
-    """차단 대상 환경변수를 찾아 이름을 돌려준다. 판정만 하고 예외를 던지지 않는다."""
+    """차단 대상 환경변수를 찾아 이름을 돌려준다. 판정만 하고 예외를 던지지 않는다.
+
+    이름 접두뿐 아니라 **값의 스킴도 본다** — `MLFLOW_TRACKING_URI` 가 아닌 이름으로
+    원격 스토어를 가리키는 경우를 접두 목록만으로는 못 잡는다.
+    """
     src = os.environ if env is None else env
-    return tuple(sorted(k for k in src if k.startswith(CLOUD_ENV_PREFIXES)))
+    hits = {k for k in src if k.startswith(CLOUD_ENV_PREFIXES)}
+    hits |= {
+        k for k, v in src.items()
+        if "TRACKING_URI" in k.upper() and str(v).lower().startswith(CLOUD_URI_SCHEMES)
+    }
+    return tuple(sorted(hits))
 
 
 def guard_no_cloud_logging(env: Mapping[str, str] | None = None) -> None:

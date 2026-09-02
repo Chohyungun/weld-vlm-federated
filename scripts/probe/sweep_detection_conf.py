@@ -28,8 +28,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
-from data.label_map import load_label_map
 from evaluation.adapters import read_records
+from evaluation.cells import load_population
 from evaluation.detect_infer import (
     CHECKPOINTS,
     cell_tag,
@@ -38,8 +38,6 @@ from evaluation.detect_infer import (
     load_yolo_from_npz,
     predict_cell,
 )
-from evaluation.eval_set import eval_rows as select_eval
-from evaluation.eval_set import read_gold, read_manifest
 from evaluation.params import add_common_args, params_from_args
 from evaluation.score import score_records
 from tracking.mlflow_local import reject_best_checkpoint
@@ -71,7 +69,8 @@ def stage_predict(params, eval_rows, root: Path) -> dict:
     for (cell, client), ckpt in ckpts.items():
         tag = cell_tag(cell, client)
         t0 = time.time()
-        yolo = load_yolo_from_npz(ckpt, params.class_names, params.imgsz)
+        yolo = load_yolo_from_npz(ckpt, params.class_names, params.imgsz,
+                                  model_cfg=params.model_cfg)
         recs = predict_cell(yolo, eval_rows, root, cell, client, params,
                             conf=params.conf_floor)
         dest = raw_path(params.out, tag, params.seed)
@@ -210,15 +209,12 @@ def main() -> int:
     root = Path(args.root)
     params.out.mkdir(parents=True, exist_ok=True)
 
-    lm = load_label_map()
-    classes = [lm.iso_code(n) for n in params.class_names]
-
-    rows = read_manifest(params.snapshot)
-    ev = select_eval(rows)
-    eval_ids = {r["image_id"] for r in ev}
-    gold_codes, gold_boxes = read_gold(params.snapshot, eval_ids)
-    for iid in eval_ids:
-        gold_codes.setdefault(iid, set())
+    # 모집단은 `load_population` 한 지점에서만 만든다 — 여기서 따로 만들면 정상 이미지
+    # back-fill 이 빠져 스윕만 다른 모집단에서 채점된다(80번 D9 의 재발 경로).
+    pop = load_population(params)
+    classes = pop.classes
+    ev = pop.rows
+    gold_codes, gold_boxes = pop.gold_codes, pop.gold_boxes
     print(f"평가셋 {len(ev)}장 · 임계 {params.conf.value} ({params.conf.source})")
 
     tags = [cell_tag(c, cl) for c, cl, _ in CHECKPOINTS]

@@ -34,55 +34,100 @@ def iou(a: Box, b: Box) -> float:
     return inter / union if union > 0 else 0.0
 
 
+MATCH_MIN_IOU = 0.0
+"""매칭으로 인정하는 겹침의 **하한(초과)**. 겹침이 정확히 0 인 배정은 매칭이 아니다.
+
+Hungarian 은 비용이 같으면 아무 쌍이나 배정하므로, 겹침 0 인 쌍도 `matched=True` 로
+들어왔다. 함정 #4(좌표계 붕괴)를 잡으라고 만든 `bbox_iou_matched_only` 가 그 탓에
+"위치를 못 맞힘"과 "좌표계가 무너짐"을 구분하지 못했다(80번 D5).
+
+**하한을 0 초과로 두는 것만으로는 부족하다.** 겹침 0 을 매칭에서 빼면 진짜 붕괴가
+`n_matched=0` → "판정 불가"로 이름만 바꿔 다시 숨는다. 그래서 배정 자체의 통계
+(`n_assigned`·`n_zero_overlap_assigned`)를 함께 남기고, `coord_health` 판정 트리가
+그 둘을 본다. 지표 수정과 판정 트리 수정은 한 묶음이다.
+"""
+
+
 @dataclass(frozen=True)
 class Match:
     image_id: str
     iso_code: str
     iou: float
     matched: bool
+    """겹침이 실제로 있는 매칭. `assigned` 와 다르다."""
+    assigned: bool = False
+    """Hungarian 이 쌍으로 묶었는가. 겹침 0 이어도 True 일 수 있다."""
 
 
 def match_image(
     pred: Sequence[tuple[str, Box]],
     gold: Sequence[tuple[str, Box]],
     image_id: str = "",
-) -> tuple[Match, ...]:
+) -> tuple[tuple[Match, ...], int]:
     """같은 `iso_code` 안에서만 Hungarian 1:1 매칭한다.
 
     클래스가 틀리면 위치가 맞아도 매칭하지 않는다. **미매칭 GT 는 IoU 0 으로 남긴다** —
     분모에서 빼면 못 찾은 결함이 지표에서 사라진다.
+
+    Returns:
+        (GT 기준 매칭 목록, **짝을 못 찾은 예측 박스 수**). 두 번째 값이 새로 생겼다 —
+        남는 예측에 벌점을 매기려면 그 개수를 알아야 한다(80번 D6).
     """
     out: list[Match] = []
+    n_pred_unmatched = 0
     codes = sorted({c for c, _ in gold} | {c for c, _ in pred})
     for code in codes:
         p = [b for c, b in pred if c == code]
         g = [b for c, b in gold if c == code]
         if not g:
-            continue  # GT 가 없는 클래스의 오검출은 검출 지표(FP)가 잡는다
+            # GT 가 없는 클래스의 오검출. 검출 지표(FP)가 잡지만 **위치 축에서도
+            # 분모에 들어가야 한다** — 안 그러면 정상 이미지 오탐이 위치 지표에 면역이다.
+            n_pred_unmatched += len(p)
+            continue
         if not p:
-            out.extend(Match(image_id, code, 0.0, False) for _ in g)
+            out.extend(Match(image_id, code, 0.0, False, False) for _ in g)
             continue
         cost = np.zeros((len(g), len(p)), dtype=float)
         for i, gb in enumerate(g):
             for j, pb in enumerate(p):
                 cost[i, j] = -iou(gb, pb)
         rows, cols = linear_sum_assignment(cost)
-        assigned = set(rows.tolist())
+        assigned_g = set(rows.tolist())
+        assigned_p = set(cols.tolist())
         for i, j in zip(rows.tolist(), cols.tolist(), strict=True):
-            out.append(Match(image_id, code, -cost[i, j], True))
+            v = float(-cost[i, j])   # numpy 스칼라를 흘리지 않는다 — jsonl 직렬화·`is False` 대조
+            out.append(Match(image_id, code, v, v > MATCH_MIN_IOU, True))
         out.extend(
-            Match(image_id, code, 0.0, False)
-            for i in range(len(g)) if i not in assigned
+            Match(image_id, code, 0.0, False, False)
+            for i in range(len(g)) if i not in assigned_g
         )
-    return tuple(out)
+        n_pred_unmatched += len(p) - len(assigned_p)
+    return tuple(out), n_pred_unmatched
 
 
 @dataclass(frozen=True)
 class BBoxIoUReport:
+    """위치 지표 세 정의. **이름이 다르면 다른 양이다** — 표에 정의를 병기한다."""
+
+    mean_penalized: float
+    """**주 보고값** `bbox_iou` — 분모가 (GT 박스 + 짝 못 찾은 예측 박스)다.
+
+    이전 정의(`mean_all`)는 분모가 GT 수로 고정이라 **예측을 더 낼수록 값이 올랐다.**
+    빗나간 박스 하나면 0.1429 인데 정답 박스를 하나 더 얹으면 1.0000 이 되고, 무작위
+    10박스가 0.6123 이었다(80번 D6). conf 를 0.01 까지 내리는 스윕과 곱해지면 분리형만
+    벌점 없이 단조 상승한다. 남는 예측을 분모에 넣어 그 성질을 없앤다.
+    """
     mean_all: float
-    """주 보고값 — 미매칭 GT 를 IoU 0 으로 포함한 전체 GT 박스 기준 평균."""
+    """이전 정의 `bbox_iou_gold_anchored` — 미매칭 GT 를 0 으로 포함한 GT 기준 평균.
+
+    65·66번이 `bbox_iou` 라는 이름으로 실은 값이 이것이다. **이름을 바꿔 남긴다** —
+    지우면 과거 산출물과의 회귀 대조가 불가능해진다.
+    """
     mean_matched: float
-    """부 보고값 — 매칭쌍만의 평균. 선행 연구(WeldLLM 0.953) 비교용."""
+    """매칭쌍만의 평균. 선행 연구(WeldLLM 0.953) 비교용.
+
+    **겹침 0 배정은 이제 여기 안 들어간다**(80번 D5). 그래서 65·66번 값과 다르다.
+    """
     n_gold: int
     n_matched: int
     coord_suspect: bool
@@ -91,14 +136,31 @@ class BBoxIoUReport:
     n_matched_ge_50: int = 0
     """매칭쌍 중 IoU ≥ 0.5 인 건수. mAP@0.5 가 세는 것과 같은 문턱이라, mAP 가 낮을 때
     "위치가 나쁜 것"과 "점수 순위가 없는 것"을 가르는 재료가 된다."""
+    n_assigned: int = 0
+    """Hungarian 이 묶은 쌍 수. 겹침 0 도 포함한다."""
+    n_zero_overlap_assigned: int = 0
+    """묶였으나 겹침이 0 인 쌍. **좌표계 붕괴의 서명**이다 — 클래스는 맞는데 위치가
+    완전히 어긋난 상태. 이 수가 `n_assigned` 를 거의 다 차지하면 성능이 아니라 규약이다."""
+    n_pred: int = 0
+    n_pred_unmatched: int = 0
+
+    @property
+    def zero_overlap_frac(self) -> float:
+        return self.n_zero_overlap_assigned / self.n_assigned if self.n_assigned else 0.0
 
     def as_dict(self) -> dict:
         return {
-            "bbox_iou": self.mean_all,
+            "bbox_iou": self.mean_penalized,
+            "bbox_iou_gold_anchored": self.mean_all,
             "bbox_iou_matched_only": self.mean_matched,
             "n_gold": self.n_gold,
             "n_matched": self.n_matched,
             "n_matched_ge_50": self.n_matched_ge_50,
+            "n_assigned": self.n_assigned,
+            "n_zero_overlap_assigned": self.n_zero_overlap_assigned,
+            "zero_overlap_frac": self.zero_overlap_frac,
+            "n_pred": self.n_pred,
+            "n_pred_unmatched": self.n_pred_unmatched,
             "coord_suspect": self.coord_suspect,
         }
 
@@ -110,26 +172,44 @@ def score_bbox_iou(
     pred: Mapping[str, Sequence[tuple[str, Box]]],
     gold: Mapping[str, Sequence[tuple[str, Box]]],
 ) -> BBoxIoUReport:
-    """전 이미지의 BBox-IoU. 정의 두 벌을 **함께** 낸다.
+    """전 이미지의 BBox-IoU. 정의 세 벌을 **함께** 낸다.
 
     어느 정의로 산출했는지 표에 반드시 병기한다 — 안 밝히면 0.9 와 0.5 가 같은 이름을 단다.
+
+    **모집단은 `gold` 의 키 전량이다.** 정상 이미지(GT 박스 0건)도 반드시 키로 들어와야
+    한다. 빠지면 그 이미지의 오탐이 위치 축에서 사라진다(80번 D9) — 호출부가
+    `evaluation.cells.load_population` 에서 back-fill 한다.
     """
     matches: list[Match] = []
+    n_pred_unmatched = 0
+    n_pred = 0
     for img in sorted(gold):
-        matches.extend(match_image(pred.get(img, ()), gold[img], img))
-    if not matches:
-        return BBoxIoUReport(0.0, 0.0, 0, 0, False)
+        p = pred.get(img, ())
+        n_pred += len(p)
+        ms, unmatched = match_image(p, gold[img], img)
+        matches.extend(ms)
+        n_pred_unmatched += unmatched
+    if not matches and not n_pred:
+        return BBoxIoUReport(0.0, 0.0, 0.0, 0, 0, False)
 
     all_ious = [m.iou for m in matches]
     matched = [m.iou for m in matches if m.matched]
+    n_assigned = sum(1 for m in matches if m.assigned)
+    n_zero = sum(1 for m in matches if m.assigned and not m.matched)
     median = float(np.median(matched)) if matched else 0.0
+    denom = len(matches) + n_pred_unmatched
     return BBoxIoUReport(
-        mean_all=float(np.mean(all_ious)),
+        mean_penalized=(float(np.sum(matched)) / denom) if denom else 0.0,
+        mean_all=float(np.mean(all_ious)) if all_ious else 0.0,
         mean_matched=float(np.mean(matched)) if matched else 0.0,
         n_gold=len(matches),
         n_matched=len(matched),
         coord_suspect=bool(matched) and median <= COORD_SUSPECT_MEDIAN,
         n_matched_ge_50=sum(1 for v in matched if v >= 0.5),
+        n_assigned=n_assigned,
+        n_zero_overlap_assigned=n_zero,
+        n_pred=n_pred,
+        n_pred_unmatched=n_pred_unmatched,
     )
 
 
@@ -145,10 +225,17 @@ def to_coco_xywh(box: Box) -> tuple[float, float, float, float]:
 
 # --- mAP (pycocotools) ---------------------------------------------------------
 
+NOT_APPLICABLE = "NOT_APPLICABLE"
+"""산출하지 않았다는 표식. `None` 과 구분한다 — `None` 은 "0건이라 못 냈다"이고
+이쪽은 **"이 칸에서는 정의되지 않는다"**이다. 표에 빈칸으로 두면 둘이 섞인다."""
+
+
 def coco_map(
     pred: Mapping[str, Sequence[tuple[str, Box, float]]],
     gold: Mapping[str, Sequence[tuple[str, Box]]],
     classes: Sequence[str],
+    *,
+    scores_present: bool = True,
 ) -> dict:
     """mAP@0.5 / @0.5:0.95 — pycocotools `COCOeval`, 기본 설정 그대로(커스텀 금지).
 
@@ -158,7 +245,12 @@ def coco_map(
 
     Args:
         pred: image_id → [(iso_code, xyxy_box, score)]
-        gold: image_id → [(iso_code, xyxy_box)]
+        gold: image_id → [(iso_code, xyxy_box)]. **정상 이미지도 빈 리스트로 들어와야
+            한다** — 빠지면 그 이미지의 오탐이 mAP 모집단에서 사라진다(80번 D9).
+        scores_present: 예측이 실제 신뢰도를 가지는가. 생성 모델은 신뢰도를 내지 않으므로
+            전 박스가 같은 점수가 되는데, mAP 는 **순위 지표**라 그 상태에서 나온 수는
+            다른 칸의 mAP 와 같은 표에 실을 수 없다(80번 D16). `False` 면 산출하지 않고
+            `NOT_APPLICABLE` 을 돌려준다 — 0 으로 채우면 "위치를 못 맞혔다"로 오독된다.
     """
     import contextlib
     import io as _io
@@ -167,6 +259,14 @@ def coco_map(
     from pycocotools.cocoeval import COCOeval
 
     image_ids = sorted(gold)
+    if not scores_present:
+        return {
+            "map_50_95": NOT_APPLICABLE, "map_50": NOT_APPLICABLE,
+            "n_gt_boxes": sum(len(gold[i]) for i in image_ids),
+            "n_pred_boxes": sum(len(pred.get(i, ())) for i in image_ids),
+            "note": ("예측에 신뢰도가 없다. mAP 는 순위 지표라 상수 점수에서 산출하면 "
+                     "다른 칸과 비교 불가능한 수가 된다 — 산출하지 않는다"),
+        }
     img_map = {iid: i + 1 for i, iid in enumerate(image_ids)}
     cat_map = {c: i + 1 for i, c in enumerate(classes)}
 
