@@ -33,11 +33,13 @@ def ring_mask(poly: np.ndarray) -> np.ndarray:
 
 
 def run_contrast(args) -> int:
+    from data.frozen_guard import legacy_path
     from data.manifest_io import read_manifest
     from scripts.measure_clamp_feasibility import poly_mask
     from scripts.measure_tiling_geometry import read_labels
 
-    before = read_manifest(V1 / "manifest_pre_histmatch.csv").set_index("image_id")
+    # 정합 이전 판은 attic/ 으로 격리됐다 (80번 G11-1). 경로를 직접 쓰지 않는다.
+    before = read_manifest(legacy_path("manifest_pre_histmatch.csv")).set_index("image_id")
     after = read_manifest(V1 / "manifest.csv").set_index("image_id")
 
     prog = {}
