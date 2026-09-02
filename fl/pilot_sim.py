@@ -22,154 +22,30 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-
-from flwr.clientapp import ClientApp
-from flwr.common import ArrayRecord, ConfigRecord, Context, Message, MetricRecord, RecordDict
+from flwr.common import ArrayRecord, ConfigRecord, Context
 from flwr.serverapp import Grid, ServerApp
 
 from detection.budget_audit import AccountingMatrix
 from fl.atomic_log import AtomicLog, RoundTimer, new_run_id
-from fl.round_wiring import (CANONICAL_KEYS_KEY, SERVER_ROUND_KEY,
-                             finalize_accounting, make_round_recorder)
-from fl.strategy import ARRAYS_KEY, CONFIG_KEY, METRICS_KEY, WeldFedAvg
+from fl.round_wiring import (ALL_CELLS, CANONICAL_KEYS_KEY, FED_CELLS,
+                             SMOKE_CELL, finalize_accounting,
+                             make_round_recorder)
+from fl.strategy import ARRAYS_KEY, WeldFedAvg
 
 __all__ = ["run_pilot_fed", "PILOT_CFG", "FED_CELLS", "SMOKE_CELL",
-           "smoke_client_round", "SMOKE_BACKEND", "DEFAULT_BACKEND",
-           "ray_startup_env"]
+           "SMOKE_BACKEND", "DEFAULT_BACKEND", "ray_startup_env"]
 
 #: run_simulation 이 run_config 를 지원하지 않으므로 모듈 전역으로 주입한다.
 #: run_pilot_fed 가 채우고, 서버·클라이언트 앱이 읽는다.
 PILOT_CFG: dict[str, Any] = {}
 
-FED_CELLS = ("sep_fed", "uni_fed")
-
-#: 배선 자체를 검사하는 칸. **실험 칸이 아니다.**
-#:
-#: 진입점이 라운드 1 에서 죽는 상태로 커밋돼 있었는데 아무도 몰랐다(80번 F1). 시험이
-#: 없어서가 아니라 **경로를 끝까지 돌리는 시험이** 없어서다. 그런데 실물 칸으로 스모크를
-#: 돌리려면 모델·데이터·GPU 가 필요하고, 그러면 CI 에서 돌지 않아 결국 또 안 돌게 된다.
-#:
-#: 그래서 더미 2텐서를 돌려주는 칸을 배선에 **1급으로** 둔다(80번 G10-2 가 요구한 모양).
-#: Ray 액터는 별도 프로세스라 시험 쪽 monkeypatch 가 닿지 않는다 — 스모크 경로가 코드에
-#: 있어야만 실제 런타임 위에서 돌릴 수 있다.
-#:
-#: 오용 방지: 이 칸으로 돈 산출물 디렉터리에는 `DO_NOT_CITE.md` 가 함께 쓰인다.
-SMOKE_CELL = "smoke"
-ALL_CELLS = FED_CELLS + (SMOKE_CELL,)
-
-
-def smoke_client_round(round_idx: int, client_idx: int, cfg: Any) -> tuple[list, dict, dict]:
-    """더미 2텐서. 학습하지 않고 **배선만** 통과시킨다.
-
-    클라이언트마다 값이 조금씩 다르다 — 전부 같으면 집계가 항등이 되어 평균 산술이
-    돌았는지 알 수 없다.
-    """
-    scale = 1.0 + 0.01 * client_idx
-    arrays = [
-        (np.arange(12, dtype=np.float32).reshape(4, 3) * scale),
-        (np.arange(3, dtype=np.float32) * scale),
-    ]
-    fail_at = str(cfg.get("smoke-fail-at", ""))
-    if fail_at == f"{round_idx},{client_idx}":
-        raise RuntimeError(
-            f"스모크 의도적 실패: r{round_idx} c{client_idx} — 회계가 남는지 본다"
-        )
-
-    from detection import serialize
-
-    tokens = 1000 + client_idx
-    metrics = {
-        "num-examples": float(tokens),        # 가중 = 감독 토큰 총합(판정 2)
-        "supervised-tokens": float(tokens),
-        "epochs-ran": float(cfg["local-epochs"]),
-        "optimizer-steps": 5.0, "optimizer-updates": 5.0, "resumed-from-epoch": -1.0,
-        "param-l2": serialize.params_l2_norm(arrays),
-        "payload-bytes": float(serialize.payload_nbytes(arrays)),
-        "seed": float(cfg["base-seed"]), "client-idx": float(client_idx),
-        "lr": 1e-4, "momentum": float("nan"), "budget-fired-at": -1.0,
-        "peak-vram-gb": 0.0, "stopper-true-count": -1.0,
-    }
-    strings = {
-        "keys-digest": serialize.keys_digest(list(cfg[CANONICAL_KEYS_KEY])),
-        "optimizer": "AdamW", "arg-optimizer": "AdamW", "stopper-class": "",
-        "weight-unit": "supervised_tokens",
-    }
-    return arrays, metrics, strings
 
 server_app = ServerApp()
-client_app = ClientApp()
 
-
-def _client_idx(context: Context) -> int:
-    node_cfg = dict(context.node_config or {})
-    if "partition-id" not in node_cfg:
-        raise RuntimeError(
-            "시뮬레이션 백엔드가 partition-id 를 넣지 않았다. 클라이언트를 식별할 수 없으므로 "
-            "추측하지 않고 멈춘다 — 세 클라이언트가 같은 데이터를 돌면 지표는 초록인 채 "
-            "연합이 무의미해진다."
-        )
-    return int(node_cfg["partition-id"])
-
-
-@client_app.train()
-def _client_train(msg: Message, context: Context) -> Message:
-    cfg = msg.content[CONFIG_KEY]
-    client_idx = _client_idx(context)
-    round_idx = int(cfg[SERVER_ROUND_KEY]) - 1        # flwr 는 1부터 센다
-    canonical_keys = list(cfg[CANONICAL_KEYS_KEY])
-    arrays_in = msg.content[ARRAYS_KEY].to_numpy_ndarrays()
-    cell = str(cfg["cell"])
-
-    if cell == "sep_fed":
-        from fl.client_det import run_client_round
-
-        run_cfg = {
-            "data_yaml": str(Path(str(cfg["views-root"])) / f"client{client_idx}" / "data.yaml"),
-            "model": str(cfg["model"]),
-            "total_epochs": int(cfg["total-epochs"]),
-            "local_epochs": int(cfg["local-epochs"]),
-            "base_seed": int(cfg["base-seed"]),
-            "num_examples": int(cfg[f"num-examples-{client_idx}"]),
-            "project": str(cfg["project"]),
-            # 라운드 안에서 죽어도 그 라운드를 0부터 다시 돌지 않는다. 신원(라운드·클라이언트·
-            # 시드)이 다르면 거부되므로 옆 라운드 상태를 물려받는 경로는 없다.
-            "resume_root": str(cfg["resume-root"]) if cfg.get("resume-root") else None,
-            "run_id": str(cfg.get("run-stamp", "")),
-        }
-        arrays_out, metrics, strings = run_client_round(
-            weights_in=arrays_in, canonical_keys=canonical_keys,
-            round_idx=round_idx, client_idx=client_idx, cfg=run_cfg,
-            profile=str(cfg.get("profile", "main")),
-        )
-    elif cell == "uni_fed":
-        from fl.client_vlm import run_client_round
-
-        run_cfg = {
-            "client_tag": str(cfg[f"client-tag-{client_idx}"]),
-            "local_epochs": int(cfg["local-epochs"]),
-            "num_rounds": int(cfg["num-rounds"]),
-            "base_seed": int(cfg["base-seed"]),
-            "resume_root": str(cfg["resume-root"]) if cfg.get("resume-root") else None,
-            "run_id": str(cfg.get("run-stamp", "")),
-        }
-        arrays_out, metrics, strings = run_client_round(
-            adapter_in=arrays_in, canonical_keys=canonical_keys,
-            round_idx=round_idx, client_idx=client_idx, cfg=run_cfg,
-        )
-    elif cell == SMOKE_CELL:
-        arrays_out, metrics, strings = smoke_client_round(round_idx, client_idx, cfg)
-    else:
-        raise ValueError(f"연합 칸이 아니다: {cell!r}. 허용: {ALL_CELLS}")
-
-    return Message(
-        content=RecordDict({
-            ARRAYS_KEY: ArrayRecord(arrays_out),
-            METRICS_KEY: MetricRecord(metrics),
-            CONFIG_KEY: ConfigRecord(strings),
-        }),
-        reply_to=msg,
-    )
+#: 클라이언트는 **등록 디스패처 그대로**다(`fl/client_app.py`). 여기 지역 사본이 있던
+#: 시절, 등록된 앱(client_det)은 죽어 있는데 도는 앱은 여기라 아무도 몰랐다(85번 ⑤).
+#: 두 진입점이 같은 객체를 타야 한쪽에서만 죽는 배선이 원리적으로 없다.
+from fl.client_app import app as client_app  # noqa: E402  (ServerApp 정의 뒤 의도적 배치)
 
 
 @server_app.main()

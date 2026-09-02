@@ -61,7 +61,11 @@ publisher = "weld-fl"
 
 [tool.flwr.app.components]
 serverapp = "fl.server_app:app"
-clientapp = "fl.client_det:app"
+# 클라이언트는 칸 디스패처 하나다(fl/client_app.py). 구판은 fl.client_det:app 을
+# 등록했는데 그 train 핸들러가 죽어 있었다 — "등록된 것은 죽어 있고 도는 것은 등록돼
+# 있지 않다"(85번 ⑤). ⑦(uni_fed)도 별도 앱이 아니라 run-config 의 cell 로 고른다:
+#   flwr run . local-sim --run-config 'cell="uni_fed" ...'
+clientapp = "fl.client_app:app"
 
 [tool.flwr.app.config]
 cell = "sep_fed"
@@ -80,8 +84,6 @@ profile = "main"
 num-examples = "1,1,1"
 client-tags = "C1,C2,C3"
 
-# 통합형 연합 칸. `flwr run . uni-fed` 로 띄운다 — 클라이언트 앱이 다르다
-# (교환 단위가 LoRA 어댑터라 검출 클라이언트를 그대로 쓸 수 없다).
 [tool.flwr.federations]
 default = "local-sim"
 

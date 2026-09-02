@@ -41,8 +41,17 @@ __all__ = ["RoundFailure", "WeldFedAvg", "ARRAYS_KEY", "METRICS_KEY", "WEIGHT_KE
 ARRAYS_KEY = "arrays"
 METRICS_KEY = "metrics"
 CONFIG_KEY = "config"
-#: `weighted_by_key` 기본값. 클라이언트가 이 이름으로 표본 수를 올린다.
-WEIGHT_KEY = "num-examples"
+#: FedAvg 가중 전용 키. **의미 키("num-examples" = 표본/페어 수)와 분리돼 있다.**
+#:
+#: 이전 값은 "num-examples" 였다 — 가중 키이면서 동시에 페어 수의 의미 키였고, 그래서
+#: 통합형 클라이언트의 metrics dict 리터럴이 같은 키를 두 번 쓰는 사고가 났다
+#: (85번 ①: `{WEIGHT_KEY: 토큰, "num-examples": 페어 수}` 에서 뒤가 이겨 **실제 전송
+#: 가중이 페어 수**가 됐는데 회계의 weight-unit 은 supervised_tokens 로 남아 거짓말했다).
+#:
+#: 한 키에 두 의미를 실으면 언젠가 다시 충돌한다. 가중은 이 키, 표본 수는
+#: "num-examples", 감독 토큰은 "supervised-tokens" — 세 값이 항상 따로 실린다.
+#: 검출은 가중 == 표본 수, 통합형은 가중 == 감독 토큰 총합(총괄 판정 2)이다.
+WEIGHT_KEY = "fedavg-weight"
 
 #: `MetricRecord` 는 `int | float | list` 만 받는다(실측 — str·bool 거부).
 #: 그래서 문자열 필드(정본 키 다이제스트, 실사용 optimizer 이름)는 `ConfigRecord` 로 나른다.

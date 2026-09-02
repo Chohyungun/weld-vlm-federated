@@ -29,7 +29,16 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-pytest.importorskip("flwr")
+# **skip 이 아니라 fail 이다** (85번 ⑨). `importorskip` 이면 `uv sync --extra` 사고로
+# flwr 가 걷혔을 때 이 파일의 이빨 시험 전체가 조용히 skip 되어 초록으로 보인다 —
+# CLAUDE.md 가 경고하는 바로 그 사고다. 의존성 부재는 환경 고장이므로 시끄럽게 죽인다.
+try:
+    import flwr  # noqa: F401
+except ImportError as _exc:  # pragma: no cover
+    pytest.fail(
+        f"flwr 가 없다({_exc}) — `uv sync --extra detection --extra vlm --extra fl "
+        "--extra corpus` 를 돌려라. skip 하면 항목 16 이빨 시험 전체가 무이빨이 된다."
+    )
 
 from detection import serialize  # noqa: E402
 from fl.aggregate import weighted_fedavg  # noqa: E402
@@ -178,18 +187,28 @@ def test_pyproject_에_flwr_앱이_등록돼_있다():
     cfg = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     flwr = cfg["tool"]["flwr"]
     assert flwr["app"]["components"]["serverapp"] == "fl.server_app:app"
-    assert flwr["app"]["components"]["clientapp"] == "fl.client_det:app"
+    # 85번 ⑤·⑥ — 등록 클라이언트는 칸 디스패처 하나다. 구판의 fl.client_det:app 은
+    # train 핸들러가 죽어 있었다("등록된 것은 죽어 있고 도는 것은 등록돼 있지 않다").
+    assert flwr["app"]["components"]["clientapp"] == "fl.client_app:app"
     assert flwr["federations"]["local-sim"]["options"]["num-supernodes"] == 3
 
 
 def test_라운드_키를_리터럴로_쓰지_않는다():
     """두 배선이 다른 이름(`round` 대 `server-round`)을 써서 진입점이 죽었다(F1)."""
-    for name in ("fl/server_app.py", "fl/pilot_sim.py", "fl/client_vlm.py"):
+    # 85번 ⑤ — 구판 목록에는 하필 client_det.py 만 빠져 있었고, 그 파일의 죽은
+    # 핸들러가 옛 키 리터럴을 읽고 있었다. **정의 지점(fl/round_wiring.py)만 빼고**
+    # fl/ 의 배선 파일 전부를 검사한다 — 상수의 집은 리터럴을 한 번은 가져야 한다.
+    for name in ("fl/server_app.py", "fl/pilot_sim.py", "fl/client_vlm.py",
+                 "fl/client_det.py", "fl/client_app.py"):
         src = Path(name).read_text(encoding="utf-8")
         body = "\n".join(l for l in src.splitlines() if not l.strip().startswith("#"))
         assert '"server-round"' not in body, f"{name}: 상수 대신 리터럴을 썼다"
         assert '"round"' not in body, f"{name}: 옛 키 리터럴이 남아 있다"
     assert SERVER_ROUND_KEY == "server-round"
+    # 정의 지점 검사 — 리터럴은 round_wiring 에 정확히 한 번(정의행)만 산다.
+    home = Path("fl/round_wiring.py").read_text(encoding="utf-8")
+    body = "\n".join(l for l in home.splitlines() if not l.strip().startswith("#"))
+    assert body.count('SERVER_ROUND_KEY = "server-round"') == 1
 
 
 def test_서버가_보내는_설정에_정본_키가_실린다():
@@ -354,15 +373,28 @@ def test_run_simulation_스모크가_완주한다(tmp_path):
     assert {int(k): v for k, v in audit["total_epochs_by_client"].items()} == {0: 2, 1: 2, 2: 2}
 
 
-def test_가중_단위가_회계에_기록된다(tmp_path):
-    """총괄 판정 2 — 회계가 단위를 말해야 RQ3 을 해석할 수 있다."""
+def test_가중_단위가_회계에_기록되고_거짓말하지_않는다(tmp_path):
+    """총괄 판정 2 / 85번 ① — 실제 전송 가중이 단위가 가리키는 값과 같아야 한다.
+
+    구판 스모크는 가중과 페어 수에 **같은 값**을 실어 키 충돌을 원리적으로 못 봤다.
+    지금은 토큰(1000+c)과 페어 수(100+c)가 다른 값이라, 충돌이 재발해 페어 수가
+    전송되면 여기서 fedavg_weight 가 100+c 로 잡혀 즉시 실패한다.
+    """
     import csv
 
     out = _run(tmp_path, out_name="unit")
     rows = list(csv.DictReader((out / "accounting.csv").open(encoding="utf-8")))
     assert rows and all(r["fedavg_weight_unit"] == "supervised_tokens" for r in rows)
-    assert all(float(r["fedavg_weight"]) > 0 for r in rows)
-    assert all(int(r["supervised_tokens"]) > 0 for r in rows)
+    for r in rows:
+        c = int(r["client_idx"])
+        assert float(r["fedavg_weight"]) == float(1000 + c), (
+            f"전송 가중이 감독 토큰이 아니다: {r['fedavg_weight']} — 85번 ① 재발"
+        )
+        assert int(r["supervised_tokens"]) == 1000 + c
+        assert int(r["num_examples"]) == 100 + c, "페어 수가 의미 키에서 사라졌다"
+        assert float(r["fedavg_weight"]) != float(r["num_examples"]), (
+            "가중과 페어 수가 같은 값이면 이 시험은 충돌을 구분하지 못한다"
+        )
 
 
 def test_원자_로그에_epochs_ran_과_lr_이_남는다(tmp_path):
@@ -410,11 +442,11 @@ def test_uni_fed_서버가_보내는_키와_클라이언트가_읽는_키가_맞
     sent |= {"cell", "canonical-keys", "local-epochs", "total-epochs", "num-rounds",
              "base-seed", "run-stamp", "resume-root"}
 
-    # 클라이언트 분기가 실제로 읽는 키를 소스에서 뽑는다.
-    src = Path("fl/pilot_sim.py").read_text(encoding="utf-8")
+    # **등록 디스패처**(fl/client_app.py)가 실제로 읽는 키를 소스에서 뽑는다.
+    src = Path("fl/client_app.py").read_text(encoding="utf-8")
     tree = ast.parse(src)
     fn = next(n for n in ast.walk(tree)
-              if isinstance(n, ast.FunctionDef) and n.name == "_client_train")
+              if isinstance(n, ast.FunctionDef) and n.name == "train")
     read: set[str] = set()
     for node in ast.walk(fn):
         # cfg["x"] / cfg.get("x")
@@ -428,23 +460,216 @@ def test_uni_fed_서버가_보내는_키와_클라이언트가_읽는_키가_맞
 
     # f-string 으로 만드는 키(client-tag-N, num-examples-N)는 위 추출에 안 잡힌다.
     read |= {"client-tag-0", "client-tag-1", "client-tag-2"}
-    read -= {"views-root", "model", "project", "profile", "num-examples-0"}   # sep_fed 전용
+    # sep_fed·스모크 전용 키는 uni_fed 계약이 아니다
+    read -= {"views-root", "model", "project", "profile", "num-examples-0", "smoke-fail-at"}
 
     missing = read - sent
     assert not missing, f"클라이언트가 읽는데 서버가 안 보내는 키: {sorted(missing)}"
 
 
-def test_uni_fed_클라이언트가_감독_토큰을_가중으로_싣는다():
-    """총괄 판정 2 — 소스 계약으로 고정한다(실물 학습 없이)."""
-    src = Path("fl/client_vlm.py").read_text(encoding="utf-8")
-    assert 'WEIGHT_KEY: float(m["supervised_tokens"])' in src, (
-        "가중이 감독 토큰 총합이어야 한다(판정 2)"
-    )
-    assert '"weight-unit": "supervised_tokens"' in src
-    assert '"num-examples": float(len(rows))' in src, "페어 수도 회계용으로 함께 실어야 한다"
+def _fake_train_metrics() -> dict:
+    return {
+        "supervised_tokens": 4321, "epochs_ran": 2, "optimizer_steps": 7,
+        "resumed_from_epoch": None, "param_l2": 1.5, "payload_bytes": 999,
+        "seed": 11, "lr": 1e-4, "peak_vram_gb": 0.1, "optimizer": "AdamW",
+        "init_proof": {"l2": 31.5},
+    }
+
+
+def test_uni_fed_가중은_감독_토큰이고_페어수는_별도_키다__행동_시험():
+    """총괄 판정 2 / 85번 ① — **문자열이 아니라 실구성 dict 를 검사한다.**
+
+    구판 시험은 `'WEIGHT_KEY: float(...)' in src` 문자열 검사라, dict 리터럴 중복 키로
+    가중이 페어 수로 바뀐 깨진 코드에서도 통과했다. 여기서는 페이로드를 실제로 만들어
+    전송될 값을 본다.
+    """
+    from fl.client_vlm import payload_metrics
+    from fl.strategy import WEIGHT_KEY
+
+    metrics, strings = payload_metrics(
+        _fake_train_metrics(), n_pairs=77, canonical_keys=KEYS, client_idx=2)
+
+    assert metrics[WEIGHT_KEY] == 4321.0, "전송 가중이 감독 토큰 총합이 아니다"
+    assert metrics["num-examples"] == 77.0, "페어 수가 의미 키에 없다"
+    assert metrics["supervised-tokens"] == 4321.0
+    assert strings["weight-unit"] == "supervised_tokens"
+    # 키 자체가 분리돼 있어야 한다 — 같으면 dict 구성에서 충돌이 재발할 수 있다.
+    assert WEIGHT_KEY != "num-examples", "가중 키가 의미 키와 같다 — 85번 ① 의 뿌리"
+
+
+def test_가중_키_분리_상수_고정():
+    """`WEIGHT_KEY` 가 의미 키로 되돌아가는 회귀를 막는다."""
+    from fl.round_wiring import WEIGHT_KEY as RW
+    from fl.strategy import WEIGHT_KEY as ST
+
+    assert ST == "fedavg-weight"
+    assert RW is ST, "두 모듈이 다른 상수를 들고 있으면 한쪽만 바뀌는 사고가 재발한다"
+
+
+def test_fl_배선의_dict_리터럴에_중복_키가_없다():
+    """85번 ① 을 **원리적으로** 막는다 — 상수로 쓴 키를 값으로 풀어 문자열 키와 겹치는지
+    fl/ 전체의 dict 리터럴에서 검사한다. 파이썬은 중복 키를 조용히 뒤가 이기게 둔다."""
+    import ast as _ast
+
+    known = {
+        "WEIGHT_KEY": "fedavg-weight", "CANONICAL_KEYS_KEY": "canonical-keys",
+        "SERVER_ROUND_KEY": "server-round", "ARRAYS_KEY": "arrays",
+        "METRICS_KEY": "metrics", "CONFIG_KEY": "config",
+    }
+    for name in sorted(Path("fl").glob("*.py")):
+        tree = _ast.parse(name.read_text(encoding="utf-8"))
+        for node in _ast.walk(tree):
+            if not isinstance(node, _ast.Dict):
+                continue
+            seen: dict[str, str] = {}
+            for k in node.keys:
+                if k is None:                      # **spread
+                    continue
+                if isinstance(k, _ast.Constant) and isinstance(k.value, str):
+                    resolved, shown = k.value, f'"{k.value}"'
+                elif isinstance(k, _ast.Name) and k.id in known:
+                    resolved, shown = known[k.id], k.id
+                else:
+                    continue
+                assert resolved not in seen, (
+                    f"{name}:{k.lineno} dict 리터럴 중복 키 {resolved!r} "
+                    f"({seen[resolved]} 와 {shown}) — 뒤가 조용히 이긴다(85번 ①)"
+                )
+                seen[resolved] = shown
 
 
 def test_uni_fed_클라이언트가_주입을_서버_기준으로_검증한다():
     """G2-5 — 클라이언트끼리 비교로는 셋 다 no-op 일 때 통과한다."""
     src = Path("fl/client_vlm.py").read_text(encoding="utf-8")
     assert "assert_injected_matches" in src
+
+
+# ==========================================================================
+# 85번 ④ — 등록 진입점(`fl.server_app:app`)을 실제 런타임에서 끝까지 돌린다
+#
+# 지금까지의 스모크는 `pilot_sim` 서버만 돌았다. server_app 고유 구간(run_config 파싱·
+# `_load_initial`·`_as_list`)은 실행 이력 0 이었다 — F1(죽은 채 커밋)과 같은 부류.
+# `flwr run` 이 하는 일을 재현한다: 등록된 두 컴포넌트 + run_config 를 실은 Context.
+# ==========================================================================
+
+def test_flwr_run_진입점이_끝까지_돈다(tmp_path):
+    import os
+
+    from flwr.common import Context, RecordDict
+    from flwr.supercore.telemetry import EventType
+    from flwr.simulation.run_simulation import _run_simulation
+    from flwr.supercore.run import Run
+
+    from fl.client_app import app as registered_client
+    from fl.pilot_sim import SMOKE_BACKEND, ray_startup_env
+    from fl.server_app import app as registered_server
+
+    os.environ.update(ray_startup_env())
+    _wait_for_headroom()
+
+    run = Run.create_empty(run_id=20260902)
+    run.primary_task_id = 1
+    run.federation_id = "@none/default"          # NOOP_FEDERATION_ID 실측값
+
+    project = tmp_path / "proj"
+    ctx = Context(
+        run_id=run.run_id, node_id=0, node_config={}, state=RecordDict(),
+        run_config={
+            # pyproject [tool.flwr.app.config] 와 같은 모양 — flwr run 이 넣어 주는 것
+            "cell": "smoke", "num-server-rounds": 2, "local-epochs": 1,
+            "total-epochs": 2, "num-clients": 3, "num-classes": 4,
+            "base-seed": 1, "run-stamp": "entry", "split-hash": "deadbeef",
+            "model": "yolo11s.pt", "project": str(project),
+            "views-root": str(project / "views"), "profile": "main",
+            "num-examples": "1,1,1", "client-tags": "C1,C2,C3",
+        },
+    )
+    _run_simulation(
+        num_supernodes=3,
+        exit_event=EventType.PYTHON_API_RUN_SIMULATION_LEAVE,
+        client_app=registered_client,
+        server_app=registered_server,
+        backend_config=dict(SMOKE_BACKEND),
+        server_app_context=ctx,
+        run=run,
+    )
+
+    out = project / "fl" / "smoke"
+    audit = json.loads((out / "audit.json").read_text(encoding="utf-8"))
+    assert audit["ok"], audit["failures"]
+    assert (out / "accounting.csv").exists()
+    assert (out / "DO_NOT_CITE.md").exists(), "스모크 산출물에 인용 금지 표식이 없다"
+    assert (out / "global_r002.npz").exists()
+
+
+# ==========================================================================
+# 85번 ⑦ — run_gates 지문 1개는 통과가 아니다
+# ==========================================================================
+
+def _fp(tag: str, coord_hash: str = "h1"):
+    from tracking.mlflow_local import CellFingerprint
+
+    return CellFingerprint(cell=tag, base_ckpt_sha256="b", coords_sha256="c",
+                           coord_cfg_hash=coord_hash, rag_snapshot_sha256="r")
+
+
+def test_지문_1개는_cells_identical_이_None_이다():
+    """구판은 `if prints:` 라 지문 1개(통합형 학습이 정확히 그렇다)가 대조 없이
+    true 로 기록됐다 — 이 게이트가 잡으려던 무이빨 형태의 재발(85번 ⑦)."""
+    from fl.run_gates import apply_run_gates
+
+    out = apply_run_gates(cell="t", fingerprints=[_fp("a")])
+    assert out["gate_results"]["cells_identical"] is None
+    assert "check_cells_identical" not in out["gates_evaluated"], (
+        "부르지 않은 대조를 불렀다고 적으면 gates_evaluated 가 거짓말한다"
+    )
+
+
+def test_지문_2개_동일은_true_다():
+    from fl.run_gates import apply_run_gates
+
+    out = apply_run_gates(cell="t", fingerprints=[_fp("a"), _fp("b")])
+    assert out["gate_results"]["cells_identical"] is True
+    assert "check_cells_identical" in out["gates_evaluated"]
+
+
+def test_지문_2개_상이는_죽는다__이빨():
+    from fl.run_gates import apply_run_gates
+
+    with pytest.raises(RuntimeError, match="같아야 할 값"):
+        apply_run_gates(cell="t", fingerprints=[_fp("a"), _fp("b", coord_hash="h2")])
+
+
+# ==========================================================================
+# 85번 ① — 회계의 단위 일치 감사 (이빨)
+# ==========================================================================
+
+def test_가중_단위가_거짓말하면_회계가_실패한다():
+    """85번 ① 그 자체를 픽스처로 — unit=supervised_tokens 인데 가중이 페어 수."""
+    from detection.budget_audit import AccountingCell, AccountingMatrix
+
+    m = AccountingMatrix(num_rounds=1, client_ids=[0], local_epochs=1, total_epochs=1)
+    m.record(AccountingCell(
+        round_idx=0, client_idx=0, epochs_ran=1, optimizer_steps=5, num_examples=100,
+        seed=1, optimizer="AdamW", lr=1e-4, arg_optimizer="AdamW", arg_lr0=1e-4,
+        fedavg_weight=100.0,                     # 페어 수가 전송됐다
+        fedavg_weight_unit="supervised_tokens",  # 단위는 토큰이라고 주장한다
+        supervised_tokens=4321,
+    ))
+    rep = m.audit()
+    assert not rep.ok
+    assert any("거짓말" in f for f in rep.failures), rep.failures
+
+
+def test_가중_단위가_정직하면_통과한다():
+    from detection.budget_audit import AccountingCell, AccountingMatrix
+
+    m = AccountingMatrix(num_rounds=1, client_ids=[0], local_epochs=1, total_epochs=1)
+    m.record(AccountingCell(
+        round_idx=0, client_idx=0, epochs_ran=1, optimizer_steps=5, num_examples=100,
+        seed=1, optimizer="AdamW", lr=1e-4, arg_optimizer="AdamW", arg_lr0=1e-4,
+        fedavg_weight=4321.0, fedavg_weight_unit="supervised_tokens",
+        supervised_tokens=4321,
+    ))
+    rep = m.audit()
+    assert rep.ok, rep.failures
