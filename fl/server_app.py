@@ -69,6 +69,16 @@ def _cell_from_metrics(round_idx: int, m: dict[str, Any]) -> AccountingCell:
         momentum=float(m.get("momentum", float("nan"))),
         arg_optimizer=str(m.get("arg-optimizer", "")),
         budget_fired_at=(None if float(m.get("budget-fired-at", -1)) < 0 else int(m["budget-fired-at"])),
+        optimizer_updates=int(m.get("optimizer-updates", 0)),
+        resumed_from_epoch=(None if float(m.get("resumed-from-epoch", -1)) < 0
+                            else int(m["resumed-from-epoch"])),
+        # 조기 종료 계측을 클라이언트 실측에서 받는다. -1 은 "계측 없음"이라 None 으로
+        # 옮긴다 — 0 으로 접으면 재지 않은 셀이 통과한다(74번 감사 P9).
+        stopper_class=str(m.get("stopper-class", "")),
+        stopper_true_count=(None if float(m.get("stopper-true-count", -1)) < 0
+                            else int(m["stopper-true-count"])),
+        stopper_calls=(None if m.get("stopper-calls") is None
+                       else int(float(m["stopper-calls"]))),
     )
 
 
@@ -114,6 +124,7 @@ def main(grid: "Grid", context: "Context") -> None:
                 metrics={
                     "epochs_ran": float(m.get("epochs-ran", 0)),
                     "optimizer_steps": float(m.get("optimizer-steps", 0)),
+                    "optimizer_updates": float(m.get("optimizer-updates", 0)),
                     "param_l2": float(m.get("param-l2", 0.0)),
                     "lr": float(m.get("lr", float("nan"))),
                 },

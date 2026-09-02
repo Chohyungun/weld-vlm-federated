@@ -3,8 +3,13 @@
 `limits.csv` 한 파일에서 세 소비처가 파생된다(개발규약 1-7). 이 스크립트는 그중
 D 소비분 둘을 실체화한다:
 
-  corpus/derived/chunk_meta.jsonl   RAG 청크 메타 필터 축 (rag/retrieve.py 의 Chunk)
+  corpus/derived/chunk_meta.jsonl   RAG 청크 메타 필터 축 + 조항 본문 (rag/retrieve.py 의 Chunk)
+  corpus/derived/clause_texts.json  조항 본문만 뽑은 사전 {clause_id: text}
   corpus/derived/gold_clauses.csv   채점 정답 조항 목록 (evaluation/gold.py)
+
+`clause_texts.json` 을 따로 내는 이유: D 의 `rag.index.load_chunks(path, texts=...)` 는
+본문을 **별도 매핑으로** 받는 시그니처라, 이 파일을 그대로 넘기면 D 쪽 코드 변경 없이
+본문이 색인에 실린다. `chunk_meta.jsonl` 의 `text` 필드는 같은 내용의 자족 사본이다.
 
 규칙:
 - 입력은 `limits_loader` 공식 로더 경유. G0 통과분만 파생된다.
@@ -12,6 +17,10 @@ D 소비분 둘을 실체화한다:
   원천이 바뀌었는데 파생물이 낡은 채로 남는 것이 최악이라, 산출물마다 원천 CSV 의
   sha256 을 박는다. 소비처는 로드 시 이 해시를 자기가 본 원천과 대조할 수 있다.
 - 산출은 결정론이다. 같은 원천이면 같은 바이트가 나온다(타임스탬프를 넣지 않는 이유).
+  **개행은 LF 로 고정하고 비교는 바이트로 한다.** win32 기본 텍스트 모드는 쓸 때 CRLF 로
+  바꾸고 읽을 때 되돌리므로, `read_text()` 비교는 개행 차이에 눈이 먼다 — 이름이
+  "byte identical" 인 검사가 실제로는 바이트를 안 보고 있었다 (74번 감사 B 재검 3).
+- 조항 본문은 원문 전재가 아니라 구조 필드 재서술이다 — 근거는 `corpus/rules/clause_text.py`.
 - gold_clauses.csv 는 평가 자산(D6)이다. 채점기·검색 결정 절차 외 어떤 학습 단계에도
   투입하지 않는다(개발규약 1-4). 파일 헤더 주석에 같은 경고를 박는다.
 
@@ -44,6 +53,19 @@ GOLD_WARNING = (
 )
 
 
+def defect_names() -> dict[str, str]:
+    """사상표(계약 #1) 유래 {ISO 코드: 한국어 명칭}. 라벨 문자열 하드코딩 금지 (불변조건 8)."""
+    from data.label_map import load_label_map
+
+    lm = load_label_map()
+    out: dict[str, str] = {}
+    for dt in lm.defect_types.values():
+        out[dt.iso_code] = dt.name_ko
+        for alt in getattr(dt, "iso_code_alt", []) or []:
+            out.setdefault(alt, dt.name_ko)
+    return out
+
+
 def sha256_file(p: Path) -> str:
     h = hashlib.sha256()
     with p.open("rb") as f:
@@ -64,6 +86,18 @@ def render_chunk_meta(chunks, src: Path, src_sha: str, pilot: bool) -> str:
     lines = [json.dumps(head, ensure_ascii=False)]
     lines += [json.dumps(c, ensure_ascii=False, default=str) for c in chunks]
     return "\n".join(lines) + "\n"
+
+
+def render_clause_texts(texts, src: Path, src_sha: str, pilot: bool) -> str:
+    doc = {"_meta": {
+        "source_csv": src.name,
+        "source_sha256": src_sha,
+        "n_clauses": len(texts),
+        "pilot": pilot,
+        "regenerate": "uv run python -m corpus.rules.materialize_derived",
+        "note": "파생물 — 수기 수정 금지. 원문 전재가 아니라 구조 필드 재서술이다.",
+    }, "clauses": dict(sorted(texts.items()))}
+    return json.dumps(doc, ensure_ascii=False, indent=1, sort_keys=False) + "\n"
 
 
 def render_gold(rows, src: Path, src_sha: str, pilot: bool) -> str:
@@ -94,17 +128,26 @@ def main() -> int:
     pilot = "pilot" in src.name
     src_sha = sha256_file(src)
 
+    from corpus.rules import clause_text as CT
     from corpus.rules import limit_eval, limits_loader
     table = limits_loader.load_limits(str(src), pilot=pilot)
+    names = defect_names()
 
-    chunks = limit_eval.derive_chunk_meta(table)
+    chunks = limit_eval.derive_chunk_meta(table, names)
+    texts = CT.derive_clause_texts(table.rows, names)
     gold = limit_eval.derive_gold_clauses(table)
-    if not chunks or not gold:
+    if not chunks or not gold or not texts:
         print("파생 결과가 비었다 — 원천을 확인하라", file=sys.stderr)
+        return 2
+    empty = [c["clause_id"] for c in chunks if not c.get("text")]
+    if empty:
+        # 본문 없는 청크가 색인에 실리면 dense 정렬이 걸려도 정렬할 재료가 없다.
+        print(f"본문이 빈 청크: {empty}", file=sys.stderr)
         return 2
 
     rendered = {
         OUT_DIR / "chunk_meta.jsonl": render_chunk_meta(chunks, src, src_sha, pilot),
+        OUT_DIR / "clause_texts.json": render_clause_texts(texts, src, src_sha, pilot),
         OUT_DIR / "gold_clauses.csv": render_gold(gold, src, src_sha, pilot),
     }
 
@@ -113,7 +156,7 @@ def main() -> int:
         for path, content in rendered.items():
             if not path.exists():
                 stale.append(f"{path.name}: 없음")
-            elif path.read_text(encoding="utf-8") != content:
+            elif path.read_bytes() != content.encode("utf-8"):
                 stale.append(f"{path.name}: 원천과 불일치 (재파생 필요)")
         if stale:
             print("낡은 파생물:", *stale, sep="\n  ")
@@ -124,13 +167,16 @@ def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     changed = []
     for path, content in rendered.items():
-        old = path.read_text(encoding="utf-8") if path.exists() else None
-        if old != content:
-            path.write_text(content, encoding="utf-8")
+        blob = content.encode("utf-8")
+        old = path.read_bytes() if path.exists() else None
+        if old != blob:
+            # newline="" 로 열어 win32 CRLF 자동 변환을 막는다 (.gitattributes eol=lf 와 일치)
+            with path.open("w", encoding="utf-8", newline="") as fh:
+                fh.write(content)
             changed.append(path.name)
 
     print(f"원천 {src.name} sha256={src_sha[:12]}…")
-    print(f"청크 {len(chunks)}건 / gold 조항 {len(gold)}건"
+    print(f"청크 {len(chunks)}건 / 본문 {len(texts)}건 / gold 조항 {len(gold)}건"
           f" / 갱신 {changed if changed else '없음(동일)'}")
     return 0
 

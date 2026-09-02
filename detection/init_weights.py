@@ -7,6 +7,10 @@ run 마다 다르면 "같은 출발점" 주장이 깨진다.
 여기서는 stock 과 같은 구성 경로(DetectionModel + 부분 로드)를 **시드를 박고 1회** 수행해
 state_dict 를 뽑는다. 로컬·중앙·연합 전 run 이 이 ndarray 를 주입받아 출발하고, 주입 증빙
 다이제스트로 사후 대조한다.
+
+통합형 대응물은 `vlm/init_adapter.py` 다. 두 파일의 시그니처·캐시 규약·증빙 형태를 일부러
+맞춰 두었다 — 한쪽에만 있는 보호는 없는 것과 같다는 것을 74번 감사 C-1 에서 배웠다.
+시드 고정은 두 파일 모두 `fl.seeding` 을 지난다.
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ import numpy as np
 import torch
 
 from detection import serialize
+from fl.seeding import seeded, shared_init_seed
 
 __all__ = ["build_initial_weights"]
 
@@ -61,9 +66,16 @@ def _build(pretrained: str, nc: int, seed: int):
     # ultralytics 8.4 는 attempt_load_one_weight 가 없고 load_checkpoint 를 쓴다.
     from ultralytics.nn.tasks import DetectionModel, load_checkpoint
 
-    torch.manual_seed(seed)  # 헤드 난수 초기화 고정 — 동일 출발 증명의 핵심
-    weights, _ = load_checkpoint(pretrained)
-    cfg = weights.yaml if hasattr(weights, "yaml") else pretrained.replace(".pt", ".yaml")
-    model = DetectionModel(cfg, nc=nc, verbose=False)
-    model.load(weights)
+    # 헤드 난수 초기화 고정 — 동일 출발 증명의 핵심. 공통 진입점을 지난다.
+    #
+    # 이전 판은 여기서 `torch.manual_seed(seed)` 를 직접 불렀다. 두 가지가 문제였다.
+    # (1) 시드 고정 지점이 저장소에 이 한 줄뿐이라, VLM 쪽에 같은 고정이 빠진 것이
+    #     아무 눈에도 띄지 않았다 — 그것이 74번 감사 C-1 의 근본 원인이다.
+    # (2) 전역 난수를 **되돌리지 않아** 이 함수를 부른 뒤의 난수 흐름이 호출 위치에
+    #     묶였다. `seeded()` 는 블록을 벗어날 때 원래 상태로 되돌린다.
+    with seeded(shared_init_seed(seed)):
+        weights, _ = load_checkpoint(pretrained)
+        cfg = weights.yaml if hasattr(weights, "yaml") else pretrained.replace(".pt", ".yaml")
+        model = DetectionModel(cfg, nc=nc, verbose=False)
+        model.load(weights)
     return model

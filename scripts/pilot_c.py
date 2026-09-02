@@ -2,7 +2,8 @@
 
 사용:
     uv run python scripts/pilot_c.py views    # 학습 뷰 4벌 생성
-    uv run python scripts/pilot_c.py init     # 공통 초기 가중치 (동일 출발 증명)
+    uv run python scripts/pilot_c.py init     # 검출 공통 초기 가중치 (동일 출발 증명)
+    uv run python scripts/pilot_c.py initvlm  # 통합형 공통 초기 어댑터 (같은 증명)
     uv run python scripts/pilot_c.py cell2    # ② 분리·로컬 (C1/C2/C3)
     uv run python scripts/pilot_c.py cell3    # ③ 분리·중앙
     uv run python scripts/pilot_c.py cell4    # ④ 분리·연합 (Flower R=3)
@@ -78,6 +79,30 @@ def _initial():
     )
 
 
+#: 통합형 두 칸(⑥⑦)이 공유하는 초기 어댑터. 검출의 `initial.npz` 와 같은 자리다.
+VLM_INITIAL = "adapter_initial.npz"
+
+
+def _initial_adapter():
+    """⑥⑦ 공통 초기 LoRA 어댑터. **두 칸이 같은 A 에서 출발해야 한다.**
+
+    74번 감사 C-1: 이것이 없어서 ⑦ r0 의 세 클라이언트가 각자 난수 A 로 출발했고,
+    가중 평균이 상쇄가 되어 144스텝(전체 432의 33%)이 폐기됐다.
+    """
+    from vlm.init_adapter import build_initial_adapter
+
+    return build_initial_adapter(seed=BASE_SEED, cache_path=OUT_ROOT / VLM_INITIAL)
+
+
+def cmd_initvlm() -> None:
+    from detection import serialize
+
+    arrays, keys, _ = _initial_adapter()
+    print(f"초기 어댑터 {len(arrays)} 텐서, keys_digest {serialize.keys_digest(keys)[:12]}…")
+    print(f"‖adapter‖ {serialize.params_l2_norm(arrays):.4f} "
+          f"/ payload {serialize.payload_nbytes(arrays)/1e6:.1f} MB → {OUT_ROOT/VLM_INITIAL}")
+
+
 def _num_examples(sn) -> dict[int, int]:
     from data.manifest_io import split_view
 
@@ -97,6 +122,7 @@ def cmd_cell2() -> None:
         model=MODEL, total_epochs=N, base_seed=BASE_SEED,
         out_dir=OUT_ROOT / "sep_local", split_hash=digest, run_stamp=RUN_STAMP,
         profile=PROFILE, initial_weights=arrays, canonical_keys=keys,
+        resume_root=OUT_ROOT / "_resume" / "sep_local",
     )
     for i, r in results.items():
         print(f"  C{i+1}: {r.epochs_ran}ep steps {r.optimizer_steps} "
@@ -117,6 +143,7 @@ def cmd_cell3() -> None:
         model=MODEL, total_epochs=N, base_seed=BASE_SEED,
         out_dir=OUT_ROOT / "sep_central", split_hash=digest, run_stamp=RUN_STAMP,
         profile=PROFILE, initial_weights=arrays, canonical_keys=keys,
+        resume_root=OUT_ROOT / "_resume" / "sep_central",
     )
     print(f"  central: {r.epochs_ran}ep steps {r.optimizer_steps} peak {r.peak_vram_gb:.2f}GB")
     print(f"③ 완주 {time.perf_counter()-t0:.0f}s")
@@ -174,13 +201,23 @@ def cmd_cell6() -> None:
                       metrics={"mean_ce": mean_ce, "optimizer_steps": float(steps)}, wall_time=wall)
         print(f"  ep{ep}: ce {mean_ce:.4f} steps {steps} ({wall:.0f}s)", flush=True)
 
+    # ⑥ 은 단일 런이라 도중에 죽으면 처음부터다(파일럿에서 10.2시간). 재개 경로를 켠다 —
+    # 산출물 디렉터리 밖에 둬서 채점·내보내기가 훑는 트리에 재개 가중치를 남기지 않는다.
+    # ⑥ 도 공통 초기 어댑터에서 출발한다. ⑦ 과 같은 A 여야 두 칸 비교가 성립한다
+    # (5칸 공통 고정 · 74번 감사 C-1).
+    init_arrays, init_keys, _ = _initial_adapter()
     arrays, keys, m, _ = train_rounds(rows=rows, epochs=N, round_idx=0, client_idx=0,
-                                      base_seed=BASE_SEED, log_cb=cb)
+                                      base_seed=BASE_SEED, log_cb=cb,
+                                      adapter_in=init_arrays, adapter_keys=init_keys,
+                                      resume_dir=str(OUT_ROOT / "_resume" / "uni_central"),
+                                      run_id=RUN_STAMP)
     np.savez(out / "adapter_last.npz", **{k: a for k, a in zip(keys, arrays)})
     (out / "adapter_last.meta.json").write_text(
         __import__("json").dumps(m, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"⑥ 완주 {m['wall_s']:.0f}s / steps {m['optimizer_steps']} / peak {m['peak_vram_gb']:.2f}GB "
           f"/ 감독토큰 {m['supervised_tokens']:,} / 어댑터 {m['payload_bytes']/1e6:.1f}MB")
+    print(f"  초기 어댑터 ‖A‖ {m['init_proof']['l2']:.4f} "
+          f"digest {m['init_proof']['tensor_digest']}")
 
 
 def cmd_cell7() -> None:
@@ -196,6 +233,8 @@ def cmd_cell7() -> None:
     from detection.budget_audit import AccountingCell, AccountingMatrix
     from fl.aggregate import weighted_fedavg
     from fl.atomic_log import AtomicLog, RoundTimer, new_run_id
+    from vlm.init_adapter import assert_same_start
+    from vlm.pilot_vlm import LR as VLM_LR
     from vlm.pilot_vlm import load_pairs, train_rounds
 
     _, digest = _snapshot()
@@ -213,14 +252,24 @@ def cmd_cell7() -> None:
     acc = AccountingMatrix(num_rounds=R, client_ids=list(shards), local_epochs=E, total_epochs=N)
     timer = RoundTimer()
 
-    global_arrays, keys, ref_sd = None, None, None
+    # r0 부터 **명시 주입**한다. 시드 고정(`fl.seeding`)만으로도 A 는 같아지지만, 파일로
+    # 떨궈 주입하면 "같은 것을 받았다"가 파일 해시 하나로 사후 검증된다 — 검출 칸의
+    # `initial.npz` 와 같은 구조다(74번 감사 C-1 의 비대칭 지적).
+    global_arrays, keys, ref_sd = *_initial_adapter()[:2], None
+    print(f"초기 어댑터 주입: {len(keys)} 텐서 → {OUT_ROOT / VLM_INITIAL}", flush=True)
+
     for r in range(R):
         client_payloads, weights = [], []
+        init_proofs, injected_proofs = {}, {}
         for i in sorted(shards):
             arrays, keys, m, ref_sd = train_rounds(
                 rows=shards[i], epochs=E, round_idx=r, client_idx=i, base_seed=BASE_SEED,
                 adapter_in=global_arrays, adapter_keys=keys,
+                resume_dir=str(OUT_ROOT / "_resume" / "uni_fed" / f"r{r:03d}_c{i}"),
+                run_id=RUN_STAMP,
             )
+            init_proofs[i] = m["init_proof"]
+            injected_proofs[i] = m["injected_proof"]
             client_payloads.append(arrays); weights.append(n_train[i])
             log.log_round(round_idx=r, client_id=i, n_train_samples=n_train[i],
                           metrics={"optimizer_steps": float(m["optimizer_steps"]),
@@ -228,21 +277,42 @@ def cmd_cell7() -> None:
                                    "param_l2": m["param_l2"], "peak_vram_gb": m["peak_vram_gb"]},
                           bytes_up=m["payload_bytes"], bytes_down=m["payload_bytes"],
                           wall_time=m["wall_s"])
+            # 회계에 싣는 값은 **실측**이다. `epochs_ran`·`optimizer`·`lr` 을 여기서
+            # 상수로 재구성하던 것이 74번 감사 P9 의 절반이다. `arg_*` 는 코드에 선언된
+            # 값이고 `optimizer`·`lr` 은 옵티마이저 객체에서 읽은 값이라, 둘이 갈라지면
+            # 검사 (5)가 잡는다.
             acc.record(AccountingCell(
-                round_idx=r, client_idx=i, epochs_ran=E, optimizer_steps=m["optimizer_steps"],
+                round_idx=r, client_idx=i, epochs_ran=m["epochs_ran"],
+                optimizer_steps=m["optimizer_steps"],
                 num_examples=n_train[i], seed=m["seed"], param_l2_norm=m["param_l2"],
-                payload_bytes=m["payload_bytes"], optimizer="AdamW", lr=1e-4,
-                momentum=float("nan"), arg_optimizer="AdamW", arg_lr0=1e-4,
-                arg_momentum=float("nan")))
+                payload_bytes=m["payload_bytes"],
+                optimizer=m["optimizer"], lr=m["lr"], momentum=float("nan"),
+                arg_optimizer="AdamW", arg_lr0=VLM_LR, arg_momentum=float("nan"),
+                resumed_from_epoch=m["resumed_from_epoch"], value_source="measured"))
             print(f"  r{r} c{i}: steps {m['optimizer_steps']} tok {m['supervised_tokens']:,} "
-                  f"peak {m['peak_vram_gb']:.2f}GB ({m['wall_s']:.0f}s)", flush=True)
+                  f"peak {m['peak_vram_gb']:.2f}GB ({m['wall_s']:.0f}s) "
+                  f"‖A0‖ {m['init_proof']['l2']:.4f}", flush=True)
+
+        # **집계 직전 가드.** 세 클라이언트가 같은 A 에서 출발했는가. 아니면 가중 평균이
+        # "같은 기저의 평균"이 아니라 독립 난수의 상쇄가 된다(함정 #3). 10시간 뒤가 아니라
+        # 여기서 죽는 편이 낫다.
+        assert_same_start(init_proofs)
+        if all(v is not None for v in injected_proofs.values()):
+            assert_same_start(injected_proofs)
+
         agg = weighted_fedavg(client_payloads, weights, keys,
                               {k: torch.as_tensor(v) for k, v in ref_sd.items()})
+        client_l2 = [c.param_l2_norm for c in
+                     (acc.cells[(r, i)] for i in sorted(shards))]
         global_arrays = agg.ndarrays
         np.savez(out / f"adapter_r{r+1:03d}.npz", **{k: a for k, a in zip(keys, global_arrays)})
         log.log_round(round_idx=r, client_id="server", n_train_samples=agg.total_examples,
                       metrics={"global_l2": agg.global_norm}, wall_time=timer.lap())
-        print(f"  r{r} 집계: global_l2 {agg.global_norm:.3f}", flush=True)
+        # global_l2 가 클라이언트 norm 근처면 공유 초기값, sqrt(Σw²) 배로 줄어들면 상쇄다.
+        # 이 한 줄이 74번 C-1 을 곧바로 드러냈을 진단이다.
+        mean_l2 = sum(client_l2) / len(client_l2)
+        print(f"  r{r} 집계: global_l2 {agg.global_norm:.3f} "
+              f"(클라이언트 평균 {mean_l2:.3f}, 비 {agg.global_norm / mean_l2:.4f})", flush=True)
 
     # 병합은 라운드 중 금지 — 최종 어댑터만 저장. 평가용 병합은 채점 단계 몫.
     np.savez(out / "adapter_last.npz", **{k: a for k, a in zip(keys, global_arrays)})
@@ -270,6 +340,7 @@ def cmd_cell7resume() -> None:
     from detection.round_runner import derive_seed
     from fl.aggregate import weighted_fedavg
     from fl.atomic_log import AtomicLog, RoundTimer, new_run_id
+    from vlm.pilot_vlm import LR as VLM_LR
     from vlm.pilot_vlm import load_pairs, train_rounds
 
     _, digest = _snapshot()
@@ -292,15 +363,19 @@ def cmd_cell7resume() -> None:
     hist = df[df.client_id != "server"].pivot_table(
         index=["round", "client_id"], columns="metric_name", values="metric_value", aggfunc="last")
     up = df[df.client_id != "server"].groupby(["round", "client_id"])["bytes_up"].last()
+    # **여기서 만드는 셀은 실측이 아니라 재구성이다.** 원자 로그에 있는 것은
+    # optimizer_steps·param_l2·bytes_up 셋뿐이고, epochs_ran·optimizer·lr 은 코드 상수로
+    # 채운다. `value_source="reconstructed"` 가 그 표식이며, 회계 산출물이 두 종류를
+    # 구분해 싣는다(74번 감사 P9 두 번째 항목).
     for (r, c), row in hist.iterrows():
         c = int(c)
         acc.record(AccountingCell(
             round_idx=int(r), client_idx=c, epochs_ran=E,
             optimizer_steps=int(row["optimizer_steps"]), num_examples=n_train[c],
             seed=derive_seed(BASE_SEED, int(r), c), param_l2_norm=float(row["param_l2"]),
-            payload_bytes=int(up.loc[(r, str(c))]), optimizer="AdamW", lr=1e-4,
-            momentum=float("nan"), arg_optimizer="AdamW", arg_lr0=1e-4,
-            arg_momentum=float("nan")))
+            payload_bytes=int(up.loc[(r, str(c))]), optimizer="AdamW", lr=VLM_LR,
+            momentum=float("nan"), arg_optimizer="AdamW", arg_lr0=VLM_LR,
+            arg_momentum=float("nan"), value_source="reconstructed"))
     print(f"원자 로그에서 셀 {len(acc.cells)}개 복원", flush=True)
 
     timer = RoundTimer()
@@ -310,7 +385,9 @@ def cmd_cell7resume() -> None:
     for i in sorted(shards):
         arrays, keys, m, ref_sd = train_rounds(
             rows=shards[i], epochs=E, round_idx=r, client_idx=i, base_seed=BASE_SEED,
-            adapter_in=global_arrays, adapter_keys=keys)
+            adapter_in=global_arrays, adapter_keys=keys,
+            resume_dir=str(OUT_ROOT / "_resume" / "uni_fed" / f"r{r:03d}_c{i}"),
+            run_id=RUN_STAMP)
         client_payloads.append(arrays); weights.append(n_train[i])
         log.log_round(round_idx=r, client_id=i, n_train_samples=n_train[i],
                       metrics={"optimizer_steps": float(m["optimizer_steps"]),
@@ -319,11 +396,13 @@ def cmd_cell7resume() -> None:
                       bytes_up=m["payload_bytes"], bytes_down=m["payload_bytes"],
                       wall_time=m["wall_s"])
         acc.record(AccountingCell(
-            round_idx=r, client_idx=i, epochs_ran=E, optimizer_steps=m["optimizer_steps"],
+            round_idx=r, client_idx=i, epochs_ran=m["epochs_ran"],
+            optimizer_steps=m["optimizer_steps"],
             num_examples=n_train[i], seed=m["seed"], param_l2_norm=m["param_l2"],
-            payload_bytes=m["payload_bytes"], optimizer="AdamW", lr=1e-4,
-            momentum=float("nan"), arg_optimizer="AdamW", arg_lr0=1e-4,
-            arg_momentum=float("nan")))
+            payload_bytes=m["payload_bytes"],
+            optimizer=m["optimizer"], lr=m["lr"], momentum=float("nan"),
+            arg_optimizer="AdamW", arg_lr0=VLM_LR, arg_momentum=float("nan"),
+            resumed_from_epoch=m["resumed_from_epoch"], value_source="measured"))
         print(f"  r{r} c{i}: steps {m['optimizer_steps']} tok {m['supervised_tokens']:,} "
               f"peak {m['peak_vram_gb']:.2f}GB ({m['wall_s']:.0f}s)", flush=True)
     agg = weighted_fedavg(client_payloads, weights, keys,
@@ -342,9 +421,18 @@ def cmd_cell7resume() -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["views", "init", "cell2", "cell3", "cell4",
+    ap.add_argument("cmd", choices=["views", "init", "initvlm", "cell2", "cell3", "cell4",
                                     "cell6", "cell7", "cell7resume"])
+    # 승격 어블레이션은 **같은 코드 경로**로 다른 스냅샷을 돌려야 한다. 별도 실행기를
+    # 만들면 두 팔의 차이가 표본 때문인지 코드 때문인지 구분되지 않는다.
+    ap.add_argument("--snapshot", default=None, help="스냅샷 디렉터리 덮어쓰기 (어블레이션용)")
+    ap.add_argument("--out", default=None, help="산출 루트 덮어쓰기 (어블레이션용)")
     args = ap.parse_args()
-    {"views": cmd_views, "init": cmd_init, "cell2": cmd_cell2, "cell3": cmd_cell3,
+    if args.snapshot:
+        SNAPSHOT_DIR = args.snapshot
+    if args.out:
+        OUT_ROOT = Path(args.out).resolve()
+    {"views": cmd_views, "init": cmd_init, "initvlm": cmd_initvlm,
+     "cell2": cmd_cell2, "cell3": cmd_cell3,
      "cell4": cmd_cell4, "cell6": cmd_cell6, "cell7": cmd_cell7,
      "cell7resume": cmd_cell7resume}[args.cmd]()

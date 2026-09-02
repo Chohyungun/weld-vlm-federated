@@ -65,6 +65,12 @@ def run_client_round(
         canonical_keys=canonical_keys,
         project=Path(cfg["project"]).resolve(),
         profile=profile,
+        # 재개 전용 체크포인트. 라운드 안에서 죽으면 그 라운드를 0부터 다시 도는 대신
+        # epoch 경계에서 이어 간다. 신원(라운드·클라이언트·시드)이 다르면 거부되므로
+        # 옆 라운드의 상태를 잘못 물려받는 경로는 없다. 채점 대상이 아니다.
+        resume_dir=(Path(cfg["resume_root"]).resolve() / f"r{round_idx:03d}_c{client_idx}"
+                    if cfg.get("resume_root") else None),
+        run_id=str(cfg.get("run_id", "")),
     )
     eff = result.effective_optimizer
     metrics: dict[str, Any] = {
@@ -72,6 +78,12 @@ def run_client_round(
         WEIGHT_KEY: float(result.num_examples),
         "epochs-ran": float(result.epochs_ran),
         "optimizer-steps": float(result.optimizer_steps),
+        # 배치 수와 실제 갱신 횟수는 다르다(숨은 기본값 #10). 논문의 "총 갱신 횟수"는 아래다.
+        "optimizer-updates": float(getattr(result, "optimizer_updates", 0) or 0),
+        # 재개해서 이어 간 라운드인가. -1 은 재개 아님. 이어 간 런은 궤적이 다르다.
+        "resumed-from-epoch": float(
+            result.resumed_from_epoch if getattr(result, "resumed_from_epoch", None) is not None else -1
+        ),
         "param-l2": float(result.param_l2_norm),
         "payload-bytes": float(result.payload_bytes),
         "seed": float(result.seed),
@@ -82,11 +94,19 @@ def run_client_round(
         "momentum": float(eff.get("momentum", float("nan"))),
         "budget-fired-at": float(result.budget_fired_at if result.budget_fired_at is not None else -1),
         "peak-vram-gb": float(result.peak_vram_gb),
+        # 조기 종료 계측. 서버 회계가 이 값을 읽는다 — 리터럴 0 을 박아 두면 검사가
+        # 공허해진다(74번 감사 P9). -1 은 "계측 없음"이며 0 과 다르다.
+        "stopper-true-count": float(
+            result.stopper_true_count if result.stopper_true_count is not None else -1
+        ),
+        "stopper-calls": float(len(result.stopper_calls)),
     }
     strings: dict[str, str] = {
         "keys-digest": serialize.keys_digest(canonical_keys),
         "optimizer": str(eff.get("optimizer", "")),
         "arg-optimizer": str(eff.get("arg_optimizer", "")),
+        # 스텁 교체가 실패하면 여기가 달라지고 서버 회계가 실패한다.
+        "stopper-class": str(result.stopper_class),
     }
     return result.ndarrays, metrics, strings
 

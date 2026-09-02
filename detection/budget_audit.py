@@ -11,6 +11,31 @@ Flower `FedAvg`의 기본값 `accept_failures=True`는 클라이언트 하나가
 이 모듈은 **셀의 부재 자체를 실패로 정의**한다. 전자만 있으면 "실패가 없었다"를 신뢰에
 의존하게 되지만, 후자가 있으면 R × 클라이언트 수 전 셀이 채워졌는지를 사후에 센다.
 
+## 조기 종료 부재는 무엇으로 증명되는가 (74번 감사 P9 정정)
+
+이전 판은 `stopper_true_count=0` 을 **리터럴로 박아 놓고** 그 상수를 검사했다. 어떤
+경우에도 통과하는 검사였다. 공허한 검사를 통과 근거로 남겨 두는 것이 검사가 없는 것보다
+나쁘다 — 회계표에 초록불이 하나 늘지만 정보량은 0 이고, 읽는 사람은 무언가 확인됐다고
+믿는다.
+
+지금은 셋으로 나눠 적는다.
+
+1. **`stopper_class`** — 스텁(`NoEarlyStopping`)이 실제로 끼워졌는가. 교체가 실패하면
+   Ultralytics 의 진짜 `EarlyStopping` 이 남으므로 여기서 잡힌다. **실패 가능한 검사다.**
+2. **`stopper_true_count`** — 스텁이 남긴 호출 이력에서 참 판정 횟수. 계측이 없는 경로
+   (통합형은 Ultralytics 를 쓰지 않아 stopper 자체가 없다)에서는 `None` 이고, 그 경우
+   **통과가 아니라 "이 셀의 근거는 다른 곳"으로 보고서에 적힌다.**
+3. **대체 증거** — 조기 종료 부재의 실질 증거는 회계가 아니라 `results.csv` 행 수와
+   `optimizer_steps` 다. 검사 (2)(3) 의 `epochs_ran == E`·`sum == N` 이 그 회계 쪽
+   대응물이며, 이 둘이 실제로 값을 하는 검사다.
+
+## 실측값과 재구성값을 구분한다
+
+`value_source` 가 그 표식이다. ⑦ 재개 경로는 회계 매트릭스가 인메모리라 중단 시 앞
+라운드 셀이 사라지고, 원자 로그에서 되살린다. 되살린 값은 실측이 아니다 — 로그에 없는
+필드(`epochs_ran` 등)는 상수로 채워진다. 표식이 없으면 산출물을 읽는 사람이 둘을
+구분할 수 없다.
+
 ## 실사용 optimizer·lr 을 왜 기록하는가
 
 Ultralytics의 `optimizer='auto'`는 명시한 `lr0`·`momentum`을 **경고 한 줄만 남기고 버린
@@ -28,6 +53,10 @@ from pathlib import Path
 from typing import Any, Iterable
 
 __all__ = ["AccountingCell", "AccountingMatrix", "AuditReport"]
+
+#: 조기 종료를 구조적으로 낼 수 없는 stopper 구현. 여기 없는 클래스가 끼워져 있으면
+#: 스텁 교체가 실패한 것이고, 그것은 회계 실패다.
+_NO_STOP_CLASSES = frozenset({"NoEarlyStopping"})
 
 _CSV_COLUMNS = [
     "round_idx",
@@ -47,7 +76,18 @@ _CSV_COLUMNS = [
     "arg_lr0",
     "arg_momentum",
     "budget_fired_at",
+    # 조기 종료 계측 3종. `stopper_true_count` 가 빈칸이면 "0 회 관측"이 아니라
+    # **"이 경로에는 stopper 계측이 없다"** 는 뜻이다. 74번 P9 정정.
+    "stopper_class",
     "stopper_true_count",
+    "stopper_calls",
+    # 이 행의 값이 실측인가 재구성인가. 섞이면 산출물을 인용할 수 없다.
+    "value_source",
+    # 배치 수(`optimizer_steps`)와 실제 갱신 횟수는 다르다 — Ultralytics 가 nbs=64 기준으로
+    # 누적한다(숨은 기본값 #10). 논문의 "총 갱신 횟수"는 아래 컬럼이다.
+    "optimizer_updates",
+    # 재개해서 이어 간 칸인가. 이어 간 런은 무중단 런과 다른 궤적을 그린다.
+    "resumed_from_epoch",
 ]
 
 
@@ -70,8 +110,18 @@ class AccountingCell:
     arg_lr0: float = float("nan")
     arg_momentum: float = float("nan")
     budget_fired_at: int | None = None
-    stopper_true_count: int = 0
+    #: 실제로 끼워진 stopper 의 클래스 이름. 빈 문자열이면 계측이 없다는 뜻이다.
+    stopper_class: str = ""
+    #: 스텁이 참을 돌려준 횟수. **`None` 은 "0 회"가 아니라 "계측 없음"이다.**
+    #: 기본값을 0 으로 두면 아무도 재지 않은 셀이 조용히 통과한다(74번 P9).
+    stopper_true_count: int | None = None
+    #: stopper 가 호출된 횟수. epoch 수와 맞아야 학습 루프가 그 게이트를 실제로 지났다.
+    stopper_calls: int | None = None
+    optimizer_updates: int = 0
+    resumed_from_epoch: int | None = None
     participated: bool = True
+    #: "measured" | "reconstructed". 재구성 셀은 감사 보고서에 따로 센다.
+    value_source: str = "measured"
 
     @classmethod
     def from_round_result(cls, result: Any) -> "AccountingCell":
@@ -92,7 +142,13 @@ class AccountingCell:
             arg_lr0=float(eff.get("arg_lr0", float("nan"))),
             arg_momentum=float(eff.get("arg_momentum", float("nan"))),
             budget_fired_at=result.budget_fired_at,
-            stopper_true_count=0,  # 스텁 stopper 는 True 를 돌려줄 수 없다
+            # 실물을 읽는다. 이전 판은 여기에 0 을 박아 검사 (4)를 공허하게 만들었다.
+            stopper_class=str(getattr(result, "stopper_class", "") or ""),
+            stopper_true_count=getattr(result, "stopper_true_count", None),
+            stopper_calls=(len(result.stopper_calls)
+                           if getattr(result, "stopper_calls", None) is not None else None),
+            optimizer_updates=int(getattr(result, "optimizer_updates", 0) or 0),
+            resumed_from_epoch=getattr(result, "resumed_from_epoch", None),
         )
 
 
@@ -104,6 +160,16 @@ class AuditReport:
     failures: list[str] = field(default_factory=list)
     total_epochs_by_client: dict[int, int] = field(default_factory=dict)
     total_optimizer_steps: int = 0
+    #: 실제 갱신 횟수 합. 배치 수와 다르다(숨은 기본값 #10).
+    total_optimizer_updates: int = 0
+    #: 재개해서 이어 간 셀 목록. **실패가 아니다** — 재개는 정당한 복구 수단이다.
+    #: 다만 이어 간 런은 무중단 런과 다른 궤적을 그리므로 보고서에 드러나 있어야 한다.
+    resumed_cells: list[list[int]] = field(default_factory=list)
+    #: 값이 실측이 아니라 재구성인 셀. 이것도 실패가 아니지만 인용 전에 알아야 한다.
+    reconstructed_cells: list[list[int]] = field(default_factory=list)
+    #: **통과도 실패도 아닌 것.** 검사가 원리적으로 적용되지 않은 항목을 여기 적는다.
+    #: 이 목록이 비어 있지 않다면 그 셀의 근거는 회계가 아니라 다른 산출물에 있다.
+    notes: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -131,6 +197,7 @@ class AccountingMatrix:
     # -- 검증 ---------------------------------------------------------------
     def audit(self) -> AuditReport:
         failures: list[str] = []
+        notes: list[str] = []
 
         # (1) 셀의 부재 자체가 실패다 — 실패한 클라이언트는 로그에 아예 없을 수 있다.
         missing = [
@@ -159,10 +226,45 @@ class AccountingMatrix:
             if t != self.total_epochs:
                 failures.append(f"클라이언트 {c}: 총 epoch {t} != N={self.total_epochs}")
 
-        # (4) 조기 종료가 실제로 걸리지 않았는가
+        # (4) 조기 종료가 실제로 걸리지 않았는가 — 74번 P9 정정본.
+        #
+        #     이전 판은 리터럴 0 을 읽어 **어떤 경우에도 통과했다.** 지금은 실패할 수
+        #     있는 것만 검사하고, 검사가 적용되지 않는 셀은 통과시키는 대신 `notes` 에
+        #     적어 근거가 다른 곳에 있음을 산출물에 남긴다.
+        uninstrumented: list[tuple[int, int]] = []
         for (r, c), cell in sorted(self.cells.items()):
             if cell.stopper_true_count:
-                failures.append(f"라운드 {r} 클라이언트 {c}: 조기 종료 판정이 {cell.stopper_true_count}회 발생")
+                failures.append(
+                    f"라운드 {r} 클라이언트 {c}: 조기 종료 판정이 {cell.stopper_true_count}회 발생"
+                )
+            if cell.stopper_class and cell.stopper_class not in _NO_STOP_CLASSES:
+                failures.append(
+                    f"라운드 {r} 클라이언트 {c}: stopper 가 스텁이 아니다 "
+                    f"({cell.stopper_class}) — 조기 종료가 구조적으로 가능한 상태다"
+                )
+            if cell.stopper_calls is not None and cell.stopper_calls < cell.epochs_ran:
+                failures.append(
+                    f"라운드 {r} 클라이언트 {c}: stopper 호출 {cell.stopper_calls}회 < "
+                    f"epoch {cell.epochs_ran}회 — 학습 루프가 그 게이트를 다 지나지 않았다"
+                )
+            if cell.stopper_true_count is None and not cell.stopper_class:
+                uninstrumented.append((r, c))
+        if uninstrumented:
+            notes.append(
+                f"조기 종료 계측이 없는 셀 {len(uninstrumented)}개 {uninstrumented[:6]} — "
+                "이 셀들에 대해 검사 (4)는 통과가 아니라 **미적용**이다. 조기 종료 부재의 "
+                "증거는 results.csv 행 수와 optimizer_steps(및 검사 (2)(3)의 "
+                "epochs_ran==E · 합계==N)에 있다."
+            )
+
+        # (4') 재구성 값 표식
+        recon = sorted([r, c] for (r, c), cell in self.cells.items()
+                       if cell.value_source != "measured")
+        if recon:
+            notes.append(
+                f"실측이 아닌 재구성 셀 {len(recon)}개 {recon[:6]} — 원자 로그에 없는 필드는 "
+                "상수로 채워졌다. 이 행의 epochs_ran·optimizer·lr 을 실측으로 인용하지 마라."
+            )
 
         # (5) 최적화 설정이 실제로 고정됐는가 — 'auto' 교체를 여기서 잡는다
         opts = {cell.optimizer for cell in self.cells.values() if cell.optimizer}
@@ -186,6 +288,15 @@ class AccountingMatrix:
             failures=failures,
             total_epochs_by_client=totals,
             total_optimizer_steps=sum(cell.optimizer_steps for cell in self.cells.values()),
+            total_optimizer_updates=sum(
+                cell.optimizer_updates for cell in self.cells.values()
+            ),
+            resumed_cells=sorted(
+                [r, c] for (r, c), cell in self.cells.items()
+                if cell.resumed_from_epoch is not None
+            ),
+            reconstructed_cells=recon,
+            notes=notes,
         )
 
     # -- 산출물 -------------------------------------------------------------
