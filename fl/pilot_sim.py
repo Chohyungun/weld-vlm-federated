@@ -61,6 +61,10 @@ def _client_train(msg: Message, context: Context) -> Message:
         "base_seed": int(cfg["base-seed"]),
         "num_examples": int(cfg[f"num-examples-{client_idx}"]),
         "project": str(cfg["project"]),
+        # 라운드 안에서 죽어도 그 라운드를 0부터 다시 돌지 않는다. 신원(라운드·클라이언트·
+        # 시드)이 다르면 거부되므로 옆 라운드 상태를 물려받는 경로는 없다.
+        "resume_root": str(cfg["resume-root"]) if cfg.get("resume-root") else None,
+        "run_id": str(cfg.get("run-stamp", "")),
     }
     arrays_out, metrics, strings = run_client_round(
         weights_in=weights_in,
@@ -122,6 +126,7 @@ def _server_main(grid: Grid, context: Context) -> None:
                 metrics={
                     "epochs_ran": float(m.get("epochs-ran", 0)),
                     "optimizer_steps": float(m.get("optimizer-steps", 0)),
+                    "optimizer_updates": float(m.get("optimizer-updates", 0)),
                     "param_l2": float(m.get("param-l2", 0.0)),
                     "lr": float(m.get("lr", float("nan"))),
                     "peak_vram_gb": float(m.get("peak-vram-gb", 0.0)),
@@ -160,6 +165,9 @@ def _server_main(grid: Grid, context: Context) -> None:
             "local-epochs": int(cfg["local_epochs"]),
             "base-seed": int(cfg["base_seed"]),
             "project": str(out_dir / "runs"),
+            # 재개 파일은 산출물 트리 밖에 둔다 — 채점·내보내기가 훑지 않는 곳이다.
+            "resume-root": str(out_dir.parent / "_resume" / "sep_fed"),
+            "run-stamp": str(cfg["run_stamp"]),
             "profile": str(cfg.get("profile", "main")),
             **{f"num-examples-{i}": int(n) for i, n in enumerate(cfg["num_examples"])},
         }
