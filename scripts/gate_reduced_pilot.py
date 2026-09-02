@@ -258,6 +258,10 @@ TRIVIAL_LINE = 0.2081
 #: 통과 기준 2.
 FAR_MAX = 0.5
 
+#: 한 번에 `predict_cell` 에 넘기는 이미지 수. 전량(12,461)을 한 번에 주면 전처리가
+#: 한 텐서로 뭉쳐 36.7GB 를 할당하려다 죽는다. 256장이면 약 0.8GB 다.
+PREDICT_CHUNK = 256
+
 
 def cmd_score() -> None:
     """평가셋 전량 추론 → 통과 기준 3종 판정.
@@ -300,8 +304,23 @@ def cmd_score() -> None:
 
     yolo = _load_yolo(last, params.class_names, params.imgsz)
     t0 = time.perf_counter()
-    preds = predict_cell(yolo, rows, Path.cwd(), "gate46_sep_central", None,
-                         params, conf=params.conf.value)
+    # **묶어서 부른다.** `predict_cell` 은 받은 행 전부의 경로를 한 번에 Ultralytics 에
+    # 넘기는데, 파일럿 평가셋 653장에서는 문제가 없다가 본실험 평가셋 12,461장에서
+    # 전처리가 통째로 한 텐서가 되어 **36.7GB 할당 시도로 죽는다**(실측).
+    #
+    #     RuntimeError: DefaultCPUAllocator: not enough memory:
+    #                   you tried to allocate 36748984320 bytes
+    #
+    # `evaluation/` 는 D 소관이라 함수를 고치지 않고 **같은 함수를 나눠 부른다** —
+    # 추론 경로는 여전히 하나다. D 가 본실험 전에 내부 청킹을 넣어야 한다(82번 보고).
+    preds = []
+    for i in range(0, len(rows), PREDICT_CHUNK):
+        part = rows[i:i + PREDICT_CHUNK]
+        preds.extend(predict_cell(yolo, part, Path.cwd(), "gate46_sep_central", None,
+                                  params, conf=params.conf.value))
+        if (i // PREDICT_CHUNK) % 10 == 0:
+            print(f"  추론 {len(preds):,}/{len(rows):,} "
+                  f"({time.perf_counter()-t0:.0f}s)", flush=True)
     print(f"추론 {len(preds):,}건 / {time.perf_counter()-t0:.0f}s "
           f"(conf {params.conf.value}, 출처 {params.conf.source})", flush=True)
 
