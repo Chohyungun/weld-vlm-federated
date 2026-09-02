@@ -119,6 +119,10 @@ class RoundResult:
     #: 재개해서 이어 간 실행인가. 이어 간 런은 무중단 런과 다른 궤적을 그리므로
     #: 회계에 남겨야 한다(`detection/resume.py` 참조).
     resumed_from_epoch: int | None = None
+    #: 이 런에서 **실제로 호출된** 게이트 이름과 그 결과(cudnn 실효값 포함).
+    #: 통과 여부가 아니라 판정을 했는지를 산출물이 증명하게 한다(80번 G1-6).
+    gates_evaluated: list[str] = field(default_factory=list)
+    gate_results: dict[str, Any] = field(default_factory=dict)
 
 
 def derive_seed(base_seed: int, round_idx: int, client_idx: int) -> int:
@@ -245,6 +249,12 @@ def train_round(
         from ultralytics import settings as _ul_settings
         _ul_settings.update({"mlflow": False})
 
+    # 체크리스트 18 — 게이트 실호출. Ultralytics 의 `deterministic: True` 와 별개로
+    # torch 쪽 cudnn 플래그를 우리가 직접 걸고 **실효값을 결과에 남긴다**(80번 D13).
+    from fl.run_gates import apply_run_gates
+
+    gates = apply_run_gates(cell=f"det_r{round_idx}_c{client_idx}")
+
     import torch
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
@@ -336,4 +346,6 @@ def train_round(
         peak_vram_gb=peak_vram,
         optimizer_updates=int(getattr(trainer, "n_optimizer_updates", 0)),
         resumed_from_epoch=(resume_state.next_epoch if resume_state is not None else None),
+        gates_evaluated=gates["gates_evaluated"],
+        gate_results=gates["gate_results"],
     )

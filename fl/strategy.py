@@ -132,7 +132,14 @@ class WeldFedAvg(FedAvg):
             strings = dict(content[CONFIG_KEY]) if CONFIG_KEY in content else {}
             serialize.assert_compatible(arrays, self.canonical_keys, self.reference_state_dict)
 
-            got_digest = str(strings.get("keys-digest", self.keys_digest))
+            # G2-3 — 기본값을 **기대값으로** 채우면 필드를 안 실은 클라이언트가 무조건
+            # 통과한다. 빈 문자열로 받고 부재 자체를 실패로 만든다(80번 F3).
+            got_digest = str(strings.get("keys-digest", ""))
+            if not got_digest:
+                raise RoundFailure(
+                    f"라운드 {server_round}: 클라이언트 node={msg.metadata.src_node_id} 가 "
+                    "keys-digest 를 싣지 않았다. 부재를 통과로 접으면 이 검사는 공허해진다."
+                )
             if got_digest != self.keys_digest:
                 raise RoundFailure(
                     f"라운드 {server_round}: 정본 키 다이제스트 불일치 "
