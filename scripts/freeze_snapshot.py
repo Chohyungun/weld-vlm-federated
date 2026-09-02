@@ -30,6 +30,7 @@ for _s in (sys.stdout, sys.stderr):
     except (AttributeError, ValueError):
         pass
 
+from data.frozen_guard import legacy_path
 from data.manifest_io import (
     ANNOTATIONS_FILENAME,
     CAPABILITIES_FILENAME,
@@ -80,7 +81,9 @@ def main() -> int:
     print(f"매니페스트 {len(m):,}행 · 결함 인스턴스 {len(a):,}행")
 
     tiles = build_tiles(m)
-    split_meta = json.loads((V1 / "split_meta_e3.json").read_text(encoding="utf-8"))
+    # 정본 분할의 유도 원본. attic/ 으로 격리됐다 (80번 G11-1) — 값은 아래에서
+    # data_capabilities.yaml 에 흡수되어 SNAPSHOT 해시로 잠긴다.
+    split_meta = json.loads(legacy_path("split_meta_e3.json").read_text(encoding="utf-8"))
 
 
     capabilities = {
