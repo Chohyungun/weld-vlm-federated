@@ -32,6 +32,8 @@ from detection import serialize
 from detection.round_runner import derive_seed
 from fl.seeding import seeded, shared_init_seed
 from vlm.coords import CoordCfg, ImageGeom, quantize, to_model
+from vlm.loss_norm import TokenAccumulator, normalized_ce, rescale_grads_, supervised_ce_sum
+from vlm.schedule import LRF, cosine_lr, global_step
 
 MODEL_ID = "Qwen/Qwen3.5-0.8B"
 #: 프롬프트는 다섯 칸 공통 고정 항목이라 **한 글자도 달라선 안 된다**(개발규약 3-3).
@@ -184,6 +186,7 @@ def train_rounds(
     resume_dir: str | None = None,
     run_id: str = "",
     init_seed: int | None = None,
+    num_rounds: int = 1,
 ) -> tuple[list[np.ndarray], list[str], dict[str, Any], dict]:
     """한 라운드(⑥은 라운드 1개 = 전체 epoch). 어댑터 fp32 ndarray 를 돌려준다.
 
@@ -197,8 +200,22 @@ def train_rounds(
         run_id: 재개 신원의 일부.
         init_seed: LoRA A 초기화 시드. **라운드·클라이언트에 따라 달라지면 안 된다** —
             `derive_seed` 와 헷갈리지 않도록 별도 인자로 뒀다. None 이면 `base_seed`.
+        num_rounds: **전역 라운드 수 R.** 학습률 cosine 이 이 값으로 총 스텝 예산을
+            계산한다(판정 4). ⑥ 처럼 단일 런이면 1 이고, 그때 라운드 하나가 곧 전체
+            예산이라 검출의 `total_epochs` 와 같은 역할을 한다. 여기에 1 을 넣고
+            ⑦ 을 돌리면 라운드마다 스케줄이 리셋돼 검출과 다시 어긋난다.
     """
     from peft import get_peft_model_state_dict, set_peft_model_state_dict
+
+    # 체크리스트 18 — 게이트를 **실제로 부른다.** 통합형은 Ultralytics 를 안 쓰므로
+    # cudnn 결정론에 대응물이 없었다(80번 D13). 실효값은 metrics 에 실려 나간다.
+    from fl.run_gates import apply_run_gates, fingerprint_for_cell
+
+    gates = apply_run_gates(
+        cell=f"uni_r{round_idx}_c{client_idx}",
+        fingerprints=[fingerprint_for_cell(f"uni_r{round_idx}_c{client_idx}",
+                                           base_ckpt=str(model_id or MODEL_ID))],
+    )
 
     model, proc = _load_model(
         model_id, init_seed=shared_init_seed(base_seed if init_seed is None else init_seed)
@@ -277,6 +294,19 @@ def train_rounds(
             state_dict_fn=lambda tr: get_peft_model_state_dict(tr.model),
         )
 
+    # -- 누적 창·학습률 상태 -------------------------------------------------
+    # `steps_per_round` 는 이 클라이언트가 한 라운드에 밟는 옵티마이저 스텝 수다.
+    # `math.ceil` 인 이유: 마지막 부분 창도 step 한다(`(j+1) == len(order)` 분기).
+    import math as _math
+
+    steps_per_epoch = _math.ceil(len(rows) / GRAD_ACCUM)
+    steps_per_round = steps_per_epoch * int(epochs)
+    total_step_budget = steps_per_round * max(int(num_rounds), 1)
+    acc = TokenAccumulator()
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+    steps_in_round = int(steps)          # 재개했다면 이미 밟은 스텝에서 이어 간다
+    lr_trace: list[tuple[int, float]] = []
+
     epochs_done = int(start_ep)          # 이 라운드에서 완료한 epoch 누적 수(재개분 포함)
     for ep in range(start_ep, epochs):
         order = list(range(len(rows)))
@@ -291,23 +321,34 @@ def train_rounds(
             # `logits_to_keep` 정수 슬라이스로 정확히 겹친다. 0 을 주면 전 위치를 뽑는다.
             n_keep = int(labels.shape[1] - prompt_len + 1) if supervised_logits_only else 0
             out = model(**enc, logits_to_keep=n_keep)
-            # 판정 2 — shift 후 감독 토큰 총합 분모. HF 평균 loss 를 쓰지 않는다.
+            # shift 는 여기서 한 번만 한다 — `supervised_ce_sum` 은 shift 하지 않는다.
             logits = out.logits[:, :-1]
             # 남긴 로짓 j 는 절대 위치 T-n_keep+j 를 예측하므로 타깃은 그 다음 토큰이다.
             tgt = labels[:, 1:] if n_keep == 0 else labels[:, -(n_keep - 1):]
-            mask = tgt != -100
-            ce = torch.nn.functional.cross_entropy(
-                logits[mask].float(), tgt[mask], reduction="sum"
-            )
-            n_tok = int(mask.sum())
-            (ce / max(n_tok, 1)).backward()   # micro=1 이라 샘플 정규화 = 토큰 총합/토큰 수
+
+            # 판정 2 — **토큰 균일**. `ce_sum` 을 나누지 않고 누적하고, 창이 닫힐 때
+            # 기울기를 창 토큰 총합으로 한 번 나눈다. 샘플마다 나누면 목적함수가
+            # 샘플 균일이 되고, 감독 길이가 19~947 로 49.8배 퍼져 있어 짧은 답(결함 0건)이
+            # 토큰당 6.13배 무거워진다(80번 C1).
+            ce, n_tok = supervised_ce_sum(logits, tgt)
+            ce.backward()
+            acc.add(n_tok)
             ce_sum += ce.detach(); tok_cnt += n_tok
+
             if (j + 1) % GRAD_ACCUM == 0 or (j + 1) == len(order):
-                opt.step(); opt.zero_grad(); steps += 1
+                rescale_grads_(trainable_params, acc.close())
+                # 판정 4 — 전역 오프셋 cosine. 라운드 경계를 넘어 하나의 스케줄로 잇는다.
+                lr_now = cosine_lr(LR, global_step(round_idx, steps_in_round, steps_per_round),
+                                   total_step_budget)
+                for grp in opt.param_groups:
+                    grp["lr"] = lr_now
+                opt.step(); opt.zero_grad()
+                steps += 1; steps_in_round += 1
+                lr_trace.append((steps, round(lr_now, 10)))
         supervised_total += tok_cnt
         epochs_done += 1
         if log_cb:
-            log_cb(ep, float(ce_sum.item() / max(tok_cnt, 1)), steps, time.perf_counter() - t0)
+            log_cb(ep, normalized_ce(ce_sum, tok_cnt), steps, time.perf_counter() - t0)
         if ckpt is not None:
             # `epoch=ep, start_epoch=0` 이라 저장되는 값이 곧 **누적치**다 —
             # epochs_ran_in_round = ep+1, optimizer_steps = steps.
@@ -336,11 +377,21 @@ def train_rounds(
         "resumed_from_epoch": int(start_ep) if start_ep else None,
         "optimizer": type(opt).__name__,
         "lr": float(opt_group["lr"]),
+        # 판정 4 — 상수가 아니라 궤적을 남긴다. 검출의 `lr_trace` 와 대응한다.
+        "lr0": float(LR),
+        "lrf": float(LRF),
+        "lr_trace_head": lr_trace[:3],
+        "lr_trace_tail": lr_trace[-3:],
+        "steps_per_round": int(steps_per_round),
+        "total_step_budget": int(total_step_budget),
         "betas": [float(b) for b in opt_group.get("betas", ())],
         "weight_decay": float(opt_group.get("weight_decay", float("nan"))),
         "init_seed": shared_init_seed(base_seed if init_seed is None else init_seed),
         "init_proof": dict(init_proof),
         "injected_proof": None if injected_proof is None else dict(injected_proof),
+        # 판정 자체를 했는지를 산출물이 증명한다(G1-6).
+        "gates_evaluated": gates["gates_evaluated"],
+        "gate_results": gates["gate_results"],
     }
     ref_sd = {k: v.detach().cpu() for k, v in final_sd.items()}
     del model

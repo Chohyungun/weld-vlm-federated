@@ -77,7 +77,25 @@ def weighted_fedavg(
     for arrays in client_arrays:
         serialize.assert_compatible(arrays, keys, reference)
 
+    # G2-2 ① 유한성 전수. NaN 한 원소가 섞이면 평균 전체가 NaN 이 되고 지표에는
+    # `global_l2 = nan` 만 남는다 — 어느 클라이언트의 어느 텐서인지 알 수 없다.
+    # 실측에서 정확히 그 상태가 났다(80번 F3).
+    for ci, arrays in enumerate(client_arrays):
+        for k, arr in zip(keys, arrays):
+            if np.issubdtype(arr.dtype, np.floating) and not np.isfinite(arr).all():
+                n_bad = int((~np.isfinite(arr)).sum())
+                raise ValueError(
+                    f"클라이언트 {ci} 의 [{k}] 에 유한하지 않은 값 {n_bad}개. "
+                    "집계하면 글로벌이 통째로 NaN 이 되고 출처를 잃는다."
+                )
+
     weights = np.array([n / total for n in num_examples], dtype=np.float64)
+    # G2-2 ② 가중치 합. 재정규화 사고(실패 클라이언트를 빼고 평균)를 산술로 잡는다.
+    if abs(float(weights.sum()) - 1.0) > 1e-9:
+        raise ValueError(
+            f"가중치 합이 1 이 아니다: {float(weights.sum()):.12f}. "
+            "R×E=N 등가가 흔적 없이 깨지는 경로다."
+        )
     out: list[np.ndarray] = []
 
     for i, k in enumerate(keys):
@@ -94,10 +112,21 @@ def weighted_fedavg(
                 acc = np.maximum(acc, arr)
             out.append(np.array(acc, copy=True))
 
+    client_norms = [serialize.params_l2_norm(a) for a in client_arrays]
+    global_norm = serialize.params_l2_norm(out)
+    # G2-2 ③ 출력 norm 불변식. 볼록 가중 평균은 ‖Σ w_k x_k‖ ≤ Σ w_k‖x_k‖ ≤ max‖x_k‖ 다.
+    # 넘으면 평균이 아니라 다른 산술이 돈 것이다(부호·순서·중복 누적 사고가 여기 걸린다).
+    ceiling = max(client_norms) * (1.0 + 1e-6)
+    if global_norm > ceiling:
+        raise ValueError(
+            f"집계 결과 norm {global_norm:.6f} 이 클라이언트 최대 {max(client_norms):.6f} 를 "
+            "넘는다. 볼록 가중 평균에서는 일어날 수 없다 — 평균이 아닌 산술이 돌았다."
+        )
+
     return AggregationResult(
         ndarrays=out,
-        client_norms=[serialize.params_l2_norm(a) for a in client_arrays],
-        global_norm=serialize.params_l2_norm(out),
+        client_norms=client_norms,
+        global_norm=global_norm,
         total_examples=total,
         bn_buffer_divergence=bn_divergence(client_arrays, keys),
         missing_variance_ratio=_missing_variance_ratio(client_arrays, num_examples, keys),

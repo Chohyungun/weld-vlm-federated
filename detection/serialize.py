@@ -106,6 +106,11 @@ def assert_compatible(
     """집계 직전·직후에 거는 무결성 검사 3종 — 키·shape·dtype.
 
     조용한 오염을 잡는 저비용 안전장치다. 위반은 경고가 아니라 예외로 올린다.
+
+    **dtype 은 계열이 아니라 정확 일치로 본다** (80번 F3 / G2-1). 이전 판은
+    "부동소수 계열이 서로 맞는가"만 봐서 fp16 페이로드가 그대로 통과했다 — 실측에서
+    글로벌 최대 편차 5.44e-04 가 났고 아무 검사도 발화하지 않았다. 교환 규약이
+    "부동소수는 fp32" 라고 못박고 있으므로 그대로 검사한다.
     """
     if len(arrays) != len(keys):
         raise SerializeError(f"배열 수 불일치: {len(arrays)} != {len(keys)}")
@@ -122,6 +127,20 @@ def assert_compatible(
                 f"dtype 계열 불일치 [{k}]: 수신 {arr.dtype}, 기준 {ref.dtype}. "
                 "부동소수는 fp32, 정수 버퍼는 원 dtype이어야 한다."
             )
+        if expect_float:
+            # 계열이 아니라 정확 일치. fp16 이 통과하던 구멍을 막는다.
+            if arr.dtype != np.float32:
+                raise SerializeError(
+                    f"부동소수 dtype 불일치 [{k}]: 수신 {arr.dtype}, 규약 float32. "
+                    "fp16 페이로드는 글로벌 최대 편차 5.44e-04 를 남기고 조용히 통과했다."
+                )
+        else:
+            ref_np = torch.empty(0, dtype=ref.dtype).numpy().dtype
+            if arr.dtype != ref_np:
+                raise SerializeError(
+                    f"정수 dtype 불일치 [{k}]: 수신 {arr.dtype}, 기준 {ref_np}. "
+                    "정수 버퍼는 원 dtype 그대로여야 한다(카운터를 평균하지 않는다)."
+                )
 
 
 def params_l2_norm(arrays: Sequence[np.ndarray]) -> float:
@@ -145,14 +164,29 @@ def payload_nbytes(arrays: Sequence[np.ndarray]) -> int:
 
 
 def tensor_digest(arrays: Sequence[np.ndarray], sample: int = 5) -> list[float]:
-    """대표 텐서 몇 개의 L2 norm. 주입이 실제로 일어났는지 대조하는 증빙이다.
+    """대표 텐서의 L2 norm + **전 텐서 합산 norm**. 주입 증빙이다.
 
     서버가 보낸 값과 클라이언트가 주입 후 계산한 값이 같아야 한다. 다르면 주입이
     조용히 무력화된 것이다 — Ultralytics는 조건에 따라 사전학습 가중치를 덮어쓸 수 있다.
+
+    ## 표집이 한쪽 눈을 감고 있었다 (80번 C4 / G2-4)
+
+    이전 판은 `step = len(floats) // sample` 로 등간격 표집했다. LoRA 어댑터는
+    `lora_A`·`lora_B` 가 **교대로** 배열되는데 372 텐서에서 step 이 74(짝수)라 뽑힌 5개가
+    **전부 `lora_A`** 였다. `lora_B` 만 누락되는 부분 주입은 원리적으로 안 잡혔다.
+
+    두 가지로 고친다.
+    1. step 을 홀수로 강제해 교대 배열에서 A·B 가 함께 뽑히게 한다.
+    2. 마지막 원소로 **전 텐서 L2 합**을 붙인다. 표집이 무엇을 놓치든 전체가 바뀌면
+       이 값이 움직인다. 비용은 표집과 같은 자릿수다.
     """
     floats = [a for a in arrays if np.issubdtype(a.dtype, np.floating)]
     if not floats:
         return []
     step = max(1, len(floats) // sample)
+    if step % 2 == 0 and len(floats) > step:
+        step += 1                      # 교대 배열에서 한 계열만 뽑히는 것을 막는다
     picked = floats[::step][:sample]
-    return [float(np.linalg.norm(a.astype(np.float64, copy=False))) for a in picked]
+    digest = [float(np.linalg.norm(a.astype(np.float64, copy=False))) for a in picked]
+    digest.append(params_l2_norm(floats))     # 전 텐서 — 표집이 놓쳐도 여기서 잡힌다
+    return digest
