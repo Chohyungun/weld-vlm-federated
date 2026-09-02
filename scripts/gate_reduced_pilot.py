@@ -316,7 +316,10 @@ def cmd_score() -> None:
     preds = []
     for i in range(0, len(rows), PREDICT_CHUNK):
         part = rows[i:i + PREDICT_CHUNK]
-        preds.extend(predict_cell(yolo, part, Path.cwd(), "gate46_sep_central", None,
+        # 칸 이름은 계약 #4 의 다섯 리터럴 중 하나여야 한다(스키마가 거부한다).
+        # §4-6 은 "분리·중앙 1시드" 이므로 이 런의 칸은 실제로 sep_central 이다 —
+        # 게이트라는 신원은 산출 경로와 verdict.json 이 들고 있다.
+        preds.extend(predict_cell(yolo, part, Path.cwd(), "sep_central", None,
                                   params, conf=params.conf.value))
         if (i // PREDICT_CHUNK) % 10 == 0:
             print(f"  추론 {len(preds):,}/{len(rows):,} "
