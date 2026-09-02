@@ -225,25 +225,116 @@ def test_load_initial_이_더_이상_NotImplementedError_가_아니다():
 # 14·15항 — 완주 스모크. 실제 Flower 런타임 위에서 두 진입점을 돌린다.
 # ==========================================================================
 
-def _run(tmp_path: Path, *, out_name: str, fail_at: str = "") -> Path:
+# --------------------------------------------------------------------------
+# Ray 기동을 부하에 견디게 한다 — **건너뛰지 않는다**
+#
+# 머지 게이트에서 이 스모크가 raylet 기동 타임아웃(GCS overloaded)으로 죽었다. 그때 같은
+# 기계에서 §4-6 파일럿이 GPU·CPU 를 물고 있었다. 부하에서 죽는 스모크는 게이트를
+# 불안정하게 만든다.
+#
+# 처방은 셋이고 **어느 것도 skip 이 아니다.**
+#   1. Ray 발자국을 묶고 기동 타임아웃을 올린다 (`SMOKE_BACKEND` · `ray_startup_env`)
+#   2. 시작 전에 자원 여유를 **명시적으로 기다린다** — 기다려도 안 나면 실패시킨다
+#   3. **기동 실패에 한해** 재시도한다. 단언 실패는 그대로 올린다
+#
+# skip 하면 무이빨이 된다. 기다리다 못 얻으면 그것도 보고할 사실이므로 실패로 남긴다.
+# --------------------------------------------------------------------------
+
+#: 자원이 빌 때까지 기다리는 한도. 넘으면 skip 이 아니라 **fail** 이다.
+HEADROOM_WAIT_S = 600
+#: 스모크 3 클라이언트 + Ray 오버헤드에 필요한 최소 여유.
+NEED_FREE_GB = 6.0
+
+#: Ray 기동 실패로만 판별할 문구. 여기 없는 실패는 재시도하지 않는다 —
+#: 배선 결함을 재시도로 덮으면 이 시험이 하는 일이 없어진다.
+_RAY_STARTUP_SIGNS = (
+    "raylet", "gcs", "overloaded", "Failed to start", "timed out while waiting",
+    "connection refused", "RaySystemError", "Cannot connect", "ray.init",
+)
+
+
+def _free_gb() -> float:
+    import psutil
+
+    vm = psutil.virtual_memory()
+    return vm.available / 1e9
+
+
+def _wait_for_headroom(deadline_s: float = HEADROOM_WAIT_S) -> float:
+    """자원이 빌 때까지 기다린다. **못 얻으면 예외** — 호출부가 실패시킨다."""
+    import time as _t
+
+    end = _t.monotonic() + deadline_s
+    last = _free_gb()
+    while _t.monotonic() < end:
+        last = _free_gb()
+        if last >= NEED_FREE_GB:
+            return last
+        _t.sleep(10)
+    raise RuntimeError(
+        f"자원 여유를 {deadline_s:.0f}초 기다렸지만 {last:.1f}GB 뿐이다 "
+        f"(필요 {NEED_FREE_GB}GB). 이 기계에서 다른 장기 작업이 돌고 있다 — "
+        "스모크를 건너뛰지 않고 실패로 남긴다."
+    )
+
+
+def _is_ray_startup_failure(exc: BaseException) -> bool:
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return any(sign.lower() in text for sign in _RAY_STARTUP_SIGNS)
+
+
+def _run(tmp_path: Path, *, out_name: str, fail_at: str = "", _attempts: int = 3) -> Path:
     """스모크 칸으로 실제 Flower 런타임을 돈다.
 
     **`monkeypatch` 로 클라이언트를 바꿔치기할 수 없다.** Ray 액터는 별도 프로세스라
     부모의 패치가 닿지 않고, 실물 클라이언트가 그대로 돌아 GPU 를 잡는다(실측: 스모크가
     게이트 학습과 자원 경합으로 10분 넘게 굶었고, num_gpus=0 을 주면 클라이언트가
     `Invalid device id` 로 죽었다). 그래서 스모크 경로가 **코드에** 있어야 한다.
-    """
-    from fl.pilot_sim import SMOKE_BACKEND, SMOKE_CELL, run_pilot_fed
 
+    기동 실패는 재시도하고 그 외 실패는 그대로 올린다.
+    """
+    import os
+    import time as _t
+
+    from fl.pilot_sim import (SMOKE_BACKEND, SMOKE_CELL, ray_startup_env,
+                              run_pilot_fed)
+
+    os.environ.update(ray_startup_env())
     out = tmp_path / out_name
-    run_pilot_fed({
+    cfg = {
         "cell": SMOKE_CELL, "out_dir": out, "num_rounds": 2, "local_epochs": 1,
         "total_epochs": 2, "num_clients": 3, "base_seed": 1, "run_stamp": "smoke",
         "split_hash": "deadbeef", "canonical_keys": KEYS,
         "initial_arrays": _dummy_arrays(), "reference_sd": REF,
         "smoke_fail_at": fail_at,
-    }, backend_config=SMOKE_BACKEND)
-    return out
+    }
+
+    last_startup_exc: BaseException | None = None
+    for attempt in range(1, _attempts + 1):
+        free = _wait_for_headroom()          # 못 기다리면 여기서 예외 → 실패
+        try:
+            run_pilot_fed(dict(cfg), backend_config=SMOKE_BACKEND)
+            return out
+        except BaseException as exc:                                 # noqa: BLE001
+            if not _is_ray_startup_failure(exc):
+                raise            # **배선 실패는 재시도하지 않는다.** 그대로 올린다
+            last_startup_exc = exc
+            print(f"[smoke] 시도 {attempt}/{_attempts}: Ray 기동 실패 "
+                  f"(여유 {free:.1f}GB) — {type(exc).__name__}: {str(exc)[:120]}")
+            try:
+                import ray
+
+                if ray.is_initialized():
+                    ray.shutdown()
+            except Exception:                                        # noqa: BLE001
+                pass
+            _t.sleep(15 * attempt)
+
+    raise AssertionError(
+        f"Ray 기동이 {_attempts}회 연속 실패했다 — 마지막: {last_startup_exc}. "
+        "스모크를 건너뛰지 않는다(무이빨이 된다). 기계가 계속 이 상태면 CI 러너의 "
+        "자원 배정을 고쳐야 한다."
+    )
 
 
 def test_run_simulation_스모크가_완주한다(tmp_path):

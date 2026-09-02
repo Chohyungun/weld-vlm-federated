@@ -34,7 +34,9 @@ from fl.round_wiring import (CANONICAL_KEYS_KEY, SERVER_ROUND_KEY,
                              finalize_accounting, make_round_recorder)
 from fl.strategy import ARRAYS_KEY, CONFIG_KEY, METRICS_KEY, WeldFedAvg
 
-__all__ = ["run_pilot_fed", "PILOT_CFG", "FED_CELLS", "SMOKE_CELL", "smoke_client_round"]
+__all__ = ["run_pilot_fed", "PILOT_CFG", "FED_CELLS", "SMOKE_CELL",
+           "smoke_client_round", "SMOKE_BACKEND", "DEFAULT_BACKEND",
+           "ray_startup_env"]
 
 #: run_simulation 이 run_config 를 지원하지 않으므로 모듈 전역으로 주입한다.
 #: run_pilot_fed 가 채우고, 서버·클라이언트 앱이 읽는다.
@@ -270,10 +272,44 @@ def _cell_train_config(cell: str, cfg: dict[str, Any], out_dir: Path) -> dict[st
 #: 에서 7.7GB 를 쓰므로 두 클라이언트를 동시에 올릴 수 없다.
 DEFAULT_BACKEND = {"client_resources": {"num_cpus": 2, "num_gpus": 1.0}}
 
-#: CI 스모크 백엔드 — **GPU 를 요구하지 않는다.** 배선만 보는 시험이 GPU 자원을 잡으면
-#: (가) CPU 전용 러너에서 아예 못 돌고 (나) 같은 기계에서 도는 학습과 자원 경합으로
-#: 무한정 대기한다. 실제로 게이트 학습과 겹쳐 10분 넘게 굶었다.
-SMOKE_BACKEND = {"client_resources": {"num_cpus": 1, "num_gpus": 0.0}}
+#: CI 스모크 백엔드 — **GPU 를 요구하지 않고 Ray 의 발자국도 묶는다.**
+#:
+#: 배선만 보는 시험이 GPU 자원을 잡으면 (가) CPU 전용 러너에서 아예 못 돌고 (나) 같은
+#: 기계에서 도는 학습과 경합해 굶는다. 실제로 게이트 학습과 겹쳐 10분 넘게 굶었다.
+#:
+#: 더해 **부하 상태에서 Ray 기동 자체가 실패한다.** 머지 게이트에서 raylet 기동이
+#: GCS overloaded 로 타임아웃 나 스모크가 죽었다 — 그때 이 기계는 §4-6 파일럿이 GPU 와
+#: CPU 를 물고 있었다. 배선을 보는 시험이 부하에 흔들리면 게이트가 불안정해지므로
+#: Ray 가 띄우는 워커 수를 묶고(`num_cpus`) 대시보드·드라이버 로깅을 끈다.
+#: 기동 타임아웃 상향은 환경변수라 `ray_startup_env()` 가 따로 준다.
+SMOKE_BACKEND = {
+    "client_resources": {"num_cpus": 1, "num_gpus": 0.0},
+    "init_args": {
+        # 3 클라이언트에 필요한 최소치. 기본값(호스트 전 코어)이면 부하 시 워커 기동이
+        # 서로를 밀어내며 GCS 가 넘친다.
+        "num_cpus": 4,
+        "include_dashboard": False,
+        "log_to_driver": False,
+        "configure_logging": False,
+    },
+}
+
+
+def ray_startup_env() -> dict[str, str]:
+    """부하 상태에서 Ray 기동이 죽지 않도록 올리는 타임아웃. **환경변수로만 먹는다.**
+
+    기본값(raylet 대기 10초)은 한가한 기계 기준이다. 같은 기계에서 학습이 돌면 그 안에
+    raylet 이 못 뜨고 `ray.init` 이 GCS overloaded 로 죽는다 — 머지 게이트에서 실제로 났다.
+    시험을 건너뛰는 대신 **기다리게** 만든다(건너뛰면 무이빨이 된다).
+    """
+    return {
+        "RAY_raylet_start_wait_time_s": "120",
+        "RAY_gcs_server_request_timeout_seconds": "60",
+        "RAY_gcs_rpc_server_reconnect_timeout_s": "120",
+        "RAY_health_check_initial_delay_ms": "60000",
+        "RAY_health_check_timeout_ms": "30000",
+        "RAY_health_check_period_ms": "10000",
+    }
 
 
 def run_pilot_fed(cfg: dict[str, Any], *, backend_config: dict | None = None) -> None:
