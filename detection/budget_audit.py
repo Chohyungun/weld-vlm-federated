@@ -257,10 +257,16 @@ class AccountingMatrix:
                     f"라운드 {r} 클라이언트 {c}: stopper 가 스텁이 아니다 "
                     f"({cell.stopper_class}) — 조기 종료가 구조적으로 가능한 상태다"
                 )
-            if cell.stopper_calls is not None and cell.stopper_calls < cell.epochs_ran:
+            # **재개한 셀은 이 프로세스가 돈 epoch 만 stopper 를 지난다.** `epochs_ran` 은
+            # 라운드 누적치라 그대로 비교하면 재개 런이 무조건 실패한다 — §4-6 게이트
+            # 실행에서 실제로 그렇게 났다(33 epoch 누적 대 이번 프로세스 2회).
+            ran_here = cell.epochs_ran - int(cell.resumed_from_epoch or 0)
+            if cell.stopper_calls is not None and cell.stopper_calls < ran_here:
                 failures.append(
                     f"라운드 {r} 클라이언트 {c}: stopper 호출 {cell.stopper_calls}회 < "
-                    f"epoch {cell.epochs_ran}회 — 학습 루프가 그 게이트를 다 지나지 않았다"
+                    f"이 프로세스가 돈 epoch {ran_here}회 — 학습 루프가 그 게이트를 "
+                    f"다 지나지 않았다 (누적 epochs_ran={cell.epochs_ran}, "
+                    f"resumed_from={cell.resumed_from_epoch})"
                 )
             if cell.stopper_true_count is None and not cell.stopper_class:
                 uninstrumented.append((r, c))
