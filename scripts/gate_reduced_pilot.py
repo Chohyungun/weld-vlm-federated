@@ -192,6 +192,7 @@ def cmd_train() -> None:
         "stopper_calls": len(res.stopper_calls),
         "budget_fired_at": res.budget_fired_at,
         "lr_trace_head": res.lr_trace[:3], "lr_trace_tail": res.lr_trace[-3:],
+        "resumed_from_epoch": res.resumed_from_epoch,
         "wall_s": round(wall, 1),
         "gates_evaluated": res.gates_evaluated,
         "gate_results": res.gate_results,
@@ -206,6 +207,51 @@ def cmd_train() -> None:
 # --------------------------------------------------------------------------
 # 채점·판정
 # --------------------------------------------------------------------------
+
+def _load_yolo(npz_path: Path, class_names, imgsz: int):
+    """npz 상태를 **본실험 프로파일 모델**(YOLO11s)에 주입한다.
+
+    ## 왜 D 의 `load_yolo_from_npz` 를 그대로 못 쓰는가
+
+    `evaluation/detect_infer.load_yolo_from_npz` 가 `cfg="yolo11n.yaml"` 을 **하드코딩**한다.
+    파일럿 프로파일(YOLO11n)만 상정한 코드라 본실험 프로파일(YOLO11s)로 학습한 가중치를
+    넣으면 첫 층에서 죽는다 — 실측:
+
+        SerializeError: shape 불일치 [model.0.conv.weight]: (32,3,3,3) != (16,3,3,3)
+
+    **`evaluation/` 는 트랙 D 소관이라 고치지 않았다.** 대신 여기서 같은 절차를 모델
+    구성만 바꿔 수행한다. 갈라지는 것은 `cfg` 문자열 하나이고, 가중치 주입은 D 의
+    독스트링이 스스로 지정한 대로 C 의 `detection.serialize` 를 그대로 지난다.
+    **채점(`score_detection`·`cluster_bootstrap`)과 추론(`predict_cell`)은 전부 D 것을
+    그대로 부른다** — 두 번째 채점기를 만들지 않는다.
+
+    본실험 착수 전에 D 가 `load_yolo_from_npz` 에 모델 cfg 를 인자로 열어야 한다.
+    지금 상태로는 **다섯 칸 중 어느 것도 본실험 프로파일로 채점할 수 없다.** 82번에 보고.
+    """
+    import numpy as np
+    import torch
+    from ultralytics import YOLO
+    from ultralytics.nn.tasks import DetectionModel
+
+    from detection import serialize
+
+    dm = DetectionModel(cfg="yolo11s.yaml", nc=len(class_names), verbose=False)
+    keys = serialize.canonical_keys(dm.state_dict())
+    z = np.load(npz_path)
+    arrays = [z[f"arr_{i}"] for i in range(len(z.files))]
+    ref = dm.state_dict()
+    serialize.assert_compatible(arrays, keys, ref)
+    dm.load_state_dict(serialize.ndarrays_to_state_dict(arrays, keys, ref), strict=True)
+    dm.names = dict(enumerate(class_names))
+    tmp = Path(npz_path).with_suffix(".tmp.pt")
+    # fp32 그대로 저장한다 — `.half()` 사본을 만들지 않는다(D17: 예측 산출과 채점이
+    # 모델 정밀도에 합의해야 한다).
+    torch.save({"model": dm.float(), "train_args": {"imgsz": imgsz}}, tmp)
+    yolo = YOLO(str(tmp))
+    tmp.unlink(missing_ok=True)
+    return yolo
+
+
 
 #: 통과 기준 1 의 비교선. 40번 §4-6 이 사전 등록한 값(4결함 전량양성 자명하한)이다.
 TRIVIAL_LINE = 0.2081
@@ -252,11 +298,7 @@ def cmd_score() -> None:
     gold, _gold_boxes = read_gold(SNAPSHOT_DIR, eval_ids)
     print(f"평가셋 {len(rows):,}장 / 정답 라벨 {len(gold):,}건", flush=True)
 
-    # 추론 진입점은 D 가 단일화한 `load_yolo_from_npz` 하나다(fp32 + imgsz 명시).
-    # `.half()` 사본을 만들지 않는다 — 예측 산출과 채점이 모델 정밀도에 합의해야 한다(D17).
-    from evaluation.detect_infer import load_yolo_from_npz
-
-    yolo = load_yolo_from_npz(last, params.class_names, params.imgsz)
+    yolo = _load_yolo(last, params.class_names, params.imgsz)
     t0 = time.perf_counter()
     preds = predict_cell(yolo, rows, Path.cwd(), "gate46_sep_central", None,
                          params, conf=params.conf.value)
@@ -348,6 +390,61 @@ def cmd_score() -> None:
     print(f"\n→ {OUT / 'verdict.json'}")
 
 
+def cmd_audit() -> None:
+    """디스크의 `accounting.csv` 를 그대로 다시 감사한다.
+
+    **재계산이 아니라 재판정이다.** 셀의 값은 학습이 기록한 실측 그대로 읽고, 검사만
+    다시 건다. §4-6 첫 판정에서 검사 (4)가 재개 런을 오판했다 — `stopper_calls`(이 프로세스가
+    돈 2회)를 `epochs_ran`(라운드 누적 33회)과 비교했다. 값이 틀린 게 아니라 검사가
+    틀렸으므로 학습을 다시 돌리지 않고 같은 기록에 고친 검사를 적용한다.
+
+    상수로 채우는 필드가 없다 — 전부 CSV 에 있던 값이라 `value_source` 는 그대로다.
+    """
+    import csv
+
+    from detection.budget_audit import AccountingCell, AccountingMatrix
+
+    path = OUT / "accounting.csv"
+    rows = list(csv.DictReader(path.open(encoding="utf-8")))
+    if not rows:
+        raise SystemExit(f"회계가 비었다: {path}")
+
+    def _opt(v, cast):
+        return None if v in ("", None) else cast(v)
+
+    acc = AccountingMatrix(num_rounds=1, client_ids=[0], local_epochs=EPOCHS,
+                           total_epochs=EPOCHS)
+    for r in rows:
+        acc.record(AccountingCell(
+            round_idx=int(r["round_idx"]), client_idx=int(r["client_idx"]),
+            epochs_ran=int(r["epochs_ran"]), optimizer_steps=int(r["optimizer_steps"]),
+            num_examples=int(r["num_examples"]), seed=int(r["seed"]),
+            param_l2_norm=float(r["param_l2_norm"]), payload_bytes=int(r["payload_bytes"]),
+            optimizer=r["optimizer"], lr=float(r["lr"]),
+            arg_optimizer=r["arg_optimizer"], arg_lr0=float(r["arg_lr0"]),
+            budget_fired_at=_opt(r["budget_fired_at"], int),
+            stopper_class=r["stopper_class"],
+            stopper_true_count=_opt(r["stopper_true_count"], int),
+            stopper_calls=_opt(r["stopper_calls"], int),
+            optimizer_updates=int(r["optimizer_updates"]),
+            resumed_from_epoch=_opt(r["resumed_from_epoch"], int),
+            value_source=r["value_source"],
+            fedavg_weight=_opt(r["fedavg_weight"], float),
+            fedavg_weight_unit=r["fedavg_weight_unit"],
+            supervised_tokens=int(r["supervised_tokens"] or 0),
+        ))
+    rep = acc.audit()
+    acc.to_json(OUT / "accounting.json")
+    print(json.dumps({
+        "ok": rep.ok, "failures": rep.failures, "notes": rep.notes,
+        "resumed_cells": rep.resumed_cells,
+        "total_optimizer_steps": rep.total_optimizer_steps,
+        "total_epochs_by_client": rep.total_epochs_by_client,
+    }, ensure_ascii=False, indent=2))
+    if not rep.ok:
+        raise SystemExit("회계 재판정도 실패다 — 검사가 아니라 런에 문제가 있다.")
+
+
 def cmd_status() -> None:
     for name in ("view_meta.json", "train_result.json", "verdict.json"):
         p = OUT / name
@@ -362,6 +459,6 @@ def cmd_status() -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("cmd", choices=["view", "train", "score", "status"])
+    ap.add_argument("cmd", choices=["view", "train", "score", "audit", "status"])
     {"view": cmd_view, "train": cmd_train, "score": cmd_score,
-     "status": cmd_status}[ap.parse_args().cmd]()
+     "audit": cmd_audit, "status": cmd_status}[ap.parse_args().cmd]()
