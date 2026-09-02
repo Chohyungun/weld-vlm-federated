@@ -72,11 +72,13 @@ def main() -> int:
     ap.add_argument("-o", "--out", type=Path, default=V1 / "clamp_feasibility.json")
     args = ap.parse_args()
 
+    from data.frozen_guard import legacy_path
     from data.manifest_io import read_manifest
     from scripts.measure_tiling_geometry import read_labels
 
     # 마스킹 전 경로를 쓴다. 마스킹본은 테두리가 상수 114 라 배경 분포가 오염된다.
-    m = read_manifest(V1 / "manifest_pre_mask.csv")
+    # 그 판은 attic/ 으로 격리됐다 (80번 G11-1). 경로를 직접 쓰지 않는다.
+    m = read_manifest(legacy_path("manifest_pre_mask.csv"))
     m = m[m["split"] != "eval"]
     print(f"학습 풀 {len(m):,}장 (평가셋 제외)")
 

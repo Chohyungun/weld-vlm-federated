@@ -36,6 +36,7 @@ from data.dedup.phash import (
     compute_phash,
     pack_hashes,
 )
+from data.frozen_guard import assert_writable, legacy_path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 V1 = REPO_ROOT / "data/interim/manifest_v1"
@@ -194,6 +195,8 @@ def stage_apply(manifest, cache: dict[str, str], threshold: int | None) -> int:
     if threshold > THRESHOLD_CAP:
         print(f"!! t={threshold} 가 상한 {THRESHOLD_CAP} 을 넘는다. 총괄 에스컬레이션이다.")
         return 3
+    # 이 단계는 동결 디렉터리에 매니페스트를 쓴다. 동결 후에는 진입에서 막는다 (80번 G11-1).
+    assert_writable(V1, what="동결 매니페스트 디렉터리")
 
     from data.dedup.phash import build_groups
 
@@ -229,7 +232,7 @@ def stage_apply(manifest, cache: dict[str, str], threshold: int | None) -> int:
           f"(합쳐진 묶음 {len(old_to_new) - res.n_groups:,}개 감소)")
     print(f"  둘 이상의 v0 묶음을 삼킨 새 묶음 {fused:,}개")
 
-    out = V1 / "manifest_e3.csv"
+    out = V1 / "attic" / "manifest_e3.csv"
     from data.manifest_io import FLOAT_FORMAT
     with out.open("w", encoding="utf-8", newline="\n") as fh:
         sub.to_csv(fh, index=False, na_rep="", float_format=FLOAT_FORMAT,
@@ -247,8 +250,11 @@ def stage_split(previous) -> int:
     from data.manifest_io import FLOAT_FORMAT, read_annotations, read_manifest
     from data.split.pipeline import assign_splits, distribution_heatmap
 
-    src = V1 / "manifest_e3.csv"
-    if not src.exists():
+    # 최종적으로 manifest.csv 를 덮어쓰는 단계다. 동결 후에는 진입에서 막는다 (80번 G11-1).
+    assert_writable(V1, what="동결 매니페스트 디렉터리")
+    try:
+        src = legacy_path("manifest_e3.csv")
+    except FileNotFoundError:
         print("!! manifest_e3.csv 가 없다. --stage apply 를 먼저 돌려라.")
         return 3
     m = read_manifest(src)
@@ -295,7 +301,9 @@ def stage_split(previous) -> int:
     for v in violations[:20]:
         print(f"   {v}")
 
-    (V1 / "manifest_pre_e3.csv").write_bytes((V1 / "manifest.csv").read_bytes())
+    # 동결 후에는 여기서 멈춘다. 아래가 manifest.csv 를 직접 덮어쓴다 (80번 G11-1).
+    assert_writable(V1, what="동결 매니페스트 디렉터리")
+    (V1 / "attic" / "manifest_pre_e3.csv").write_bytes((V1 / "manifest.csv").read_bytes())
     out = m.sort_values("image_id", kind="stable").reset_index(drop=True)
     for col in out.columns:
         if str(out[col].dtype) == "boolean":
@@ -305,7 +313,7 @@ def stage_split(previous) -> int:
                    lineterminator="\n")
     with (V1 / "distribution.csv").open("w", encoding="utf-8", newline="\n") as fh:
         distribution_heatmap(m).to_csv(fh, index=True, lineterminator="\n")
-    with (V1 / "split_meta_e3.json").open("w", encoding="utf-8", newline="\n") as fh:
+    with (V1 / "attic" / "split_meta_e3.json").open("w", encoding="utf-8", newline="\n") as fh:
         json.dump({
             "seed": meta.seed, "dirichlet": meta.dirichlet,
             "groups": int(m["group_id"].nunique()),

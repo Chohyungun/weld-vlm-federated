@@ -40,6 +40,8 @@ for _s in (sys.stdout, sys.stderr):
     except (AttributeError, ValueError):
         pass
 
+from data.frozen_guard import assert_writable
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 V1 = REPO_ROOT / "data/interim/manifest_v1"
 OUT = REPO_ROOT / "data/interim/tiles_v1_histmatch"
@@ -162,6 +164,8 @@ def stage_apply(manifest, quality: int) -> int:
 
 def stage_manifest(manifest) -> int:
     """`rel_path`·`sha256` 만 갈아 끼운다. 분할·묶음·클래스는 손대지 않는다."""
+    # 이 단계 끝에서 manifest.csv 를 직접 덮어쓴다. 동결 후에는 진입에서 막는다 (80번 G11-1).
+    assert_writable(V1, what="동결 매니페스트 디렉터리")
     from data.invariants import check_invariants
     from data.label_map import load_label_map
     from data.manifest_io import FLOAT_FORMAT, read_annotations
@@ -192,7 +196,7 @@ def stage_manifest(manifest) -> int:
     for v in violations[:20]:
         print(f"   {v}")
 
-    (V1 / "manifest_pre_histmatch.csv").write_bytes((V1 / "manifest.csv").read_bytes())
+    (V1 / "attic" / "manifest_pre_histmatch.csv").write_bytes((V1 / "manifest.csv").read_bytes())
     out = m.sort_values("image_id", kind="stable").reset_index(drop=True)
     for col in out.columns:
         if str(out[col].dtype) == "boolean":
