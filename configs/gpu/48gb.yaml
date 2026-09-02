@@ -2,6 +2,9 @@
 #
 # 뼈대만이다. 값은 파일럿 후 확정한다 (CTO 브리프 §4-1).
 # 16gb.yaml 과 키 집합이 완전히 같아야 한다. 키가 갈리면 "GPU 사양 비의존" 원칙이 깨진다.
+#
+# `detection:` 블록의 지위는 16gb.yaml 머리글에 적었다 — **참고 프로파일이고 미배선이다**
+# (74번 감사 P11). 실행값 정본은 `detection/round_runner.py:PROFILES`.
 
 profile: "48gb"
 device: cuda
@@ -16,7 +19,10 @@ precision:
   amp_dtype: bf16
   matmul_tf32: true
 
+# ⚠ 미배선. 16gb.yaml 머리글 참조 — 정본은 detection/round_runner.py:PROFILES (트랙 C 소관).
 detection:
+  wired: false
+  runtime_source_of_truth: "detection/round_runner.py:PROFILES"
   batch: null                    # TODO 파일럿
   imgsz: 640                     # 16gb 와 동일해야 한다 — 5칸 전처리 고정 조건
   workers: null                  # TODO 파일럿
