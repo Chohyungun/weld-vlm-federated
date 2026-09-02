@@ -18,26 +18,60 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-RT_TOTAL = 62_998
-"""RT 전량 (ST 54,053 + AL 8,945)."""
+RT_TOTAL = 62_308
+"""RT 전량 — **동결 스냅샷 `aihub71761_rt_v1` 실측.**
 
-R1_COUNT = 37_814
-"""1280×720 이미지 수. 규격전용 예측기의 예측 양성 수."""
+이전 값 62,998 은 동결 전 집계였고 690장 많았다. 자명하한은 유병률의 함수라 N 이 틀리면
+게이트선이 통째로 틀어진다 — 실제로 등록 통과선 0.2131 이 **동결 평가셋 자명하한
+0.21595 보다 낮아** 과엄격 헛경보가 될 상태였다(80번 D2).
+"""
+
+R1_COUNT = 62_308
+"""1280×720 이미지 수. 규격전용 예측기의 예측 양성 수.
+
+**재인코딩 후 전량이 1280×720 이다.** 그래서 규격전용 규칙은 전량양성과 같은 예측기가
+되고 지름길 순 기여가 0 이 된다 — 함정 #11 대응이 성공했다는 증거다. 이전 값 37,814 는
+처리 전 값이며, 같은 이름의 다른 양이다.
+"""
 
 TOLERANCE = 0.005
 """P1′ 통과선의 여유. 전량양성 자명하한 + 이 값 이하여야 지름길이 죽은 것으로 본다."""
 
+EVAL_ALL_POSITIVE = 0.21595238
+"""**동결 평가셋(12,461장)** 의 전량양성 자명하한.
+
+전량(62,308) 값과 다르다. 채점은 평가셋에서 하므로 게이트를 세울 때는 이쪽을 쓴다 —
+전량 값으로 선을 그으면 채점 모집단에서 자명하한 아래에 선이 놓인다.
+`pass_line_for()` 를 통해 쓴다.
+"""
+
+TRAINVAL_ALL_POSITIVE = 0.20989820
+"""동결 train+val(49,847장) 자명하한. 참고값."""
+
+BEFORE_PREPROCESS = {
+    "RT_TOTAL": 62_998, "R1_COUNT": 37_814,
+    "all_positive_macro_f1": 0.2081, "spec_only_macro_f1": 0.3025,
+    "shortcut_contribution": 0.0944,
+}
+"""**처리 전 등록값.** 지우지 않는다 — "지름길이 죽었다"는 주장은 전후 대조이고,
+전 값을 지우면 그 대조가 사라진다. 게이트 판정에는 쓰지 않는다.
+"""
+
 
 @dataclass(frozen=True)
 class PreregisteredConstants:
-    """§5-1 표. **동결 평가셋에서 재산출해 이 값을 재현해야 계측이 옳다.**"""
+    """§5-1 표. **동결 평가셋에서 재산출해 이 값을 재현해야 계측이 옳다.**
 
-    all_positive_macro_f1: float = 0.2081
-    """전량양성 자명하한 — 규격을 무시하고 모든 이미지에 4코드를 주장."""
-    spec_only_macro_f1: float = 0.3025
-    """규격전용 최적 (처리 전) — 1280×720 에만 4코드를 주장."""
-    shortcut_contribution: float = 0.0944
-    """규격 지름길의 순 기여. 위 둘의 차."""
+    값의 출처: `scripts/probe/recompute_prereg.py` →
+    `outputs/pilot_d/prereg_recomputed_v1.json` (동결 digest 1f80e98b…).
+    """
+
+    all_positive_macro_f1: float = 0.21111837
+    """전량양성 자명하한 — 규격을 무시하고 모든 이미지에 4코드를 주장. 동결 전량 기준."""
+    spec_only_macro_f1: float = 0.21111837
+    """규격전용 최적 — 1280×720 에만 4코드를 주장. **처리 후 전량양성과 같다.**"""
+    shortcut_contribution: float = 0.0
+    """규격 지름길의 순 기여. 위 둘의 차. **0 이 목표값이었다**(처리 전 0.0944)."""
     sds_rt: float = 0.9484
     sds_st: float = 0.9613
     sds_al: float = 0.871
@@ -46,7 +80,7 @@ class PreregisteredConstants:
 
     @property
     def p1_prime_gate(self) -> float:
-        """P1′ 통과선. 미처리 원본(0.3025)은 통과하지 못한다."""
+        """P1′ 통과선(동결 전량 기준). 채점 모집단이 평가셋이면 `pass_line_for` 를 쓴다."""
         return round(self.all_positive_macro_f1 + TOLERANCE, 4)
 
     def as_header_rows(self) -> tuple[tuple[str, str], ...]:
@@ -153,3 +187,13 @@ def recovery_denominator_ok(
         f"분모 D={d:.4f} < 3·sd={threshold:.4f} — 회복률을 산출하지 않고 "
         "세 절대값만 95% CI 와 함께 보고한다"
     )
+
+
+def pass_line_for(population_bound: float) -> float:
+    """**채점 모집단의 자명하한 위에** 통과선을 세운다.
+
+    고정 상수를 다른 유병률의 집단에 그대로 대면 선이 틀린다. 실제로 등록 통과선
+    0.2131 이 동결 평가셋 자명하한 0.21595 보다 낮았다 — 자명하한도 못 넘는 예측기가
+    "통과"로 찍히는 상태다(80번 D2 재검 정정).
+    """
+    return round(float(population_bound) + TOLERANCE, 6)

@@ -17,6 +17,13 @@ from evaluation.metrics.detection import class_jaccard, score_detection
 from evaluation.metrics.localization import coco_map, score_bbox_iou
 from evaluation.schema import PredictionRecord
 
+COLLAPSE_ZERO_FRAC = 0.90
+"""배정쌍 중 겹침 0 의 비율이 이 이상이면 좌표계 붕괴로 본다.
+
+0.9 인 이유: 정상 학습된 모델도 어려운 이미지에서 완전 빗나간 배정을 몇 건 낸다.
+붕괴는 그것과 달리 **거의 전부**가 겹침 0 이다 — 규약이 어긋나면 예외가 없다.
+"""
+
 
 def score_records(
     records: Sequence[PredictionRecord],
@@ -41,13 +48,18 @@ def score_records(
         ]
         for r in records
     }
+    # 신뢰도가 하나라도 실재하는가. 생성형 칸은 전부 None 이라 mAP 를 내지 않는다(D16).
+    scores_present = any(
+        d.score is not None for r in records for d in r.defects if d.bbox_px
+    )
     det = score_detection(pred_codes, {k: sorted(v) for k, v in gold_codes.items()}, classes)
     loc = score_bbox_iou(pred_boxes, gold_boxes)
-    ap = coco_map(pred_scored, gold_boxes, classes)
+    ap = coco_map(pred_scored, gold_boxes, classes, scores_present=scores_present)
     return {
         **det.as_dict(),
         "miss_rate": 1.0 - det.defect_recall,
-        "class_jaccard": class_jaccard(pred_codes, gold_codes),
+        "class_jaccard": class_jaccard(pred_codes, gold_codes, classes),
+        "scores_present": scores_present,
         **loc.as_dict(),
         **ap,
     }
@@ -70,16 +82,37 @@ def failure_breakdown(records: Sequence[PredictionRecord]) -> dict:
 
 
 def coord_health(metrics: Mapping[str, object]) -> dict:
-    """좌표계 건강 판정 — 매칭쌍 IoU 대 전체 IoU 분리(65번과 같은 방법).
+    """좌표계 건강 판정 — **"좌표계가 무너졌다"와 "위치를 못 맞혔다"를 가른다.**
 
-    전체 IoU 가 낮은 것은 미검출로도 설명되지만, **매칭쌍 IoU 까지 0.0x 로 무너지면**
-    그것은 성능이 아니라 좌표계 불일치의 서명이다(함정 #4: 0.938 → 0.055).
+    이전 판은 `bbox_iou_matched_only` 와 `n_matched` 만 봤다. Hungarian 이 겹침 0 인 쌍도
+    매칭으로 배정했으므로 붕괴가 "낮은 매칭 IoU"로 섞여 들어왔고, 겹침 0 을 매칭에서 빼자
+    이번엔 `n_matched=0` → "판정 불가"로 이름만 바꿔 다시 숨었다(80번 D5의 재검 경고).
+
+    그래서 **배정 통계를 본다.** 클래스가 맞아 쌍으로 묶였는데(`n_assigned`) 겹침이
+    거의 전무하면(`zero_overlap_frac`) 그것은 성능이 아니라 규약이다 — 모델이 맞는
+    클래스를 맞는 이미지에서 찾아 놓고 위치만 통째로 어긋난 상태다. 반대로 애초에
+    예측이 거의 없으면(`n_pred` 작음) 좌표를 판정할 재료가 없는 것이지 붕괴가 아니다.
     """
     matched = float(metrics.get("bbox_iou_matched_only") or 0.0)
     n_matched = int(metrics.get("n_matched") or 0)
+    n_assigned = int(metrics.get("n_assigned") or 0)
+    n_zero = int(metrics.get("n_zero_overlap_assigned") or 0)
+    n_pred = int(metrics.get("n_pred") or 0)
+    n_gold = int(metrics.get("n_gold") or 0)
+    zero_frac = n_zero / n_assigned if n_assigned else 0.0
     suspect = bool(metrics.get("coord_suspect"))
-    if n_matched == 0:
-        verdict = "판정 불가 — 매칭쌍 0건(모델이 해당 클래스를 한 번도 맞히지 못함)"
+
+    if n_pred == 0:
+        verdict = "판정 불가 — 예측 박스 0건. 좌표를 잴 재료가 없다(미검출)"
+    elif n_assigned == 0:
+        verdict = (
+            "판정 불가 — 클래스가 맞는 쌍이 0건. 좌표 이전에 분류가 안 맞았다"
+        )
+    elif zero_frac >= COLLAPSE_ZERO_FRAC:
+        verdict = (
+            f"붕괴 의심 — 클래스가 맞아 묶인 {n_assigned}쌍 중 {n_zero}쌍"
+            f"({zero_frac:.1%})이 겹침 0 이다. 위치가 통째로 어긋난 서명(함정 #4)"
+        )
     elif suspect or matched < 0.10:
         verdict = "붕괴 의심 — 매칭쌍 IoU 가 0.1 이하다. 함정 #4 발현 가능성"
     elif matched < 0.25:
@@ -89,7 +122,11 @@ def coord_health(metrics: Mapping[str, object]) -> dict:
     return {
         "bbox_iou_matched_only": matched,
         "n_matched": n_matched,
-        "n_gold": int(metrics.get("n_gold") or 0),
+        "n_assigned": n_assigned,
+        "n_zero_overlap_assigned": n_zero,
+        "zero_overlap_frac": zero_frac,
+        "n_pred": n_pred,
+        "n_gold": n_gold,
         "coord_suspect": suspect,
         "verdict": verdict,
     }
