@@ -88,50 +88,16 @@ REMEDY_TABLE = [
 # 골격 값을 프롬프트에 넣을 때는 내부 표현이 아니라 사람이 읽는 형태로 쓴다.
 # enum(Unit.MM, InspectionMethod.RT)이나 개구간 인코딩(+0.01)이 그대로 새면 그 문자열이
 # 판정문에 박힌다. 실측에서 기각 사유의 다수가 이것이었다.
-
-def val(x) -> str:
-    """enum 은 값만, 수치는 뒤따르는 0 을 정리해서 쓴다."""
-    v = getattr(x, "value", x)
-    if v is None:
-        return ""
-    txt = str(v)
-    if re.fullmatch(r"-?\d+\.\d+", txt):
-        txt = txt.rstrip("0").rstrip(".")
-    return txt
-
-
-def unit_ko(u) -> str:
-    return {"mm": "mm", "percent": "%"}.get(val(u), val(u) or "mm")
-
-
-def method_ko(m) -> str:
-    return {"RT": "RT(방사선투과)", "VT": "VT(육안)", "ALL": "검사 방식 무관"}.get(
-        val(m), val(m))
-
-
-def num_ko(x) -> str:
-    """개구간 인코딩(+0.01)을 사람이 읽는 경계로 되돌린다."""
-    v = val(x)
-    if not v:
-        return ""
-    try:
-        f = float(v)
-    except ValueError:
-        return v
-    if abs(f - round(f) - 0.01) < 1e-9:      # 10.01 → 10 초과
-        return val(round(f - 0.01, 2))
-    return val(f)
-
-
-def thickness_ko(tmin, tmax) -> str:
-    """두께 구간을 원문 표기(초과·이하)로 쓴다."""
-    lo, hi = val(tmin), val(tmax)
-    lo_f = float(lo) if lo else 0.0
-    left = "" if lo_f == 0 else f"{num_ko(tmin)} mm 초과"
-    if not hi:
-        return left or "모든 두께"
-    right = f"{num_ko(tmax)} mm 이하"
-    return f"{left} {right}".strip() if left else right
+#
+# 표현 헬퍼의 정본은 `corpus.rules.clause_text` 하나다 — 여기서는 가져다 쓰기만 한다.
+# 같은 문구 규칙을 두 벌로 두면 한쪽만 개구간 인코딩·enum 표기를 놓친다 (74번 감사 P4).
+from corpus.rules.clause_text import (  # noqa: E402  (모듈 상단 상수 뒤 배치)
+    method_ko,
+    num_ko,  # noqa: F401  (재수출 — 시험·타 모듈이 여기서 가져간다)
+    thickness_ko,
+    unit_ko,
+    val,
+)
 
 
 # ------------------------------------------------------------------ 골격

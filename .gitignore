@@ -92,6 +92,9 @@ docs/dev_log/**/50_공개문서_검수방침.md
 # --- 파일럿 합성 산출물 (드라이브·로컬 보관, 저장소는 스크립트·보고서만) ---
 corpus/generate/cycle_pilot/*.jsonl
 corpus/generate/cycle_pilot/_raw_generated.json
+# 단, 통과율의 근거는 추적한다 — 원본이 미추적이라 워크트리를 정리하면 근거가
+# 소실된다(74번 감사 P5). 축약본은 생성문 전문 없이 판정 플래그와 sha256 만 담는다.
+!corpus/generate/cycle_pilot/EVIDENCE.jsonl
 
 # --- 분리 실행 로그 (프로브·학습). 실측 결과는 outputs/ 와 보고서에 남는다 ---
 logs/
