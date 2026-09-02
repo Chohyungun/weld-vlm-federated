@@ -27,12 +27,17 @@ sys.path.insert(0, str(REPO))
 
 from evaluation.eval_set import read_manifest
 from evaluation.gold import read_derived_csv
+from evaluation.params import COORD_SPACE
 from vlm.coords import CoordCfg, ImageGeom, quantize, to_model
 
 FROZEN = Path("data/interim/manifest_v1")
 OUT = Path("outputs/pilot_d")
 MODEL_ID = "Qwen/Qwen3.5-0.8B"
-COORD_CFG = CoordCfg(coord_space="NORM_1000")
+# **ABS_ORIG.** 총괄 판정 1 (2026-09-02) · C 의 전환 커밋 main 47c4dbc.
+# 자릿수가 토큰 수를 바꾸므로 규약이 바뀌면 예산도 다시 재야 한다 — 절대 픽셀은
+# 0~1000 정규화보다 자릿수가 길어 타깃 토큰이 늘어난다(C 추정 +0.52개/박스).
+# 이 상수는 `evaluation.params.COORD_SPACE` 와 같아야 하고 시험이 그것을 고정한다.
+COORD_CFG = CoordCfg(coord_space=COORD_SPACE)
 SAFETY = 1.5
 CURRENT = 256          # C 가 쓴 값 (고장 7)
 PREV_RECOMMEND = 1536  # 66번 §8 권고 (평가셋 포함 관측에서 유도)

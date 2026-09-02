@@ -37,8 +37,8 @@ def pilot_samples(n_defect: int, n_normal: int) -> list[MetaSample]:
 
 def stratified_like_rt(n: int = 3000) -> list[MetaSample]:
     """본실험 유병률을 보존한 층화 표본. 클래스별 비율을 RT 실측에서 가져온다."""
-    counts = {"100": 2349, "2011": 26967, "301": 2062, "401": 3229}
-    total = 62_998
+    counts = {"100": 2376, "2011": 26970, "301": 2108, "401": 3327}
+    total = 62_308     # 동결 스냅샷 실측. 이전 62,998 은 동결 전 집계였다(80번 D2)
     out: list[MetaSample] = []
     idx = 0
     for code, c in counts.items():
@@ -189,4 +189,4 @@ def test_report_warns_against_using_pilot_as_conclusion():
 
 def test_note_shows_both_main_and_pilot_gates():
     note = expected_constants_note(pilot_samples(1500, 1500), CLASSES)
-    assert "0.2081" in note and "본실험" in note and "파일럿" in note
+    assert "0.2111" in note and "본실험" in note and "파일럿" in note

@@ -43,13 +43,21 @@ from evaluation.cells import (
     regression_diffs,
     score,
 )
-from evaluation.params import ScoringParams, add_common_args, params_from_args
+from evaluation.gates import GateContext, run_scoring_gates
+from evaluation.params import (
+    ScoringParams,
+    add_common_args,
+    params_from_args,
+    resolve_gate_status,
+)
 from evaluation.probes.metadata_probe import MetaSample, trivial_bound
 from evaluation.probes.p9_runner import contexts_from_snapshot, p9_all_cells
 from evaluation.score import coord_health, failure_breakdown
 
 
-def score_all(params: ScoringParams, pop: Population) -> tuple[dict, dict, dict, list]:
+def score_all(
+    params: ScoringParams, pop: Population
+) -> tuple[dict, dict, dict, list, dict]:
     """다섯 칸 전부 채점. 검출은 저장 레코드 되읽기, 통합형은 어댑터 경유."""
     known = set(load_label_map().iso_codes())
     metrics: dict[str, dict] = {}
@@ -57,9 +65,11 @@ def score_all(params: ScoringParams, pop: Population) -> tuple[dict, dict, dict,
     adapters: dict[str, dict] = {}
     all_records: list = []
 
+    by_cell: dict[str, list] = {}
     for tag in DET_TAGS:
         recs = load_detection_records(params, tag)
         all_records.extend(recs)
+        by_cell[tag] = recs
         metrics[tag] = score(pop, recs)
         failures[tag] = failure_breakdown(recs)
 
@@ -84,11 +94,12 @@ def score_all(params: ScoringParams, pop: Population) -> tuple[dict, dict, dict,
         if missing or extra:
             raise SystemExit(f"{cell}: 평가셋 불일치 결측 {len(missing)} 초과 {len(extra)}")
         all_records.extend(recs)
+        by_cell[cell] = recs
         metrics[cell] = score(pop, recs)
         failures[cell] = failure_breakdown(recs)
         adapters[cell]["citations"] = rep.citations
 
-    return metrics, failures, adapters, all_records
+    return metrics, failures, adapters, all_records, by_cell
 
 
 def recovery(metrics: dict) -> dict:
@@ -186,13 +197,31 @@ def cmd_score(args) -> int:
     pop = load_population(params)
     print(f"평가셋 {pop.n_eval}장 (정상 {pop.n_normal})")
 
-    metrics, failures, adapters, all_records = score_all(params, pop)
+    metrics, failures, adapters, all_records, by_cell = score_all(params, pop)
     for tag in ALL_TAGS:
         m = metrics[tag]
         print(f"[{tag}] macroF1 {m['macro_f1']:.4f} · miss {m['miss_rate']:.4f} "
               f"· IoU {m['bbox_iou']:.4f}")
 
     reg = check_regressions(params, metrics)
+    diag = diagnostics(params, pop, all_records, adapters)
+    gates = run_scoring_gates(GateContext(
+        metrics=metrics,
+        records_by_cell=by_cell,
+        expected_coord_space=params.coord_space,
+        population_bound=diag["sample_trivial_bound"],
+        n_eval=pop.n_eval,
+        n_scored={t: len(v) for t, v in by_cell.items()},
+        recovery=recovery(metrics),
+        seed_sd=None,                 # 시드 1세트 — 게이트가 그 사실을 판정으로 남긴다
+        env=None,                     # 실제 프로세스 환경을 본다
+        tags=None,                    # 채점 단계에는 run 태그가 없다. 차단하지 않는다
+        gate_status=resolve_gate_status(),
+        extra={
+            "gate_pass_line": params.gate_pass_line,
+            "measured_prereg": _measured_prereg(params),
+        },
+    ))
     payload = {
         "params": params.as_dict(),
         "n_eval": pop.n_eval,
@@ -204,13 +233,22 @@ def cmd_score(args) -> int:
         "recovery": recovery(metrics),
         "gate": gate_check(metrics, params),
         "regression": reg,
-        **diagnostics(params, pop, all_records, adapters),
+        "gates_evaluated": gates,
+        **diag,
     }
     dest = params.out / "score_cells_v1.json"
     with dest.open("w", encoding="utf-8", newline="\n") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
     print(f"저장: {dest}")
+
+    print(f"게이트 {gates['n_evaluated']}/{gates['n_registered']} 평가 · "
+          f"차단 실패 {gates['blocking_failures'] or '없음'} · "
+          f"건너뜀 {gates['n_skipped']}")
+    for r in gates["results"]:
+        if not r["passed"] and not r["skipped"]:
+            mark = "차단" if r["blocking"] else "기록"
+            print(f"  [{mark}] {r['name']}: {r['detail'][:120]}")
 
     bad = [k for k, v in reg.items() if v.get("checked") and not v["identical"]]
     for k in bad:
@@ -307,7 +345,9 @@ def cmd_predict(args) -> int:
     sub = params.out if args.at_conf else params.out / "sweep"
     sub.mkdir(parents=True, exist_ok=True)
     print(f"평가셋 {pop.n_eval}장 · conf {conf} "
-          f"({'운용' if args.at_conf else f'하한 {CONF_FLOOR}'})")
+          f"({'운용' if args.at_conf else f'하한 {CONF_FLOOR}'}) · "
+          f"프로파일 {params.profile} ({params.model_cfg} · imgsz {params.imgsz} · "
+          f"청크 {params.predict_chunk})")
 
     for (cell, client), ckpt in checkpoint_paths(params.pilot).items():
         reject_best_checkpoint(ckpt)
@@ -315,7 +355,8 @@ def cmd_predict(args) -> int:
             print(f"체크포인트 없음: {ckpt}")
             return 1
         tag = cell_tag(cell, client)
-        yolo = load_yolo_from_npz(ckpt, params.class_names, params.imgsz)
+        yolo = load_yolo_from_npz(ckpt, params.class_names, params.imgsz,
+                                  model_cfg=params.model_cfg)
         recs = predict_cell(yolo, pop.rows, Path(args.root), cell, client, params, conf=conf)
         name = f"{tag}_s{params.seed}.jsonl" if args.at_conf \
             else f"{tag}_raw_s{params.seed}.jsonl"
@@ -352,5 +393,18 @@ def main() -> int:
     return args.fn(args)
 
 
+def _measured_prereg(params: ScoringParams) -> dict | None:
+    """`recompute_prereg.py` 산출물이 있으면 게이트에 넘긴다. 없으면 그 게이트는 skip."""
+    p = params.out / "prereg_recomputed_v1.json"
+    if not p.exists():
+        return None
+    d = json.loads(p.read_text(encoding="utf-8"))["populations"]["frozen_total"]
+    return {
+        "all_positive_macro_f1": d["all_positive_macro_f1"],
+        "spec_only_macro_f1": d["spec_only_macro_f1"],
+    }
+
+
 if __name__ == "__main__":
     raise SystemExit(main())
+

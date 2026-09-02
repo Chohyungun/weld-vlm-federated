@@ -72,19 +72,29 @@ def test_계약_밖_사유는_조용히_삼키지_않고_멈춘다() -> None:
         adapt([line("img1", parse_error="gpu_oom", parsed=None)])
 
 
-def test_미지_iso_코드는_오답이지_보정_대상이_아니다() -> None:
+def test_미지_iso_코드는_버리되_세어서_보고된다() -> None:
+    """**정책이 바뀌었다**(체크리스트 13 · 80번 D7). 항목만 버리고 레코드는 살린다.
+
+    보정하지 않는다는 원칙은 그대로다 — 코드를 고쳐 주지 않고 버린다. 달라진 것은
+    **레코드 전체를 폐기하지 않는다**는 것이고, 버린 사실은 `n_unknown_code` 로 남는다.
+    버려진 결함은 예측 집합에서 빠져 미검출로 계상되므로 오답 처리의 방향도 유지된다.
+    """
     parsed = {"defects": [{"iso_code": "9999", "bbox_px": [1, 1, 2, 2]}],
               "verdict": "판정불가", "cited_clauses": []}
     rep = adapt([line("img1", parsed=parsed)])
-    assert rep.adapter_failures == {"unknown_iso_code": 1}
+    assert rep.n_unknown_code == 1
     assert rep.records[0].defects == []
+    assert rep.records[0].parse_ok is True
 
 
-def test_퇴화_bbox_는_bbox_invalid_로_오답_처리된다() -> None:
-    parsed = {"defects": [{"iso_code": "2011", "bbox_px": [5, 5, 5, 9]}],
+def test_퇴화_bbox_는_그_항목만_버린다() -> None:
+    """퇴화 박스 하나가 나머지 결함을 죽이지 않는다 — 분리형과 같은 정책이다."""
+    parsed = {"defects": [{"iso_code": "2011", "bbox_px": [5, 5, 5, 9]},
+                          {"iso_code": "2011", "bbox_px": [10, 10, 20, 20]}],
               "verdict": "판정불가", "cited_clauses": []}
     rep = adapt([line("img1", parsed=parsed)])
-    assert rep.adapter_failures == {"bbox_invalid": 1}
+    assert rep.n_bad_items == 1
+    assert len(rep.records[0].defects) == 1
 
 
 def test_enum_밖_verdict_는_스키마_위반이다() -> None:
@@ -138,14 +148,29 @@ def test_단일_채점기가_통합형_레코드도_그대로_채점한다() -> 
 
 
 def test_좌표_건강_판정이_미검출과_붕괴를_가른다() -> None:
+    """판정 트리가 배정 통계를 함께 본다(체크리스트 10 · 80번 D5).
+
+    `n_pred` 가 없으면 "잴 재료가 없다"로 떨어진다 — 예측이 0건인 것과 좌표가 무너진
+    것은 다른 상태이므로 입력에 예측 수가 반드시 들어와야 한다.
+    """
     healthy = coord_health({"bbox_iou_matched_only": 0.44, "n_matched": 134,
-                            "n_gold": 1281, "coord_suspect": False})
+                            "n_assigned": 134, "n_zero_overlap_assigned": 0,
+                            "n_pred": 166, "n_gold": 1281, "coord_suspect": False})
     assert healthy["verdict"].startswith("건강")
 
     collapsed = coord_health({"bbox_iou_matched_only": 0.055, "n_matched": 400,
-                              "n_gold": 1281, "coord_suspect": True})
+                              "n_assigned": 400, "n_zero_overlap_assigned": 0,
+                              "n_pred": 500, "n_gold": 1281, "coord_suspect": True})
     assert "붕괴" in collapsed["verdict"]
 
+    # 클래스는 맞는데 겹침이 전무한 상태 — 규약 불일치의 서명
+    space_mismatch = coord_health({"bbox_iou_matched_only": 0.0, "n_matched": 0,
+                                   "n_assigned": 400, "n_zero_overlap_assigned": 400,
+                                   "n_pred": 400, "n_gold": 1281,
+                                   "coord_suspect": False})
+    assert "붕괴" in space_mismatch["verdict"]
+
     silent = coord_health({"bbox_iou_matched_only": 0.0, "n_matched": 0,
-                           "n_gold": 1281, "coord_suspect": False})
+                           "n_assigned": 0, "n_zero_overlap_assigned": 0,
+                           "n_pred": 0, "n_gold": 1281, "coord_suspect": False})
     assert "판정 불가" in silent["verdict"]
