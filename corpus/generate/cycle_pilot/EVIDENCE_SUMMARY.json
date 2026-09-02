@@ -4,7 +4,7 @@
   "note": "원본 jsonl 은 용량 때문에 미추적. 항목 축약본 EVIDENCE.jsonl 과 이 요약이 근거다. 원본이 있으면 SNAPSHOT.sha256 으로 대조한다.",
   "regenerate": "uv run python -m corpus.generate.snapshot_cycle_pilot",
   "n_evidence_items": 612,
-  "snapshot_digest": "2cedbe011af5098b54e068ab5f17191766040ebf71070633e2fa3c963fd1982a"
+  "snapshot_digest": "fb316682843cde37906f143e669397338458512581572b55195c928e11277400"
  },
  "recomputed": {
   "reasoning:deepseek": {
