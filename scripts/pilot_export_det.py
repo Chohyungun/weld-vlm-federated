@@ -35,13 +35,18 @@ OUT_ROOT = Path("outputs/pilot_c").resolve()
 CONF = 0.25
 IMGSZ = 416
 
-CELLS = {
-    "sep_local_c0": OUT_ROOT / "sep_local" / "sep_local_c0.npz",
-    "sep_local_c1": OUT_ROOT / "sep_local" / "sep_local_c1.npz",
-    "sep_local_c2": OUT_ROOT / "sep_local" / "sep_local_c2.npz",
-    "sep_central": OUT_ROOT / "sep_central" / "sep_central.npz",
-    "sep_fed": OUT_ROOT / "sep_fed" / "latest.npz",
-}
+
+def _cells(root: Path) -> dict[str, Path]:
+    return {
+        "sep_local_c0": root / "sep_local" / "sep_local_c0.npz",
+        "sep_local_c1": root / "sep_local" / "sep_local_c1.npz",
+        "sep_local_c2": root / "sep_local" / "sep_local_c2.npz",
+        "sep_central": root / "sep_central" / "sep_central.npz",
+        "sep_fed": root / "sep_fed" / "latest.npz",
+    }
+
+
+CELLS = _cells(OUT_ROOT)
 
 
 def load_model_from_npz(npz_path: Path):
@@ -112,4 +117,16 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # 어블레이션은 팔마다 평가셋이 다르다(431 / 418장). 같은 코드로 스냅샷·산출 경로만 바꾼다.
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--snapshot", default=None)
+    ap.add_argument("--out", default=None)
+    a = ap.parse_args()
+    if a.snapshot:
+        SNAPSHOT_DIR = a.snapshot
+    if a.out:
+        OUT_ROOT = Path(a.out).resolve()
+        CELLS = _cells(OUT_ROOT)
     main()

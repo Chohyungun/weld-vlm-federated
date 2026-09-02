@@ -261,6 +261,21 @@ def test_파일럿은_크기만_줄인다():
     assert diff == {"imgsz", "batch", "close_mosaic"}, f"예상 밖 차이: {diff}"
 
 
+def test_계측용_비결정_프로파일은_결정성만_다르다():
+    """`probe_nondet` 은 결정성 비용을 재기 위한 계측 전용이다.
+
+    이 프로파일로 만든 가중치는 실험 산출물이 아니다. 다른 키까지 함께 풀리면 계측이
+    다른 것을 재게 되고, 무엇보다 '실험용처럼 보이는' 프로파일이 하나 더 생긴다.
+    """
+    from detection.round_runner import FIXED_OVERRIDES, FIXED_PROBE_NONDET, PROFILES
+
+    diff = {k for k in FIXED_OVERRIDES if FIXED_PROBE_NONDET[k] != FIXED_OVERRIDES[k]}
+    assert diff == {"deterministic"}, f"예상 밖 차이: {diff}"
+    assert FIXED_PROBE_NONDET["deterministic"] is False
+    # 실험용 프로파일 둘은 결정성을 유지한다
+    assert all(PROFILES[p]["deterministic"] is True for p in ("main", "pilot"))
+
+
 def test_파일럿에서도_칸별_덮어쓰기는_막힌다():
     from detection.round_runner import train_round
 
