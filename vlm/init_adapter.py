@@ -29,7 +29,13 @@ import torch
 
 from detection import serialize
 
-__all__ = ["build_initial_adapter", "assert_same_start", "InitProof"]
+__all__ = [
+    "build_initial_adapter",
+    "assert_same_start",
+    "assert_injected_matches",
+    "adapter_proof",
+    "InitProof",
+]
 
 
 class InitProof(dict):
@@ -114,6 +120,33 @@ def build_initial_adapter(
     return arrays, keys, ref
 
 
+def assert_injected_matches(sent: list[np.ndarray], keys: list[str],
+                            after: InitProof | dict, *, who: str) -> None:
+    """G2-5 — 주입이 **서버가 보낸 것과 같은지** 대조한다.
+
+    이전 구조는 클라이언트끼리만 비교했다. 세 클라이언트 모두에서 주입이 no-op 이면
+    셋의 증빙이 똑같으므로 그대로 통과한다(80번 C4 ③). 기준은 옆 클라이언트가 아니라
+    **서버가 보낸 페이로드**여야 한다.
+
+    `set_peft_model_state_dict` 는 내부적으로 `strict=False` 라 키가 안 맞아도 조용히
+    넘어간다. 그 반환값을 믿는 대신 주입 후 상태를 다시 읽어 여기서 대조한다.
+    """
+    want = adapter_proof(sent, keys)
+    bad = []
+    if want["keys_digest"] != after.get("keys_digest"):
+        bad.append(f"keys_digest {after.get('keys_digest', '')[:12]} != 서버 {want['keys_digest'][:12]}")
+    if round(want["l2"], 9) != round(float(after.get("l2", -1.0)), 9):
+        bad.append(f"l2 {after.get('l2')} != 서버 {want['l2']}")
+    if [round(x, 9) for x in want["tensor_digest"]] != \
+       [round(x, 9) for x in after.get("tensor_digest", [])]:
+        bad.append(f"tensor_digest {after.get('tensor_digest')} != 서버 {want['tensor_digest']}")
+    if bad:
+        raise RuntimeError(
+            f"{who}: 주입이 서버 페이로드와 다르다 — set_peft_model_state_dict 가 "
+            "조용히 무시했을 수 있다(strict=False):\n  " + "\n  ".join(bad)
+        )
+
+
 def assert_same_start(proofs: dict[int, InitProof | dict]) -> None:
     """클라이언트별 r0 초기 어댑터 증빙이 전부 같은지 검사한다.
 
@@ -134,6 +167,11 @@ def assert_same_start(proofs: dict[int, InitProof | dict]) -> None:
            [round(x, 9) for x in ref.get("tensor_digest", [])]:
             bad.append(f"c{c}: tensor_digest {p.get('tensor_digest')} != "
                        f"c{ref_c} {ref.get('tensor_digest')}")
+        # G2-4 — 계산해 두고 비교하지 않던 값(80번 F14). 한 줄에 전 텐서를 덮는다.
+        if round(float(p.get("l2", -1.0)), 9) != round(float(ref.get("l2", -2.0)), 9):
+            bad.append(f"c{c}: l2 {p.get('l2')} != c{ref_c} {ref.get('l2')}")
+        if int(p.get("n_tensors", -1)) != int(ref.get("n_tensors", -2)):
+            bad.append(f"c{c}: n_tensors {p.get('n_tensors')} != c{ref_c} {ref.get('n_tensors')}")
     if bad:
         raise RuntimeError(
             "r0 초기 어댑터가 클라이언트마다 다르다 — 함정 #3(독립 난수 상쇄) 재발이다:\n  "

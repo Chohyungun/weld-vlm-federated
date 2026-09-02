@@ -23,6 +23,8 @@ except ModuleNotFoundError as exc:  # pragma: no cover
 
 from detection.budget_audit import AccountingCell, AccountingMatrix
 from fl.atomic_log import AtomicLog, RoundTimer, new_run_id
+from fl.round_wiring import (CANONICAL_KEYS_KEY, SERVER_ROUND_KEY,
+                             finalize_accounting, make_round_recorder)
 from fl.strategy import METRICS_KEY, RoundFailure, WeldFedAvg
 
 __all__ = ["app", "build_accounting", "cell_to_client_ids"]
@@ -79,6 +81,10 @@ def _cell_from_metrics(round_idx: int, m: dict[str, Any]) -> AccountingCell:
                             else int(m["stopper-true-count"])),
         stopper_calls=(None if m.get("stopper-calls") is None
                        else int(float(m["stopper-calls"]))),
+        # 판정 2 — 실제 집계 가중과 그 단위를 회계가 들고 있어야 RQ3 을 해석할 수 있다.
+        fedavg_weight=(float(m["num-examples"]) if m.get("num-examples") is not None else None),
+        fedavg_weight_unit=str(m.get("weight-unit", "")),
+        supervised_tokens=int(float(m.get("supervised-tokens", 0))),
     )
 
 
@@ -109,42 +115,13 @@ def main(grid: "Grid", context: "Context") -> None:
         cell=cell,
         split_hash=str(cfg.get("split-hash", "")),
     )
-    timer = RoundTimer()
-
-    def on_round_end(server_round: int, cells: list[dict[str, Any]], agg: Any) -> None:
-        elapsed = timer.lap()
-        for m in cells:
-            accounting.record(_cell_from_metrics(server_round - 1, m))
-            # 학습 과정의 실측만 남긴다. 성능 지표는 학습이 끝난 뒤 일괄 채점으로 얻는다.
-            up = int(m.get("payload-bytes", 0))
-            atomic.log_round(
-                round_idx=server_round - 1,
-                client_id=int(m.get("client-idx", -1)),
-                n_train_samples=int(m.get("num-examples", 0)),
-                metrics={
-                    "epochs_ran": float(m.get("epochs-ran", 0)),
-                    "optimizer_steps": float(m.get("optimizer-steps", 0)),
-                    "optimizer_updates": float(m.get("optimizer-updates", 0)),
-                    "param_l2": float(m.get("param-l2", 0.0)),
-                    "lr": float(m.get("lr", float("nan"))),
-                },
-                bytes_up=up,
-                bytes_down=int(getattr(agg, "payload_bytes_down", 0) or up),
-                wall_time=elapsed,
-            )
-        # 서버 시점 집계 진단도 한 줄로 남긴다(client_id = "server")
-        atomic.log_round(
-            round_idx=server_round - 1,
-            client_id="server",
-            n_train_samples=int(getattr(agg, "total_examples", 0)),
-            metrics={
-                "global_l2": float(getattr(agg, "global_norm", 0.0)),
-                "bn_divergence": float(getattr(agg, "bn_buffer_divergence", 0.0)),
-                "missing_variance_ratio": float(getattr(agg, "missing_variance_ratio", 0.0)),
-            },
-            wall_time=elapsed,
-        )
-        _save_round(out_dir, server_round, num_rounds, agg)
+    # 라운드 종료 기록은 `fl/round_wiring` 하나가 만든다. 두 배선이 각자 구현하던 것이
+    # 한쪽에만 있는 버그를 낳았다(80번 F1·F9 / G10-2).
+    on_round_end = make_round_recorder(
+        accounting=accounting, atomic=atomic, timer=RoundTimer(),
+        cell_from_metrics=_cell_from_metrics,
+        on_save=lambda sr, agg: _save_round(out_dir, sr, num_rounds, agg),
+    )
 
     strategy = WeldFedAvg(
         expected_nodes=len(client_ids),
@@ -153,40 +130,97 @@ def main(grid: "Grid", context: "Context") -> None:
         on_round_end=on_round_end,
     )
 
-    train_cfg = ConfigRecord({"total-epochs": total_epochs, "local-epochs": local_epochs})
-    strategy.start(
-        grid=grid,
-        initial_arrays=initial_arrays,
-        num_rounds=num_rounds,
-        train_config=train_cfg,
-    )
-
-    # 회계 마감 — 빈 셀이 하나라도 있으면 run 무효다.
-    accounting.to_csv(out_dir / "accounting.csv")
-    accounting.to_json(out_dir / "accounting.json")
-    report = accounting.audit()
-    gaps = atomic.audit_rounds(num_rounds, list(client_ids) + ["server"])
-    if gaps:
-        report.failures.extend(gaps)
-        report.ok = False
-    if not report.ok:
-        raise RoundFailure(
-            "회계 감사 실패 — run 을 무효로 처리한다. 채점하지 않는다.\n  - "
-            + "\n  - ".join(report.failures)
+    train_cfg = ConfigRecord({
+        "cell": cell,
+        # 정본 키 이름은 별도로 실린다 — ArrayRecord 가 리스트 경로에서 이름을 인덱스로
+        # 바꾸기 때문이다. 이것이 없어서 `flwr run` 경로가 라운드 1 에서 즉사했다(F1).
+        CANONICAL_KEYS_KEY: list(canonical_keys),
+        "total-epochs": total_epochs,
+        "local-epochs": local_epochs,
+        "num-rounds": num_rounds,
+        "base-seed": int(cfg.get("base-seed", 0)),
+        "run-stamp": str(cfg.get("run-stamp", "")),
+        "resume-root": str(cfg.get("resume-root", "")),
+        **_cell_train_config(cell, cfg, out_dir),
+    })
+    try:
+        strategy.start(
+            grid=grid,
+            initial_arrays=initial_arrays,
+            num_rounds=num_rounds,
+            train_config=train_cfg,
+        )
+    finally:
+        # **`finally` 여야 한다.** 학습 밖 단계(요약 출력 등)가 죽어도 회계는 디스크에
+        # 남아야 한다 — 파일럿에서 정확히 그 순서로 라운드를 날렸다(F1).
+        finalize_accounting(
+            accounting=accounting, atomic=atomic, out_dir=out_dir,
+            num_rounds=num_rounds, client_ids=list(client_ids),
         )
 
 
-def _load_initial(cell: str, cfg: Any) -> tuple["ArrayRecord", list[str], dict]:
-    """칸별 초기 가중치·정본 키·기준 state_dict.
+def _cell_train_config(cell: str, cfg: Any, out_dir: Path) -> dict[str, Any]:
+    """칸별로만 다른 설정. 라운드 루프는 두 칸이 같은 코드를 탄다."""
+    if cell == "sep_fed":
+        return {
+            "views-root": str(cfg["views-root"]),
+            "model": str(cfg["model"]),
+            "project": str(out_dir / "runs"),
+            "profile": str(cfg.get("profile", "main")),
+            **{f"num-examples-{i}": int(n)
+               for i, n in enumerate(_as_list(cfg.get("num-examples", [])))},
+        }
+    return {f"client-tag-{i}": str(t)
+            for i, t in enumerate(_as_list(cfg.get("client-tags", ["C1", "C2", "C3"])))}
 
-    구현은 칸 진입 시점에 채운다. 검출은 동결 출발 체크포인트에서 `serialize` 로 뽑고,
-    VLM 은 어댑터 키 집합만 싣는다(교환 단위가 state_dict 의 진부분집합이다).
+
+def _as_list(v: Any) -> list:
+    """run_config 값은 문자열로 오기도 한다. 쉼표 구분을 허용한다."""
+    if isinstance(v, str):
+        return [x for x in (p.strip() for p in v.split(",")) if x]
+    return list(v)
+
+
+def _load_initial(cell: str, cfg: Any) -> tuple["ArrayRecord", list[str], dict]:
+    """칸별 초기 가중치·정본 키·기준 state_dict — **동일 출발 증명의 서버 쪽**.
+
+    두 칸 모두 "시드를 박고 1회 만들어 캐시에 떨군 뒤 전 클라이언트가 그것을 주입받는다"
+    는 같은 규약을 쓴다. 검출은 `detection/init_weights`, 통합형은 `vlm/init_adapter` 이고
+    두 모듈의 시그니처·캐시 규약을 일부러 맞춰 두었다(74번 감사 C-1 의 비대칭 지적).
+
+    이전 판은 `NotImplementedError` 라 `flwr run` 진입점이 아예 못 떴다(80번 F1).
     """
-    raise NotImplementedError(
-        "초기 파라미터 로더는 칸 진입 시 연결한다. "
-        "검출: 동결 출발 체크포인트 → serialize.state_dict_to_ndarrays. "
-        "VLM: 30번 명세 G2(교환 폐포 감사) 통과 후 어댑터 키 집합."
-    )
+    from detection import serialize
+
+    seed = int(cfg.get("base-seed", 0))
+    cache = Path(str(cfg["project"])).resolve() / "fl" / cell / "initial.npz"
+
+    if cell == "sep_fed":
+        from detection.init_weights import build_initial_weights
+
+        arrays, keys, ref = build_initial_weights(
+            pretrained=str(cfg.get("model", "yolo11s.pt")),
+            nc=int(cfg.get("num-classes", 4)), seed=seed, cache_path=cache,
+        )
+    elif cell == "uni_fed":
+        from vlm.init_adapter import build_initial_adapter
+
+        arrays, keys, ref = build_initial_adapter(
+            model_id=str(cfg["model"]) if cfg.get("model") else None,
+            seed=seed, cache_path=cache,
+        )
+        if not ref:
+            # F11 — 캐시 분기가 ref 를 비워 돌려주면 `assert_compatible` 이 모든 키에서
+            # "기준 모델에 없는 키"로 죽는다. 검출 쪽은 캐시에서도 ref 를 다시 만든다.
+            # 여기서 배열로부터 복원해 같은 계약을 지킨다.
+            import torch
+
+            ref = {k: torch.as_tensor(a) for k, a in zip(keys, arrays)}
+    else:
+        raise ValueError(f"연합 칸이 아니다: {cell!r}. 허용: {FED_CELLS}")
+
+    serialize.assert_compatible(arrays, keys, ref)
+    return ArrayRecord(list(arrays)), list(keys), ref
 
 
 def _save_round(out_dir: Path, server_round: int, num_rounds: int, agg: Any) -> None:
