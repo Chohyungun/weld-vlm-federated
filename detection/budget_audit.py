@@ -291,6 +291,26 @@ class AccountingMatrix:
                 f"가중이 0 이하인 셀 {len(zero_w)}개 {zero_w[:6]} — 그 클라이언트의 학습이 "
                 "집계에 반영되지 않았다는 뜻이다"
             )
+        # (4''') 단위 일치 — 회계가 단위를 거짓말하지 못하게 한다. 85번 ① 에서 실제
+        #        전송 가중은 페어 수인데 weight-unit 은 supervised_tokens 로 남았다.
+        #        단위가 가리키는 값과 기록된 가중이 다르면 그 자체가 실패다.
+        for (r, c), cell in sorted(self.cells.items()):
+            if cell.fedavg_weight is None or not cell.fedavg_weight_unit:
+                continue
+            expect = {"supervised_tokens": float(cell.supervised_tokens),
+                      "num_examples": float(cell.num_examples)}.get(cell.fedavg_weight_unit)
+            if expect is None:
+                failures.append(
+                    f"라운드 {r} 클라이언트 {c}: 알 수 없는 가중 단위 "
+                    f"{cell.fedavg_weight_unit!r}"
+                )
+            elif abs(cell.fedavg_weight - expect) > 1e-6:
+                failures.append(
+                    f"라운드 {r} 클라이언트 {c}: 가중 단위가 거짓말한다 — unit="
+                    f"{cell.fedavg_weight_unit} 이면 가중이 {expect} 여야 하는데 "
+                    f"{cell.fedavg_weight} 가 전송됐다 (85번 ① 형태)"
+                )
+
         unweighted = sorted([r, c] for (r, c), cell in self.cells.items()
                             if cell.fedavg_weight is None)
         if unweighted:
