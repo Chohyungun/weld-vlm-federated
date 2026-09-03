@@ -42,8 +42,10 @@ if [ "${GATE_DEFER_HEAVY:-0}" = "1" ]; then
   uv run pytest -q -m "not resource_heavy"
   TEST_RC=$?
   DEFERRED=$(uv run pytest -q -m resource_heavy --collect-only 2>/dev/null | grep -c "::" || echo 0)
+  # 원장 기록을 머지 커밋에 원자 포함 — 커밋 뒤에 쓰면 다음 게이트가 더러운 트리를 본다(실사고 09-03)
   echo "$(date -u +%FT%TZ) merge=$BRANCH deferred=$DEFERRED reason=main-experiment-running" >> docs/dev_log/gate_deferred_ledger.txt
-  echo "== 유예 원장 기록: resource_heavy $DEFERRED 건 (본실험 점유 중) =="
+  git add docs/dev_log/gate_deferred_ledger.txt
+  echo "== 유예 원장 기록: resource_heavy $DEFERRED 건 (본실험 점유 중, 머지 커밋에 포함) =="
 else
   uv run pytest -q
   TEST_RC=$?
