@@ -54,5 +54,5 @@ if [ $TEST_RC -ne 0 ]; then
   exit 4
 fi
 
-git commit -F "$MSGFILE" --no-edit
+CTO_GATE_COMMIT=1 git commit -F "$MSGFILE" --no-edit
 echo "== 게이트 통과, 머지 완료: $(git log --oneline -1) =="
