@@ -120,11 +120,34 @@ def _seed_dir(seed_no: int) -> Path:
     return OUT / f"seed{seed_no}"
 
 
+def _commit_free_gb() -> float:
+    """Windows **커밋 차지** 여유(GlobalMemoryStatusEx.ullAvailPageFile).
+
+    `psutil.virtual_memory().available`(물리 RAM)이 아니다 — 그 지표를 잘못 써서 시드 1
+    체인이 6시간 헛대기 후 자멸했다(이 기계의 평시 물리 여유가 ~13GB 라 16GB 문턱을
+    영원히 못 넘는다). §4-6 을 실제로 죽인 것은 물리 RAM 이 아니라 커밋 고갈이었다
+    (건강 시 24~30GB, 고장 시 0.5GB — 전부 커밋 기준 실측).
+    """
+    import ctypes
+
+    class _MSX(ctypes.Structure):
+        _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+
+    st = _MSX()
+    st.dwLength = ctypes.sizeof(_MSX)
+    ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st))
+    return st.ullAvailPageFile / 1e9
+
+
 def _headroom_wait(need_gpu_mib: int = 9000, need_commit_gb: float = 16.0,
                    deadline_s: int = 6 * 3600) -> None:
-    """GPU·호스트 커밋 여유를 기다린다. §4-6 이 두 번 죽은 자리다(B 와의 경합)."""
-    import psutil
-
+    """GPU·호스트 **커밋** 여유를 기다린다. §4-6 이 두 번 죽은 자리다(B 와의 경합)."""
     end = time.monotonic() + deadline_s
     while time.monotonic() < end:
         try:
@@ -136,11 +159,11 @@ def _headroom_wait(need_gpu_mib: int = 9000, need_commit_gb: float = 16.0,
             gpu_free = total - used
         except Exception:                                     # noqa: BLE001
             gpu_free = 0
-        commit_free = psutil.virtual_memory().available / 1e9
+        commit_free = _commit_free_gb()
         if gpu_free >= need_gpu_mib and commit_free >= need_commit_gb:
             return
         print(f"[대기] GPU {gpu_free}MiB(need {need_gpu_mib}) / "
-              f"RAM {commit_free:.1f}GB(need {need_commit_gb}) — 60초 후 재확인", flush=True)
+              f"커밋 {commit_free:.1f}GB(need {need_commit_gb}) — 60초 후 재확인", flush=True)
         time.sleep(60)
     raise SystemExit("자원 여유를 6시간 기다렸지만 확보되지 않았다 — 멈추고 보고한다.")
 

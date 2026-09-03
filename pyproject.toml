@@ -115,6 +115,12 @@ explicit = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    # 본실험이 자원을 점유한 동안 게이트가 이 마커를 **유예 원장에 기록**하고 나머지
+    # 전량을 돌린다(스킵 아님 — 유휴 창에서 전량 재실행 의무). 붙는 대상은 자원 여유를
+    # 600초 기다렸다 실패하는 flwr 스모크류다.
+    "resource_heavy: 자원(RAM·GPU) 여유를 기다렸다 실패하는 시험 — 본실험 중 유예 원장 대상",
+]
 
 [tool.ruff]
 line-length = 100
