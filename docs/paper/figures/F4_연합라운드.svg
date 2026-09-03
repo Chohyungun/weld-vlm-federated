@@ -59,7 +59,7 @@
   <!-- 회사 C -->
   <rect x="880" y="330" width="200" height="170" rx="8" fill="#f2f2f2" stroke="#444" stroke-width="1.8"/>
   <text x="980" y="352" text-anchor="middle" font-size="14.5" font-weight="bold" fill="#222">회사 C</text>
-  <text x="980" y="371" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">알루미늄, 소형</text>
+  <text x="980" y="371" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">취득처가 다름, 소형</text>
   <text x="980" y="392" text-anchor="middle" font-size="12.5" fill="#333">사진 7,143장</text>
   <text x="980" y="412" text-anchor="middle" font-size="12.5" fill="#333">② 자기 사진으로만 학습</text>
   <circle cx="906" cy="459" r="9" fill="none" stroke="#a33" stroke-width="2"/>
