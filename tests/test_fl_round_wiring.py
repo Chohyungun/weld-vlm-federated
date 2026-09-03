@@ -377,6 +377,7 @@ def _run(tmp_path: Path, *, out_name: str, fail_at: str = "", _attempts: int = 3
     )
 
 
+@pytest.mark.resource_heavy
 def test_run_simulation_스모크가_완주한다(tmp_path):
     """더미 2텐서·3클라이언트·R=2·E=1 로 서버 루프를 끝까지 돌린다(G10-2).
 
@@ -394,6 +395,7 @@ def test_run_simulation_스모크가_완주한다(tmp_path):
     assert {int(k): v for k, v in audit["total_epochs_by_client"].items()} == {0: 2, 1: 2, 2: 2}
 
 
+@pytest.mark.resource_heavy
 def test_가중_단위가_회계에_기록되고_거짓말하지_않는다(tmp_path):
     """총괄 판정 2 / 85번 ① — 실제 전송 가중이 단위가 가리키는 값과 같아야 한다.
 
@@ -418,6 +420,7 @@ def test_가중_단위가_회계에_기록되고_거짓말하지_않는다(tmp_p
         )
 
 
+@pytest.mark.resource_heavy
 def test_원자_로그에_epochs_ran_과_lr_이_남는다(tmp_path):
     """F9 — ⑦ 로그에 이 둘이 없어 R×E=N 을 복원할 수 없었고, 그래서 회계가 상수로 채워졌다."""
     import csv
@@ -429,6 +432,7 @@ def test_원자_로그에_epochs_ran_과_lr_이_남는다(tmp_path):
         assert need in names, f"원자 로그에 {need} 가 없다 — 사후 복원이 불가능해진다"
 
 
+@pytest.mark.resource_heavy
 def test_클라이언트를_죽이면_실패하되_회계는_디스크에_남는다(tmp_path):
     """`finally` 가 실제로 값을 하는지 — 파일럿에서 라운드를 날린 그 고장이다."""
     out = tmp_path / "killed"
@@ -573,6 +577,7 @@ def test_uni_fed_클라이언트가_주입을_서버_기준으로_검증한다()
 # `flwr run` 이 하는 일을 재현한다: 등록된 두 컴포넌트 + run_config 를 실은 Context.
 # ==========================================================================
 
+@pytest.mark.resource_heavy
 def test_flwr_run_진입점이_끝까지_돈다(tmp_path):
     import os
 
