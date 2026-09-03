@@ -233,6 +233,55 @@ def _gate_content_free(ctx: GateContext) -> GateResult:
         blocking=blocking, value={"pass_line": line, "above": above})
 
 
+@register("stratified_scoring")
+def _gate_stratified(ctx: GateContext) -> GateResult:
+    """총괄 판정 6 이행 — 층화 블록이 **같은 산출물 안에** 있고 계측기가 작동하는가.
+
+    13번 D-1: 본채점 진입점이 층화 블록을 산출하지 않아 병기가 사람 손 절차(별도
+    스크립트 실행)에 걸려 있었다. 이제 `score` 가 블록을 만들고 이 게이트가 매 채점마다
+    본다 — (1) 기본 K 의 표가 있고, (2) 채점된 칸 전부에 행이 있으며, (3) 지름길 규칙
+    행의 lift 가 정확히 0 이다. 0 이 아니면 층 정의나 기준선이 틀린 것이다(계측기 고장).
+    """
+    from evaluation.strata import SHORTCUT_TAG
+
+    s = ctx.extra.get("stratified")
+    if s is None:
+        return GateResult("stratified_scoring", True, "층화 블록 미제공 — 판정 안 함",
+                          skipped=True)
+    k = str(s.get("default_k", ""))
+    rows = (s.get("by_k") or {}).get(k)
+    if not rows:
+        return GateResult("stratified_scoring", False,
+                          f"기본 K={k or '?'} 의 층화 표가 없다 — 판정 6(병기) 미이행")
+    missing = sorted(set(ctx.metrics or {}) - set(rows))
+    if missing:
+        return GateResult("stratified_scoring", False,
+                          f"층화 표에 없는 칸: {missing}", value={"k": k})
+    sc = rows.get(SHORTCUT_TAG)
+    if not sc:
+        return GateResult("stratified_scoring", False,
+                          "지름길 규칙 행이 없다 — 판별력 계측 부재", value={"k": k})
+    lift = float(sc.get("stratified_lift", float("nan")))
+    lift_w = float(sc.get("stratified_lift_weighted", float("nan")))
+    summary = {
+        "k": k,
+        "n_cells": len(rows) - 1,
+        "shortcut_global_macro_f1": sc.get("global_macro_f1"),
+        "shortcut_stratified_macro_f1": sc.get("stratified_macro_f1"),
+        "shortcut_lift": lift,
+        "n_strata_impure_scored": sc.get("n_strata_impure_scored"),
+    }
+    if not (abs(lift) <= 1e-9 and abs(lift_w) <= 1e-9):
+        return GateResult(
+            "stratified_scoring", False,
+            f"지름길 규칙의 lift 가 0 이 아니다 ({lift:+.3e} / 가중 {lift_w:+.3e}) — "
+            "층 정의 또는 기준선 정의가 틀렸다", value=summary)
+    return GateResult(
+        "stratified_scoring", True,
+        f"K={k} · 칸 {len(rows) - 1} + 지름길 · 지름길 lift {lift:+.1e} · "
+        f"비순수 구간 {sc.get('n_strata_impure_scored')}", value=summary)
+
+
 def run_scoring_gates(ctx: GateContext) -> dict:
     """등록된 게이트를 **전부** 돌린다. 골라 부르지 않는다.
 

@@ -31,9 +31,8 @@ from evaluation.params import FROZEN_SNAPSHOT, add_common_args, params_from_args
 from evaluation.strata import (
     DEFAULT_K,
     ID_GRANULARITY,
-    bins_for,
-    shortcut_pred,
-    stratified_score,
+    SHORTCUT_TAG,
+    stratified_table,
 )
 
 
@@ -83,18 +82,11 @@ def main() -> int:
         return structure_only(args, frozen, n_tv, pop.classes)
 
     ks = list(ID_GRANULARITY) if args.ladder else [args.k]
-    out: dict[str, dict] = {}
+    # 본채점(`score_cells.py score`)과 **같은 함수**로 표를 만든다. 지름길 규칙은 그 안에서
+    # 하나의 모델로 들어간다 — 판별력 시험. 여기는 기본 K 의 구간별 상세를 추가로 남긴다.
+    out = stratified_table(preds, gold, classes, ks, snapshot=frozen_dir, detail_k=args.k)
     for k in ks:
-        bins = bins_for(sorted(pop.eval_ids), k, snapshot=frozen_dir)
-        # 지름길 규칙을 하나의 모델로 넣는다 — 판별력 시험
-        shortcut = shortcut_pred(gold, classes, bins)
-        rows = {}
-        for tag, pc in {**preds, "__shortcut__": shortcut}.items():
-            rep = stratified_score(pc, gold, classes, bins, k=k,
-                                   keep_detail=(k == args.k and tag == "__shortcut__"))
-            rows[tag] = rep.as_dict(with_detail=(k == args.k and tag == "__shortcut__"))
-        out[str(k)] = rows
-        s = rows["__shortcut__"]
+        s = out[str(k)][SHORTCUT_TAG]
         print(f"[K={k:3d}] 구간 {s['n_strata']:3d} (채점가능 {s['n_strata_scored']:3d}, "
               f"순수 {s['n_pure_strata']:3d} · 이미지 {s['frac_images_in_pure']:.1%}) "
               f"지름길: 전역 {s['global_macro_f1']:.4f} · "
@@ -121,7 +113,7 @@ def main() -> int:
     print(f"\n=== K={args.k} 전역 대 층화 ===")
     print(f"{'칸':16s} {'전역F1':>8s} {'층화F1':>8s} {'lift':>9s} "
           f"{'비순수F1':>9s} {'비순수lift':>11s}")
-    for tag in [*ALL_TAGS, "__shortcut__"]:
+    for tag in [*ALL_TAGS, SHORTCUT_TAG]:
         r = out[k0].get(tag)
         if not r:
             continue
@@ -151,11 +143,9 @@ def structure_only(args, frozen, n_tv, classes) -> int:
     print(f"동결 평가셋 {len(ids)}장 · 결함 {sum(1 for v in gold.values() if v)}장")
 
     rows = []
+    table = stratified_table({}, gold, classes, ID_GRANULARITY, snapshot=Path(args.frozen))
     for k in ID_GRANULARITY:
-        bins = bins_for(sorted(ids), k, snapshot=Path(args.frozen))
-        sc = shortcut_pred(gold, classes, bins)
-        rep = stratified_score(sc, gold, classes, bins, k=k)
-        d = rep.as_dict()
+        d = table[str(k)][SHORTCUT_TAG]
         rows.append(d)
         print(f"[K={k:3d}] 구간 {d['n_strata']:4d} · 채점가능 {d['n_strata_scored']:4d} · "
               f"순수 {d['n_pure_strata']:4d} · **비순수 {d['n_strata_impure_scored']:4d}** · "
