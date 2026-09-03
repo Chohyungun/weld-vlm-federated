@@ -14,6 +14,14 @@
 66번(`score_all_cells_v1.json`)의 저장 지표를 완전 일치로 대조하고, 어긋나면 0 이
 아닌 코드로 죽는다. 저장 파일을 덮어쓰지 않는다 — 증거를 지우면 대조가 무의미해진다.
 
+**차단은 종료 코드다** (13번 D-7). `run_scoring_gates` 의 `blocking_failures` 가 비어
+있지 않으면 산출물은 증거로 남기되 `score` 가 2 로 죽는다. 이전 판은 출력만 하고 0 을
+돌려줘 "차단 ○" 열이 기록 이상이 아니었다. 종료 코드 표는 `evaluation/README.md`.
+
+`score` 는 전역 지표 옆에 **같은 산출물 안에** id 구간 층화 블록을 싣고(총괄 판정 6 ·
+13번 D-1), 채점 디렉터리에 `prereg_recomputed_v1.json` 이 없으면 동결본에서 재산출해
+선배치한다(13번 D-8 파생). 둘 다 게이트가 매 채점마다 확인한다.
+
 GPU 를 쓰지 않는다. `predict` 만 CPU 추론이고 나머지는 순수 채점이다.
 """
 
@@ -45,6 +53,7 @@ from evaluation.cells import (
 )
 from evaluation.gates import GateContext, run_scoring_gates
 from evaluation.params import (
+    FROZEN_SNAPSHOT,
     ScoringParams,
     add_common_args,
     params_from_args,
@@ -53,6 +62,58 @@ from evaluation.params import (
 from evaluation.probes.metadata_probe import MetaSample, trivial_bound
 from evaluation.probes.p9_runner import contexts_from_snapshot, p9_all_cells
 from evaluation.score import coord_health, failure_breakdown
+from evaluation.strata import (
+    DEFAULT_K,
+    ID_GRANULARITY,
+    SHORTCUT_TAG,
+    STRATUM_AXIS,
+    stratified_table,
+)
+
+EXIT_OK = 0
+EXIT_REGRESSION = 1
+"""저장 지표(65·66번) 대조 불일치 — 리팩토링이 값을 바꿨다."""
+EXIT_GATE_BLOCKED = 2
+"""차단 게이트 실패. 산출물은 쓰이지만 **이 채점을 결과로 쓰지 마라.**"""
+
+
+def exit_code(gates: dict, regressions: dict) -> tuple[int, str]:
+    """`score` 의 종료 코드와 사유. **차단 게이트가 대조 불일치보다 앞선다** — 게이트
+    실패는 채점 신뢰의 전제가 빈 것이고, 대조 불일치는 그 위의 정의 변경 문제다."""
+    blocked = list(gates.get("blocking_failures") or [])
+    if blocked:
+        return EXIT_GATE_BLOCKED, (
+            f"차단 게이트 실패 {blocked} — 산출물은 증거로 남겼으나 이 채점을 결과로 쓰지 마라")
+    bad = [k for k, v in regressions.items() if v.get("checked") and not v["identical"]]
+    if bad:
+        return EXIT_REGRESSION, f"저장 지표 대조 불일치 {bad}"
+    return EXIT_OK, "차단 실패 없음 · 저장 지표 대조 일치"
+
+
+def stratified_block(pop: Population, by_cell: dict,
+                     frozen: Path = Path(FROZEN_SNAPSHOT)) -> dict:
+    """전역 지표 옆에 **같은 산출물 안에** 층화 지표를 싣는다 (총괄 판정 6 · 13번 D-1).
+
+    절단점은 동결본 train+val 에서만 온다(A 의 `data.id_strata`). 채점 모집단이 파일럿
+    부분집합이든 동결 평가셋 전량이든 같은 절단점을 받는다. K 사다리 전체를 내되 기본
+    K 를 표시한다 — `stratified_scoring` 게이트가 기본 K 의 표와 지름길 행을 본다.
+    구간별 상세는 `stratified_compare.py --ladder` 가 낸다(여기서는 표만).
+    """
+    gold = {i: sorted(pop.gold_codes.get(i, ())) for i in pop.eval_ids}
+    preds = {tag: {r.image_id: sorted(r.iso_codes) for r in recs}
+             for tag, recs in by_cell.items()}
+    by_k = stratified_table(preds, gold, pop.classes, ID_GRANULARITY, snapshot=frozen)
+    return {
+        "axis": STRATUM_AXIS,
+        "default_k": DEFAULT_K,
+        "ladder": list(ID_GRANULARITY),
+        "cut_points_from": f"{frozen} train+val (data.id_strata)",
+        "by_k": by_k,
+        "note": (
+            "층화 Macro-F1 은 지시 문면, lift 는 완료 기준이 겨냥한 수다(83번 §1-2). "
+            "지름길 규칙(__shortcut__) 행의 lift 가 0 이 아니면 층 정의나 기준선이 틀린 것이다"
+        ),
+    }
 
 
 def score_all(
@@ -205,6 +266,12 @@ def cmd_score(args) -> int:
 
     reg = check_regressions(params, metrics)
     diag = diagnostics(params, pop, all_records, adapters)
+    strata = stratified_block(pop, by_cell)
+    k0 = str(strata["default_k"])
+    for tag in [*ALL_TAGS, SHORTCUT_TAG]:
+        s = strata["by_k"][k0][tag]
+        print(f"[{tag}] 층화(K={k0}) macroF1 {s['stratified_macro_f1']:.4f} · "
+              f"lift {s['stratified_lift']:+.5f} · 비순수 lift {s['stratified_lift_impure']:+.5f}")
     gates = run_scoring_gates(GateContext(
         metrics=metrics,
         records_by_cell=by_cell,
@@ -220,13 +287,16 @@ def cmd_score(args) -> int:
         extra={
             "gate_pass_line": params.gate_pass_line,
             "measured_prereg": _measured_prereg(params),
+            "stratified": strata,
         },
     ))
+    code, why = exit_code(gates, reg)
     payload = {
         "params": params.as_dict(),
         "n_eval": pop.n_eval,
         "scorer": "evaluation.score.score_records (단일)",
         "metrics": metrics,
+        "stratified": strata,
         "failures": failures,
         "adapters": adapters,
         "coord_health": {t: coord_health(m) for t, m in metrics.items()},
@@ -234,6 +304,8 @@ def cmd_score(args) -> int:
         "gate": gate_check(metrics, params),
         "regression": reg,
         "gates_evaluated": gates,
+        "exit_code": code,
+        "exit_reason": why,
         **diag,
     }
     dest = params.out / "score_cells_v1.json"
@@ -253,12 +325,13 @@ def cmd_score(args) -> int:
     bad = [k for k, v in reg.items() if v.get("checked") and not v["identical"]]
     for k in bad:
         print(f"{k} 대조 불일치: {reg[k]['diffs'][:3]}")
-    if bad:
-        return 1
-    print("65·66번 대조: 완전 일치")
+    if not bad:
+        print("65·66번 대조: 완전 일치" if any(v.get("checked") for v in reg.values())
+              else "65·66번 대조: 저장본 없음 — 미대조")
     print(f"게이트: {payload['gate']['verdict']} (선 {params.gate_pass_line}, "
           f"{params.gate.source})")
-    return 0
+    print(f"종료 코드 {code} — {why}")
+    return code
 
 
 def cmd_gate(args) -> int:
@@ -393,15 +466,27 @@ def main() -> int:
     return args.fn(args)
 
 
-def _measured_prereg(params: ScoringParams) -> dict | None:
-    """`recompute_prereg.py` 산출물이 있으면 게이트에 넘긴다. 없으면 그 게이트는 skip."""
-    p = params.out / "prereg_recomputed_v1.json"
+def _measured_prereg(params: ScoringParams) -> dict:
+    """채점 디렉터리의 `prereg_recomputed_v1.json`. **없으면 동결본에서 재산출해 선배치한다.**
+
+    13번 D-8 파생: 파일이 없으면 `prereg_constants_reproduced` 게이트가 `skipped` 로
+    갈렸다 — 검증에서 실측된 구멍이다. 상수는 동결 스냅샷의 결정론적 함수이므로 채점기가
+    스스로 만들어 두는 것이 사람 손 선배치보다 안전하다. 파일은 남겨 다음 채점이 되읽고,
+    digest 와 출처를 게이트 value 에 실어 어느 동결본에서 왔는지가 표에 남게 한다.
+    """
+    from scripts.probe.recompute_prereg import FILE_NAME, recompute, write_payload
+
+    p = params.out / FILE_NAME
     if not p.exists():
-        return None
-    d = json.loads(p.read_text(encoding="utf-8"))["populations"]["frozen_total"]
+        write_payload(recompute(), p)
+        print(f"사전등록 상수 재산출 → 선배치 {p}")
+    d = json.loads(p.read_text(encoding="utf-8"))
+    tot = d["populations"]["frozen_total"]
     return {
-        "all_positive_macro_f1": d["all_positive_macro_f1"],
-        "spec_only_macro_f1": d["spec_only_macro_f1"],
+        "all_positive_macro_f1": tot["all_positive_macro_f1"],
+        "spec_only_macro_f1": tot["spec_only_macro_f1"],
+        "snapshot_digest": d.get("snapshot_digest"),
+        "source": str(p),
     }
 
 

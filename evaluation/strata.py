@@ -242,6 +242,43 @@ def stratified_score(
     )
 
 
+SHORTCUT_TAG = "__shortcut__"
+"""지름길 규칙(구간→최빈 라벨)을 하나의 예측기로 넣을 때 쓰는 태그. **매 채점마다** 같은
+표에 실린다 — 판별력 시험이 일회성 검증이 아니라 상시 계측이 되게. 이 행의 lift 가 0 이
+아니면 층 정의나 기준선 정의가 틀린 것이고, `stratified_scoring` 게이트가 그것을 본다."""
+
+
+def stratified_table(
+    preds_by_tag: Mapping[str, Mapping[str, Iterable[str]]],
+    gold_codes: Mapping[str, Iterable[str]],
+    classes: Sequence[str],
+    ks: Sequence[int],
+    *,
+    snapshot: Path | None = None,
+    detail_k: int | None = None,
+) -> dict[str, dict[str, dict]]:
+    """K 별 · 예측기별 층화 보고 — `{str(k): {tag: report_dict}}`.
+
+    본채점 진입점(`score_cells.py score`)과 대조표 스크립트(`stratified_compare.py`)가
+    **같은 함수**로 표를 만든다(13번 D-1 — 층화가 별도 스크립트에만 살아 있던 배선 공백).
+    지름길 규칙은 `SHORTCUT_TAG` 예측기로 항상 함께 넣는다. `detail_k` 를 주면 그 K 의
+    지름길 행에 구간별 상세를 남긴다.
+    """
+    ids = sorted(gold_codes)
+    gold = {i: sorted(gold_codes[i]) for i in ids}
+    out: dict[str, dict[str, dict]] = {}
+    for k in ks:
+        bins = bins_for(ids, k, snapshot=snapshot)
+        shortcut = shortcut_pred(gold, classes, bins)
+        rows: dict[str, dict] = {}
+        for tag, pc in {**dict(preds_by_tag), SHORTCUT_TAG: shortcut}.items():
+            detail = k == detail_k and tag == SHORTCUT_TAG
+            rep = stratified_score(pc, gold, classes, bins, k=k, keep_detail=detail)
+            rows[tag] = rep.as_dict(with_detail=detail)
+        out[str(k)] = rows
+    return out
+
+
 def shortcut_pred(
     gold_codes: Mapping[str, Iterable[str]],
     classes: Sequence[str],
