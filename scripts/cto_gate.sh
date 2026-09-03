@@ -16,6 +16,16 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 2
 fi
 
+# 게이트 잠금 — 게이트가 열려 있는 동안 다른 커밋이 머지를 조기 종결시키는 사고 방지
+# (실사고 2026-09-03: 열린 머지 중 총괄 문서 커밋이 F 머지를 테스트 완료 전에 완결시켰다)
+LOCK=".git/CTO_GATE_OPEN"
+if [ -f "$LOCK" ]; then
+  echo "!! 다른 게이트가 열려 있다 ($LOCK). 동시 게이트 금지." >&2
+  exit 5
+fi
+echo "$BRANCH $(date -u +%FT%TZ)" > "$LOCK"
+trap 'rm -f "$LOCK"' EXIT
+
 git merge --no-commit --no-ff "$BRANCH"
 MERGE_RC=$?
 if [ $MERGE_RC -ne 0 ]; then
