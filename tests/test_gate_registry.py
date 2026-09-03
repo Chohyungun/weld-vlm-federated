@@ -40,6 +40,7 @@ def test_expected_gates_are_registered() -> None:
         "required_tags",
         "coord_space_contract",
         "scoring_population",
+        "stratified_scoring",          # 13번 D-1 — 판정 6 이행 담보
     } <= set(REGISTRY)
 
 
@@ -183,3 +184,60 @@ def test_duplicate_registration_is_refused() -> None:
 
     with pytest.raises(ValueError):
         register("no_cloud_logging")(lambda ctx: None)
+
+
+# --------------------------------------------------------------------------------------
+# stratified_scoring — 판정 6 이행 담보 (13번 D-1). 층화 블록이 같은 산출물 안에 있는가
+# --------------------------------------------------------------------------------------
+
+def _strata(lift: float = 0.0, lift_w: float = 0.0, *, cells=("a", "b"),
+            with_shortcut: bool = True, k: int = 64) -> dict:
+    from evaluation.strata import SHORTCUT_TAG
+
+    rows = {c: {"stratified_lift": -0.2, "stratified_macro_f1": 0.3} for c in cells}
+    if with_shortcut:
+        rows[SHORTCUT_TAG] = {
+            "stratified_lift": lift, "stratified_lift_weighted": lift_w,
+            "global_macro_f1": 0.8957, "stratified_macro_f1": 0.8614,
+            "n_strata_impure_scored": 13,
+        }
+    return {"default_k": k, "by_k": {str(k): rows}}
+
+
+def _result(out: dict, name: str) -> dict:
+    return next(r for r in out["results"] if r["name"] == name)
+
+
+def test_stratified_gate_skips_without_block() -> None:
+    """단위 문맥(블록 미제공)에서는 skipped — passed 와 구분된다."""
+    r = _result(run_scoring_gates(GateContext(env={})), "stratified_scoring")
+    assert r["skipped"] and r["passed"]
+
+
+def test_stratified_gate_passes_when_shortcut_lift_is_zero() -> None:
+    metrics = {"a": {"macro_f1": 0.2}, "b": {"macro_f1": 0.3}}
+    out = run_scoring_gates(GateContext(env={}, metrics=metrics,
+                                        extra={"stratified": _strata()}))
+    r = _result(out, "stratified_scoring")
+    assert r["passed"] and not r["skipped"] and r["blocking"]
+    assert "stratified_scoring" not in out["blocking_failures"]
+    assert r["value"]["n_cells"] == 2
+
+
+def test_stratified_gate_has_teeth() -> None:
+    """실패해야 하는 입력 넷 — 전부 **차단** 실패여야 한다."""
+    metrics = {"a": {"macro_f1": 0.2}, "b": {"macro_f1": 0.3}}
+
+    def blocked(extra: dict) -> bool:
+        out = run_scoring_gates(GateContext(env={}, metrics=metrics, extra=extra))
+        return "stratified_scoring" in out["blocking_failures"]
+
+    # (1) 기본 K 의 표가 없다 — 병기 미이행
+    assert blocked({"stratified": {"default_k": 64, "by_k": {}}})
+    # (2) 채점된 칸이 층화 표에 없다
+    assert blocked({"stratified": _strata(cells=("a",))})
+    # (3) 지름길 규칙 행이 없다 — 판별력 계측 부재
+    assert blocked({"stratified": _strata(with_shortcut=False)})
+    # (4) 지름길 규칙의 lift 가 0 이 아니다 — 층 정의 또는 기준선 고장
+    assert blocked({"stratified": _strata(lift=1e-6)})
+    assert blocked({"stratified": _strata(lift_w=-1e-6)})
