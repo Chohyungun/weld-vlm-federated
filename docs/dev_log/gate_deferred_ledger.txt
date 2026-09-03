@@ -7,3 +7,4 @@
 2026-09-03T06:44:36Z push deferred=resource_heavy reason=main-experiment-running
 2026-09-03T06:47:16Z push deferred=resource_heavy reason=main-experiment-running
 2026-09-03T08:36:45Z merge=wt/A deferred=5 reason=main-experiment-running
+2026-09-03T08:39:10Z merge=wt/C deferred=5 reason=main-experiment-running
