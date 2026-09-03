@@ -1,0 +1,6 @@
+2026-09-03T03:30:18Z merge=wt/C deferred=5 reason=main-experiment-running
+2026-09-03T03:42:11Z push deferred=resource_heavy reason=main-experiment-running
+2026-09-03T03:52:27Z push deferred=resource_heavy reason=main-experiment-running
+2026-09-03T06:23:10Z merge=wt/F deferred=5 reason=main-experiment-running
+2026-09-03T06:23:18Z push deferred=resource_heavy reason=main-experiment-running
+2026-09-03T06:34:31Z merge=wt/E deferred=5 reason=main-experiment-running
