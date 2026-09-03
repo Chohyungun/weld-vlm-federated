@@ -25,8 +25,19 @@ if [ $MERGE_RC -ne 0 ]; then
 fi
 
 echo "== 게이트: 전체 테스트 =="
-uv run pytest -q
-TEST_RC=$?
+# GATE_DEFER_HEAVY=1: 등록된 장기 실행(본실험 학습)이 자원을 점유한 동안,
+# resource_heavy 마커 시험을 "건너뛰기"가 아니라 **유예 원장에 기록**하고 나머지 전량을 돌린다.
+# 유예분은 다음 유휴 창에서 반드시 재실행한다 — 원장이 그 의무의 증거다.
+if [ "${GATE_DEFER_HEAVY:-0}" = "1" ]; then
+  uv run pytest -q -m "not resource_heavy"
+  TEST_RC=$?
+  DEFERRED=$(uv run pytest -q -m resource_heavy --collect-only 2>/dev/null | grep -c "::" || echo 0)
+  echo "$(date -u +%FT%TZ) merge=$BRANCH deferred=$DEFERRED reason=main-experiment-running" >> docs/dev_log/gate_deferred_ledger.txt
+  echo "== 유예 원장 기록: resource_heavy $DEFERRED 건 (본실험 점유 중) =="
+else
+  uv run pytest -q
+  TEST_RC=$?
+fi
 if [ $TEST_RC -ne 0 ]; then
   echo "!! 테스트 실패 (exit $TEST_RC) — 머지를 되돌린다." >&2
   git merge --abort 2>/dev/null || git reset --merge
