@@ -323,13 +323,26 @@ FEDERATION_CONFIG = ("options.num-supernodes=3 "
 
 def _flwr_run(run_config: str, log_path: Path) -> None:
     """정식 진입점. pyproject [tool.flwr] 의 등록 앱을 CLI 로 띄운다."""
-    cmd = ["flwr", "run", ".", "local-sim", "--run-config", run_config,
+    import os
+    import sys
+
+    # 실행 파일은 **이 인터프리터의 venv** 에서 찾는다. 분리 launcher 는 venv 의
+    # python.exe 를 직접 띄우므로 Scripts 디렉터리가 PATH 에 없고, 맨 이름 "flwr" 는
+    # FileNotFoundError(WinError 2)로 죽는다 — 시드 1 ③ 완주 직후 ④ 진입에서 실측.
+    # preflight 는 `uv run` 이 PATH 를 채워 줘서 지나갔다(환경 차이가 숨긴 결함).
+    scripts_dir = Path(sys.executable).resolve().parent
+    flwr_exe = scripts_dir / ("flwr.exe" if os.name == "nt" else "flwr")
+    if not flwr_exe.exists():
+        raise SystemExit(f"flwr 실행 파일이 인터프리터 venv 에 없다: {flwr_exe}")
+    cmd = [str(flwr_exe), "run", ".", "local-sim", "--run-config", run_config,
            "--federation-config", FEDERATION_CONFIG, "--stream"]
     print("  $", " ".join(cmd[:5]), "…", flush=True)
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    import os
 
     env = dict(os.environ)
+    # flwr 가 자식으로 띄우는 flower-superlink / flwr-simulation 등도 같은 Scripts 에서
+    # 찾게 PATH 앞에 붙인다.
+    env["PATH"] = str(scripts_dir) + os.pathsep + env.get("PATH", "")
     # flwr 의 FAB 설치 경로가 pyproject 를 인코딩 지정 없이 read_text() 한다 — Windows
     # 기본(cp949)에서 한글 주석 바이트에 UnicodeDecodeError 로 죽는다(실측, exit 700).
     # 프레임워크 결함이라 우리 쪽에서 파이썬 기본 인코딩을 UTF-8 로 강제한다.
