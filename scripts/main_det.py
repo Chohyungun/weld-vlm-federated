@@ -316,9 +316,13 @@ def _flwr_run_config(seed_no: int, *, cell: str, rounds: int, local_epochs: int,
 #: 저장소 밖에 살게 된다. 매 실행 명시해 **여기(버전 관리)가 정본**이 되게 한다.
 #: GPU 1.0 = 클라이언트 동시성 1 — VLM 은 물론 검출도 batch 32 에서 7.7GB 라
 #: 두 클라이언트를 동시에 못 올린다.
-FEDERATION_CONFIG = ("options.num-supernodes=3 "
-                     "options.backend.client-resources.num-cpus=2 "
-                     "options.backend.client-resources.num-gpus=1.0")
+#: 키는 flwr 1.33 `SimulationConfig` proto 필드명(`-`→`_`)의 **평탄** 형식이다.
+#: 구판 pyproject 의 `options.backend.client-resources.…` 중첩 형식을 그대로 넘기면
+#: "Unknown simulation config field(s)" 로 거부된다 — 시드 1 ④ 진입에서 실측.
+#: 형식 검증은 tests/test_fl_round_wiring.py 가 flwr 자체 파서로 한다.
+FEDERATION_CONFIG = ("num-supernodes=3 "
+                     "client-resources-num-cpus=2 "
+                     "client-resources-num-gpus=1.0")
 
 
 def _flwr_run(run_config: str, log_path: Path) -> None:
