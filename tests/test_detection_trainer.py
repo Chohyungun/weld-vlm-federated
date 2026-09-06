@@ -68,6 +68,16 @@ def test_트레이너가_접촉점_넷을_실제로_오버라이드한다():
         assert getattr(FedDetectionTrainer, name) is not getattr(BaseTrainer, name, None)
 
 
+def test_검증_로더_접촉점을_오버라이드한다():
+    """접촉점 6 — 검증 로더만 workers=0 (14번 §B-3, 15번 G3). stock 과 다른 함수여야 한다."""
+    from ultralytics.models.yolo.detect import DetectionTrainer
+
+    from detection.fed_trainer import FedDetectionTrainer
+
+    assert "get_dataloader" in FedDetectionTrainer.__dict__, "get_dataloader 오버라이드가 없다"
+    assert FedDetectionTrainer.get_dataloader is not DetectionTrainer.get_dataloader
+
+
 def test_no_op_들이_학습루프가_기대하는_형태를_돌려준다():
     """no-op 이 루프의 계약을 깨면 학습이 죽는다."""
     from detection.fed_trainer import FedDetectionTrainer

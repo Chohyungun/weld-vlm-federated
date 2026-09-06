@@ -13,6 +13,7 @@ Ultralytics는 자체 저장·재개·조기 종료·EMA 로직을 갖고 있고
 | `optimizer='auto'`가 `lr0`·`momentum`을 버리고 AdamW로 교체 | 5칸 공통 고정의 '최적화' | `SGD` 명시 + 실사용 기록 |
 | `save_model()`이 EMA 가중치를 저장 | FedAvg는 raw 가중치를 평균한다 | EMA 비활성 + no-op |
 | mlflow 자동 연동, 전역 `runs_dir` 재지향 | 로깅 단일 경로, 저장소 위생 | `mlflow=False` + `project` 절대경로 |
+| 검증 로더를 무조건 만들고 `workers×2`(cpu 캡→12) 워커를 생성 즉시 spawn·프리페치 | 소비자 없는 로더가 호스트 커밋 ≈13.7 GB·기동 I/O 를 먹는다(14번 §B) | val 로더만 `workers=0` (`get_dataloader`) |
 
 ## 라운드 경계를 어떻게 만드는가
 
@@ -159,12 +160,14 @@ class LoaderReseed:
 class FedDetectionTrainer(DetectionTrainer):
     """라운드 단위로 호출되는 검출 트레이너.
 
-    내부 접촉점은 아래 넷으로 한정한다. 늘리면 Ultralytics 버전 변동에 그만큼 취약해진다.
+    내부 접촉점은 아래 여섯으로 한정한다. 늘리면 Ultralytics 버전 변동에 그만큼 취약해진다.
       1. `_setup_train`  — 가중치 주입, 전역 epoch 오프셋, 재개 상태 적용, mosaic 재적용,
                            EMA off, stopper 교체
       2. `validate`      — no-op
       3. `final_eval`    — no-op (stock은 best.pt를 로드한다)
       4. `save_model`    — no-op (stock은 EMA 가중치를 저장한다)
+      5. `optimizer_step` — 실제 갱신 횟수 계측 (학습 동작 무변경)
+      6. `get_dataloader` — 검증 로더만 `workers=0` (소비되지 않는 로더의 워커 12개 제거, 14번 §B-3)
     """
 
     def __init__(
@@ -192,6 +195,9 @@ class FedDetectionTrainer(DetectionTrainer):
         self.loader_reseed: LoaderReseed | None = None
         #: 실제 `optimizer.step()` 횟수. 배치 수와 다르다 — `optimizer_step` 주석 참조.
         self.n_optimizer_updates: int = 0
+        #: 검증 DataLoader 의 실효 워커 수 증빙. None = 아직 안 만듦(또는 미계측), 0 = 접촉점 6 적용.
+        #: "설정이 아니라 실제로 돈 값"을 남긴다 — `RoundResult.val_loader_workers` 로 나간다.
+        self.val_loader_workers: int | None = None
 
         if cfg is None:
             from ultralytics.cfg import get_cfg  # 지역 import — 모듈 로드를 가볍게 유지
@@ -314,6 +320,49 @@ class FedDetectionTrainer(DetectionTrainer):
         `False`를 돌려주어 `on_model_save` 콜백도 돌지 않게 한다.
         """
         return False
+
+    # -- 접촉점 6 -------------------------------------------------------------
+    def get_dataloader(self, dataset_path, batch_size: int = 16, rank: int = 0, mode: str = "train"):
+        """검증 로더만 `workers=0` 으로 만든다. 학습 로더는 stock 그대로다 (14번 §B-3, 15번 G3).
+
+        stock 은 `_build_train_pipeline` 이 검증 로더를 **무조건** 만들고(`trainer.py:291`),
+        `workers*2`(=16, `os.cpu_count()` 캡으로 실효 12)·`batch*2` 로 `InfiniteDataLoader` 를
+        생성하는 순간 워커 spawn + `prefetch_factor=4` 프리페치가 시작된다(`build.py:75·376`).
+        그런데 이 래퍼는 `validate`·`final_eval` 이 no-op 이라 그 로더를 **한 번도 소비하지
+        않는다**(`trainer.py` 의 `test_loader` 참조는 대입 L291 과 close L646 뿐). 워커 12개 =
+        호스트 커밋 ≈ 13.7 GB 와 클라이언트 기동마다 검증 이미지 3,072장 프리페치 I/O 가 순수
+        낭비였고, 09-07 06:12 의 SuperLink 하트비트 만료도 그 I/O 폭주 직후였다(15번 §1).
+
+        등가: 데이터셋 생성(`build_dataset`)은 stock 그대로 둔다 — `get_img_files` →
+        `check_file_speeds` 가 전역 `random` 을 1회 소비하므로(`base.py:184`, `data/utils.py:86`)
+        생략하면 주 프로세스 RNG 궤적이 갈라진다. 로더의 `_base_seed` 는 로더 자신의 generator
+        에서만 뽑히고(torch `dataloader.py`), 학습 로더는 검증 로더보다 먼저 생성·반복자가 확정된다
+        (`trainer.py:281`). 따라서 학습 배치열·워커 시드·모델/옵티마이저 상태는 B 전후 bit 동일해야
+        하며, 판정은 재실행 라운드 1 오라클(`global_r001.npz` sha256 `5c0378a1…`)이 한다.
+        """
+        if mode != "val":
+            return super().get_dataloader(dataset_path, batch_size, rank, mode)
+        from ultralytics.data import build_dataloader
+        from ultralytics.utils.torch_utils import torch_distributed_zero_first
+
+        with torch_distributed_zero_first(rank):  # detect/train.py:91-92 와 동일
+            dataset = self.build_dataset(dataset_path, mode, batch_size)
+        loader = build_dataloader(
+            dataset,
+            batch=batch_size,
+            workers=0,  # stock: self.args.workers * 2
+            shuffle=False,  # stock: mode == "train"
+            rank=rank,
+            drop_last=False,  # stock: self.args.compile and mode == "train"
+            device=self.device,
+        )
+        nw = getattr(loader, "num_workers", None)
+        if nw != 0:
+            raise RuntimeError(
+                f"검증 로더 워커 {nw} != 0 — 상류 build_dataloader 배선이 바뀌었다(B 전제 위반, 14번 §B-3)"
+            )
+        self.val_loader_workers = int(nw)
+        return loader
 
     # -- 보조 ---------------------------------------------------------------
     def _unwrapped_model(self):

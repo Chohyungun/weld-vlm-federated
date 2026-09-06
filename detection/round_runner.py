@@ -51,6 +51,10 @@ FIXED_OVERRIDES: dict[str, Any] = {
     "batch": 32,
     "imgsz": 640,
     "deterministic": True,
+    # 학습 DataLoader 워커 수. Ultralytics 기본값과 같은 8 이지만 **명시 등록**한다(15번 G10) —
+    # 워커 수가 워커 시드 배정을 정하고 그것이 증강 난수열을 정하므로 사실상 공통 고정 항목이다.
+    # 값을 바꾸면 bit 등가가 깨진다(총괄이 8→4 를 기각한 이유). 검증 로더는 래퍼가 0 으로 만든다.
+    "workers": 8,
     # 저장·검증은 래퍼가 no-op 으로 막지만, 인자 수준에서도 꺼 두어 의도를 드러낸다.
     "save": False,
     "val": False,
@@ -123,6 +127,10 @@ class RoundResult:
     #: 통과 여부가 아니라 판정을 했는지를 산출물이 증명하게 한다(80번 G1-6).
     gates_evaluated: list[str] = field(default_factory=list)
     gate_results: dict[str, Any] = field(default_factory=dict)
+    #: 검증 DataLoader 의 실효 워커 수. None = 미계측(B 이전 코드로 돈 산출물, 시드 1 ②③),
+    #: 0 = 접촉점 6(B) 적용, 그 외 = B 가 꺼진 채 돈 실측값. ②③ 은 meta.json 으로, ④ 는 메트릭·
+    #: 원자 로그 지표 행으로 남는다(14번 §B-3, 15번 G3). accounting.csv 열은 늘리지 않는다.
+    val_loader_workers: int | None = None
 
 
 def derive_seed(base_seed: int, round_idx: int, client_idx: int) -> int:
@@ -348,4 +356,5 @@ def train_round(
         resumed_from_epoch=(resume_state.next_epoch if resume_state is not None else None),
         gates_evaluated=gates["gates_evaluated"],
         gate_results=gates["gate_results"],
+        val_loader_workers=getattr(trainer, "val_loader_workers", None),
     )
