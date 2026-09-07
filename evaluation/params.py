@@ -352,6 +352,10 @@ def add_common_args(ap) -> None:
                     help="검출 임계 수동 지정. 지정하면 configs·폴백보다 우선한다")
     ap.add_argument("--gate", type=float, default=None,
                     help="게이트 선 수동 지정. A 의 재산출이 오면 이 플래그로 즉시 재채점한다")
+    ap.add_argument("--cells", choices=("all", "det"), default="all",
+                    help="채점할 칸 집합. det = 검출만(통합형 미실행 구간). "
+                         "생략은 all 이고, 통합형 원시 출력이 없으면 채점이 죽는다 — "
+                         "빠진 칸이 조용히 사라지지 않게 **선택을 명시**하게 만든다")
 
 
 def params_from_args(args) -> ScoringParams:

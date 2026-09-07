@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -116,8 +117,21 @@ def stratified_block(pop: Population, by_cell: dict,
     }
 
 
+def selected_tags(args) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """`--cells` → (검출 태그, 통합형 태그). **빠진 칸을 산출물이 말하게 한다.**
+
+    본실험 시드 1 은 검출 3칸(5모델)만 돌았다 — 통합형 두 칸은 아직 학습 전이다. 그때
+    `ALL_TAGS` 를 그대로 돌리면 통합형 원시 출력 부재로 채점이 죽고, 예외를 삼키면
+    "다섯 칸 채점"이라는 이름 아래 세 칸만 채점된 산출물이 남는다. 선택을 인자로 올려
+    산출물의 `cells_scored` 에 적는다.
+    """
+    if getattr(args, "cells", "all") == "det":
+        return DET_TAGS, ()
+    return DET_TAGS, UNI_TAGS
+
+
 def score_all(
-    params: ScoringParams, pop: Population
+    params: ScoringParams, pop: Population, uni_tags: Sequence[str] = UNI_TAGS
 ) -> tuple[dict, dict, dict, list, dict]:
     """다섯 칸 전부 채점. 검출은 저장 레코드 되읽기, 통합형은 어댑터 경유."""
     known = set(load_label_map().iso_codes())
@@ -134,7 +148,7 @@ def score_all(
         metrics[tag] = score(pop, recs)
         failures[tag] = failure_breakdown(recs)
 
-    for cell in UNI_TAGS:
+    for cell in uni_tags:
         # 원시 생성문에서 매번 새로 어댑트한다. 저장본을 되읽으면 어댑터가 채점 경로에서
         # 빠져 "칸이 갈리는 유일한 지점"이 검증 대상 밖으로 나간다.
         rep = load_unified_records(params, pop, cell, known)
@@ -175,6 +189,21 @@ def recovery(metrics: dict) -> dict:
     locals_ = ("sep_local_C1", "sep_local_C2", "sep_local_C3")
     local_mean = sum(f1(k) for k in locals_) / len(locals_)
     denom = f1("sep_central") - local_mean
+    # 통합형 두 칸이 아직 없으면(검출 선행 구간) **0 을 지어내지 않는다.** 없는 것과
+    # 0 인 것을 섞으면 유지율이 거짓 수를 낸다.
+    uni = (
+        {
+            "central": f1("uni_central"), "fed": f1("uni_fed"),
+            "local_mean": None, "recovery_pct": None,
+            "retention_pct": f1("uni_fed") / f1("uni_central") * 100
+            if f1("uni_central") > 0 else None,
+            "note": "통합·로컬은 '제외' 칸이라 회복률 분모가 없다. 유지율만 낸다",
+        }
+        if {"uni_central", "uni_fed"} <= set(metrics)
+        else {"central": None, "fed": None, "local_mean": None, "recovery_pct": None,
+              "retention_pct": None,
+              "note": "통합형 두 칸 미채점 — 이 채점에 없다(0 이 아니라 부재)"}
+    )
     return {
         "basis": "macro_f1",
         "separated": {
@@ -184,19 +213,13 @@ def recovery(metrics: dict) -> dict:
             "recovery_pct": (f1("sep_fed") - local_mean) / denom * 100
             if denom > 0 else None,
         },
-        "unified": {
-            "central": f1("uni_central"), "fed": f1("uni_fed"),
-            "local_mean": None, "recovery_pct": None,
-            "retention_pct": f1("uni_fed") / f1("uni_central") * 100
-            if f1("uni_central") > 0 else None,
-            "note": "통합·로컬은 '제외' 칸이라 회복률 분모가 없다. 유지율만 낸다",
-        },
-        "caveat": "시드 1세트 · 표본 3,279 · R×E=N=6 (본실험의 1/17). 결론으로 쓰지 않는다",
+        "unified": uni,
+        "caveat": "시드 1세트 — 시드 3세트 집계 전까지 경향만. 결론으로 쓰지 않는다",
     }
 
 
 def diagnostics(params: ScoringParams, pop: Population, all_records: list,
-                adapters: dict) -> dict:
+                adapters: dict, uni_tags: Sequence[str] = UNI_TAGS) -> dict:
     """P9(규격 지름길) · 자명하한 · 통합형 인용 진단. 66번이 내던 것을 그대로 옮겼다."""
     with (params.snapshot / "tiles.csv").open(encoding="utf-8", newline="") as fh:
         prov = {r["image_id"]: r["provenance"] for r in csv.DictReader(fh)}
@@ -216,7 +239,7 @@ def diagnostics(params: ScoringParams, pop: Population, all_records: list,
 
     index_ids = {c.chunk_id for c in load_chunks(load_rag_config().chunk_meta)}
     citation_diag = {}
-    for cell in UNI_TAGS:
+    for cell in uni_tags:
         cited = adapters.get(cell, {}).get("citations", {}) or {}
         flat = [c for v in cited.values() for c in v]
         citation_diag[cell] = {
@@ -256,19 +279,21 @@ def cmd_score(args) -> int:
     params = params_from_args(args)
     params.out.mkdir(parents=True, exist_ok=True)
     pop = load_population(params)
-    print(f"평가셋 {pop.n_eval}장 (정상 {pop.n_normal})")
+    det_tags, uni_tags = selected_tags(args)
+    tags = (*det_tags, *uni_tags)
+    print(f"평가셋 {pop.n_eval}장 (정상 {pop.n_normal}) · 칸 {len(tags)}개 {list(tags)}")
 
-    metrics, failures, adapters, all_records, by_cell = score_all(params, pop)
-    for tag in ALL_TAGS:
+    metrics, failures, adapters, all_records, by_cell = score_all(params, pop, uni_tags)
+    for tag in tags:
         m = metrics[tag]
         print(f"[{tag}] macroF1 {m['macro_f1']:.4f} · miss {m['miss_rate']:.4f} "
               f"· IoU {m['bbox_iou']:.4f}")
 
     reg = check_regressions(params, metrics)
-    diag = diagnostics(params, pop, all_records, adapters)
+    diag = diagnostics(params, pop, all_records, adapters, uni_tags)
     strata = stratified_block(pop, by_cell)
     k0 = str(strata["default_k"])
-    for tag in [*ALL_TAGS, SHORTCUT_TAG]:
+    for tag in [*tags, SHORTCUT_TAG]:
         s = strata["by_k"][k0][tag]
         print(f"[{tag}] 층화(K={k0}) macroF1 {s['stratified_macro_f1']:.4f} · "
               f"lift {s['stratified_lift']:+.5f} · 비순수 lift {s['stratified_lift_impure']:+.5f}")
@@ -294,6 +319,8 @@ def cmd_score(args) -> int:
     payload = {
         "params": params.as_dict(),
         "n_eval": pop.n_eval,
+        "cells_scored": list(tags),
+        "cells_selection": getattr(args, "cells", "all"),
         "scorer": "evaluation.score.score_records (단일)",
         "metrics": metrics,
         "stratified": strata,

@@ -232,7 +232,13 @@ def main() -> int:
 
     # --- 통합형 2칸: 66번 산출물 되읽기. 임계가 없으므로 한 점 -----------------------
     uni: dict[str, dict] = {}
-    for cell in UNI_CELLS:
+    uni_cells = () if getattr(args, "cells", "all") == "det" else UNI_CELLS
+    if not uni_cells:
+        # 검출 선행 구간(본실험 시드 1) — 통합형 두 칸이 아직 없다. **스윕 자체는 성립한다**:
+        # "단일 임계로 결론내지 마라"는 검출 3칸 안에서도 그대로 요구되고, 통합형과의
+        # 예측량 정합점·RQ2 대소만 뒤로 미뤄진다. 빠진 것을 산출물이 말하게 한다.
+        print("통합형 두 칸 미채점(--cells det) — 예측량 정합점·RQ2 대소는 산출하지 않는다")
+    for cell in uni_cells:
         p = params.out / f"{cell}_s{params.seed}.jsonl"
         if not p.exists():
             print(f"통합형 산출물 없음: {p} — 66번을 먼저 돌린다")
@@ -262,7 +268,7 @@ def main() -> int:
             }
         sweep[tag] = {"n_boxes_floor": n_boxes(raw), "by_threshold": per_thr}
         parity_points[tag] = {}
-        for cell in UNI_CELLS:
+        for cell in uni_cells:
             pt = parity_threshold(raw, uni[cell]["n_boxes"])
             if pt.get("threshold") is not None:
                 cut = filter_by_conf(raw, pt["threshold"])
@@ -270,7 +276,12 @@ def main() -> int:
             parity_points[tag][cell] = pt
         print(f"[{tag}] 스윕 완료 · 하한 {sweep[tag]['n_boxes_floor']}박스")
 
-    verdict = rq2_verdict(sweep, uni, params)
+    verdict = (
+        rq2_verdict(sweep, uni, params) if uni
+        else {"single_threshold_comparable": "판정 보류",
+              "n_pairs": 0, "n_flipping_pairs": 0, "pairs": [],
+              "summary": "통합형 두 칸 미채점 — RQ2 대소는 통합형 착수 후에 낸다"}
+    )
 
     payload = {
         "params": params.as_dict(),
@@ -278,6 +289,8 @@ def main() -> int:
         "timing_predict": timing,
         "parity_vs_65": parity,
         "unified": uni,
+        "cells_scored": list(tags) + list(uni),
+        "cells_selection": getattr(args, "cells", "all"),
         "sweep": sweep,
         "parity_points": parity_points,
         "rq2": verdict,

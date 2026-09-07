@@ -174,3 +174,42 @@ def test_clean_scoring_process_exits_zero_with_stratified_block(scoring_runs) ->
     # D-8 봉인 — 저장본이 최종 코드로 산출됐다는 4키
     for key in ("profile", "model_cfg", "predict_chunk", "imgsz_source"):
         assert key in payload["params"], key
+
+
+# --------------------------------------------------------------------------------------
+# 칸 선택 — 빠진 칸이 조용히 사라지지 않게 (17번 시드 1 첫 채점)
+# --------------------------------------------------------------------------------------
+
+def _args(cells: str):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(cells=cells)
+
+
+def test_cells_det_은_검출만_고르고_기본은_전_칸이다() -> None:
+    from evaluation.cells import DET_TAGS, UNI_TAGS
+    from scripts.probe.score_cells import selected_tags
+
+    assert selected_tags(_args("det")) == (DET_TAGS, ())
+    assert selected_tags(_args("all")) == (DET_TAGS, UNI_TAGS)
+    # 인자가 아예 없는 호출부(구 스크립트)는 전 칸이다 — 조용히 줄어들지 않는다
+    assert selected_tags(object()) == (DET_TAGS, UNI_TAGS)
+
+
+def test_통합형이_없으면_회복률이_0_을_지어내지_않는다() -> None:
+    """부재와 0 을 섞으면 유지율이 거짓 수를 낸다."""
+    from scripts.probe.score_cells import recovery
+
+    det = {"sep_central": {"macro_f1": 0.8}, "sep_fed": {"macro_f1": 0.7},
+           "sep_local_C1": {"macro_f1": 0.6}, "sep_local_C2": {"macro_f1": 0.5},
+           "sep_local_C3": {"macro_f1": 0.4}}
+    r = recovery(det)
+    assert r["unified"]["central"] is None and r["unified"]["retention_pct"] is None
+    assert "부재" in r["unified"]["note"]
+    # 분리형 축은 그대로 산출된다
+    assert r["separated"]["local_mean"] == pytest.approx(0.5)
+    assert r["separated"]["recovery_pct"] == pytest.approx((0.7 - 0.5) / (0.8 - 0.5) * 100)
+
+    full = {**det, "uni_central": {"macro_f1": 0.6}, "uni_fed": {"macro_f1": 0.3}}
+    r2 = recovery(full)
+    assert r2["unified"]["retention_pct"] == pytest.approx(50.0)
