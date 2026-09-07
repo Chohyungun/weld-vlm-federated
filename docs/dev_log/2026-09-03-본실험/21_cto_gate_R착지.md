@@ -17,6 +17,12 @@
 | 5 | 시드 2 ④(B 트리, 마감 검사 없음) 라운드 1 마감 직후 원자 로그 `val_loader_workers` 0 ×3 · 트레이서 워커 8 수동 확인(≈ 09-08 11시) | C |
 | 6 | E 계약 통지 답(20번) 수령 — 착지 차단 조건은 아니나 G6 통지 흔적 | E |
 
+## 0-1. 조건 이행 기록
+
+- 조건 1·2: wt/C-bdr `8f9cf67`(09-07 11:13) — 마감 `val_loader_workers == 0` 단언(audit.json `b_evidence`), T-eq 변형 2 → 1 순서로 둘 다 필수(18번 §2-7, 창 2~2.5 h), Minor 9·참고 3 반영, 가짜 Grid 로 실 `Strategy.start` 루프 CPU 시험 추가(18번 §5 미결 1 해소).
+- 조건 6: E 20번(`bad3ad1`·`b54cac3`) 수령 — 재개 접두 인용 원천은 제자리 원자 로그 measured 행, 열린 라운드 행 없음, ⑦ 재개 없음, 조건 표 부록.
+- 남은 조건: 3(창 T7 재확인)·4(T-eq)·5(시드 2 B-ON 확인). D 는 시드 2 구간 회귀 전량 재실행 때 `8f9cf67` 의 마감 단언·ops 스크립트 변경분을 함께 본다.
+
 ## 1. 총괄 판독 요지
 
 - 오프셋은 `configure_train`(super 호출 전)·`aggregate_train`·`aggregate_evaluate` 진입부에 있고 기본 0 이면 동일. 반쪽 배선은 회계 `record` ValueError 로 잡힌다.
