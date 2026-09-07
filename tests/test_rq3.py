@@ -264,3 +264,31 @@ def test_val_loader_workers_flag_is_readable_per_client():
     got = rows_to_client_metric(rows, cell="sep_fed", metric_name="val_loader_workers")
     assert got == {"C1": 0.0, "C3": 0.0}
     assert rows_to_client_metric(rows, cell="sep_fed", metric_name="macro_f1") == {"C1": 0.5}
+
+
+# --- 원자 로그 v3(R 착지, 13 지표) 내성 (19번 R 검수 — 과제 1(d)) ---------------------------------
+#
+# R 착지 뒤 ④ 클라이언트 행은 13 지표(v2 + amp·cudnn_deterministic·cudnn_benchmark·batch)다.
+# 이 파서는 `metric_name` 으로 고르므로 어떤 버전의 접두가 섞여도 궤적·통신량 누적이 같아야 한다.
+
+_V3_EXTRA = ("val_loader_workers", "amp", "cudnn_deterministic", "cudnn_benchmark", "batch")
+
+
+def _extra_rows(round_idx, client, values):
+    rows = []
+    for name, value in zip(_V3_EXTRA, values):
+        row = atomic(round_idx, client, float(value))
+        row["metric_name"] = name
+        rows.append(row)
+    return rows
+
+
+def test_v3_metric_rows_do_not_touch_trajectory_or_traffic():
+    """v1 접두(라운드 0, 추가 행 없음) + v3 라운드(라운드 1, 추가 5행)가 섞여도 결과가 같다."""
+    base = [atomic(0, "C3", 0.62), atomic(1, "C3", 0.70)]
+    mixed = [base[0], base[1], *_extra_rows(1, "C3", (0, 1, 1, 0, 32))]
+    a, b = report(atomic_rows=base), report(atomic_rows=mixed)
+    assert a.trajectory == b.trajectory
+    assert a.gain_per_mb() == b.gain_per_mb()
+    assert rows_to_client_metric(mixed, cell="sep_fed", metric_name="batch") == {"C3": 32.0}
+    assert rows_to_client_metric(mixed, cell="sep_fed", metric_name="macro_f1") == {"C3": 0.70}
