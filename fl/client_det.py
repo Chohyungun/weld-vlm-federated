@@ -81,6 +81,10 @@ def run_client_round(
         "resumed-from-epoch": float(
             result.resumed_from_epoch if getattr(result, "resumed_from_epoch", None) is not None else -1
         ),
+        # 검증 로더 실효 워커 수(B 증빙, 15번 G3). -1 = 미계측, 0 = 미소비 검증 로더를 워커 0 으로 만든 run.
+        "val-loader-workers": float(
+            result.val_loader_workers if getattr(result, "val_loader_workers", None) is not None else -1
+        ),
         "param-l2": float(result.param_l2_norm),
         "payload-bytes": float(result.payload_bytes),
         "seed": float(result.seed),
