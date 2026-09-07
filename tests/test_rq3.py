@@ -234,3 +234,61 @@ def test_formatted_report_marks_a_loser():
     text = format_report(report(fed={"C1": 0.82, "C2": 0.70, "C3": 0.70},
                                 solo={"C1": 0.80, "C2": 0.74, "C3": 0.60}))
     assert "손해" in text
+
+
+# --- 원자 로그 스키마 확장 내성 (16번 B 검수 — 과제 2) -------------------------------
+#
+# C 가 B(검증 로더 워커 제거)를 착지하며 ④ 원자 로그에 `val_loader_workers` 지표 행을
+# 더한다(라운드당 27→30행, 시드 1 원장은 없음). 이 파서는 `metric_name` 으로 고르므로 새 행이
+# 궤적 점이나 통신량 누적에 섞이면 안 된다 — 통신량은 (라운드, 클라이언트)당 한 번만 센다.
+
+def _flag_row(round_idx, client, workers, **kw):
+    row = atomic(round_idx, client, float(workers), **kw)
+    row["metric_name"] = "val_loader_workers"
+    return row
+
+
+def test_val_loader_workers_rows_do_not_touch_trajectory_or_traffic():
+    """지표 행이 늘어도 궤적 점 수·누적 바이트가 같다. -1(미계측 관례)·0(B on) 둘 다."""
+    base = [atomic(0, "C3", 0.62), atomic(1, "C3", 0.70)]
+    with_flags = [base[0], _flag_row(0, "C3", -1), base[1], _flag_row(1, "C3", 0)]
+    a, b = report(atomic_rows=base), report(atomic_rows=with_flags)
+    assert a.trajectory == b.trajectory
+    assert a.gain_per_mb() == b.gain_per_mb()
+    assert b.gain_per_mb()["C3"] == pytest.approx(10.0 / 4, abs=1e-6)   # 4 MB — 두 번 세지 않았다
+
+
+def test_val_loader_workers_flag_is_readable_per_client():
+    """속도 축 '표시' 규칙(15번 G9)의 입력 — 플래그를 클라이언트별로 읽을 수 있다."""
+    rows = [_flag_row(0, "C1", 0), _flag_row(0, "C3", 0), atomic(0, "C1", 0.5)]
+    got = rows_to_client_metric(rows, cell="sep_fed", metric_name="val_loader_workers")
+    assert got == {"C1": 0.0, "C3": 0.0}
+    assert rows_to_client_metric(rows, cell="sep_fed", metric_name="macro_f1") == {"C1": 0.5}
+
+
+# --- 원자 로그 v3(R 착지, 13 지표) 내성 (19번 R 검수 — 과제 1(d)) ---------------------------------
+#
+# R 착지 뒤 ④ 클라이언트 행은 13 지표(v2 + amp·cudnn_deterministic·cudnn_benchmark·batch)다.
+# 이 파서는 `metric_name` 으로 고르므로 어떤 버전의 접두가 섞여도 궤적·통신량 누적이 같아야 한다.
+
+_V3_EXTRA = ("val_loader_workers", "amp", "cudnn_deterministic", "cudnn_benchmark", "batch")
+
+
+def _extra_rows(round_idx, client, values):
+    rows = []
+    for name, value in zip(_V3_EXTRA, values):
+        row = atomic(round_idx, client, float(value))
+        row["metric_name"] = name
+        rows.append(row)
+    return rows
+
+
+def test_v3_metric_rows_do_not_touch_trajectory_or_traffic():
+    """v1 접두(라운드 0, 추가 행 없음) + v3 라운드(라운드 1, 추가 5행)가 섞여도 결과가 같다."""
+    base = [atomic(0, "C3", 0.62), atomic(1, "C3", 0.70)]
+    mixed = [base[0], base[1], *_extra_rows(1, "C3", (0, 1, 1, 0, 32))]
+    a, b = report(atomic_rows=base), report(atomic_rows=mixed)
+    assert a.trajectory == b.trajectory
+    assert a.gain_per_mb() == b.gain_per_mb()
+    assert rows_to_client_metric(mixed, cell="sep_fed", metric_name="batch") == {"C3": 32.0}
+    assert rows_to_client_metric(mixed, cell="sep_fed", metric_name="macro_f1") == {"C3": 0.70}
