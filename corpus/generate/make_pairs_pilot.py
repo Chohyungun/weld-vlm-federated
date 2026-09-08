@@ -20,8 +20,12 @@ bbox 는 원본 픽셀이다(불변조건 8) — 네이티브 좌표 변환은 �
   스키마 · 조항 실재(limits 파생 근거와 대조) · 부등식 방향(기준 서술의 한계·"이하"가
   limits 행과 일치) · 합부 단어 금지 · 정상 페어 결함 어휘 금지 · bbox 경계.
 
-실행: uv run python -m corpus.generate.make_pairs_pilot
-산출: data/processed/pairs_pilot_v1/ (pairs.jsonl + counts.json + SNAPSHOT.sha256)
+`--out` 은 **필수**다. 기본값이 `pairs_pilot_v2` 이던 시절, v2 가 봉인된 뒤로는 인자 없는
+실행 한 번이 봉인본을 지웠다. 옛 가드는 경로가 v1 인지만 봤기 때문에 그 실행을 통과시켰다 —
+이름을 열거하는 가드는 자산이 느는 속도를 못 따라간다. 지금은 계약(`SNAPSHOT.sha256`)을 본다.
+
+실행: uv run python -m corpus.generate.make_pairs_pilot --out data/processed/pairs_pilot_v3
+산출: 지정한 디렉터리 (pairs.jsonl + counts.json + SNAPSHOT.sha256)
 """
 
 from __future__ import annotations
@@ -31,6 +35,9 @@ import json
 import subprocess
 from collections import Counter, defaultdict
 from pathlib import Path
+
+# 봉인 계약의 정본은 `data.frozen_guard` 다 — corpus 쪽 문안만 frozen_out 이 감싼다.
+from corpus.generate.frozen_out import CONTRACT_NAME, assert_not_frozen
 
 # 어휘 락·판정어·아티팩트 검출의 정본 (§4-6-1 ④ · 80번 G2-6·G3-1).
 # **여기에 같은 성격의 정규식을 다시 두지 않는다** — 배선 시험이 강제한다.
@@ -42,10 +49,11 @@ from corpus.generate.numeric_lock import (
 
 REPO = Path(__file__).resolve().parents[2]
 SNAP = REPO / "data/processed/aihub71761_rt_v1_pilot3000"
-#: v1 은 동결이다 (규약 1-6). 정정본은 v2 로 가른다 — 알려진 결함 421건의 회계가
-#: v1 에 붙어 있고, 같은 경로에 덮어쓰면 그 회계가 가리키는 실물이 사라진다.
-OUT = REPO / "data/processed/pairs_pilot_v2"
+#: v1 은 동결이다 (규약 1-6). 알려진 결함 421건의 회계가 v1 에 붙어 있고, 같은 경로에
+#: 덮어쓰면 그 회계가 가리키는 실물이 사라진다. v2 도 09-02 에 봉인됐다.
+#: **둘 다 기본값이 아니다** — `--out` 은 필수이고, 봉인 여부는 계약 파일로 판정한다.
 FROZEN_V1 = REPO / "data/processed/pairs_pilot_v1"
+LEGACY_OUT_DIRS = (FROZEN_V1, REPO / "data/processed/pairs_pilot_v2")
 LIMITS_CSV = REPO / "corpus/rules/limits_v0_pilot.csv"
 
 #: 좌표 규약 (총괄 판정 1, main 47c4dbc). 페어의 `bbox_px` 는 **원본 절대 픽셀**이고
@@ -266,11 +274,14 @@ def main() -> None:
     from corpus.generate.run_cycle_corpus import defect_names
 
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=str(OUT))
+    ap.add_argument("--out", required=True,
+                    help="산출 디렉터리. **기본값 없음** — 봉인본을 겨누는 사고를 막는다."
+                         " 관례대로 판본 접미를 붙여라 (pairs_pilot_v3 …)")
     args = ap.parse_args()
     out_dir = Path(args.out)
-    if out_dir.resolve() == FROZEN_V1.resolve():
-        raise SystemExit("v1 은 동결이다 (규약 1-6) — 덮어쓰지 않는다. --out 을 바꿔라.")
+    # 스냅샷 적재·페어 생성 전에 막는다. 뒤에서 막으면 몇 분을 버리고, 그 사이 산출물이
+    # 봉인본 위에 떨어진다. 이름이 아니라 계약(`SNAPSHOT.sha256`)으로 판정한다.
+    assert_not_frozen(out_dir, what="--out 대상", flag="--out")
 
     snap = load_snapshot(SNAP)
     table = limits_loader.load_limits(str(LIMITS_CSV), pilot=True)
@@ -411,7 +422,7 @@ def main() -> None:
     for f in ("pairs.jsonl", "counts.json", "discarded.jsonl", "PAIRS_META.json"):
         entries.append((hashlib.sha256((out_dir / f).read_bytes()).hexdigest(), f))
     digest = hashlib.sha256("".join(h for h, _ in entries).encode()).hexdigest()
-    with (out_dir / "SNAPSHOT.sha256").open("w", encoding="utf-8", newline="") as fh:
+    with (out_dir / CONTRACT_NAME).open("w", encoding="utf-8", newline="") as fh:
         fh.write("\n".join(f"{h}  {f}" for h, f in entries)
                  + f"\n# snapshot_digest {digest}\n")
 

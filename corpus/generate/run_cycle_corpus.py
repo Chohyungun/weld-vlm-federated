@@ -30,9 +30,12 @@
 예산·같은 사고 정책으로 돌린다 (G12-4) — 파일럿의 56.75pp 는 계열 차이가 아니라
 계열+설정 차이였다.
 
-실행:
-  uv run python -m corpus.generate.run_cycle_corpus --stage generate
-  uv run python -m corpus.generate.run_cycle_corpus --stage judge [--judge-id deepseek]
+`--out` 은 **필수**다. 기본값이 `cycle_pilot` 이던 시절, 인자 없는 실행 한 번이 봉인본을
+지울 수 있었다 (규약 1-6). 봉인된 디렉터리를 겨누면 `frozen_out` 이 진입에서 막는다.
+
+실행 (OUT=corpus/generate/cycle_pilot_v3 처럼 새 판본을 준다):
+  uv run python -m corpus.generate.run_cycle_corpus --out $OUT --stage generate
+  uv run python -m corpus.generate.run_cycle_corpus --out $OUT --stage judge [--judge-id deepseek]
 """
 
 from __future__ import annotations
@@ -50,11 +53,17 @@ from typing import Any, Optional
 
 import yaml
 
+# 봉인 계약의 정본은 `data.frozen_guard` 다 — corpus 쪽 문안만 frozen_out 이 감싼다.
+from corpus.generate.frozen_out import assert_not_frozen
+
 os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
 
 REPO = Path(__file__).resolve().parents[2]
 PILOT_CSV = REPO / "corpus/rules/limits_v0_pilot.csv"
-OUT_DIR = REPO / "corpus/generate/cycle_pilot"
+#: 지난 판본이 남긴 자리. **기본값이 아니다** — `cycle_pilot` 도 `cycle_pilot_v2` 도
+#: 이미 봉인돼 있어서 기본값으로 두면 인자 없는 실행이 봉인본을 지운다. `--out` 은 필수다.
+LEGACY_OUT_DIRS = (REPO / "corpus/generate/cycle_pilot",
+                   REPO / "corpus/generate/cycle_pilot_v2")
 CONFIG_PATH = REPO / "configs/corpus_validation.yaml"
 PASSAGE_DOCS = [
     ("KR-RULES-P2", REPO / "corpus/parse/survey/KR-RULES-P2/KR-RULES-P2_p316-336.md"),
@@ -562,11 +571,16 @@ def main() -> None:
     ap.add_argument("--judge-id", default=None,
                     help="사전 등록본의 후보 id. 미지정 시 등록된 후보를 전부 돌린다")
     ap.add_argument("--stage", choices=["generate", "judge", "all"], default="all")
-    ap.add_argument("--out", default=None, help="산출 디렉터리 (기본 cycle_pilot)")
+    ap.add_argument("--out", required=True,
+                    help="산출 디렉터리. **기본값 없음** — 봉인본을 겨누는 사고를 막는다."
+                         " 관례대로 판본 접미를 붙여라 (cycle_pilot_v3 …)")
     args = ap.parse_args()
 
     cfg = load_config()
-    out_dir = Path(args.out) if args.out else OUT_DIR
+    out_dir = Path(args.out)
+    # 인자를 읽자마자 막는다. 뒤에서 막으면 GPU 를 몇 시간 쓴 뒤에 걸리고, 그때는 이미
+    # 중간 산출물이 봉인본 위에 떨어져 있다 (09-02 `_raw_generated.json` 소실).
+    assert_not_frozen(out_dir, what="--out 대상", flag="--out")
     out_dir.mkdir(parents=True, exist_ok=True)
     batch = args.batch or int(cfg["generation"]["batch_size"])
     mid = out_dir / "_raw_generated.json"

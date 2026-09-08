@@ -20,8 +20,14 @@
 재계산값이 보고서(`cycle_corpus_report.json`·`_phi_report.json`)와 어긋나면 **시끄럽게
 실패한다.** 조용히 지나가면 스냅샷이 틀린 수치를 고정해 버린다.
 
-실행: uv run python -m corpus.generate.snapshot_cycle_pilot [--check]
-  --check 는 쓰지 않고 기존 스냅샷·축약본이 현재 산출물과 일치하는지만 본다.
+`--dir` 은 **필수**다. 기본값이 `cycle_pilot` 이던 시절 인자 없는 실행이 이미 봉인된
+디렉터리의 SNAPSHOT 을 조용히 다시 썼다. 09-02 의 `2cedbe01… → d033c1c6… → fb316682…`
+사슬이 그 흔적이다. 봉인된 디렉터리는 기본적으로 거부하고, 대조는 `--check`,
+다시 봉인해야 하면 `--reseal` 로 확인 절차를 거친다.
+
+실행: uv run python -m corpus.generate.snapshot_cycle_pilot --dir corpus/generate/cycle_pilot_v3
+  --check  쓰지 않고 기존 스냅샷·축약본이 현재 산출물과 일치하는지만 본다.
+  --reseal 봉인된 디렉터리의 SNAPSHOT 을 다시 쓴다. 사람 확인이 필요하다.
 """
 
 from __future__ import annotations
@@ -33,10 +39,13 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
-OUT_DIR = REPO / "corpus/generate/cycle_pilot"
+# 봉인 계약의 정본은 `data.frozen_guard` 다 — corpus 쪽 문안만 frozen_out 이 감싼다.
+from corpus.generate.frozen_out import CONTRACT_NAME, confirm_overwrite, is_frozen
 
-SNAPSHOT = "SNAPSHOT.sha256"
+REPO = Path(__file__).resolve().parents[2]
+
+#: 계약 파일 이름은 저장소 공통이다 — 여기서 다시 문자열을 박으면 두 곳이 갈린다.
+SNAPSHOT = CONTRACT_NAME
 EVIDENCE = "EVIDENCE.jsonl"
 SUMMARY = "EVIDENCE_SUMMARY.json"
 
@@ -349,9 +358,29 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true",
                     help="쓰지 않고 기존 스냅샷·축약본과 현재 산출물의 일치만 검사")
-    ap.add_argument("--dir", default=str(OUT_DIR), help="사이클 산출 디렉터리")
+    ap.add_argument("--reseal", action="store_true",
+                    help="이미 봉인된 디렉터리의 SNAPSHOT 을 **다시 쓴다**."
+                         " 지울 기록을 찍고 사람이 직접 확인해야 통과한다")
+    ap.add_argument("--dir", required=True, help="사이클 산출 디렉터리")
     args = ap.parse_args()
     out_dir = Path(args.dir)
+
+    # 봉인을 두 번 쓰면 digest 가 조용히 갈린다. 09-02 에 실제로 그랬다 —
+    # `2cedbe01… → d033c1c6… → fb316682…` 사슬이 그 흔적이고, 논문에 실을 해시가
+    # 어느 것인지 사후에 재구성해야 했다. 대조가 목적이면 `--check` 다.
+    if is_frozen(out_dir) and not args.check and not args.reseal:
+        print(f"{out_dir} 는 이미 봉인돼 있다 ({CONTRACT_NAME}).", file=sys.stderr)
+        print("  대조가 목적이면 --check 를 써라 (아무것도 쓰지 않는다).", file=sys.stderr)
+        print("  봉인을 정말 다시 써야 하면 --reseal 이고, 확인 절차를 거친다.",
+              file=sys.stderr)
+        print("  근거: 개발규약 1-6. 새 산출물은 새 디렉터리에 봉인한다.", file=sys.stderr)
+        return 4
+    if args.reseal and not args.check:
+        if not is_frozen(out_dir):
+            print(f"--reseal 인데 {out_dir} 에 {CONTRACT_NAME} 이 없다 —"
+                  " 다시 봉인할 것이 없다. 플래그를 빼라.", file=sys.stderr)
+            return 4
+        confirm_overwrite(out_dir, action="다시 쓴다", flag="--reseal")
 
     missing = [n for n in REQUIRED if not (out_dir / n).exists()]
     if missing:
