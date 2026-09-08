@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import io
 import json
+import warnings
 from pathlib import Path
 
 import pytest
@@ -32,6 +33,7 @@ from corpus.generate.frozen_out import (
     assert_not_frozen,
     is_frozen,
     snapshot_summary,
+    verify_contract,
 )
 from corpus.validate import compare_judges as C
 
@@ -316,16 +318,80 @@ def test_옛_기본값_경로는_지금이라면_전부_거부된다(mod):
             assert_not_frozen(d)
 
 
-def test_봉인_구성원이_실물과_이름이_맞는다():
-    """계약 파일이 유령 목록이 되지 않았는지. 이름이 어긋나면 대조가 불가능하다."""
-    for d in FROZEN_REAL:
-        if not d.is_dir():
-            continue
-        names, digest = snapshot_summary(d)
-        assert names, f"{d} 의 계약 파일이 비었다"
-        assert digest and len(digest) == 64, f"{d} 에 snapshot_digest 가 없다"
-        missing = [n for n in names if not (d / n).is_file()]
-        assert not missing, f"{d}: 계약에 있는데 실물이 없다 — {missing}"
+class IncompleteTreeWarning(UserWarning):
+    """이 트리에 원본이 없어 계약 대조를 다 못 했다. 통과했다는 뜻이 아니다."""
+
+
+@pytest.mark.parametrize("d", FROZEN_REAL, ids=lambda p: p.name)
+def test_봉인_구성원이_실물과_이름이_맞는다(d: Path):
+    """계약 파일이 유령 목록이 되지 않았는지. 이름이 어긋나면 대조가 불가능하다.
+
+    **트리마다 답이 다르다.** 계약 구성원 일부가 `.gitignore` 로 추적 밖이라
+    (`corpus/generate/cycle_pilot/*.jsonl`) 만든 워크트리에만 있고 main 체크아웃에는
+    없다. 단순 존재 검사로 두면 만든 자리에서만 통과하고 게이트에서 깨진다 — 09-08 에
+    실제로 그랬다.
+
+    그래서 **git 이 그 이름을 추적하는가**로 가른다. 추적분이 없으면 훼손이라 실패하고,
+    미추적분이 없으면 이 트리에 원본이 없을 뿐이라 건너뛴다. 건너뛸 때는 **경고와
+    skip 사유에 이름을 남긴다** — 조용히 통과하면 다음 사람은 다 본 줄 안다.
+    """
+    if not d.is_dir():
+        pytest.skip(f"{d.name}: 워크트리에 디렉터리가 없다")
+
+    r = verify_contract(d)
+    if r["verdict"] == "no_contract":
+        pytest.skip(f"{d.name}: 계약 파일이 없다 — 봉인본이 아니다")
+
+    assert r["verdict"] != "broken", (
+        f"{d}: {r.get('reason')} — {r['missing_tracked']}")
+
+    if r["unverified"]:
+        msg = (f"{d.name}: 계약 구성원 {r['n_members']}개 중 "
+               f"{len(r['unverified'])}개를 이 트리에서 대조하지 못했다 "
+               f"({r['verdict']}) — {r['unverified']}. "
+               "추적 밖 자산이라 만든 워크트리에만 있다.")
+        warnings.warn(msg, IncompleteTreeWarning, stacklevel=2)
+        pytest.skip(msg)
+
+    # 계약과 실물이 둘 다 있는 트리에서는 엄격히 본다.
+    assert r["verdict"] == "ok", r
+    assert r["digest"] and len(r["digest"]) == 64, f"{d} 에 snapshot_digest 가 없다"
+    assert r["n_members"], f"{d} 의 계약 파일이 비었다"
+
+
+def test_대조_판정은_훼손과_트리_차이를_가른다(tmp_path):
+    """이빨 시험 — 위 시험이 **넘어가면 안 될 것**까지 넘기지 않는지.
+
+    같은 "실물 없음"이라도 추적분이 사라진 것은 훼손이고, 미추적분이 없는 것은 트리
+    차이다. 둘을 같게 다루면 한쪽은 매번 깨지고 다른 한쪽은 영영 안 걸린다.
+    """
+    d = _seal(tmp_path / "s", names=("tracked.json", "ignored.jsonl"))
+    tracked = frozenset({CONTRACT_NAME, "tracked.json"})
+
+    # 둘 다 있다 → 엄격 통과
+    (d / "tracked.json").write_text("{}", encoding="utf-8")
+    (d / "ignored.jsonl").write_text("{}\n", encoding="utf-8")
+    assert verify_contract(d, tracked=tracked)["verdict"] == "ok"
+
+    # 미추적분만 없다 → 트리 차이. 이름이 판정에 남아야 한다
+    (d / "ignored.jsonl").unlink()
+    r = verify_contract(d, tracked=tracked)
+    assert r["verdict"] == "incomplete_tree"
+    assert r["unverified"] == ["ignored.jsonl"] and not r["missing_tracked"]
+
+    # 추적분이 없다 → 훼손. 미추적분 상태와 무관하게 broken 이다
+    (d / "tracked.json").unlink()
+    r = verify_contract(d, tracked=tracked)
+    assert r["verdict"] == "broken"
+    assert r["missing_tracked"] == ["tracked.json"]
+
+
+def test_추적_여부를_모르면_괜찮다고_하지_않는다(tmp_path):
+    """git 을 못 물었을 때 통과로 떨어지면 가드가 아니라 장식이다."""
+    d = _seal(tmp_path / "s", names=("a.jsonl",))
+    monkey = verify_contract(d, tracked=None)   # tmp 는 저장소 밖 → git 판단 불가
+    assert monkey["verdict"] in ("unverifiable", "broken", "incomplete_tree")
+    assert monkey["unverified"] == ["a.jsonl"] or monkey["missing_tracked"] == ["a.jsonl"]
 
 
 def test_corpus_는_계약_이름을_다시_박지_않는다():

@@ -31,19 +31,28 @@ docstring 이 경계하는 실패다. **판정과 예외형은 공유하고, 사
 
 from __future__ import annotations
 
+import argparse
+import json
+import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import Any
 
 # 계약·예외형의 정본은 `data.frozen_guard` 하나다 — 여기서는 가져다 쓰기만 한다.
 from data.frozen_guard import CONTRACT_NAME, FrozenDirectoryError, is_frozen
+
+_REPO = Path(__file__).resolve().parents[2]
 
 __all__ = [
     "CONTRACT_NAME",
     "FrozenDirectoryError",
     "assert_not_frozen",
     "confirm_overwrite",
+    "find_sealed",
     "is_frozen",
     "snapshot_summary",
+    "tracked_names",
+    "verify_contract",
 ]
 
 
@@ -121,3 +130,132 @@ def confirm_overwrite(directory: Path, *, action: str, flag: str,
     got = sys.stdin.readline().strip()
     if got != want:
         raise SystemExit(f"입력이 {got!r} 로 {want!r} 와 다르다 — 중단한다.")
+
+
+# ------------------------------------------------------------------ 계약 대조
+#
+# 봉인 계약서와 실물이 맞는지 보는 일은 **트리마다 답이 다르다.** 계약 구성원 일부가
+# `.gitignore` 로 추적 밖이라(`corpus/generate/cycle_pilot/*.jsonl`), 그 파일들은
+# 만든 워크트리에만 있고 main 체크아웃에는 없다. 그래서 "구성원이 실물과 맞는가" 를
+# 단순 존재 검사로 쓰면 만든 자리에서만 통과하고 다른 곳에서는 무조건 깨진다 — 실제로
+# 09-08 게이트가 그렇게 막혔다.
+#
+# 가르는 기준은 **git 이 그 이름을 추적하는가** 다.
+#   추적분이 없다  → 있어야 할 것이 사라진 것이다. **깨졌다.**
+#   미추적분이 없다 → 이 트리에 원본이 없을 뿐이다. 대조를 **건너뛰되 기록한다.**
+# 조용히 넘어가면 안 된다. 판정 결과에 건너뛴 이름이 남아야 다음 사람이 "이 트리에서는
+# 무엇을 못 봤는지" 를 안다.
+
+
+def tracked_names(directory: Path) -> frozenset[str] | None:
+    """git 이 추적하는 구성원 이름. 판단할 수 없으면 `None` (추측하지 않는다)."""
+    d = Path(directory)
+    try:
+        # git 은 UTF-8 로 쓰는데 `text=True` 는 로캘(win32 cp949)로 읽는다. 오류 문구가
+        # 한국어면 읽기 스레드가 UnicodeDecodeError 로 죽는다 — 인코딩을 명시한다.
+        r = subprocess.run(["git", "ls-files", "--", str(d)],
+                           cwd=str(_REPO), capture_output=True, timeout=60,
+                           encoding="utf-8", errors="replace", check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    return frozenset(PurePosixPath(x.strip()).name
+                     for x in r.stdout.splitlines() if x.strip())
+
+
+def verify_contract(directory: Path, *,
+                    tracked: frozenset[str] | None = None) -> dict:
+    """계약서와 실물 대조. 판정은 넷이다.
+
+    * `no_contract`     — 계약 파일이 없다. 봉인본이 아니다.
+    * `ok`              — 구성원이 전부 이 트리에 있고 이름이 맞는다. **엄격히 봤다.**
+    * `incomplete_tree` — 없는 것이 전부 **추적 밖**이다. 이 트리에 원본이 없을 뿐이다.
+    * `broken`          — **추적분**이 없다. 있어야 할 것이 사라졌다.
+
+    `unverified` 에 건너뛴 이름이 남는다 — 이것이 "조용한 통과" 를 막는 장치다.
+    """
+    d = Path(directory)
+    names, digest = snapshot_summary(d)
+    out: dict[str, Any] = {"dir": str(d), "digest": digest,
+                           "n_members": len(names), "members": names}
+    if not names:
+        out["verdict"] = "no_contract"
+        out["unverified"] = []
+        return out
+
+    missing = [n for n in names if not (d / n).is_file()]
+    if tracked is None:
+        tracked = tracked_names(d)
+    if tracked is None:
+        # git 을 못 물었다. 없는 것이 추적분인지 판단할 수 없으니 깨졌다고도,
+        # 괜찮다고도 하지 않는다.
+        out.update(verdict="unverifiable" if missing else "ok",
+                   unverified=missing, missing_tracked=[],
+                   reason="git ls-files 를 부르지 못해 추적 여부를 판단할 수 없다")
+        return out
+
+    out["missing_tracked"] = [n for n in missing if n in tracked]
+    out["unverified"] = [n for n in missing if n not in tracked]
+    if out["missing_tracked"]:
+        out["verdict"] = "broken"
+        out["reason"] = ("계약에 있고 git 이 추적하는데 실물이 없다 —"
+                         " 봉인본이 훼손됐다")
+    elif out["unverified"]:
+        out["verdict"] = "incomplete_tree"
+        out["reason"] = (f"추적 밖 구성원 {len(out['unverified'])}개가 이 트리에 없다."
+                         " 만든 워크트리에만 있는 자산이다 (.gitignore)")
+    else:
+        out["verdict"] = "ok"
+    return out
+
+
+def find_sealed(*roots: Path) -> list[Path]:
+    """계약 파일을 가진 디렉터리. 하위 1단만 훑는다 — 정션 아래를 재귀하면 멈춘다."""
+    found: list[Path] = []
+    for root in roots or (_REPO / "corpus/generate", _REPO / "data/processed"):
+        r = Path(root)
+        if not r.is_dir():
+            continue
+        for d in [r, *(x for x in r.iterdir() if x.is_dir())]:
+            if is_frozen(d) and d not in found:
+                found.append(d)
+    return found
+
+
+def main(argv: list[str] | None = None) -> int:
+    """`uv run python -m corpus.generate.frozen_out [디렉터리…]`
+
+    게이트가 어느 트리에서든 돌려 "여기서 무엇을 못 봤는지" 를 볼 수 있게 한다.
+    깨진 것이 있을 때만 실패한다 — 트리에 원본이 없는 것은 실패가 아니다.
+    """
+    ap = argparse.ArgumentParser(description="봉인 계약서와 실물 대조")
+    ap.add_argument("dirs", nargs="*", help="미지정 시 corpus/generate·data/processed 를 훑는다")
+    ap.add_argument("--json", action="store_true", help="판정을 JSON 으로 출력")
+    args = ap.parse_args(argv)
+
+    targets = [Path(x) for x in args.dirs] if args.dirs else find_sealed()
+    results = [verify_contract(t) for t in targets]
+    if args.json:
+        print(json.dumps(results, ensure_ascii=False, indent=1))
+    else:
+        for r in results:
+            mark = {"ok": "○", "incomplete_tree": "△", "broken": "✕",
+                    "unverifiable": "?", "no_contract": "-"}[r["verdict"]]
+            try:
+                shown = Path(r["dir"]).relative_to(_REPO)
+            except ValueError:
+                shown = Path(r["dir"])
+            print(f"{mark} {shown}  구성원 {r['n_members']}개  [{r['verdict']}]")
+            if r.get("missing_tracked"):
+                print(f"    실물 없음(추적분): {r['missing_tracked']}")
+            if r.get("unverified"):
+                print(f"    이 트리에서 대조 못 함: {r['unverified']}")
+        n_broken = sum(1 for r in results if r["verdict"] == "broken")
+        n_skip = sum(len(r.get("unverified") or []) for r in results)
+        print(f"\n봉인 {len(results)}곳 · 깨짐 {n_broken} · 대조 못 한 구성원 {n_skip}개")
+    return 1 if any(r["verdict"] == "broken" for r in results) else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
