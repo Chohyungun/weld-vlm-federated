@@ -82,16 +82,39 @@
 하한·NMS IoU·매칭 IoU·`max_det`·모집단에는 여전히 의존한다 — 산출물의
 `threshold_independent.still_depends_on` 이 그 목록이다.
 
+## 3-2. 무내용 대조 — 지표마다 "안 보고도 나오는 값"을 함께 낸다 (22번 §5)
+
+높은 값이 곧 학습의 증거가 아니다. 이 평가셋에서는 **화소를 한 번도 열지 않는 규칙**
+(`image_id` 512분위 최빈 코드, `evaluation/content_free.py`)이 분류 축에서 다섯 칸을
+전부 이긴다(macro-AP 0.9582 대 최고 칸 0.8229 — 17번 §12-2). 그래서 축마다 대조선을 안다.
+
+| 축 | 무내용 대조선 | 상태 |
+|---|---|---|
+| 위치 `map_50` | 0.0044 (구간별 중앙 박스) | **선다** — 최고 칸의 1/112 |
+| 분류 `macro_ap` | **0.9582** | **넘지 못한다** — 총괄 재판정 대상 |
+| 판별 `Δ`·`Δ_AUC` | **정의상 정확히 0** | 지름길이 통과할 수 없는 유일한 축 |
+
+**점수 구성은 산출 전에 못박는다**(17번 §11, 커밋 `3f8d5cb`). 대조선 규칙은 `train+val`
+정답만으로 적합하고 평가셋을 열지 않는다 — 열면 대조선이 오라클이 되어 게이트가 무의미해진다.
+구간 배정은 A 의 절단점(`evaluation/strata.bins_for`)을 그대로 쓰고 D 가 분위를 다시 만들지 않는다.
+
+**판별력**(`evaluation/discrimination.py`)은 출처(`N-crop`)를 상수로 묶은 구간에서 잰다.
+`Δ` 는 임계 한 점의 발화율 차라 **임계에 의존한다**(격자 안에서 칸 순위가 뒤집힌다 —
+17번 §12-5). 임계 없이 같은 질문을 묻는 형태가 `gini`(= `2·AUROC − 1`)이고, 지름길은
+상수 점수라 여기서도 정확히 0 이다. **승격 여부는 총괄 판정 사항이다.**
+
 ## 4. 산출물 (`<채점 dir>/`)
 
 | 파일 | 무엇 |
 |---|---|
 | `{cell}_s{seed}.jsonl` | 계약 #4 레코드 (검출은 `predict`, 통합형은 `score` 가 어댑터로 생성) |
-| `score_cells_v1.json` | 본채점. `metrics` · `stratified` · `gates_evaluated` · `exit_code` · `coord_health` · `recovery` · `regression` · P9 |
+| `score_cells_v1.json` | 본채점. `metrics` · `stratified` · `gates_evaluated` · `exit_code` · `coord_health` · `recovery` · `regression` · P9 · `discrimination` · `decomposition` |
 | `prereg_recomputed_v1.json` | 사전등록 상수 동결본 재산출(자동 선배치). `snapshot_digest` 로 출처 고정 |
 | `stratified_compare_v1.json` | 층화 상세 (K 사다리 · 구간별 행 · 지름길 규칙) |
 | `verify_filter_parity_v1.json` | 하한+필터 ≡ 직접 추론 동치의 표본 재확인 (곡선의 전제) |
 | `sweep/` · `sweep_detection_conf_v1.json` | conf 스윕 |
+| `content_free_baselines_v1.json` | 무내용 대조선 3종 + `__shortcut__` AP + 위치 축 + 등록 상수 자기 검사 |
+| `discrimination_sweep_v1.json` | 판별력 Δ 의 임계 곡선(격자 전 점) + 임계 독립 `Δ_AUC` + 칸 대비(같은 재표집 짝지음) |
 
 ## 5. 첫 산출물 감사 (시드 1)
 

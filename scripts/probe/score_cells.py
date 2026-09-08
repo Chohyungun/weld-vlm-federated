@@ -288,6 +288,100 @@ def threshold_independent_block(params: ScoringParams, pop: Population, det_tags
     }
 
 
+def discrimination_block(pop: Population, by_cell: dict, prov: dict) -> dict:
+    """**출처 고정 판별력 Δ** — 지름길이 정의상 통과할 수 없는 유일한 축 (22번 §5 과제 4).
+
+    `evaluation/discrimination.py` 는 09-02 에 구현·시험까지 끝났는데 본채점 진입점이
+    부르지 않아 값이 산출물에 실린 적이 없었다. 의사결정로그가 이 지표를 "지름길이 정의상
+    통과할 수 없는 유일한 축" 으로 적어 둔 이상, 무내용 대조가 문제가 된 지금이 그 값을
+    표에 올릴 자리다.
+
+        판별력 Δ = (결함 이미지 발화율) − (정상 이미지 발화율)   [출처 고정, N-crop]
+
+    출처를 상수로 묶은 구간 안에서는 출처만 읽는 예측기가 상수 예측기로 퇴화하므로 Δ 가
+    정확히 0 이 된다. **0 을 넘으려면 이미지를 봐야 한다.** 0 은 실패선이 아니라 기준선이고,
+    음수는 정상에서 더 발화했다는 뜻이다(역전).
+
+    맥락은 P9 와 달리 **결함·정상 둘 다** 필요하다 — P9 는 정상만 본다.
+    """
+    from evaluation.discrimination import CROP, score_discrimination_all_cells
+
+    contexts = {
+        r["image_id"]: (r["group_id"], r["has_defect"] == "True",
+                        prov.get(r["image_id"], ""))
+        for r in pop.rows
+    }
+    records = [rec for recs in by_cell.values() for rec in recs]
+    reports = score_discrimination_all_cells(records, contexts, provenance=CROP)
+    rows = [r.as_dict() for r in reports]
+    return {
+        "provenance": CROP,
+        "definition": "결함 발화율 − 정상 발화율 (출처 고정, 묶음 클러스터 부트스트랩 CI)",
+        "baseline": "0 = 이미지를 안 봤다. 지름길은 정의상 0 을 넘을 수 없다",
+        "n_context": len(contexts),
+        "results": rows,
+        "promotion_note": (
+            "헤드라인 보조지표 승격은 총괄 판정 사항이다(22번 §5 과제 4). 여기서는 값과 "
+            "판정 재료만 낸다"
+        ),
+    }
+
+
+def decomposition_block(params: ScoringParams, pop: Population, det_tags) -> dict:
+    """**귀속 축 분해** — 회복률이 80% 미만일 때 결과표 템플릿이 요구하는 분해 (과제 5).
+
+    **평가셋에는 클라이언트 열이 없다.** 회사별 분할보다 먼저 뗐기 때문이다(불변조건 1-3,
+    실측: eval 12,461행의 `client` 열이 전부 빈 문자열). 그래서 3분할 클라이언트 분해는
+    원리적으로 불가능하고, 대신 **재질 축**으로 분해한다 — 분할 설계상 `AL ≡ C3`(알루미늄
+    단독 클라이언트)이고 `ST ≡ C1 ∪ C2` 다. C1 과 C2 는 둘 다 강재이고 Dirichlet 로 갈렸으므로
+    평가셋에서 분리되지 않는다. 이 한계를 값과 함께 싣는다.
+
+    분해는 **하한 레코드**(임계 독립 축)에서 낸다 — 헤드라인이 거기 있기 때문이다.
+    """
+    from evaluation.adapters import read_records
+
+    groups: dict[str, list[str]] = {}
+    for r in pop.rows:
+        groups.setdefault(r["material"], []).append(r["image_id"])
+    out: dict[str, dict] = {}
+    for material, ids in sorted(groups.items()):
+        idset = set(ids)
+        gold_codes = {i: pop.gold_codes.get(i, set()) for i in ids}
+        gold_boxes = {i: pop.gold_boxes.get(i, []) for i in ids}
+        n_defect = sum(1 for i in ids if gold_codes[i])
+        per_tag: dict[str, dict] = {}
+        for tag in det_tags:
+            src = raw_record_path(params, tag)
+            if not src.exists():
+                continue
+            recs = [r for r in read_records(src.read_text(encoding="utf-8").splitlines())
+                    if r.image_id in idset]
+            from evaluation.score import score_records
+
+            m = score_records(recs, gold_codes, gold_boxes, pop.classes)
+            per_tag[tag] = {"macro_f1": m["macro_f1"], "miss_rate": m["miss_rate"],
+                            "macro_ap": m["macro_ap"], "map_50": m["map_50"],
+                            "n_images": len(recs)}
+        out[material] = {
+            "n_images": len(ids), "n_defect": n_defect, "n_normal": len(ids) - n_defect,
+            "per_tag": per_tag,
+            "recovery": {key: _recovery_of({t: v[key] for t, v in per_tag.items()})
+                         for key in ("map_50", "macro_ap", "macro_f1", "miss_rate")}
+            if per_tag else {},
+        }
+    return {
+        "axis": "material",
+        "computed_at": f"conf >= {params.conf_floor} (하한 — 임계 독립 축)",
+        "client_mapping": {"AL": "C3 (알루미늄 단독 클라이언트)",
+                           "ST": "C1 ∪ C2 (강재 두 클라이언트, 평가셋에서 분리 불가)"},
+        "limitation": (
+            "평가셋은 회사별 분할보다 먼저 뗐으므로 `client` 열이 비어 있다(실측 12,461행 전부). "
+            "3분할 클라이언트 분해는 원리적으로 불가능하고 재질이 유일한 귀속 축이다"
+        ),
+        "by_group": out,
+    }
+
+
 def shortcut_footnote(p9: dict, strata: dict) -> dict:
     """**전역 지표 표에 자동으로 달리는 각주** (총괄 판정 2 · 22번 §2-2-2).
 
@@ -472,6 +566,7 @@ def diagnostics(params: ScoringParams, pop: Population, all_records: list,
         "p9_context_missing": list(ctx_missing),
         "sample_trivial_bound": trivial_bound(samples, pop.classes),
         "citation_diagnostic": citation_diag,
+        "_provenance": prov,      # 판별력 Δ 가 같은 출처 표를 쓴다(두 번 읽지 않는다)
     }
 
 
@@ -515,6 +610,14 @@ def cmd_score(args) -> int:
     indep = threshold_independent_block(params, pop, det_tags)
     curve = curve_block(params, pop, det_tags)
     footnote = shortcut_footnote(diag["p9"], strata)
+    # 22번 §5 — 판별력 Δ 배선(과제 4)과 귀속 축 분해(과제 5).
+    discrim = discrimination_block(pop, by_cell, diag.pop("_provenance"))
+    decomp = decomposition_block(params, pop, det_tags)
+    for r in discrim["results"]:
+        tag = r["cell"] if not r.get("client") else f"{r['cell']}_{r['client']}"
+        print(f"[판별력] {tag}: Δ {r['delta']['point']:+.4f} "
+              f"[{r['delta']['ci_lo']:+.4f}, {r['delta']['ci_hi']:+.4f}] "
+              f"(결함 {r['fire_rate_defect']:.4f} · 정상 {r['fire_rate_normal']:.4f})")
     ti = indep.get("recovery", {}).get(indep["primary"], {})
     if ti.get("recovery_pct") is not None:
         print(f"[임계 독립] {indep['primary']} 회복률 {ti['recovery_pct']:.1f}% "
@@ -566,6 +669,8 @@ def cmd_score(args) -> int:
         ),
         "threshold_independent": indep,
         "curve": curve,
+        "discrimination": discrim,
+        "decomposition": decomp,
         "shortcut_footnote": footnote,
         "stratified": strata,
         "failures": failures,
