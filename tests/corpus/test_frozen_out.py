@@ -17,6 +17,7 @@ GPU 는 쓰지 않는다. 무력화 쪽은 가드 바로 뒤 호출을 감시 �
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 
@@ -213,6 +214,32 @@ def test_reseal_은_비대화식에서_거부한다(tmp_path, monkeypatch, capsy
     # 무엇을 지우는지 화면에 찍었어야 한다 (총괄 지시 과제 1).
     out_txt = capsys.readouterr().out
     assert "snapshot_digest" in out_txt and "pairs.jsonl" in out_txt
+
+
+class _Tty(io.StringIO):
+    """대화식 stdin 흉내. `isatty` 를 True 로 답한다."""
+
+    def isatty(self) -> bool:
+        return True
+
+
+def test_확인은_이름을_정확히_입력해야_통과한다(tmp_path, monkeypatch):
+    """대화식이어도 아무 키나 눌러서는 안 통과한다 — 그러면 확인이 아니라 관성이다.
+
+    반대쪽도 건다. **통과할 수 없는 확인은 확인이 아니라 차단이다** — 사람이 절차를
+    밟았는데도 막히면 다음 사람은 절차 대신 가드를 지운다.
+    """
+    from corpus.generate.frozen_out import confirm_overwrite
+
+    out = _seal(tmp_path / "cycle_pilot_v9")
+
+    monkeypatch.setattr("sys.stdin", _Tty("y\n"))
+    with pytest.raises(SystemExit) as e:
+        confirm_overwrite(out, action="다시 쓴다", flag="--reseal")
+    assert "중단" in str(e.value)
+
+    monkeypatch.setattr("sys.stdin", _Tty("cycle_pilot_v9\n"))
+    confirm_overwrite(out, action="다시 쓴다", flag="--reseal")   # 예외 없이 통과
 
 
 def test_check_는_봉인된_곳에서도_돈다(tmp_path, monkeypatch):
