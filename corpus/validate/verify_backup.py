@@ -34,13 +34,16 @@ import json
 import sys
 from pathlib import Path
 
-from corpus.generate.frozen_out import CONTRACT_NAME, snapshot_summary
+from corpus.generate.frozen_out import CONTRACT_NAME, snapshot_summary, tracked_names
 
 REPO = Path(__file__).resolve().parents[2]
 
-#: 총괄이 드라이브 보관으로 판정한 자산 (09-08). `--dirs` 로 넓힐 수 있다 —
-#: cycle_pilot* 는 공개 검수에서 막혔으므로 판정이 나오면 여기에 더한다.
+#: 총괄이 드라이브 보관으로 판정한 봉인 자산 전부 (09-08, 의사결정로그 abdafe8).
+#: pairs 는 AI허브 파생이라 애초에 git 이 불가였고, cycle_pilot* 는 공개 검수에서
+#: 재배포 478건이 걸려 추적 전환이 기각됐다. 그래서 **한 벌로 묶어** 같이 옮긴다.
 DEFAULT_DIRS = (
+    REPO / "corpus/generate/cycle_pilot",
+    REPO / "corpus/generate/cycle_pilot_v2",
     REPO / "data/processed/pairs_pilot_v1",
     REPO / "data/processed/pairs_pilot_v2",
 )
@@ -55,10 +58,15 @@ def sha256_file(path: Path) -> str:
 
 
 def build_plan(dirs) -> dict:
-    """옮길 파일 목록. 계약 구성원 + 계약서 자체를 담는다.
+    """옮길 파일 목록. 계약 구성원 **전부** + 계약서 자체를 담는다.
 
     계약서를 빼면 사본만으로는 무엇이 있어야 하는지 알 수 없다 — 사본이 자립해야
     원본 디스크가 죽어도 복구가 된다.
+
+    위험한 것은 추적 밖 구성원뿐이고 추적분은 git·origin 에 이미 있다. 그런데도
+    **추적분까지 담는다.** 빼면 사본이 자기 계약서로 스스로를 검증하지 못해, 복구 때마다
+    git 에서 나머지를 맞춰 와야 한다. 그 대가가 9 KB 다 — 자립을 산다. 항목마다
+    `tracked` 를 달아 어느 것이 실제 위험분인지는 목록에 남긴다.
     """
     items, problems = [], []
     for d in dirs:
@@ -70,6 +78,7 @@ def build_plan(dirs) -> dict:
         if not names:
             problems.append(f"{d}: {CONTRACT_NAME} 가 없다 — 봉인본이 아니다")
             continue
+        tracked = tracked_names(d) or frozenset()
         for name in [*names, CONTRACT_NAME]:
             p = d / name
             if not p.is_file():
@@ -82,15 +91,21 @@ def build_plan(dirs) -> dict:
                 "rel": f"{d.name}/{name}",
                 "bytes": p.stat().st_size,
                 "sha256": sha256_file(p),
+                # git 이 들고 있으면 이 사본이 유일본은 아니다. 실제 위험분은 False 쪽.
+                "tracked": name in tracked,
                 # 계약서 자체는 자기 해시를 담을 수 없다 (파생물이다).
                 "contract_sha256": next(
                     (h for h, n in _contract_entries(d) if n == name), None),
             })
     total = sum(i["bytes"] for i in items)
+    at_risk = [i for i in items if not i["tracked"]]
     return {
-        "purpose": "봉인 자산 국내 공유 드라이브 백업 (09-08 총괄 판정, 24번 A-4 ②)",
-        "redline": ("AI허브 71761 파생물이다 — 국외 리전·해외 호스팅 스토리지 금지"
-                    " (규약 2-1). 목적지가 국내인지는 사람이 확인한다."),
+        "purpose": "봉인 자산 국내 공유 드라이브 백업 (09-08 판정, 의사결정로그 abdafe8)",
+        "redline": ("pairs_pilot_* 는 AI허브 71761 파생물이고 cycle_pilot* 는 규정 원문과"
+                    " 겹치는 생성문이다 — 국외 리전·해외 호스팅 스토리지 금지"
+                    " (규약 2-1·2-5). 목적지가 국내인지는 사람이 확인한다."),
+        "n_at_risk": len(at_risk),
+        "at_risk_bytes": sum(i["bytes"] for i in at_risk),
         "n_files": len(items),
         "total_bytes": total,
         "total_mb": round(total / 1024 / 1024, 2),
@@ -162,8 +177,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "plan":
         plan = build_plan(dirs)
         for it in plan["items"]:
-            print(f"  {it['rel']:44s} {it['bytes']:>10,} B  {it['sha256'][:16]}…")
+            print(f"  {'ㆍ' if it['tracked'] else '★'} {it['rel']:42s}"
+                  f" {it['bytes']:>10,} B  {it['sha256'][:16]}…")
         print(f"\n파일 {plan['n_files']}개 / {plan['total_mb']} MB")
+        print(f"  ★ git 밖 — 이 사본이 유일본이 된다: {plan['n_at_risk']}개 /"
+              f" {plan['at_risk_bytes']:,} B")
+        print("  ㆍgit·origin 에도 있음. 사본이 자기 계약서로 자립하도록 함께 담는다")
         print(f"!! {plan['redline']}")
         if plan["problems"]:
             print("\n문제:", *plan["problems"], sep="\n  ", file=sys.stderr)

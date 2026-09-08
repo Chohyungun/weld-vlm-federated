@@ -168,11 +168,29 @@ def test_verify_는_dest_없이_돌지_않는다():
 # ------------------------------------------------------------- 실물 (읽기만)
 
 def test_실물_백업_목록이_계약과_맞는다():
-    """총괄이 옮길 실물. 목록이 계약과 어긋나면 사람이 잘못된 것을 복사한다."""
+    """총괄이 옮길 실물. 목록이 계약과 어긋나면 사람이 잘못된 것을 복사한다.
+
+    09-08 판정으로 cycle_pilot·cycle_pilot_v2 가 한 벌에 들어왔다(추적 전환 기각).
+    """
     plan = B.build_plan(B.DEFAULT_DIRS)
     if plan["problems"]:
         pytest.skip(f"이 트리에서 대상이 온전하지 않다: {plan['problems']}")
-    assert plan["n_files"] == 9, plan["n_files"]
+    assert {Path(d).name for d in B.DEFAULT_DIRS} == set(plan["dirs"])
+    assert plan["n_files"] == 25, plan["n_files"]
     for it in plan["items"]:
         if it["contract_sha256"] is not None:
             assert it["sha256"] == it["contract_sha256"], it["rel"]
+
+
+def test_위험분과_안전분을_목록이_가른다():
+    """★(git 밖)과 ㆍ(git 에도 있음)을 안 가르면 사람이 무엇이 유일본인지 모른다."""
+    plan = B.build_plan(B.DEFAULT_DIRS)
+    if plan["problems"]:
+        pytest.skip("이 트리에서 대상이 온전하지 않다")
+    assert 0 < plan["n_at_risk"] < plan["n_files"]
+    assert plan["at_risk_bytes"] < plan["total_bytes"]
+    # 추적분은 git 이 들고 있다는 뜻이므로 실제로 추적 중이어야 한다.
+    from corpus.generate.frozen_out import tracked_names
+    for it in plan["items"]:
+        d = Path(it["src"]).parent
+        assert it["tracked"] == (it["name"] in (tracked_names(d) or frozenset())), it["rel"]
