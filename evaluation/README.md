@@ -57,6 +57,7 @@
 | `content_free_gate` | 전역 Macro-F1 이 content-free 천장 통과선(0.9199)을 넘는가 | `gate_status` 가 `적용`일 때만 ○ (지금 `판정_대기`) |
 | `required_tags` | 필수 로깅 태그 11종 | 채점 단계 × (run 태그가 없다) |
 | `sweep_curve_recorded` | 등록 격자 전 점이 채점된 칸마다 있고, 임계 독립 헤드라인 지표의 회복률이 산출됐는가(총괄 판정 1) | ○ |
+| `macro_ap_baseline_paired` | macro-AP 를 실으면 무내용 대조선이 **나란히** 실렸는가(총괄 판정 22번 §6-2-1). **통과선 게이트가 아니다** — 칸이 대조선을 넘으라고 요구하지 않는다 | ○ |
 | `p9_source_separation` | P9 가 출처별(N-crop/N-tile) 오탐률·차·CI·TOST 를 병기하고, 전역 표의 규격 지름길 각주가 자동 생성됐는가(총괄 판정 2) | ○ |
 
 `skipped` 는 `passed` 와 구분해 센다. 등록됐는데 안 불린 게이트가 있으면
@@ -69,7 +70,7 @@
 
 | 블록 | 무엇 | 역할 |
 |---|---|---|
-| `threshold_independent` | 하한(`conf_floor`)에서 낸 `map_50`·`map_50_95`·`macro_ap` 와 그 회복률 | **헤드라인.** 운용점을 고르지 않는다 |
+| `threshold_independent` | 하한(`conf_floor`)에서 낸 `map_50`·`map_50_95`·`macro_ap` 와 그 회복률 | **`map_50` 만 확정 대표**(아래 §3-3). 운용점을 고르지 않는다 |
 | `curve` | 등록 격자 전 점의 `macro_f1`·`miss_rate`·`class_jaccard`·`n_boxes` + 임계별 회복률 + 대소 뒤집힘 | **칸 비교.** 데이터를 전부 보인다 |
 | `metrics` | 운용점 예시(`conf`)의 전 지표 | 기록. **확증 기준 아님** |
 
@@ -103,12 +104,31 @@
 17번 §12-5). 임계 없이 같은 질문을 묻는 형태가 `gini`(= `2·AUROC − 1`)이고, 지름길은
 상수 점수라 여기서도 정확히 0 이다. **승격 여부는 총괄 판정 사항이다.**
 
+## 3-3. 어느 수가 대표인가 — 총괄 판정 22번 §6-2 (main dd430ae)
+
+무내용 대조 결과를 받아 총괄이 대표 지표를 다시 정했다. **산출물이 이 규칙을 스스로 싣는다**
+(`headline_policy`) — 표만 읽고 인용하는 사람에게 규칙이 보여야 하기 때문이다.
+
+| 축 | 지위 | 규칙 |
+|---|---|---|
+| 위치 `map_50` | **유일한 확정 대표** | 회복률을 이 축으로만 말한다 |
+| 분류 `macro_ap` | **보조** (대표에서 내려감) | 무내용 대조선 **병기 필수**, 단독 인용 금지. 분류 축에는 대표 숫자를 두지 않는다 |
+| 판별 `Δ` | **선별용** | "다섯 칸 전부 신뢰구간 하한이 0 위" 한 문장으로만. 순위·비율로 읽지 않는다 |
+| 판별 `Δ_AUC` | **승격 후보** | 시드 3세트 집계 시점에 판정. 그때까지 값만 쌓는다 |
+
+**`HEADLINE_POLICY`(`scripts/probe/score_cells.py`)를 고치는 것은 채점 기준을 고치는 것이다** —
+총괄 판정 없이 바꾸지 마라. `macro_ap_baseline_paired` 게이트가 병기와 이 지위를 함께 본다.
+
+**대조선과 `Δ_AUC` 는 채점 한 번에 함께 나온다.** 별도 스크립트를 기억해서 돌리는 구조면
+시드 2·3 에서 조용히 빠진다. 대조선 파일이 없으면 채점기가 만들고(`prereg_recomputed_v1.json`
+선배치와 같은 규칙), `Δ_AUC` 는 하한 레코드에서 매번 다시 낸다.
+
 ## 4. 산출물 (`<채점 dir>/`)
 
 | 파일 | 무엇 |
 |---|---|
 | `{cell}_s{seed}.jsonl` | 계약 #4 레코드 (검출은 `predict`, 통합형은 `score` 가 어댑터로 생성) |
-| `score_cells_v1.json` | 본채점. `metrics` · `stratified` · `gates_evaluated` · `exit_code` · `coord_health` · `recovery` · `regression` · P9 · `discrimination` · `decomposition` |
+| `score_cells_v1.json` | 본채점. `metrics` · `stratified` · `gates_evaluated` · `exit_code` · `coord_health` · `recovery` · `regression` · P9 · `discrimination` · `discrimination_threshold_free` · `content_free_baseline` · `decomposition` · `headline_policy` |
 | `prereg_recomputed_v1.json` | 사전등록 상수 동결본 재산출(자동 선배치). `snapshot_digest` 로 출처 고정 |
 | `stratified_compare_v1.json` | 층화 상세 (K 사다리 · 구간별 행 · 지름길 규칙) |
 | `verify_filter_parity_v1.json` | 하한+필터 ≡ 직접 추론 동치의 표본 재확인 (곡선의 전제) |

@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import math
+import random
 
 import pytest
 
@@ -117,3 +118,42 @@ def test_점수_이상이_임계_필터_후_발화와_같다(conf):
     for r in recs:
         cut = filter_by_conf([r], conf)[0]
         assert (image_score(r) >= conf) == fires(cut), f"{r.image_id} @ {conf}"
+
+
+# --------------------------------------------------------------------------------------
+# 4 — numpy 구현이 기준 구현과 같은 값을 낸다
+# --------------------------------------------------------------------------------------
+
+def _reference_gini(scores, defect, normal):
+    """순위를 손으로 세는 기준 구현. **느리지만 읽으면 정의가 보인다.**
+
+    본체는 부트스트랩 안에서 수만 번 돌아야 해서 numpy 로 썼다(22번 §6-2-5 로 승격
+    후보가 되어 본채점이 매 시드 부른다). 최적화가 정의를 바꾸지 않았다는 것은 시험이 본다.
+    """
+    d = [scores[i] for i in defect if i in scores]
+    n = [scores[i] for i in normal if i in scores]
+    if not d or not n:
+        return float("nan")
+    wins = sum(1.0 if a > b else 0.5 if a == b else 0.0 for a in d for b in n)
+    return 2 * (wins / (len(d) * len(n))) - 1
+
+
+@pytest.mark.parametrize("seed", range(8))
+def test_numpy_구현이_기준_구현과_같다(seed):
+    """무작위 점수 · 동점 다수 · 층 크기 불균형에서 두 구현이 일치해야 한다."""
+    rng = random.Random(seed)
+    n_img = rng.randint(4, 60)
+    # 동점을 일부러 많이 만든다 — 동점 처리가 두 구현이 갈리기 쉬운 자리다
+    sc = {f"i{k}": rng.choice([0.0, 0.25, 0.5, 0.5, 0.75, 1.0, -1.0]) for k in range(n_img)}
+    ids = list(sc)
+    rng.shuffle(ids)
+    cut = rng.randint(1, n_img - 1)
+    d, n = ids[:cut], ids[cut:]
+    assert gini(sc, d, n) == pytest.approx(_reference_gini(sc, d, n), abs=1e-12)
+
+
+def test_전부_동점이면_기준_구현도_0():
+    """지름길 성질의 교차 확인 — 두 구현 모두 정확히 0 이어야 한다."""
+    sc = dict.fromkeys([f"i{k}" for k in range(20)], 0.3)
+    d, n = [f"i{k}" for k in range(12)], [f"i{k}" for k in range(12, 20)]
+    assert gini(sc, d, n) == 0.0 == _reference_gini(sc, d, n)

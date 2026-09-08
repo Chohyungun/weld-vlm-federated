@@ -24,14 +24,17 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-from collections.abc import Sequence
 from pathlib import Path
 
 from evaluation.detect_infer import filter_by_conf
-from evaluation.discrimination import CROP, fires, gini, image_score
+from evaluation.discrimination import (
+    CROP,
+    fires,
+    image_score,
+    score_threshold_free,
+)
 from evaluation.params import add_common_args, params_from_args
 from evaluation.schema import PredictionRecord
-from evaluation.stats import cluster_bootstrap
 
 OPERATING_CONF = 0.25
 """표에 함께 싣는 **운용점 예시**. 확증 기준이 아니다(22번 §1-2-2)."""
@@ -78,19 +81,11 @@ def main() -> int:
     by_group: dict[str, list[str]] = {}
     for i in sorted(band):
         by_group.setdefault(groups[i], []).append(i)
-    units = sorted(by_group)
-
-    def sub(sc: dict[str, float], gs: Sequence[str]) -> float:
-        """재표집된 묶음에 속한 이미지만으로 Δ_AUC 를 낸다. 같은 묶음이 여러 번 뽑히면
-        그만큼 중복 계산된다(`cluster_bootstrap` 계약)."""
-        ids = [i for g in gs for i in by_group[g]]
-        return gini(sc, [i for i in ids if i in defect], [i for i in ids if i in normal])
 
     grid, source = params.conf_sweep, params.conf_sweep_source
     print(f"격자 {len(grid)}점 (출처 {source})")
 
     curves: dict[str, list[dict]] = {}
-    gini_by_cell: dict[str, dict] = {}
     scores: dict[str, dict[str, float]] = {}
     for tag in DET_TAGS:
         recs = _load_raw(raw_record_path(params, tag))
@@ -105,44 +100,23 @@ def main() -> int:
             })
             pts[-1]["delta"] = pts[-1]["fire_rate_defect"] - pts[-1]["fire_rate_normal"]
         curves[tag] = pts
+        scores[tag] = {r.image_id: image_score(r) for r in recs}
         peak = max(pts, key=lambda p: p["delta"])
         op = next(p for p in pts if p["conf"] == OPERATING_CONF)
         print(f"[{tag}] 하한 {pts[0]['conf']:.2f} Δ {pts[0]['delta']:+.4f} · "
               f"운용 {OPERATING_CONF} Δ {op['delta']:+.4f} · "
               f"최대 {peak['conf']:.2f} Δ {peak['delta']:+.4f}")
 
-        scores[tag] = {r.image_id: image_score(r) for r in recs}
-        ci = cluster_bootstrap(
-            units, lambda gs, t=tag: sub(scores[t], gs), drop_undefined=True
-        )
-        gini_by_cell[tag] = ci.as_dict()
-        print(f"    임계 독립 Δ_AUC {ci.point:+.4f} [{ci.lo:+.4f}, {ci.hi:+.4f}]")
-
-    # 칸 대비 — **같은 재표집에서 짝지어** 낸다. 칸마다 따로 낸 CI 를 눈으로 겹쳐 보면
-    # 묶음이 공통이라는 사실이 빠져 차의 CI 가 실제보다 넓어진다.
-    locals_ = [t for t in DET_TAGS if t.startswith("sep_local")]
-
-    def contrast(fn):
-        return cluster_bootstrap(
-            units,
-            lambda gs: fn({t: sub(scores[t], gs) for t in DET_TAGS}),
-            drop_undefined=True,
-        )
-
-    def _mean_local(v):
-        return sum(v[t] for t in locals_) / len(locals_)
-
-    contrasts = {
-        "fed_minus_central": contrast(lambda v: v["sep_fed"] - v["sep_central"]),
-        "fed_minus_local_mean": contrast(lambda v: v["sep_fed"] - _mean_local(v)),
-        "central_minus_local_mean": contrast(lambda v: v["sep_central"] - _mean_local(v)),
-    }
+    # 임계 독립판은 **본채점과 같은 함수**를 쓴다. 여기서 다시 쓰면 두 산출물이 갈린다.
+    free = score_threshold_free(scores, defect, normal, by_group)
+    for tag, v in free["by_cell"].items():
+        print(f"    임계 독립 Δ_AUC[{tag}] {v['point']:+.4f} "
+              f"[{v['ci_lo']:+.4f}, {v['ci_hi']:+.4f}]")
     print("임계 독립 축 대비 (묶음 짝지음):")
-    for k, v in contrasts.items():
-        print(f"  {k:26s} {v.point:+.4f} [{v.lo:+.4f}, {v.hi:+.4f}]")
-    den = contrasts["central_minus_local_mean"].point
-    num = contrasts["fed_minus_local_mean"].point
-    rec = None if den <= 0 else 100.0 * num / den
+    for k, v in free["contrasts"].items():
+        print(f"  {k:26s} {v['point']:+.4f} [{v['ci_lo']:+.4f}, {v['ci_hi']:+.4f}]")
+    rec = free["recovery_pct"]
+    den = free["contrasts"].get("central_minus_local_mean", {}).get("point")
     print("  회복률 " + ("정의 불가(분모 ≤ 0)" if rec is None
                        else f"{rec:+.1f}% (분모 {den:+.4f})"))
 
@@ -159,24 +133,13 @@ def main() -> int:
         "provenance": CROP,
         "n_defect": len(defect),
         "n_normal": len(normal),
-        "n_groups": len(units),
+        "n_groups": free["n_groups"],
         "grid": list(grid),
         "grid_source": source,
         "operating_conf": OPERATING_CONF,
         "computed_from": "하한(export floor) 레코드 + 임계 필터 — 재추론 없음",
         "ci_note": "곡선은 점추정만. 운용점 CI 는 score_cells_v1.json 의 discrimination 블록",
-        "threshold_free": {
-            "definition": "2·AUROC − 1 (출처 고정 구간, 결함 대 정상, 동점 1/2)",
-            "baseline": "0 = 순위 정보 없음. 지름길은 상수 점수라 정의상 정확히 0",
-            "ci": "묶음 클러스터 부트스트랩 (칸 대비는 같은 재표집에서 짝지음)",
-            "by_cell": gini_by_cell,
-            "contrasts": {k: v.as_dict() for k, v in contrasts.items()},
-            "recovery_pct": rec,
-            "recovery_note": (
-                "분모(중앙집중 − 로컬평균)가 작아 비율이 민감하다. 점추정 단독이 아니라 "
-                "대비 CI 와 함께 읽어야 한다"
-            ),
-        },
+        "threshold_free": free,
         "rank_stable_across_grid": stable,
         "rank_by_conf": {f"{c:.2f}": order[c] for c in grid},
         "curves": curves,
