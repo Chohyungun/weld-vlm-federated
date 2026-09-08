@@ -237,3 +237,51 @@ def score_discrimination_all_cells(
         score_discrimination(grouped[k], contexts, provenance=provenance)
         for k in sorted(grouped)
     )
+
+
+# --------------------------------------------------------------------------------------
+# 임계 독립판 — 승격 후보 (17번 §12-5)
+# --------------------------------------------------------------------------------------
+
+def image_score(record: PredictionRecord) -> float:
+    """이미지 1장의 연속 점수 = 예측 결함 상자 중 최대 점수. `fires` 의 연속판이다.
+
+    임계 `c` 로 자른 뒤의 발화 여부가 정확히 `image_score(r) >= c` 와 같아지도록 잡았다
+    (`detect_infer.filter_by_conf` 가 `score >= c` 로 자르므로). 예측이 없거나 파싱에
+    실패하면 **어떤 임계에서도 발화하지 않아야** 하므로 0 미만을 준다.
+    """
+    if not record.parse_ok or not record.defects:
+        return -1.0
+    return max((d.score or 0.0) for d in record.defects)
+
+
+def gini(scores: Mapping[str, float], defect: Iterable[str], normal: Iterable[str]) -> float:
+    """출처 고정 구간의 **임계 독립 판별력** `2·AUROC − 1`.
+
+    `Δ` 는 임계 한 점의 발화율 차라 임계에 의존한다 — 하한에서는 두 발화율이 함께 1 로
+    올라가 차가 0 으로 눌리고, 격자 안에서 칸 순위가 뒤집힌다(17번 §12-5 실측).
+    같은 질문을 임계 없이 묻는 방법은 순위다: 무작위로 고른 결함 이미지의 점수가 정상
+    이미지보다 높을 확률. 동점은 절반으로 센다.
+
+    **지름길은 여기서도 정확히 0 이다.** 출처가 상수인 구간에서 출처만 읽는 예측기는
+    모든 이미지에 같은 점수를 주므로 전부 동점이 되고 AUROC 가 정확히 0.5 가 된다.
+    `Δ` 가 0 에 고정되는 것과 같은 이유이고, **임계를 고르지 않아도 성립한다**는 점만 다르다.
+
+    Returns:
+        `2·AUROC − 1`. 한쪽 층이 비면 `nan`(재표집에서 걸러내라는 신호다).
+    """
+    d = [scores[i] for i in defect if i in scores]
+    n = [scores[i] for i in normal if i in scores]
+    if not d or not n:
+        return float("nan")
+    order = sorted(d + n)
+    rank: dict[float, float] = {}
+    i = 0
+    while i < len(order):
+        j = i
+        while j + 1 < len(order) and order[j + 1] == order[i]:
+            j += 1
+        rank[order[i]] = (i + j) / 2 + 1          # 동점은 평균 순위
+        i = j + 1
+    auc = (sum(rank[v] for v in d) - len(d) * (len(d) + 1) / 2) / (len(d) * len(n))
+    return 2 * auc - 1

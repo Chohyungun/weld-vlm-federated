@@ -17,3 +17,4 @@
 2026-09-08T02:36:02Z merge=wt/E deferred=5 reason=main-experiment-running
 2026-09-08T07:51:32Z merge=gate/DA deferred=5 reason=main-experiment-running
 2026-09-08T11:32:27Z merge=wt/C deferred=5 reason=main-experiment-running
+2026-09-08T11:33:48Z merge=wt/D deferred=5 reason=main-experiment-running

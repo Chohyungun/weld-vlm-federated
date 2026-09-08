@@ -270,3 +270,46 @@ def test_규격_지름길_각주가_자동으로_달린다(scoring_runs) -> None
     # 운용점 표가 스스로 "확증 기준 아님" 을 말한다
     assert "확증적 기준 아님" in payload["metrics_role"]
     assert "확증적 기준 아님" in payload["params"]["conf"]["role"]
+
+
+# --------------------------------------------------------------------------------------
+# 22번 §5 — 판별력 Δ 배선(과제 4) · 귀속 축 분해(과제 5)가 본채점 산출물에 실린다
+# --------------------------------------------------------------------------------------
+
+def test_판별력_델타가_본채점_산출물에_실린다(scoring_runs) -> None:
+    """`evaluation/discrimination.py` 는 09-02 에 구현·시험까지 끝났는데 본채점 진입점이
+    부르지 않아 값이 산출물에 실린 적이 없었다. 그 배선을 여기서 고정한다."""
+    _, out = scoring_runs["clean"]
+    payload = json.loads((out / "score_cells_v1.json").read_text(encoding="utf-8"))
+    d = payload["discrimination"]
+    assert d["provenance"] == "N-crop"
+    tags = {r["cell"] if not r.get("client") else f"{r['cell']}_{r['client']}"
+            for r in d["results"]}
+    # **칸 이름으로 분기하지 않는다**(불변조건 3-7) — 채점된 칸 전부가 같은 함수를 탄다.
+    # 이 픽스처에는 통합형 두 칸도 있으므로 검출 5칸은 부분집합이지 전체가 아니다.
+    assert set(DET_TAGS) <= tags, tags
+    assert len(tags) == len(d["results"]), "칸이 중복으로 실렸다"
+    for r in d["results"]:
+        # Δ = 결함 발화율 − 정상 발화율. 셋이 서로 맞아야 값이 실제로 계산된 것이다
+        assert r["delta"]["point"] == pytest.approx(
+            r["fire_rate_defect"] - r["fire_rate_normal"], abs=1e-9)
+        # `Interval.as_dict` 의 키는 `ci_lo`/`ci_hi` 다 — 이름이 갈리면 출력이 죽는다
+        assert r["delta"]["ci_lo"] <= r["delta"]["point"] <= r["delta"]["ci_hi"]
+        assert r["n_defect"] > 0 and r["n_normal"] > 0
+
+
+def test_귀속_축_분해가_재질로_나오고_한계를_밝힌다(scoring_runs) -> None:
+    """평가셋에 `client` 열이 없으므로 3분할 분해는 불가능하다 — 그 사실이 산출물에 적혀야
+    분해표를 클라이언트 분해로 오독하지 않는다."""
+    _, out = scoring_runs["clean"]
+    payload = json.loads((out / "score_cells_v1.json").read_text(encoding="utf-8"))
+    dec = payload["decomposition"]
+    assert dec["axis"] == "material"
+    assert "client" in dec["limitation"] and "C3" in dec["client_mapping"]["AL"]
+    for g in dec["by_group"].values():
+        assert g["n_images"] == g["n_defect"] + g["n_normal"]
+        for tag, v in g["per_tag"].items():
+            assert tag in DET_TAGS
+            assert v["n_images"] == g["n_images"]
+        if g["per_tag"]:
+            assert set(g["recovery"]) == {"map_50", "macro_ap", "macro_f1", "miss_rate"}
