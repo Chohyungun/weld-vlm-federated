@@ -163,3 +163,94 @@ def class_jaccard(
         union = a | b
         total += 1.0 if not union else len(a & b) / len(union)
     return total / len(image_ids)
+
+
+# --------------------------------------------------------------------------------------
+# 임계 독립 지표 — 총괄 판정 1 (22번 §1-2)
+# --------------------------------------------------------------------------------------
+
+def image_level_ap(
+    scored: Mapping[str, Sequence[tuple[str, float]]],
+    gold: Mapping[str, Iterable[str]],
+    classes: Sequence[str],
+) -> dict:
+    """이미지 수준 **macro Average Precision** — Macro-F1 의 임계 독립 대응물.
+
+    Macro-F1 은 운용 임계 한 점에서 잰 값이라 임계가 바뀌면 칸의 순서까지 뒤집힌다
+    (17번 §3-5 실측: 연합↔로컬평균 대소가 두 축 모두 뒤집혔다). 총괄 판정 1 은 헤드라인을
+    임계 독립 지표로 옮기라고 정했고(22번), 위치 축에는 이미 `mAP@50` 이 있지만 **이미지
+    수준 분류 축에는 대응물이 없었다.** 이 함수가 그 자리를 채운다.
+
+    정의: 클래스 c 마다 이미지의 점수를 `max(그 이미지에서 c 로 예측된 박스의 conf)`
+    (없으면 −inf, 즉 순위 최하위)로 두고, 이미지 수준 정답(`c ∈ gold[i]`)에 대해 AP 를
+    낸다. 클래스별 AP 를 **GT 양성이 있는 클래스에 대해서만** 평균한다 —
+    `score_detection` 의 macro 규칙과 같다.
+
+    AP 규약은 **보간 없는 계단 합** `Σ (R_n − R_{n−1}) · P_n` 이다. COCO 의 101점 보간과
+    다르며(그쪽은 `coco_map` 이 쓴다) 자유 매개변수가 없는 쪽을 골랐다. 동점 처리:
+    같은 점수의 예측을 한 덩어리로 묶어 한 번에 반영한다 — 입력 순서에 결과가 의존하지
+    않게 하려는 것이다.
+
+    **무엇에 독립이고 무엇에 독립이 아닌가.** 운용 conf 임계에는 독립이다(전 구간을
+    적분한다). 그러나 **하한 자체**(C 의 export `conf ≥ 0.01`)·NMS IoU·`max_det` 에는
+    여전히 의존한다 — 하한 아래 박스는 애초에 존재하지 않는다. 산출물이 그 조건을 함께
+    실어야 "임계 독립"이 과장되지 않는다.
+
+    Args:
+        scored: image_id → [(iso_code, score)]. 박스 단위 목록을 그대로 줘도 된다.
+        gold: image_id → 정답 ISO 코드들. **정상 이미지도 빈 집합으로 들어와야 한다.**
+        classes: 평균 대상 결함 클래스.
+
+    Returns:
+        `{"macro_ap": float, "per_class_ap": {code: float|None}, "skipped_classes": [...]}`
+        점수가 하나도 없으면 `macro_ap` 는 0.0 이고 전 클래스가 skipped 다.
+    """
+    image_ids = sorted(set(gold))
+    g = _as_sets(gold, image_ids)
+    best: dict[str, dict[str, float]] = {c: {} for c in classes}
+    for img in image_ids:
+        for code, score in scored.get(img, ()):
+            if code not in best:
+                continue
+            prev = best[code].get(img)
+            if prev is None or score > prev:
+                best[code][img] = float(score)
+
+    per_class: dict[str, float | None] = {}
+    skipped: list[str] = []
+    for code in classes:
+        positives = sum(1 for i in image_ids if code in g[i])
+        if positives == 0:
+            per_class[code] = None
+            skipped.append(code)
+            continue
+        # 점수가 있는 이미지만 순위에 들어간다. 점수 없는 양성은 재현율 분모에 남아
+        # 놓친 것으로 계상된다 — 예측이 없다고 분모에서 빼면 낙관적으로 잡힌다.
+        ranked = sorted(best[code].items(), key=lambda kv: -kv[1])
+        tp = fp = 0
+        prev_recall = 0.0
+        ap = 0.0
+        idx = 0
+        while idx < len(ranked):
+            score = ranked[idx][1]
+            # 동점 덩어리를 한 번에 반영한다(입력 순서 무관).
+            j = idx
+            while j < len(ranked) and ranked[j][1] == score:
+                if code in g[ranked[j][0]]:
+                    tp += 1
+                else:
+                    fp += 1
+                j += 1
+            recall = tp / positives
+            precision = tp / (tp + fp) if (tp + fp) else 0.0
+            ap += (recall - prev_recall) * precision
+            prev_recall = recall
+            idx = j
+        per_class[code] = ap
+
+    scored_aps = [v for v in per_class.values() if v is not None]
+    return {
+        "macro_ap": (sum(scored_aps) / len(scored_aps)) if scored_aps else 0.0,
+        "per_class_ap": per_class,
+        "skipped_classes": skipped,
+    }

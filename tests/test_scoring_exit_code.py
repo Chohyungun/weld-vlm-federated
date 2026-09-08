@@ -36,6 +36,8 @@ PILOT_D = REPO / "outputs" / "pilot_d"
 PILOT_C = REPO / "outputs" / "pilot_c"
 DET_TAGS = ("sep_central", "sep_local_C1", "sep_local_C2", "sep_local_C3", "sep_fed")
 DET_FILES = [f"{t}_s{PILOT_SEED}.jsonl" for t in DET_TAGS]
+RAW_FILES = [f"{t}_raw_s{PILOT_SEED}.jsonl" for t in DET_TAGS]
+"""하한 레코드 — **곡선의 입력**이다(총괄 판정 1). 없으면 `sweep_curve_recorded` 가 차단한다."""
 
 
 # --------------------------------------------------------------------------------------
@@ -99,6 +101,7 @@ def _have_pilot_inputs() -> bool:
         PILOT_C / "predictions" / "uni_central.generations.jsonl",
         PILOT_C / "predictions" / "uni_fed.generations.jsonl",
         *[PILOT_D / f for f in DET_FILES],
+        *[PILOT_D / "sweep" / f for f in RAW_FILES],
     ]
     return all(p.exists() for p in need)
 
@@ -128,6 +131,9 @@ def scoring_runs(tmp_path_factory):
         out.mkdir()
         for f in DET_FILES:
             shutil.copy(PILOT_D / f, out / f)
+        (out / "sweep").mkdir()
+        for f in RAW_FILES:
+            shutil.copy(PILOT_D / "sweep" / f, out / "sweep" / f)
         proc = _run_score(out, env_extra)
         runs[name] = (proc, out)
     return runs
@@ -213,3 +219,54 @@ def test_통합형이_없으면_회복률이_0_을_지어내지_않는다() -> N
     full = {**det, "uni_central": {"macro_f1": 0.6}, "uni_fed": {"macro_f1": 0.3}}
     r2 = recovery(full)
     assert r2["unified"]["retention_pct"] == pytest.approx(50.0)
+
+
+# --------------------------------------------------------------------------------------
+# 총괄 판정 1·2 이행 — 곡선·임계 독립 지표·규격 지름길 각주가 **산출물에 실재**하는가
+# (22번 §1-2·§2-2-2. 실제 프로세스에서 본다 — 단위 시험은 블록을 손으로 만들어 줄 수 있다)
+# --------------------------------------------------------------------------------------
+
+def test_곡선과_임계_독립_지표가_정규_산출물에_있다(scoring_runs) -> None:
+    from evaluation.params import ScoringParams
+
+    _, out = scoring_runs["clean"]
+    payload = json.loads((out / "score_cells_v1.json").read_text(encoding="utf-8"))
+    grid = [f"{t:.2f}" for t in ScoringParams(snapshot=".", pilot=".", out=".").conf_sweep]
+
+    curve = payload["curve"]
+    assert curve["missing_tags"] == []
+    assert [f"{t:.2f}" for t in curve["grid"]] == grid
+    for tag in DET_TAGS:
+        pts = curve["by_tag"][tag]["by_threshold"]
+        assert set(pts) == set(grid), f"{tag}: 격자 전 점이 있어야 한다"
+        for k in grid:
+            assert {"n_boxes", "macro_f1", "miss_rate"} <= set(pts[k])
+    # 임계가 오르면 박스는 단조 감소한다 — 곡선이 실제로 임계를 반영했다는 표시
+    n = [curve["by_tag"]["sep_fed"]["by_threshold"][k]["n_boxes"] for k in grid]
+    assert n == sorted(n, reverse=True)
+
+    indep = payload["threshold_independent"]
+    assert indep["primary"] == "map_50"
+    assert indep["recovery"]["map_50"]["recovery_pct"] is not None
+    for tag in DET_TAGS:
+        assert indep["per_tag"][tag]["macro_ap"] is not None
+    # **"임계 독립"이 과장되지 않게 남는 의존을 산출물이 스스로 싣는다**(22번 과제 2)
+    assert {"conf_floor", "nms_iou", "match_iou", "max_det"} <= set(indep["still_depends_on"])
+
+    gates = {r["name"]: r for r in payload["gates_evaluated"]["results"]}
+    for name in ("sweep_curve_recorded", "p9_source_separation"):
+        assert gates[name]["passed"] and not gates[name]["skipped"], name
+
+
+def test_규격_지름길_각주가_자동으로_달린다(scoring_runs) -> None:
+    """전역 지표 표를 읽는 사람이 함정 #11·#12 를 모르고 지나가지 않게 한다(판정 2)."""
+    _, out = scoring_runs["clean"]
+    payload = json.loads((out / "score_cells_v1.json").read_text(encoding="utf-8"))
+    note = payload["shortcut_footnote"]
+    assert note["applies_to"] == "metrics (전역 지표 표)"
+    assert len(note["lines"]) == 2
+    assert any("함정 #11" in ln for ln in note["lines"])
+    assert any("함정 #12" in ln for ln in note["lines"])
+    # 운용점 표가 스스로 "확증 기준 아님" 을 말한다
+    assert "확증적 기준 아님" in payload["metrics_role"]
+    assert "확증적 기준 아님" in payload["params"]["conf"]["role"]

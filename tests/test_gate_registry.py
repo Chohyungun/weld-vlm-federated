@@ -41,6 +41,8 @@ def test_expected_gates_are_registered() -> None:
         "coord_space_contract",
         "scoring_population",
         "stratified_scoring",          # 13번 D-1 — 판정 6 이행 담보
+        "sweep_curve_recorded",        # 22번 §1-2 — 총괄 판정 1 이행 담보
+        "p9_source_separation",        # 22번 §2-2-2 — 총괄 판정 2 이행 담보
     } <= set(REGISTRY)
 
 
@@ -241,3 +243,112 @@ def test_stratified_gate_has_teeth() -> None:
     # (4) 지름길 규칙의 lift 가 0 이 아니다 — 층 정의 또는 기준선 고장
     assert blocked({"stratified": _strata(lift=1e-6)})
     assert blocked({"stratified": _strata(lift_w=-1e-6)})
+
+
+# --------------------------------------------------------------------------------------
+# sweep_curve_recorded — 곡선 병기 담보 (총괄 판정 1 · 22번 §1-2)
+# --------------------------------------------------------------------------------------
+
+def _curve(grid=(0.01, 0.25, 0.5), tags=("sep_central", "sep_fed"), missing=(),
+           drop_point=False) -> dict:
+    keys = [f"{t:.2f}" for t in grid]
+    by_tag = {}
+    for t in tags:
+        pts = {k: {"n_boxes": 10, "macro_f1": 0.5, "miss_rate": 0.4,
+                   "defect_recall": 0.6, "class_jaccard": 0.5} for k in keys}
+        if drop_point and t == tags[-1]:
+            pts.pop(keys[-1])
+        by_tag[t] = {"n_boxes_floor": 100, "by_threshold": pts}
+    return {"grid": list(grid), "grid_source": "configs/base.yaml:x",
+            "by_tag": by_tag, "missing_tags": list(missing),
+            "threshold_dependence": {"macro_f1": {"fed_vs_local_mean_flips": True,
+                                                  "fed_vs_central_flips": False}}}
+
+
+def _indep(primary="map_50", with_recovery=True, pct=29.0) -> dict:
+    return {"primary": primary,
+            "recovery": {primary: {"recovery_pct": pct}} if with_recovery else {}}
+
+
+def test_curve_gate_skips_without_block() -> None:
+    r = _result(run_scoring_gates(GateContext(env={})), "sweep_curve_recorded")
+    assert r["skipped"] and r["passed"]
+
+
+def test_curve_gate_passes_with_full_grid() -> None:
+    out = run_scoring_gates(GateContext(
+        env={}, extra={"curve": _curve(), "threshold_independent": _indep()}))
+    r = _result(out, "sweep_curve_recorded")
+    assert r["passed"] and not r["skipped"] and r["blocking"]
+    assert r["value"]["flipping_axes"] == ["macro_f1"]
+
+
+def test_curve_gate_has_teeth() -> None:
+    """실패해야 하는 입력 넷 — 전부 **차단** 실패여야 한다."""
+    def blocked(extra: dict) -> bool:
+        out = run_scoring_gates(GateContext(env={}, extra=extra))
+        return "sweep_curve_recorded" in out["blocking_failures"]
+
+    ind = _indep()
+    # (1) 격자가 비어 있다
+    assert blocked({"curve": {**_curve(), "grid": []}, "threshold_independent": ind})
+    # (2) 하한 레코드가 없어 칸이 빠졌다 — 곡선이 조용히 줄어드는 경로
+    assert blocked({"curve": _curve(missing=("sep_fed",)), "threshold_independent": ind})
+    # (3) 격자의 한 점이 어느 칸에서 빠졌다 — 시드·칸이 다른 격자를 쓰면 비교가 깨진다
+    assert blocked({"curve": _curve(drop_point=True), "threshold_independent": ind})
+    # (4) 임계 독립 헤드라인 지표의 회복률이 없다
+    assert blocked({"curve": _curve(), "threshold_independent": _indep(with_recovery=False)})
+    # (5) 키는 있는데 값이 None — 칸이 모자라 산출되지 않은 상태. 키만 세면 통과한다
+    assert blocked({"curve": _curve(), "threshold_independent": _indep(pct=None)})
+
+
+# --------------------------------------------------------------------------------------
+# p9_source_separation — 출처별 분리 보고 필수화 (총괄 판정 2 · 22번 §2-2-2)
+# --------------------------------------------------------------------------------------
+
+def _p9(equivalent=False, client="C1", drop=None) -> dict:
+    row = {
+        "cell": "sep_local", "client": client, "tag": "sep_local_C1", "seed": 1,
+        "fp_rate_crop": {"point": 0.49}, "fp_rate_tile": {"point": 0.002},
+        "fp_rate_diff": {"point": -0.49, "ci_lo": -0.53, "ci_hi": -0.45},
+        "tost": {"equivalent": equivalent},
+        "fp_breakdown": {"N-crop": {"fp_rate": 0.49}, "N-tile": {"fp_rate": 0.002}},
+    }
+    if drop:
+        row.pop(drop)
+    return {"results": [row]}
+
+
+def _note(lines=("함정 #11 …",)) -> dict:
+    return {"lines": list(lines)}
+
+
+def test_p9_gate_skips_without_block() -> None:
+    r = _result(run_scoring_gates(GateContext(env={})), "p9_source_separation")
+    assert r["skipped"] and r["passed"]
+
+
+def test_p9_gate_passes_with_separation_even_when_not_equivalent() -> None:
+    """**동등하지 않다는 사실은 차단 사유가 아니다** — 총괄이 알고 보류를 정했다.
+    차단하는 것은 분리 표가 빠지는 것이다."""
+    out = run_scoring_gates(GateContext(
+        env={}, extra={"p9": _p9(equivalent=False), "shortcut_footnote": _note()}))
+    r = _result(out, "p9_source_separation")
+    assert r["passed"] and r["blocking"] and r["value"]["n_not_equivalent"] == 1
+    assert "p9_source_separation" not in out["blocking_failures"]
+
+
+def test_p9_gate_has_teeth() -> None:
+    def blocked(extra: dict) -> bool:
+        out = run_scoring_gates(GateContext(env={}, extra=extra))
+        return "p9_source_separation" in out["blocking_failures"]
+
+    # (1) 결과가 비어 있다
+    assert blocked({"p9": {"results": []}, "shortcut_footnote": _note()})
+    # (2) 출처별 항목이 빠졌다 — 오탐률·차·CI·TOST 병기가 필수다
+    for key in ("fp_rate_crop", "fp_rate_tile", "fp_rate_diff", "tost", "fp_breakdown"):
+        assert blocked({"p9": _p9(drop=key), "shortcut_footnote": _note()}), key
+    # (3) sep_local 행에 client 가 없다 — 3모델이 이름으로 구분되지 않는다
+    assert blocked({"p9": _p9(client=None), "shortcut_footnote": _note()})
+    # (4) 전역 표의 규격 지름길 각주가 비어 있다
+    assert blocked({"p9": _p9(), "shortcut_footnote": _note(lines=())})

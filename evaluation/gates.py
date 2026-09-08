@@ -300,3 +300,104 @@ def run_scoring_gates(ctx: GateContext) -> dict:
         "blocking_failures": blocking_failures,
         "ok": not blocking_failures,
     }
+
+
+@register("sweep_curve_recorded")
+def _gate_curve(ctx: GateContext) -> GateResult:
+    """**곡선이 산출물에 있는가** — 총괄 판정 1 이행 (22번 §1-2).
+
+    단일 임계 한 점은 확증 기준이 아니다. 17번 §3-5 에서 연합↔로컬평균의 대소가 두 축
+    모두 뒤집혔고, 총괄은 헤드라인을 곡선 + 임계 독립 지표로 옮겼다. 그 이행이 사람 손
+    절차(`--stage sweep` 별도 실행)에 걸려 있으면 어느 시드에서 빠져도 조용하다.
+
+    본다: (1) 곡선 블록이 있고, (2) 등록된 격자 **전 점**이 채점된 칸마다 있으며,
+    (3) 시드 사이에 격자가 갈리지 않게 격자 출처가 기록돼 있고, (4) 임계 독립 헤드라인
+    지표가 하한에서 산출됐다.
+    """
+    curve = ctx.extra.get("curve")
+    if curve is None:
+        return GateResult("sweep_curve_recorded", True, "곡선 블록 미제공 — 판정 안 함",
+                          skipped=True)
+    grid = [f"{float(t):.2f}" for t in (curve.get("grid") or [])]
+    if not grid:
+        return GateResult("sweep_curve_recorded", False,
+                          "격자가 비어 있다 — 곡선을 낼 수 없다")
+    if curve.get("missing_tags"):
+        return GateResult(
+            "sweep_curve_recorded", False,
+            f"하한 레코드가 없어 곡선이 빠진 칸: {curve['missing_tags']} — "
+            "sweep/{tag}_raw_s{seed}.jsonl 가 있어야 한다")
+    by_tag = curve.get("by_tag") or {}
+    if not by_tag:
+        return GateResult("sweep_curve_recorded", False, "곡선에 칸이 하나도 없다")
+    for tag, block in by_tag.items():
+        got = set(block.get("by_threshold") or {})
+        if set(grid) - got:
+            return GateResult(
+                "sweep_curve_recorded", False,
+                f"{tag}: 격자 {len(grid)}점 중 {sorted(set(grid) - got)} 가 없다 — "
+                "시드·칸이 같은 격자를 써야 비교가 성립한다")
+    indep = ctx.extra.get("threshold_independent") or {}
+    primary = indep.get("primary")
+    head = (indep.get("recovery") or {}).get(primary or "", {})
+    # **키의 존재가 아니라 값의 존재를 본다.** 칸이 모자라면 `recovery_pct` 가 None 으로
+    # 남는데, 키만 세면 그 상태가 통과한다.
+    if not primary or head.get("recovery_pct") is None:
+        return GateResult(
+            "sweep_curve_recorded", False,
+            f"임계 독립 헤드라인 지표({primary or '미지정'})의 회복률이 산출되지 않았다 — "
+            "총괄 판정 1 은 헤드라인을 임계 독립 지표로 정했다",
+            value={"grid_source": curve.get("grid_source"), "head": head})
+    flips = curve.get("threshold_dependence") or {}
+    flipped = sorted(k for k, v in flips.items() if v.get("fed_vs_local_mean_flips"))
+    return GateResult(
+        "sweep_curve_recorded", True,
+        f"격자 {len(grid)}점 × 칸 {len(by_tag)} 기록 · 헤드라인 {primary} · "
+        f"임계에서 대소가 뒤집히는 축 {flipped or '없음'}",
+        value={"grid": grid, "grid_source": curve.get("grid_source"),
+               "primary": primary, "flipping_axes": flipped})
+
+
+@register("p9_source_separation")
+def _gate_p9_separation(ctx: GateContext) -> GateResult:
+    """**P9 출처별 분리 보고가 붙어 있는가** — 총괄 판정 2 이행 (22번 §2-2-2).
+
+    크롭 한정본 승격은 보류됐고(평가셋 불변), 그 대가로 **분리 보고가 필수**가 됐다.
+    전역 점수만 읽는 사람이 "이 점수의 일부는 규격 지름길"을 모르고 지나가지 않게,
+    출처별 오탐률·차·CI·TOST 가 항상 함께 있어야 한다.
+
+    **동등하지 않다는 사실 자체는 차단 사유가 아니다** — 실측 결과이고 총괄이 이미 알고
+    보류를 결정했다. 차단하는 것은 **분리 표가 빠지는 것**이다.
+    """
+    p9 = ctx.extra.get("p9")
+    if p9 is None:
+        return GateResult("p9_source_separation", True, "P9 블록 미제공 — 판정 안 함",
+                          skipped=True)
+    rows = list(p9.get("results") or [])
+    if not rows:
+        return GateResult("p9_source_separation", False,
+                          "P9 결과가 비어 있다 — 정상 이미지 오탐 분해가 없다")
+    need = ("fp_rate_crop", "fp_rate_tile", "fp_rate_diff", "tost", "fp_breakdown")
+    for r in rows:
+        missing = [k for k in need if not r.get(k)]
+        if missing:
+            return GateResult(
+                "p9_source_separation", False,
+                f"{r.get('tag', r.get('cell'))}: 출처별 분리 항목 결손 {missing} — "
+                "오탐률·차·CI·TOST 병기가 필수다(22번 §2-2-2)")
+        if not r.get("client") and r.get("cell") == "sep_local":
+            return GateResult(
+                "p9_source_separation", False,
+                "sep_local 행에 client 가 없다 — 3모델이 이름으로 구분되지 않는다")
+    note = ctx.extra.get("shortcut_footnote") or {}
+    if not (note.get("lines")):
+        return GateResult(
+            "p9_source_separation", False,
+            "전역 지표 표의 규격 지름길 각주가 비어 있다 — 자동 생성이 끊겼다")
+    n_bad = sum(1 for r in rows if not (r.get("tost") or {}).get("equivalent"))
+    return GateResult(
+        "p9_source_separation", True,
+        f"칸 {len(rows)} 전부 출처별 분리 병기 · TOST 동등 아님 {n_bad}칸(기록, 차단 아님) · "
+        f"각주 {len(note['lines'])}줄 자동 생성",
+        value={"n_cells": len(rows), "n_not_equivalent": n_bad,
+               "tags": [r.get("tag", r.get("cell")) for r in rows]})

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from evaluation.metrics.detection import class_jaccard, score_detection
+from evaluation.metrics.detection import class_jaccard, image_level_ap, score_detection
 from evaluation.metrics.localization import coco_map, score_bbox_iou
 from evaluation.schema import PredictionRecord
 
@@ -55,11 +55,22 @@ def score_records(
     det = score_detection(pred_codes, {k: sorted(v) for k, v in gold_codes.items()}, classes)
     loc = score_bbox_iou(pred_boxes, gold_boxes)
     ap = coco_map(pred_scored, gold_boxes, classes, scores_present=scores_present)
+    # 임계 독립 분류 축 (총괄 판정 1, 22번 §1-2). 점수가 없는 칸(생성형)은 순위가 없어
+    # 정의되지 않는다 — 0 으로 채우지 않고 None 을 싣는다.
+    img_ap = (
+        image_level_ap({i: [(c, s) for c, _, s in v] for i, v in pred_scored.items()},
+                       gold_codes, classes)
+        if scores_present
+        else {"macro_ap": None, "per_class_ap": {}, "skipped_classes": list(classes)}
+    )
     return {
         **det.as_dict(),
         "miss_rate": 1.0 - det.defect_recall,
         "class_jaccard": class_jaccard(pred_codes, gold_codes, classes),
         "scores_present": scores_present,
+        "macro_ap": img_ap["macro_ap"],
+        "per_class_ap": img_ap["per_class_ap"],
+        "ap_skipped_classes": img_ap["skipped_classes"],
         **loc.as_dict(),
         **ap,
     }
