@@ -93,11 +93,18 @@ def test_v1_회계가_실측과_맞는다():
 
 
 def test_v1_은_덮어쓸_수_없다(monkeypatch):
-    """규약 1-6 — 동결본 경로로 재생성하면 회계가 가리키는 실물이 사라진다."""
+    """규약 1-6 — 봉인본 경로로 재생성하면 회계가 가리키는 실물이 사라진다.
+
+    옛 가드는 경로가 v1 인지만 봐서 그 사이 봉인된 v2 를 통과시켰다. 지금은 계약
+    (`SNAPSHOT.sha256`)으로 판정한다 — 가드 전반은 `test_frozen_out.py` 가 맡고,
+    여기서는 **회계가 붙어 있는 v1** 이 실제로 막히는지만 고정한다.
+    """
+    from corpus.generate.frozen_out import FrozenDirectoryError
+
     monkeypatch.setattr(
         "sys.argv",
         ["make_pairs_pilot", "--out", str(M.FROZEN_V1)],
     )
-    with pytest.raises(SystemExit) as e:
+    with pytest.raises(FrozenDirectoryError) as e:
         M.main()
-    assert "동결" in str(e.value)
+    assert "봉인" in str(e.value)
