@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -116,8 +117,239 @@ def stratified_block(pop: Population, by_cell: dict,
     }
 
 
+def raw_record_path(params: ScoringParams, tag: str) -> Path:
+    """하한(export floor) 레코드. `adapt_main_detections.py` 와 `sweep_detection_conf.py` 가
+    같은 자리를 쓴다."""
+    return params.out / "sweep" / f"{tag}_raw_s{params.seed}.jsonl"
+
+
+def _image_level(pred_codes: dict, gold: dict, classes) -> dict:
+    """곡선 한 점 — **이미지 수준 지표만.** IoU 매칭·COCO 평가를 돌리지 않는다.
+
+    곡선의 목적은 임계 의존성을 보이는 것이고, 그 의존성이 사는 축은 Macro-F1·놓침처럼
+    **임계에서 잘라 세는** 지표다. 위치 축의 임계 독립 값은 하한 한 점에서 따로 낸다
+    (`threshold_independent_block`) — 임계마다 mAP 를 다시 내면 잘린 PR 곡선의 그림자를
+    14번 그리는 셈이고 채점 시간만 늘어난다.
+    """
+    from evaluation.metrics.detection import class_jaccard, score_detection
+
+    det = score_detection(pred_codes, gold, classes)
+    return {
+        "macro_f1": det.macro_f1,
+        "miss_rate": 1.0 - det.defect_recall,
+        "defect_recall": det.defect_recall,
+        "class_jaccard": class_jaccard(pred_codes, gold, classes),
+    }
+
+
+def _recovery_of(values: dict[str, float]) -> dict:
+    """`(연합 − 로컬평균) / (중앙집중 − 로컬평균)`. 칸이 없으면 None 을 돌려준다."""
+    need = ("sep_central", "sep_fed", "sep_local_C1", "sep_local_C2", "sep_local_C3")
+    if not all(t in values and values[t] is not None for t in need):
+        return {"recovery_pct": None, "note": "검출 5모델이 모두 있어야 산출된다"}
+    locals_ = [values[t] for t in need[2:]]
+    local_mean = sum(locals_) / len(locals_)
+    denom = values["sep_central"] - local_mean
+    return {
+        "central": values["sep_central"], "fed": values["sep_fed"],
+        "local_mean": local_mean, "denominator": denom,
+        "recovery_pct": ((values["sep_fed"] - local_mean) / denom * 100)
+        if abs(denom) > 1e-12 else None,
+    }
+
+
+def curve_block(params: ScoringParams, pop: Population, det_tags) -> dict:
+    """**등록된 격자 전 구간의 곡선.** 채점의 정규 단계다 (총괄 판정 1 · 22번 §1-2).
+
+    단일 임계 한 점은 확증 기준이 아니다 — 17번 §3-5 에서 연합↔로컬평균의 대소가 두 축
+    모두 뒤집혔고, 총괄은 헤드라인을 곡선 + 임계 독립 지표로 옮겼다. 그래서 이 블록은
+    옵션이 아니라 매 채점마다 나온다: 곡선이 없으면 `sweep_curve_recorded` 게이트가 막는다.
+
+    입력은 **하한 레코드**(`sweep/{tag}_raw_s{seed}.jsonl`)다. 하한 1회 + 사후 필터가
+    임계별 재추론과 같다는 동치 위에 서 있고, 그 동치는 파일럿 비트 대조 + 본실험 표본
+    재확인으로 받친다(`scripts/probe/verify_filter_parity.py`).
+    """
+    from evaluation.adapters import read_records
+    from evaluation.detect_infer import filter_by_conf
+
+    gold = {k: sorted(v) for k, v in pop.gold_codes.items()}
+    by_tag: dict[str, dict] = {}
+    missing: list[str] = []
+    for tag in det_tags:
+        src = raw_record_path(params, tag)
+        if not src.exists():
+            missing.append(tag)
+            continue
+        raw = read_records(src.read_text(encoding="utf-8").splitlines())
+        points: dict[str, dict] = {}
+        for thr in params.conf_sweep:
+            cut = filter_by_conf(raw, thr)
+            codes = {r.image_id: sorted(r.iso_codes) for r in cut}
+            points[f"{thr:.2f}"] = {
+                "n_boxes": sum(len(r.defects) for r in cut),
+                **_image_level(codes, gold, pop.classes),
+            }
+        by_tag[tag] = {"n_boxes_floor": sum(len(r.defects) for r in raw),
+                       "by_threshold": points}
+
+    # 임계별 회복률과 **부호가 뒤집히는지**. 뒤집히면 단일 임계 결론이 성립하지 않는다.
+    recovery: dict[str, dict] = {}
+    flips: dict[str, dict] = {}
+    if not missing and by_tag:
+        for key in ("macro_f1", "miss_rate"):
+            per_thr = {}
+            signs_fl, signs_fc = set(), set()
+            for thr in params.conf_sweep:
+                k = f"{thr:.2f}"
+                vals = {t: by_tag[t]["by_threshold"][k][key] for t in by_tag}
+                per_thr[k] = _recovery_of(vals)
+                lm = per_thr[k]["local_mean"]
+                f, c = vals["sep_fed"], vals["sep_central"]
+                signs_fl.add((f > lm) - (f < lm))
+                signs_fc.add((f > c) - (f < c))
+            recovery[key] = per_thr
+            flips[key] = {
+                "fed_vs_local_mean_flips": len(signs_fl) > 1,
+                "fed_vs_central_flips": len(signs_fc) > 1,
+                "signs_fed_vs_local_mean": sorted(signs_fl),
+                "signs_fed_vs_central": sorted(signs_fc),
+            }
+
+    return {
+        "grid": list(params.conf_sweep),
+        "grid_source": params.conf_sweep_source,
+        "input": "하한 레코드(sweep/{tag}_raw_s{seed}.jsonl) + filter_by_conf",
+        "metrics_computed": ["n_boxes", "macro_f1", "miss_rate", "defect_recall",
+                             "class_jaccard"],
+        "by_tag": by_tag,
+        "missing_tags": missing,
+        "recovery_by_threshold": recovery,
+        "threshold_dependence": flips,
+        "note": (
+            "단일 임계 한 점은 확증 기준이 아니다(총괄 판정 1, 22번). 격자는 사전등록 "
+            "대상이고 단일 임계는 아니다 — 격자는 결과와 무관하게 정할 수 있어 사후 선택이 "
+            "아니기 때문이다. 대소가 뒤집히는 축은 threshold_dependence 가 말한다"
+        ),
+    }
+
+
+def threshold_independent_block(params: ScoringParams, pop: Population, det_tags) -> dict:
+    """**임계 독립 헤드라인 지표.** 하한 레코드 한 점에서만 낸다 (총괄 판정 1).
+
+    - `map_50`·`map_50_95`: PR 곡선 전 구간 적분(위치 축)
+    - `macro_ap`: 이미지 수준 macro Average Precision(분류 축 — Macro-F1 의 임계 독립 대응물)
+
+    **"임계 독립"의 정확한 범위**(22번 과제 2가 요구한 주석): 운용 conf 임계에는 독립이다.
+    그러나 아래에는 **여전히 의존한다** — 이 값들을 "모든 설정에 불변"으로 읽으면 안 된다.
+
+    1. **export 하한 자체**(`conf_floor`, C 가 0.01 로 내보냈다). 그 아래 박스는 존재하지 않는다
+    2. **NMS IoU**(Ultralytics 기본값) — 추론 시점에 이미 적용돼 레코드에 반영돼 있다
+    3. **매칭 IoU**(mAP@50 은 0.50, mAP@50:95 는 0.50~0.95 평균)
+    4. **`max_det`**(300) — 이미지당 상한에 걸리면 재현율 꼬리가 잘린다
+    5. 모집단·정답(동결 스냅샷)과 채점 클래스 4종
+
+    즉 임계 독립은 **"운용점을 고르지 않아도 된다"**는 뜻이지 "자유 매개변수가 없다"가 아니다.
+    """
+    from evaluation.adapters import read_records
+
+    per_tag: dict[str, dict] = {}
+    for tag in det_tags:
+        src = raw_record_path(params, tag)
+        if not src.exists():
+            continue
+        recs = read_records(src.read_text(encoding="utf-8").splitlines())
+        m = score(pop, recs)
+        per_tag[tag] = {
+            "n_boxes_floor": sum(len(r.defects) for r in recs),
+            "map_50": m["map_50"], "map_50_95": m["map_50_95"],
+            "macro_ap": m["macro_ap"], "per_class_ap": m["per_class_ap"],
+            "scores_present": m["scores_present"],
+        }
+    recovery = {
+        key: _recovery_of({t: v[key] for t, v in per_tag.items()})
+        for key in ("map_50", "map_50_95", "macro_ap")
+    } if per_tag else {}
+    return {
+        "computed_at": f"conf >= {params.conf_floor} (export 하한, 임계 미적용)",
+        "primary": "map_50",
+        "per_tag": per_tag,
+        "recovery": recovery,
+        "independent_of": "운용 conf 임계 (PR 곡선 전 구간 적분)",
+        "still_depends_on": {
+            "conf_floor": params.conf_floor,
+            "nms_iou": "Ultralytics 기본값 — 추론 시점에 적용됨",
+            "match_iou": "map_50=0.50 · map_50_95=0.50~0.95 · macro_ap 은 이미지 수준이라 IoU 무관",
+            "max_det": params.max_det,
+            "population": str(params.snapshot),
+            "classes": list(params.class_names),
+        },
+        "note": ("임계 독립은 '운용점을 고르지 않아도 된다'는 뜻이지 자유 매개변수가 "
+                 "없다는 뜻이 아니다 (22번 과제 2)"),
+    }
+
+
+def shortcut_footnote(p9: dict, strata: dict) -> dict:
+    """**전역 지표 표에 자동으로 달리는 각주** (총괄 판정 2 · 22번 §2-2-2).
+
+    "이 점수의 일부는 규격 지름길이다"를 사람이 기억해서 다는 문장으로 두지 않는다 —
+    산출물이 스스로 달게 한다. 두 지름길을 각각의 실측에서 읽는다.
+
+    - **함정 #11 규격 지름길**: 정상 이미지의 오탐이 출처(크롭/타일)로 쏠리는가. P9 의
+      출처별 분해에서 읽는다. TOST 동등이 아니면 전역 점수의 일부가 "결함이라서"가 아니라
+      "크롭이라서" 나온 것이다.
+    - **함정 #12 id 축 지름길**: 구간 최빈 라벨 규칙만으로 전역 Macro-F1 이 얼마까지 가는가.
+      층화 블록의 지름길 행에서 읽는다.
+
+    문장을 만들되 **수치는 실측에서 온다** — 하드코딩한 경고문은 값이 바뀌어도 그대로 남는다.
+    """
+    lines: list[str] = []
+    p9_rows = list(p9.get("results") or [])
+    not_equiv = [r for r in p9_rows if not (r.get("tost") or {}).get("equivalent")]
+    if p9_rows:
+        worst = min(p9_rows, key=lambda r: (r.get("fp_rate_diff") or {}).get("point", 0.0))
+        crop = (worst.get("fp_rate_crop") or {}).get("point")
+        tile = (worst.get("fp_rate_tile") or {}).get("point")
+        lines.append(
+            f"함정 #11(규격 지름길): 정상 이미지 오탐이 출처로 쏠린다 — TOST 동등 아님 "
+            f"{len(not_equiv)}/{len(p9_rows)}칸. 최대 격차 {worst.get('tag', worst.get('cell'))}: "
+            f"N-crop {crop:.4f} 대 N-tile {tile:.4f}. **전역 지표의 일부는 결함이 아니라 "
+            f"크롭 규격에서 온다.** 출처별 분리 표를 반드시 함께 읽는다"
+            if crop is not None and tile is not None else
+            "함정 #11: P9 출처별 분해가 비어 있다"
+        )
+    k0 = str(strata.get("default_k", ""))
+    row = (strata.get("by_k", {}).get(k0, {}) or {}).get(SHORTCUT_TAG, {})
+    if row:
+        lines.append(
+            f"함정 #12(id 축 지름길): 구간 최빈 라벨 규칙만으로 전역 Macro-F1 "
+            f"{row.get('global_macro_f1'):.4f} (K={k0}, 평가셋 적합 상한). "
+            f"**전역 Macro-F1 하나로는 픽셀을 본 모델과 id 구간을 본 규칙을 가를 수 없다** — "
+            f"층화 lift 를 함께 읽는다"
+        )
+    return {
+        "applies_to": "metrics (전역 지표 표)",
+        "n_p9_cells_not_equivalent": len(not_equiv),
+        "n_p9_cells": len(p9_rows),
+        "lines": lines,
+        "source": "P9 출처별 분해 + 층화 지름길 행 (실측에서 유도, 하드코딩 아님)",
+    }
+
+
+def selected_tags(args) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """`--cells` → (검출 태그, 통합형 태그). **빠진 칸을 산출물이 말하게 한다.**
+
+    본실험 시드 1 은 검출 3칸(5모델)만 돌았다 — 통합형 두 칸은 아직 학습 전이다. 그때
+    `ALL_TAGS` 를 그대로 돌리면 통합형 원시 출력 부재로 채점이 죽고, 예외를 삼키면
+    "다섯 칸 채점"이라는 이름 아래 세 칸만 채점된 산출물이 남는다. 선택을 인자로 올려
+    산출물의 `cells_scored` 에 적는다.
+    """
+    if getattr(args, "cells", "all") == "det":
+        return DET_TAGS, ()
+    return DET_TAGS, UNI_TAGS
+
+
 def score_all(
-    params: ScoringParams, pop: Population
+    params: ScoringParams, pop: Population, uni_tags: Sequence[str] = UNI_TAGS
 ) -> tuple[dict, dict, dict, list, dict]:
     """다섯 칸 전부 채점. 검출은 저장 레코드 되읽기, 통합형은 어댑터 경유."""
     known = set(load_label_map().iso_codes())
@@ -134,7 +366,7 @@ def score_all(
         metrics[tag] = score(pop, recs)
         failures[tag] = failure_breakdown(recs)
 
-    for cell in UNI_TAGS:
+    for cell in uni_tags:
         # 원시 생성문에서 매번 새로 어댑트한다. 저장본을 되읽으면 어댑터가 채점 경로에서
         # 빠져 "칸이 갈리는 유일한 지점"이 검증 대상 밖으로 나간다.
         rep = load_unified_records(params, pop, cell, known)
@@ -175,6 +407,21 @@ def recovery(metrics: dict) -> dict:
     locals_ = ("sep_local_C1", "sep_local_C2", "sep_local_C3")
     local_mean = sum(f1(k) for k in locals_) / len(locals_)
     denom = f1("sep_central") - local_mean
+    # 통합형 두 칸이 아직 없으면(검출 선행 구간) **0 을 지어내지 않는다.** 없는 것과
+    # 0 인 것을 섞으면 유지율이 거짓 수를 낸다.
+    uni = (
+        {
+            "central": f1("uni_central"), "fed": f1("uni_fed"),
+            "local_mean": None, "recovery_pct": None,
+            "retention_pct": f1("uni_fed") / f1("uni_central") * 100
+            if f1("uni_central") > 0 else None,
+            "note": "통합·로컬은 '제외' 칸이라 회복률 분모가 없다. 유지율만 낸다",
+        }
+        if {"uni_central", "uni_fed"} <= set(metrics)
+        else {"central": None, "fed": None, "local_mean": None, "recovery_pct": None,
+              "retention_pct": None,
+              "note": "통합형 두 칸 미채점 — 이 채점에 없다(0 이 아니라 부재)"}
+    )
     return {
         "basis": "macro_f1",
         "separated": {
@@ -184,19 +431,13 @@ def recovery(metrics: dict) -> dict:
             "recovery_pct": (f1("sep_fed") - local_mean) / denom * 100
             if denom > 0 else None,
         },
-        "unified": {
-            "central": f1("uni_central"), "fed": f1("uni_fed"),
-            "local_mean": None, "recovery_pct": None,
-            "retention_pct": f1("uni_fed") / f1("uni_central") * 100
-            if f1("uni_central") > 0 else None,
-            "note": "통합·로컬은 '제외' 칸이라 회복률 분모가 없다. 유지율만 낸다",
-        },
-        "caveat": "시드 1세트 · 표본 3,279 · R×E=N=6 (본실험의 1/17). 결론으로 쓰지 않는다",
+        "unified": uni,
+        "caveat": "시드 1세트 — 시드 3세트 집계 전까지 경향만. 결론으로 쓰지 않는다",
     }
 
 
 def diagnostics(params: ScoringParams, pop: Population, all_records: list,
-                adapters: dict) -> dict:
+                adapters: dict, uni_tags: Sequence[str] = UNI_TAGS) -> dict:
     """P9(규격 지름길) · 자명하한 · 통합형 인용 진단. 66번이 내던 것을 그대로 옮겼다."""
     with (params.snapshot / "tiles.csv").open(encoding="utf-8", newline="") as fh:
         prov = {r["image_id"]: r["provenance"] for r in csv.DictReader(fh)}
@@ -216,7 +457,7 @@ def diagnostics(params: ScoringParams, pop: Population, all_records: list,
 
     index_ids = {c.chunk_id for c in load_chunks(load_rag_config().chunk_meta)}
     citation_diag = {}
-    for cell in UNI_TAGS:
+    for cell in uni_tags:
         cited = adapters.get(cell, {}).get("citations", {}) or {}
         flat = [c for v in cited.values() for c in v]
         citation_diag[cell] = {
@@ -256,19 +497,36 @@ def cmd_score(args) -> int:
     params = params_from_args(args)
     params.out.mkdir(parents=True, exist_ok=True)
     pop = load_population(params)
-    print(f"평가셋 {pop.n_eval}장 (정상 {pop.n_normal})")
+    det_tags, uni_tags = selected_tags(args)
+    tags = (*det_tags, *uni_tags)
+    print(f"평가셋 {pop.n_eval}장 (정상 {pop.n_normal}) · 칸 {len(tags)}개 {list(tags)}")
 
-    metrics, failures, adapters, all_records, by_cell = score_all(params, pop)
-    for tag in ALL_TAGS:
+    metrics, failures, adapters, all_records, by_cell = score_all(params, pop, uni_tags)
+    for tag in tags:
         m = metrics[tag]
         print(f"[{tag}] macroF1 {m['macro_f1']:.4f} · miss {m['miss_rate']:.4f} "
               f"· IoU {m['bbox_iou']:.4f}")
 
     reg = check_regressions(params, metrics)
-    diag = diagnostics(params, pop, all_records, adapters)
+    diag = diagnostics(params, pop, all_records, adapters, uni_tags)
     strata = stratified_block(pop, by_cell)
+
+    # 총괄 판정 1 (22번) — 곡선과 임계 독립 지표는 **정규 단계**다. 옵션이 아니다.
+    indep = threshold_independent_block(params, pop, det_tags)
+    curve = curve_block(params, pop, det_tags)
+    footnote = shortcut_footnote(diag["p9"], strata)
+    ti = indep.get("recovery", {}).get(indep["primary"], {})
+    if ti.get("recovery_pct") is not None:
+        print(f"[임계 독립] {indep['primary']} 회복률 {ti['recovery_pct']:.1f}% "
+              f"(하한 {params.conf_floor} 에서 산출 · 분모 {ti['denominator']:.4f})")
+    else:
+        print("[임계 독립] 회복률 산출 불가 — 검출 5모델이 모두 있어야 한다")
+    for key, f in curve.get("threshold_dependence", {}).items():
+        print(f"[곡선] {key}: 연합↔로컬평균 "
+              f"{'뒤집힘' if f['fed_vs_local_mean_flips'] else '유지'} · 연합↔중앙집중 "
+              f"{'뒤집힘' if f['fed_vs_central_flips'] else '유지'}")
     k0 = str(strata["default_k"])
-    for tag in [*ALL_TAGS, SHORTCUT_TAG]:
+    for tag in [*tags, SHORTCUT_TAG]:
         s = strata["by_k"][k0][tag]
         print(f"[{tag}] 층화(K={k0}) macroF1 {s['stratified_macro_f1']:.4f} · "
               f"lift {s['stratified_lift']:+.5f} · 비순수 lift {s['stratified_lift_impure']:+.5f}")
@@ -288,14 +546,27 @@ def cmd_score(args) -> int:
             "gate_pass_line": params.gate_pass_line,
             "measured_prereg": _measured_prereg(params),
             "stratified": strata,
+            "curve": curve,
+            "threshold_independent": indep,
+            "p9": diag["p9"],
+            "shortcut_footnote": footnote,
         },
     ))
     code, why = exit_code(gates, reg)
     payload = {
         "params": params.as_dict(),
         "n_eval": pop.n_eval,
+        "cells_scored": list(tags),
+        "cells_selection": getattr(args, "cells", "all"),
         "scorer": "evaluation.score.score_records (단일)",
         "metrics": metrics,
+        "metrics_role": (
+            f"운용점 예시 conf={params.conf.value} — **확증적 기준 아님**(총괄 판정 1, "
+            "22번 §1-2-3). 헤드라인은 threshold_independent, 칸 비교는 curve 로 한다"
+        ),
+        "threshold_independent": indep,
+        "curve": curve,
+        "shortcut_footnote": footnote,
         "stratified": strata,
         "failures": failures,
         "adapters": adapters,

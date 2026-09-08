@@ -23,7 +23,7 @@
 | # | 명령 | 보증하는 것 |
 |---|---|---|
 | 1 | `uv run python scripts/probe/score_cells.py predict --profile main --pilot <C 산출> --out <채점 dir>` | 검출 3칸 하한(0.01) 추론 → 계약 #4 레코드. 내부 256장 청킹. `--at-conf` 는 운용 임계 레코드 |
-| 2 | `uv run python scripts/probe/score_cells.py score --profile main --pilot <C 산출> --out <채점 dir>` | **본채점.** 전역 지표 + **id 구간 층화 블록(같은 산출물 안)** + 게이트 전수 + prereg 상수 선배치. 종료 코드가 판정이다(§2) |
+| 2 | `uv run python scripts/probe/score_cells.py score --profile main --pilot <C 산출> --out <채점 dir>` | **본채점.** 전역 지표(운용점 예시) + **곡선 전 구간** + **임계 독립 헤드라인 지표** + id 구간 층화 블록 + 규격 지름길 각주 + 게이트 전수 + prereg 상수 선배치. 종료 코드가 판정이다(§2) |
 | 3 | `uv run python scripts/probe/score_cells.py sweep --profile main ...` | conf 스윕 — 단일 임계 결론 금지. 하한 1회 추론 + 사후 필터의 동치는 `--verify-parity` 로 실측 |
 | 4 | `uv run python scripts/probe/stratified_compare.py --k 64 --ladder --pilot <C 산출> --out <채점 dir>` | 층화 **상세** 산출물(구간별 행 포함, `stratified_compare_v1.json`). 총괄 판정 6 의 대조표가 이 파일이다 |
 | 5 | `uv run python scripts/probe/score_cells.py gate --gate <값>` | (선택) 게이트 상수만 갈아 끼워 재판정. 채점은 건드리지 않는다 |
@@ -56,9 +56,31 @@
 | `recovery_denominator` | 회복률 분모 ≥ 3·시드 sd | 시드 sd 가 있으면 ○, 시드 1세트면 기록(헤드라인 금지) |
 | `content_free_gate` | 전역 Macro-F1 이 content-free 천장 통과선(0.9199)을 넘는가 | `gate_status` 가 `적용`일 때만 ○ (지금 `판정_대기`) |
 | `required_tags` | 필수 로깅 태그 11종 | 채점 단계 × (run 태그가 없다) |
+| `sweep_curve_recorded` | 등록 격자 전 점이 채점된 칸마다 있고, 임계 독립 헤드라인 지표의 회복률이 산출됐는가(총괄 판정 1) | ○ |
+| `p9_source_separation` | P9 가 출처별(N-crop/N-tile) 오탐률·차·CI·TOST 를 병기하고, 전역 표의 규격 지름길 각주가 자동 생성됐는가(총괄 판정 2) | ○ |
 
 `skipped` 는 `passed` 와 구분해 센다. 등록됐는데 안 불린 게이트가 있으면
 `tests/test_gate_registry.py` 가 깨진다.
+
+## 3-1. 헤드라인은 곡선과 임계 독립 지표다 (총괄 판정 1 · 22번)
+
+**단일 임계 한 점은 확증 기준이 아니다.** 시드 1 에서 연합↔로컬평균의 대소가 Macro-F1·
+결함 놓침 두 축 모두에서 임계에 따라 뒤집혔다(17번 §3-5). 그래서 채점기는 세 가지를 함께 낸다.
+
+| 블록 | 무엇 | 역할 |
+|---|---|---|
+| `threshold_independent` | 하한(`conf_floor`)에서 낸 `map_50`·`map_50_95`·`macro_ap` 와 그 회복률 | **헤드라인.** 운용점을 고르지 않는다 |
+| `curve` | 등록 격자 전 점의 `macro_f1`·`miss_rate`·`class_jaccard`·`n_boxes` + 임계별 회복률 + 대소 뒤집힘 | **칸 비교.** 데이터를 전부 보인다 |
+| `metrics` | 운용점 예시(`conf`)의 전 지표 | 기록. **확증 기준 아님** |
+
+**격자는 사전등록 대상이고 단일 임계는 아니다.** 격자는 결과와 무관하게 정할 수 있어
+사후 선택이 아니다. 정본은 `configs/base.yaml`(A 소관)의 `conf_sweep_grid` 이고 채점기는
+읽기만 한다 — 미등록이면 `evaluation.params.CONF_SWEEP` 폴백이며 산출물의
+`conf_sweep_source` 가 그 사실을 밝힌다.
+
+**"임계 독립"의 범위.** 운용 conf 임계에는 독립이다(PR 곡선 전 구간 적분). 그러나 export
+하한·NMS IoU·매칭 IoU·`max_det`·모집단에는 여전히 의존한다 — 산출물의
+`threshold_independent.still_depends_on` 이 그 목록이다.
 
 ## 4. 산출물 (`<채점 dir>/`)
 
@@ -68,6 +90,7 @@
 | `score_cells_v1.json` | 본채점. `metrics` · `stratified` · `gates_evaluated` · `exit_code` · `coord_health` · `recovery` · `regression` · P9 |
 | `prereg_recomputed_v1.json` | 사전등록 상수 동결본 재산출(자동 선배치). `snapshot_digest` 로 출처 고정 |
 | `stratified_compare_v1.json` | 층화 상세 (K 사다리 · 구간별 행 · 지름길 규칙) |
+| `verify_filter_parity_v1.json` | 하한+필터 ≡ 직접 추론 동치의 표본 재확인 (곡선의 전제) |
 | `sweep/` · `sweep_detection_conf_v1.json` | conf 스윕 |
 
 ## 5. 첫 산출물 감사 (시드 1)

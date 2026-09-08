@@ -88,10 +88,15 @@ class P9CellResult:
     n_band_excluded: int
     n_missing_prediction: int
     verdict: str
+    client: str | None = None
+    """`sep_local` 은 클라이언트 3모델이 각각 대상이다. 이 필드가 없으면 산출물의 세 행이
+    이름으로 구분되지 않아 RQ3 귀속이 행 순서에 의존한다(17번 시드 1 첫 채점에서 드러남)."""
 
     def as_dict(self) -> dict:
         return {
             "cell": self.cell,
+            "client": self.client,
+            "tag": self.cell if self.client is None else f"{self.cell}_{self.client}",
             "seed": self.seed,
             **self.report.as_dict(),
             "fp_breakdown": self.breakdown,
@@ -172,8 +177,9 @@ def p9_for_cell(
         )
     cell = next(iter(cells)) if cells else "?"
     seed = next(iter(seeds)) if seeds else -1
+    client = next(iter(clients)) if clients else None
     return P9CellResult(
-        cell=cell, seed=seed, report=report, breakdown=breakdown,
+        cell=cell, seed=seed, client=client, report=report, breakdown=breakdown,
         n_band_excluded=n_band, n_missing_prediction=n_missing, verdict=verdict,
     )
 

@@ -162,6 +162,19 @@ GATE_KEYS: tuple[str, ...] = (
 이 붙은 값은 평가셋 유도라 게이트 재료가 아니므로 **후보에 넣지 않는다.**
 """
 
+CONF_SWEEP_KEYS: tuple[str, ...] = (
+    "fixed_before_main_runs.conf_sweep_grid",
+    "evaluation.detection.conf_sweep_grid",
+    "detection.conf_sweep_grid",
+)
+"""**스윕 격자**를 찾을 configs 키 (총괄 판정 1, 22번 §1-2-2).
+
+단일 임계는 사전등록하지 않는다 — 결과를 본 뒤 한 점을 고르면 사후 선택이다. 대신
+**격자를 등록한다**: 격자는 결과와 무관하게 정할 수 있으므로 사후 선택이 아니고, 시드·칸이
+같은 격자를 쓰는 것이 비교 가능성의 조건이다. 등록 소관은 A(`configs/base.yaml`)이고 D 는
+읽기만 한다 — 값을 코드에 박으면 "configs 가 정본"이 문면으로만 남는다.
+"""
+
 GATE_TOLERANCE_KEYS: tuple[str, ...] = (
     "fixed_before_main_runs.gate_tolerance",
     "preregistered.gate_tolerance",
@@ -214,12 +227,42 @@ def _resolve(
 
 
 def resolve_conf(cfg: dict | None = None) -> Resolved:
-    """검출 conf 임계. configs 우선, 없으면 폴백 + 그 사실을 출처에 적는다."""
+    """검출 conf 임계 — **운용점 예시**. configs 우선, 없으면 폴백 + 그 사실을 출처에 적는다.
+
+    **여기서 configs 를 찾지 못하는 것이 정상이다**(총괄 판정 1, 22번 §1-2-2). 단일 임계를
+    사전등록하면 결과를 본 뒤 한 점을 고른 것이 되므로 등록 대상은 격자(`conf_sweep_grid`)
+    이고 단일 임계 키는 `configs/base.yaml` 에 일부러 두지 않았다. A 가 그 부재를 시험으로
+    고정했다(`tests/test_conf_sweep_grid.py`). 이 값은 65·66번 재현·운용점 표기에만 쓴다.
+    """
     return _resolve(
         CONF_KEYS, CONF_FALLBACK,
-        "fallback:evaluation.params.CONF_FALLBACK (configs 미등록 — 총괄 배분 대기)",
+        ("fallback:evaluation.params.CONF_FALLBACK — configs 에 **일부러 없다**"
+         "(총괄 판정 1, 22번 §1-2-2: 단일 임계는 사전등록하지 않는다. 등록 대상은 격자다). "
+         "운용점 예시이며 확증 기준이 아니다"),
         cfg if cfg is not None else load_base_config(),
     )
+
+
+def resolve_conf_sweep(cfg: dict | None = None) -> tuple[tuple[float, ...], str]:
+    """스윕 격자와 그 출처. **configs 에 있으면 그쪽이 이긴다.**
+
+    A 가 `conf_sweep_grid` 를 등록하기 전에는 `CONF_SWEEP` 폴백이고, 산출물의 출처 문자열이
+    "미등록"임을 스스로 밝힌다. 등록된 값은 정렬·중복 제거해 받는다 — 격자의 순서는 의미가
+    없고 중복은 같은 점을 두 번 채점하게 만든다.
+    """
+    src = cfg if cfg is not None else load_base_config()
+    for key in CONF_SWEEP_KEYS:
+        v = _dig(src, key)
+        if isinstance(v, (list, tuple)) and v:
+            try:
+                grid = tuple(sorted({float(x) for x in v}))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{key} 격자에 수가 아닌 값이 있다: {v!r}") from exc
+            if not all(0.0 <= x <= 1.0 for x in grid):
+                raise ValueError(f"{key} 격자는 0..1 이어야 한다: {grid}")
+            return grid, f"configs/base.yaml:{key}"
+    return CONF_SWEEP, ("fallback:evaluation.params.CONF_SWEEP "
+                        "(configs 미등록 — A 등록 대기, 22번 §3)")
 
 
 def resolve_gate_status(cfg: dict | None = None) -> str:
@@ -282,7 +325,9 @@ class ScoringParams:
     max_det: int = MAX_DET
     conf: Resolved = field(default_factory=resolve_conf)
     conf_floor: float = CONF_FLOOR
-    conf_sweep: tuple[float, ...] = CONF_SWEEP
+    conf_sweep: tuple[float, ...] = field(default_factory=lambda: resolve_conf_sweep()[0])
+    conf_sweep_source: str = field(default_factory=lambda: resolve_conf_sweep()[1])
+    """격자와 그 출처. **격자가 사전등록 대상이고 단일 임계는 아니다**(22번 §1-2-2)."""
     gate: Resolved = field(default_factory=resolve_gate)
     gate_tolerance: Resolved = field(default_factory=resolve_gate_tolerance)
     class_names: tuple[str, ...] = CLASS_NAMES
@@ -328,9 +373,14 @@ class ScoringParams:
             "predict_chunk": self.predict_chunk,
             "device": self.device,
             "max_det": self.max_det,
-            "conf": self.conf.as_dict(),
+            "conf": {
+                **self.conf.as_dict(),
+                "role": ("운용점 예시 — 확증적 기준 아님(총괄 판정 1, 22번 §1-2-3). "
+                         "칸 비교는 conf_sweep 곡선과 임계 독립 지표로 한다"),
+            },
             "conf_floor": self.conf_floor,
             "conf_sweep": list(self.conf_sweep),
+            "conf_sweep_source": self.conf_sweep_source,
             "gate": self.gate.as_dict(),
             "gate_tolerance": self.gate_tolerance.as_dict(),
             "gate_pass_line": self.gate_pass_line,
@@ -352,6 +402,10 @@ def add_common_args(ap) -> None:
                     help="검출 임계 수동 지정. 지정하면 configs·폴백보다 우선한다")
     ap.add_argument("--gate", type=float, default=None,
                     help="게이트 선 수동 지정. A 의 재산출이 오면 이 플래그로 즉시 재채점한다")
+    ap.add_argument("--cells", choices=("all", "det"), default="all",
+                    help="채점할 칸 집합. det = 검출만(통합형 미실행 구간). "
+                         "생략은 all 이고, 통합형 원시 출력이 없으면 채점이 죽는다 — "
+                         "빠진 칸이 조용히 사라지지 않게 **선택을 명시**하게 만든다")
 
 
 def params_from_args(args) -> ScoringParams:
@@ -363,10 +417,12 @@ def params_from_args(args) -> ScoringParams:
     if getattr(args, "gate", None) is not None:
         gate = Resolved(float(args.gate), "cli:--gate")
     space, space_src = resolve_coord_space(cfg)
+    grid, grid_src = resolve_conf_sweep(cfg)
     return ScoringParams(
         snapshot=Path(args.snapshot), pilot=Path(args.pilot), out=Path(args.out),
         seed=int(args.seed), profile=getattr(args, "profile", DEFAULT_PROFILE),
         conf=conf, gate=gate,
+        conf_sweep=grid, conf_sweep_source=grid_src,
         gate_tolerance=resolve_gate_tolerance(cfg),
         coord_space=space, coord_space_source=space_src,
     )

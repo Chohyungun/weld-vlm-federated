@@ -123,12 +123,7 @@ def test_단일_임계_키가_configs_에_없다():
 # --------------------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="D 구현 대기 — 22번 §3 · dispatch_D 과제 3. 지금 ScoringParams.conf_sweep 은 "
-    "하드코딩 상수다. 착지하면 XPASS 가 실패로 뜨므로 A 에 통지해 표식을 걷는다.",
-)
+# xfail(strict) 표식은 D 구현 착지(XPASS 통지)로 걷었다 — 이제부터 이 시험이 실질 검증이다.
 def test_채점기가_격자를_configs_에서_읽는다(monkeypatch):
     """`load_base_config` 를 등록값과 다른 격자로 바꿔치기하면 채점기의 `conf_sweep` 이 그것을
     따라야 한다. 상수를 베껴 둔 것과 파일을 읽는 것은 이 시험만이 구별한다."""

@@ -179,6 +179,18 @@ def test_sep_local_clients_are_separate_models():
             records.append(r)
     summary = p9_all_cells(records, contexts)
     assert len(summary.results) == 3      # 클라이언트마다 하나
+    # **행이 이름으로 구분돼야 한다.** 세 행이 전부 `sep_local` 이면 RQ3 귀속이 행 순서에
+    # 의존한다 — 본실험 시드 1 첫 채점에서 실제로 그렇게 나왔다(17번).
+    assert [r.client for r in summary.results] == ["C1", "C2", "C3"]
+    assert [d["tag"] for d in summary.as_dict()["results"]] == [
+        "sep_local_C1", "sep_local_C2", "sep_local_C3"]
+
+
+def test_client_없는_칸은_tag_가_칸_이름_그대로다():
+    contexts = make_contexts(10, 10)
+    summary = p9_all_cells([rec(c.image_id) for c in contexts], contexts)
+    d = summary.as_dict()["results"][0]
+    assert d["client"] is None and d["tag"] == d["cell"]
 
 
 def test_duplicate_image_records_rejected():

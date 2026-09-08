@@ -202,3 +202,117 @@ def read_records(lines: Iterable[str]) -> list[PredictionRecord]:
             continue
         out.append(PredictionRecord.model_validate_json(raw))
     return out
+
+
+# --------------------------------------------------------------------------------------
+# 본실험 검출 export → 계약 #4  (13_spec_D §2-3 · 10번 §4)
+# --------------------------------------------------------------------------------------
+
+DETECTION_EXPORT_TAGS: tuple[tuple[str, str, str | None], ...] = (
+    ("sep_local_c0", "sep_local", "C1"),
+    ("sep_local_c1", "sep_local", "C2"),
+    ("sep_local_c2", "sep_local", "C3"),
+    ("sep_central", "sep_central", None),
+    ("sep_fed", "sep_fed", None),
+)
+"""C 의 export 태그 → (칸, 클라이언트). **클라이언트 번호가 여기서 이름으로 바뀐다.**
+
+C 는 `client_idx` 0·1·2 를 파일명에 쓰고(`scripts/main_det.py:_export_targets`), 계약 #4 는
+`C1`·`C2`·`C3` 를 쓴다. 두 이름을 잇는 표가 코드에 없으면 채점이 클라이언트를 밀어서
+읽어도 아무 데서도 안 걸린다 — RQ3 의 클라이언트별 이득이 통째로 뒤바뀐다.
+근거: `evaluation.detect_infer.CHECKPOINTS` 가 파일럿에서 이미 쓰던 같은 대응
+(`sep_local_c0.npz` ↔ `C1`)이고, C 의 `client-tags = "C1,C2,C3"` 도 같은 순서다.
+"""
+
+
+def adapt_detection_export(
+    lines: Iterable[str],
+    *,
+    cell: Cell,
+    client: str | None,
+    seed: int,
+    class_names: Iterable[str],
+    iso_code_of,
+    image_size: Mapping[str, tuple[int, int]] | None = None,
+) -> AdaptReport:
+    """본실험 검출 `{tag}.detections.jsonl` → 계약 #4 레코드.
+
+    입력 한 줄: `{image_id, boxes:[{cls, xyxy_px, conf}], coord_space, coord_cfg_hash}`
+    (13_spec_D §2-3, C 가 `conf=0.01` 하한으로 낸다).
+
+    **파일럿의 `evaluation.detect_infer._record_from_result` 와 같은 매핑을 쓴다.** 그쪽은
+    Ultralytics 결과 객체에서, 이쪽은 C 가 저장한 jsonl 에서 만들 뿐 만들어지는 레코드는
+    같은 모양이어야 한다 — 파일럿과 본실험의 채점 입력이 갈리면 두 실험을 비교할 수 없다.
+    같은 규칙 셋:
+
+    - `cls` 정수 → `class_names[cls]` → `iso_code_of(...)`. 클래스 순서는 C 가 nc=4 로
+      주입한 순서이며 `ScoringParams.class_names` 가 정본이다.
+    - 퇴화 박스(x1≥x2 또는 y1≥y2)는 **항목만** 버리고 센다. 스키마가 거부하므로 만들지
+      않는 것이고, 레코드는 살린다(80번 D7 의 항목 단위 폐기).
+    - 경계 이탈은 **세기만 한다.** 클리핑은 IoU 를 올리는 방향으로만 작동한다(모듈 주석).
+    - `verdict="판정불가"` · `cited_clauses=[]` — 판정부(⑤) 미실행, 검출 축 선채점.
+
+    **좌표를 변환하지 않고 `coord_space` 를 덮어쓰지도 않는다.** 파일이 말하는 값을 그대로
+    레코드에 싣는다 — 다르면 `coord_space_contract` 게이트가 판정한다. 여기서 정정하면
+    그 게이트가 영원히 통과한다.
+    """
+    names = list(class_names)
+    rep = AdaptReport()
+
+    for raw in lines:
+        raw = raw.strip()
+        if not raw:
+            continue
+        rep.n_lines += 1
+        row = json.loads(raw)
+        image_id = str(row["image_id"])
+        boxes = row.get("boxes")
+        if not isinstance(boxes, list):
+            rep.adapter_failures["schema_violation"] = (
+                rep.adapter_failures.get("schema_violation", 0) + 1)
+            rep.records.append(failed_record(
+                image_id, cell, seed, "schema_violation", client=client,
+            ).model_copy(update={"coord_space": row.get("coord_space"),
+                                 "coord_cfg_hash": row.get("coord_cfg_hash")}))
+            continue
+
+        wh = (image_size or {}).get(image_id)
+        defects = []
+        for b in boxes:
+            try:
+                cls = int(b["cls"])
+                x1, y1, x2, y2 = (float(v) for v in b["xyxy_px"])
+                score = float(b["conf"])
+            except (KeyError, TypeError, ValueError):
+                rep.n_bad_items += 1
+                continue
+            if not 0 <= cls < len(names):
+                # 학습 클래스 수와 채점 클래스 수가 갈린 것이다. 지어내지 않고 센다.
+                rep.n_unknown_code += 1
+                continue
+            if x1 >= x2 or y1 >= y2:
+                rep.n_bad_items += 1
+                continue
+            rep.n_boxes += 1
+            if wh is not None and (x1 < 0 or y1 < 0 or x2 > wh[0] or y2 > wh[1]):
+                rep.n_boxes_out_of_bounds += 1
+            defects.append({
+                "iso_code": iso_code_of(names[cls]),
+                "bbox_px": [x1, y1, x2, y2],
+                "score": score,
+                "size_px": max(x2 - x1, y2 - y1),
+                "size_basis": "major_axis",
+                "retrieved": None,
+            })
+
+        rep.records.append(PredictionRecord(
+            schema_version=SCHEMA_VERSION,
+            image_id=image_id, cell=cell, client=client, seed=seed,
+            defects=defects,                    # type: ignore[arg-type]
+            verdict="판정불가",                  # 판정부(⑤) 미실행 — 검출 축 선채점
+            cited_clauses=[],
+            parse_ok=True,
+            coord_space=row.get("coord_space"),
+            coord_cfg_hash=row.get("coord_cfg_hash"),
+        ))
+    return rep
