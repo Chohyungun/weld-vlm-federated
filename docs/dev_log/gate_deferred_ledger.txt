@@ -10,3 +10,6 @@
 2026-09-03T08:39:10Z merge=wt/C deferred=5 reason=main-experiment-running
 2026-09-03T08:47:36Z merge=wt/C deferred=5 reason=main-experiment-running
 2026-09-03T10:35:20Z merge=wt/D deferred=5 reason=main-experiment-running
+2026-09-07T23:21:16Z merge=wt/C deferred=5 reason=main-experiment-running
+2026-09-07T23:22:30Z merge=wt/D deferred=5 reason=main-experiment-running
+2026-09-07T23:23:35Z merge=wt/E deferred=5 reason=main-experiment-running

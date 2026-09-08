@@ -204,10 +204,19 @@ def test_pyproject_에_flwr_앱이_등록돼_있다():
         assert key in flwr["app"]["config"], f"app.config 에 {key} 기본값이 없다"
 
     # 연결 설정 값의 정본은 이제 러너다 — num-supernodes=3 과 GPU 동시성 1 을 고정한다.
+    # 문자열 대조가 아니라 **flwr 자체 파서**로 검증한다. 구판은 `options.` 중첩 형식을
+    # 문자열로 고정해 두고 통과시켰고, 실제 CLI 는 그 형식을 거부해 시드 1 ④ 진입이
+    # 죽었다(실측). 파서를 안 태운 시험은 형식 결함에 무이빨이다.
+    from flwr.cli.config_utils import parse_config_args
+    from flwr.supercore.utils import simulation_config_from_json
+
     from scripts.main_det import FEDERATION_CONFIG
 
-    assert "options.num-supernodes=3" in FEDERATION_CONFIG
-    assert "options.backend.client-resources.num-gpus=1.0" in FEDERATION_CONFIG
+    parsed = parse_config_args([FEDERATION_CONFIG])
+    sim = simulation_config_from_json({k.replace("-", "_"): v for k, v in parsed.items()})
+    assert sim.num_supernodes == 3
+    assert sim.client_resources_num_gpus == 1.0, "GPU 동시성 1 이 아니면 두 클라이언트가 겹친다"
+    assert sim.client_resources_num_cpus == 2
     src = Path("scripts/main_det.py").read_text(encoding="utf-8")
     assert '"--federation-config", FEDERATION_CONFIG' in src, (
         "러너가 연결 설정을 명시하지 않으면 값이 사용자 저장소(저장소 밖)에 산다"

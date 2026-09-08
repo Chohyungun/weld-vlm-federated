@@ -95,6 +95,9 @@ def make_round_recorder(
                     # 판정 2 — 가중 단위를 산출물이 말하게 한다(RQ3 해석 재료).
                     "supervised_tokens": float(m.get("supervised-tokens", 0.0)),
                     "fedavg_weight": float(m.get(WEIGHT_KEY, 0.0)),
+                    # B 증빙(15번 G3·G7) — 검증 로더 실효 워커 수. -1 = 미계측(스모크·⑦·B 이전 원장),
+                    # 0 = 접촉점 6 적용. 라운드당 클라이언트 지표가 8→9 가 된다(시드 1 ④ 원장은 8).
+                    "val_loader_workers": float(m.get("val-loader-workers", -1)),
                 },
                 bytes_up=up,
                 bytes_down=int(getattr(agg, "payload_bytes_down", 0) or up),

@@ -125,6 +125,8 @@ def test_고정값이_조기종료와_최적화를_막는다():
     assert FIXED_OVERRIDES["optimizer"] == "SGD", "'auto' 는 lr0·momentum 을 버린다"
     assert FIXED_OVERRIDES["mlflow"] is False, "로깅 경로는 서버 시점 하나로 통일한다"
     assert FIXED_OVERRIDES["save"] is False and FIXED_OVERRIDES["val"] is False
+    # 학습 워커 수는 워커 시드 배정 → 증강 난수열을 정한다. 8 명시 등록(15번 G10), 값 변경 = 등가 파괴.
+    assert FIXED_OVERRIDES["workers"] == 8
 
 
 def test_파생시드는_재현되고_라운드마다_다르다():

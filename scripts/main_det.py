@@ -316,20 +316,37 @@ def _flwr_run_config(seed_no: int, *, cell: str, rounds: int, local_epochs: int,
 #: 저장소 밖에 살게 된다. 매 실행 명시해 **여기(버전 관리)가 정본**이 되게 한다.
 #: GPU 1.0 = 클라이언트 동시성 1 — VLM 은 물론 검출도 batch 32 에서 7.7GB 라
 #: 두 클라이언트를 동시에 못 올린다.
-FEDERATION_CONFIG = ("options.num-supernodes=3 "
-                     "options.backend.client-resources.num-cpus=2 "
-                     "options.backend.client-resources.num-gpus=1.0")
+#: 키는 flwr 1.33 `SimulationConfig` proto 필드명(`-`→`_`)의 **평탄** 형식이다.
+#: 구판 pyproject 의 `options.backend.client-resources.…` 중첩 형식을 그대로 넘기면
+#: "Unknown simulation config field(s)" 로 거부된다 — 시드 1 ④ 진입에서 실측.
+#: 형식 검증은 tests/test_fl_round_wiring.py 가 flwr 자체 파서로 한다.
+FEDERATION_CONFIG = ("num-supernodes=3 "
+                     "client-resources-num-cpus=2 "
+                     "client-resources-num-gpus=1.0")
 
 
 def _flwr_run(run_config: str, log_path: Path) -> None:
     """정식 진입점. pyproject [tool.flwr] 의 등록 앱을 CLI 로 띄운다."""
-    cmd = ["flwr", "run", ".", "local-sim", "--run-config", run_config,
+    import os
+    import sys
+
+    # 실행 파일은 **이 인터프리터의 venv** 에서 찾는다. 분리 launcher 는 venv 의
+    # python.exe 를 직접 띄우므로 Scripts 디렉터리가 PATH 에 없고, 맨 이름 "flwr" 는
+    # FileNotFoundError(WinError 2)로 죽는다 — 시드 1 ③ 완주 직후 ④ 진입에서 실측.
+    # preflight 는 `uv run` 이 PATH 를 채워 줘서 지나갔다(환경 차이가 숨긴 결함).
+    scripts_dir = Path(sys.executable).resolve().parent
+    flwr_exe = scripts_dir / ("flwr.exe" if os.name == "nt" else "flwr")
+    if not flwr_exe.exists():
+        raise SystemExit(f"flwr 실행 파일이 인터프리터 venv 에 없다: {flwr_exe}")
+    cmd = [str(flwr_exe), "run", ".", "local-sim", "--run-config", run_config,
            "--federation-config", FEDERATION_CONFIG, "--stream"]
     print("  $", " ".join(cmd[:5]), "…", flush=True)
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    import os
 
     env = dict(os.environ)
+    # flwr 가 자식으로 띄우는 flower-superlink / flwr-simulation 등도 같은 Scripts 에서
+    # 찾게 PATH 앞에 붙인다.
+    env["PATH"] = str(scripts_dir) + os.pathsep + env.get("PATH", "")
     # flwr 의 FAB 설치 경로가 pyproject 를 인코딩 지정 없이 read_text() 한다 — Windows
     # 기본(cp949)에서 한글 주석 바이트에 UnicodeDecodeError 로 죽는다(실측, exit 700).
     # 프레임워크 결함이라 우리 쪽에서 파이썬 기본 인코딩을 UTF-8 로 강제한다.
