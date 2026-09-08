@@ -313,3 +313,57 @@ def test_귀속_축_분해가_재질로_나오고_한계를_밝힌다(scoring_ru
             assert v["n_images"] == g["n_images"]
         if g["per_tag"]:
             assert set(g["recovery"]) == {"map_50", "macro_ap", "macro_f1", "miss_rate"}
+
+
+# --------------------------------------------------------------------------------------
+# 총괄 판정 22번 §6 — 대조선 병기·Δ_AUC 가 **본채점 한 번**으로 나온다
+# --------------------------------------------------------------------------------------
+
+def test_본채점이_무내용_대조선을_병기한다(scoring_runs) -> None:
+    """판정 §6-2-1: macro-AP 는 보조로 싣되 대조선을 **반드시 병기**한다.
+
+    대조선이 별도 스크립트를 돌려야만 생기는 상태면 시드 2·3 에서 조용히 빠진다.
+    채점기가 없으면 만들고, 게이트가 병기를 확인한다.
+    """
+    _, out = scoring_runs["clean"]
+    payload = json.loads((out / "score_cells_v1.json").read_text(encoding="utf-8"))
+    base = payload["content_free_baseline"]
+    assert isinstance(base["classification_axis"]["macro_ap_freq"], float)
+    # 픽스처는 파일럿 스냅샷이라 등록 상수(평가셋 12,461장) 재현을 요구하지 않는다.
+    # 요구하면 시험이 동결본에 묶여 픽스처로 돌지 못한다 — 적용 조건이 밝혀지는지만 본다.
+    assert base["self_check_applicable"] is False
+    assert "12,461" in base["self_check_scope"]
+    # 산출물 옆에 파일도 남는다 — 스크립트와 같은 자리
+    assert (out / base["source"]).exists()
+    g = next(r for r in payload["gates_evaluated"]["results"]
+             if r["name"] == "macro_ap_baseline_paired")
+    assert g["passed"] and not g["skipped"]
+
+
+def test_헤드라인_정책이_산출물에_박혀_있다(scoring_runs) -> None:
+    """표만 읽고 인용하는 사람에게 규칙이 보여야 한다 — 판정 §6-2-1~3."""
+    _, out = scoring_runs["clean"]
+    pol = json.loads((out / "score_cells_v1.json").read_text(encoding="utf-8"))["headline_policy"]
+    assert pol["confirmed_headline"] == ["map_50"]
+    assert "macro_ap" in pol["demoted"]
+    assert pol["no_headline_axis"] == "classification"
+    assert any("단독 인용" in r for r in pol["rules"])
+
+
+def test_본채점이_임계독립_판별력을_낸다(scoring_runs) -> None:
+    """판정 §6-2-5: Δ_AUC 는 승격 후보다 — 시드 2·3 에서도 같은 방식으로 산출해 둔다.
+
+    운용점 Δ 와 달리 **하한 레코드**에서 나야 한다. 임계를 고르지 않는 것이 존재 이유다.
+    """
+    _, out = scoring_runs["clean"]
+    free = json.loads(
+        (out / "score_cells_v1.json").read_text(encoding="utf-8"))["discrimination_threshold_free"]
+    assert free["computed"] is True
+    assert "하한" in free["computed_at"]
+    assert "후보" in free["status"]
+    for v in free["by_cell"].values():
+        assert v["ci_lo"] <= v["point"] <= v["ci_hi"]
+        assert -1.0 <= v["point"] <= 1.0
+    # 대비는 짝지어 낸다 — 셋 다 있거나(다섯 칸 다 있을 때) 하나도 없거나다
+    assert set(free["contrasts"]) in (
+        set(), {"fed_minus_central", "fed_minus_local_mean", "central_minus_local_mean"})

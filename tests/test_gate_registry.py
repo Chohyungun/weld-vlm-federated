@@ -43,6 +43,7 @@ def test_expected_gates_are_registered() -> None:
         "stratified_scoring",          # 13번 D-1 — 판정 6 이행 담보
         "sweep_curve_recorded",        # 22번 §1-2 — 총괄 판정 1 이행 담보
         "p9_source_separation",        # 22번 §2-2-2 — 총괄 판정 2 이행 담보
+        "macro_ap_baseline_paired",    # 22번 §6-2-1 — 대조선 병기 담보
     } <= set(REGISTRY)
 
 
@@ -352,3 +353,92 @@ def test_p9_gate_has_teeth() -> None:
     assert blocked({"p9": _p9(client=None), "shortcut_footnote": _note()})
     # (4) 전역 표의 규격 지름길 각주가 비어 있다
     assert blocked({"p9": _p9(), "shortcut_footnote": _note(lines=())})
+
+
+# --------------------------------------------------------------------------------------
+# macro_ap_baseline_paired — 대조선 병기 담보 (총괄 판정 22번 §6-2-1)
+#
+# **통과선 게이트가 아니다.** 판정 §6-2-6 은 `content_free_gate`(칸이 대조선을 넘어야 한다)
+# 를 AP 축으로 넓히는 것을 금했다. 여기서 보는 것은 값이 나란히 실렸는가뿐이고, 그 구분이
+# 흐려지면 철회된 전제가 코드로 되살아난다. 아래 시험이 그 구분을 고정한다.
+# --------------------------------------------------------------------------------------
+
+_POLICY = {"confirmed_headline": ["map_50"], "demoted": ["macro_ap"]}
+
+
+def _baseline(macro_ap=0.9582, ok=True, applicable=True) -> dict:
+    return {"primary_rule": "idq512",
+            "classification_axis": {"macro_ap_freq": macro_ap, "macro_ap_hard": 0.8355},
+            "position_axis": {"constant_box_map_50": 0.0015},
+            "self_check_reproduced": ok, "self_check_applicable": applicable}
+
+
+def _ap_ctx(**over) -> GateContext:
+    extra = {"threshold_independent": {"primary": "map_50",
+                                       "recovery": {"map_50": {"recovery_pct": 29.0},
+                                                    "macro_ap": {"recovery_pct": 63.9}}},
+             "content_free_baseline": _baseline(),
+             "headline_policy": _POLICY}
+    extra.update(over)
+    return GateContext(extra=extra)
+
+
+def test_대조선이_병기되면_통과한다() -> None:
+    r = _result(run_scoring_gates(_ap_ctx()), "macro_ap_baseline_paired")
+    assert r["passed"] and not r["skipped"]
+    assert "0.9582" in r["detail"]
+
+
+def test_macro_ap_없으면_건너뛴다() -> None:
+    """병기할 대상이 없는 것과 병기를 빠뜨린 것은 다르다."""
+    r = _result(run_scoring_gates(_ap_ctx(
+        threshold_independent={"primary": "map_50",
+                               "recovery": {"map_50": {"recovery_pct": 29.0}}})),
+        "macro_ap_baseline_paired")
+    assert r["skipped"] is True
+
+
+def test_대조선이_없으면_차단한다() -> None:
+    out = run_scoring_gates(_ap_ctx(content_free_baseline=None))
+    r = _result(out, "macro_ap_baseline_paired")
+    assert r["passed"] is False
+    assert "macro_ap_baseline_paired" in out["blocking_failures"]
+
+
+def test_대조선_키만_있고_값이_없으면_차단한다() -> None:
+    """키의 존재가 아니라 값의 존재를 본다 — None 이 통과하면 병기가 형식만 남는다."""
+    out = run_scoring_gates(_ap_ctx(content_free_baseline=_baseline(macro_ap=None)))
+    assert _result(out, "macro_ap_baseline_paired")["passed"] is False
+
+
+def test_자기검사_실패한_대조선은_차단한다() -> None:
+    """재현하지 못한 규칙의 값은 다른 규칙의 값이다 — 병기해도 대조가 아니다."""
+    out = run_scoring_gates(_ap_ctx(content_free_baseline=_baseline(ok=False)))
+    assert _result(out, "macro_ap_baseline_paired")["passed"] is False
+
+
+def test_macro_ap_를_확정_대표로_표시하면_차단한다() -> None:
+    """22번 §6-2-1 로 대표에서 내려갔다. 산출물이 그것을 되돌리면 막는다."""
+    out = run_scoring_gates(_ap_ctx(
+        headline_policy={"confirmed_headline": ["map_50", "macro_ap"]}))
+    assert _result(out, "macro_ap_baseline_paired")["passed"] is False
+
+
+def test_칸이_대조선_아래여도_이_게이트는_통과한다() -> None:
+    """**통과선 게이트가 아니라는 것**을 고정한다. 시드 1 실측이 바로 이 상태다 —
+    최고 칸 macro-AP 0.8229 < 대조선 0.9582 인데, 판정 §6-2-6 은 그것을 차단 사유로
+    삼는 것을 금했다. 병기 여부만 본다."""
+    out = run_scoring_gates(_ap_ctx())
+    r = _result(out, "macro_ap_baseline_paired")
+    assert r["passed"] is True
+    assert "macro_ap_baseline_paired" not in out["blocking_failures"]
+
+
+def test_모집단이_다르면_자기검사를_판정하지_않는다() -> None:
+    """등록 상수는 평가셋 12,461장에 대한 값이다. 파일럿 스냅샷에서 재현되지 않는 것은
+    정상이고, 그것을 차단 사유로 삼으면 픽스처 채점이 전부 막힌다."""
+    out = run_scoring_gates(_ap_ctx(
+        content_free_baseline=_baseline(ok=False, applicable=False)))
+    r = _result(out, "macro_ap_baseline_paired")
+    assert r["passed"] is True
+    assert "자기 검사 미적용" in r["detail"]

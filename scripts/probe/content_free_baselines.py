@@ -37,6 +37,9 @@ from evaluation.metrics.localization import coco_map
 from evaluation.params import add_common_args, params_from_args
 from evaluation.strata import ID_GRANULARITY, bins_for
 
+BASELINE_FILE = "content_free_baselines_v1.json"
+"""본채점과 스크립트가 같은 자리를 쓴다."""
+
 REGISTERED = {
     "idq512_macro_f1": 0.9149,
     "all_positive_macro_f1": 0.2160,
@@ -118,17 +121,14 @@ def _position_axis(fit_ids, gold_boxes_fit, eval_ids, gold_boxes_eval, classes,
     }
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    add_common_args(ap)
-    ap.add_argument("--root", default=".")
-    ap.add_argument("--at-conf", action="store_true")
-    ap.add_argument("--position-axis", action="store_true", default=True)
-    args = ap.parse_args()
+def compute_baselines(params, *, position_axis: bool = True, log=print) -> dict:
+    """무내용 대조선 전량을 계산해 payload 를 돌려준다. **파일을 쓰지 않는다.**
 
-    params = params_from_args(args)
-    params.out.mkdir(parents=True, exist_ok=True)
+    본채점(`score_cells.py score`)이 이 함수를 그대로 부른다 — 총괄 판정(22번 §6-2-1)이
+    "macro-AP 는 무내용 대조선을 **반드시 병기**" 로 못박았으므로, 대조선이 별도 스크립트를
+    돌려야만 생기는 상태로 두면 시드 2·3 에서 빠뜨릴 수 있다. 같은 함수를 부르게 해서
+    **빠뜨리는 것이 불가능하게** 만든다.
+    """
     lm = load_label_map()
     classes = [lm.iso_code(n) for n in params.class_names]
     snapshot = params.snapshot
@@ -137,7 +137,7 @@ def main() -> int:
     ev = eval_rows(rows)
     eval_ids = sorted(r["image_id"] for r in ev)
     fit_ids = sorted(r["image_id"] for r in rows if r["split"] in ("train", "val"))
-    print(f"적합 train+val {len(fit_ids):,}장 · 채점 eval {len(eval_ids):,}장 · 클래스 {classes}")
+    log(f"적합 train+val {len(fit_ids):,}장 · 채점 eval {len(eval_ids):,}장 · 클래스 {classes}")
 
     gold_eval, boxes_eval = read_gold(snapshot, set(eval_ids))
     gold_fit, boxes_fit = read_gold(snapshot, set(fit_ids))
@@ -155,7 +155,7 @@ def main() -> int:
         rule = fit_trivial(name, pred, fit_ids, gold_fit_s, classes)
         baselines[name] = _score_rule(rule, eval_ids, gold_eval_s, classes, snapshot)
         b = baselines[name]
-        print(f"[{name:20s}] F1 {b['macro_f1']:.4f} · AP(H) {b[HARD]['macro_ap']:.4f} "
+        log(f"[{name:20s}] F1 {b['macro_f1']:.4f} · AP(H) {b[HARD]['macro_ap']:.4f} "
               f"· AP(F) {b[FREQ]['macro_ap']:.4f}")
 
     # --- idq 사다리 (주 대조선 idq512) --------------------------------------------------
@@ -165,7 +165,7 @@ def main() -> int:
         baselines[key] = _score_rule(rule, eval_ids, gold_eval_s, classes, snapshot)
         b = baselines[key]
         mark = "  ← 주 대조선" if k == PRIMARY_K else ""
-        print(f"[{key:20s}] F1 {b['macro_f1']:.4f} · AP(H) {b[HARD]['macro_ap']:.4f} "
+        log(f"[{key:20s}] F1 {b['macro_f1']:.4f} · AP(H) {b[HARD]['macro_ap']:.4f} "
               f"· AP(F) {b[FREQ]['macro_ap']:.4f}{mark}")
 
     # --- 평가셋 적합판 (상한, 게이트 아님) ----------------------------------------------
@@ -175,7 +175,7 @@ def main() -> int:
                        fit_population="eval(상한)")
         shortcut[f"idq{k}"] = _score_rule(rule, eval_ids, gold_eval_s, classes, snapshot)
         b = shortcut[f"idq{k}"]
-        print(f"[__shortcut__ idq{k:<5d}] F1 {b['macro_f1']:.4f} · AP(H) "
+        log(f"[__shortcut__ idq{k:<5d}] F1 {b['macro_f1']:.4f} · AP(H) "
               f"{b[HARD]['macro_ap']:.4f} · AP(F) {b[FREQ]['macro_ap']:.4f} (평가셋 적합 상한)")
 
     # --- 자기 검사: 등록 상수 재현 --------------------------------------------------------
@@ -187,18 +187,18 @@ def main() -> int:
         "note": ("재현하지 못하면 내 재구성이 A 의 규칙과 다른 것이고, 그러면 AP 값도 "
                  "다른 규칙의 값이다. 값 자체보다 이 대조가 먼저다"),
     }
-    print(f"\n[자기 검사] 등록 idq512 Macro-F1 {want} · 재구성 {got:.4f} "
-          f"(차 {selfcheck['abs_delta']:.4f}) → {'재현' if selfcheck['within_0.01'] else '불일치'}")
+    log(f"\n[자기 검사] 등록 idq512 Macro-F1 {want} · 재구성 {got:.4f} "
+        f"(차 {selfcheck['abs_delta']:.4f}) → {'재현' if selfcheck['within_0.01'] else '불일치'}")
 
     position = (_position_axis(fit_ids, boxes_fit, eval_ids, boxes_eval, classes,
                                snapshot, PRIMARY_K)
-                if args.position_axis else {"checked": False, "reason": "생략"})
+                if position_axis else {"checked": False, "reason": "생략"})
     if position.get("checked"):
-        print(f"[위치 축] 상수 박스 mAP@50 {position['constant_box']['map_50']:.4f} · "
+        log(f"[위치 축] 상수 박스 mAP@50 {position['constant_box']['map_50']:.4f} · "
               f"idq{PRIMARY_K} 중앙 박스 {position[f'idq{PRIMARY_K}_median_box']['map_50']:.4f} "
               f"(등록 {REGISTERED['constant_box_map_50']})")
 
-    payload = {
+    return {
         "params": params.as_dict(),
         "preregistration": "17번 §11 (산출 전 커밋 3f8d5cb)",
         "constructions": {"H": "예측 클래스에 1, 나머지 부재",
@@ -214,11 +214,30 @@ def main() -> int:
         "note": ("칸 점수를 바꾸지 않는다 — 추가 산출물이다. 판정 규칙은 17번 §11-5 에 "
                  "산출 전에 적어 두었다"),
     }
-    dest = params.out / "content_free_baselines_v1.json"
+
+
+def write_baselines(params, payload: dict) -> Path:
+    """계산 결과를 정해진 자리에 쓴다. 자리는 본채점과 스크립트가 같아야 한다."""
+    params.out.mkdir(parents=True, exist_ok=True)
+    dest = params.out / BASELINE_FILE
     with dest.open("w", encoding="utf-8", newline="\n") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
-    print(f"저장: {dest}")
+    return dest
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    add_common_args(ap)
+    ap.add_argument("--root", default=".")
+    ap.add_argument("--at-conf", action="store_true")
+    ap.add_argument("--position-axis", action="store_true", default=True)
+    args = ap.parse_args()
+
+    params = params_from_args(args)
+    payload = compute_baselines(params, position_axis=args.position_axis)
+    print(f"저장: {write_baselines(params, payload)}")
     return 0
 
 

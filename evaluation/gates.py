@@ -401,3 +401,68 @@ def _gate_p9_separation(ctx: GateContext) -> GateResult:
         f"각주 {len(note['lines'])}줄 자동 생성",
         value={"n_cells": len(rows), "n_not_equivalent": n_bad,
                "tags": [r.get("tag", r.get("cell")) for r in rows]})
+
+
+@register("macro_ap_baseline_paired")
+def _gate_macro_ap_paired(ctx: GateContext) -> GateResult:
+    """**macro-AP 옆에 무내용 대조선이 서 있는가** — 총괄 판정 22번 §6-2-1 이행.
+
+    판정은 macro-AP 를 분류 축 대표에서 **내렸다.** 보조로는 싣되 무내용 대조선을
+    반드시 병기하고 단독 인용을 금한다. 그 요구가 사람의 문장 습관에만 걸려 있으면
+    시드 2·3 산출물에서 조용히 빠진다 — 표만 보고 인용하는 사람에게는 대조선이 없는
+    macro-AP 0.82 가 그냥 좋은 값으로 읽힌다.
+
+    **이 게이트는 통과선 게이트가 아니다.** 칸이 대조선을 넘으라고 요구하지 않는다.
+    판정 §6-2-6 이 금지한 것은 `content_free_gate`(통과선)를 AP 축으로 넓히는 것이고,
+    여기서 보는 것은 **값이 나란히 실렸는가**뿐이다. 둘을 섞으면 철회된 전제가 코드로
+    되살아난다.
+
+    본다: macro-AP 가 산출물에 있으면 (1) 대조선 블록이 있고 (2) 분류 축 대조선 값이
+    실수이며 (3) 대조선 규칙이 자기 검사를 통과했고 (4) macro-AP 가 확정 대표로
+    표시돼 있지 않은가.
+    """
+    name = "macro_ap_baseline_paired"
+    indep = ctx.extra.get("threshold_independent") or {}
+    # 회복률 표에도, 칸별 표에도 실린다 — 어느 쪽에든 있으면 병기 의무가 생긴다.
+    seen = set(indep.get("recovery") or {})
+    for block in (indep.get("per_tag") or {}).values():
+        if isinstance(block, dict):
+            seen |= set(block)
+    if "macro_ap" not in seen:
+        return GateResult(name, True, "macro-AP 가 산출물에 없다 — 병기할 대상이 없다",
+                          skipped=True)
+
+    base = ctx.extra.get("content_free_baseline")
+    if not base:
+        return GateResult(
+            name, False,
+            "macro-AP 를 실으면서 무내용 대조선을 싣지 않았다 — 총괄 판정 22번 §6-2-1 은 "
+            "대조선 병기를 필수로 했다")
+    got = (base.get("classification_axis") or {}).get("macro_ap_freq")
+    if not isinstance(got, (int, float)):
+        return GateResult(
+            name, False,
+            f"분류 축 대조선 값이 수가 아니다({got!r}) — 키만 있고 값이 없으면 병기가 아니다")
+    # 자기 검사는 **등록 모집단에서만** 판정한다. 등록 상수가 평가셋 12,461장에 대한
+    # 값이라 다른 모집단에서는 재현되지 않는 것이 정상이고, 그것을 차단 사유로 삼으면
+    # 픽스처·파일럿 채점이 전부 막힌다. 적용 가능한데 실패한 경우만 막는다.
+    if base.get("self_check_applicable", True) and not base.get("self_check_reproduced"):
+        return GateResult(
+            name, False,
+            "대조선 규칙이 자기 검사(등록 Macro-F1 재현)를 통과하지 못했다 — 재현하지 "
+            "못한 규칙의 값은 다른 규칙의 값이다",
+            value={"scope": base.get("self_check_scope")})
+
+    policy = ctx.extra.get("headline_policy") or {}
+    if "macro_ap" in (policy.get("confirmed_headline") or []):
+        return GateResult(
+            name, False,
+            "macro_ap 가 확정 대표로 표시돼 있다 — 총괄 판정 22번 §6-2-1 로 대표에서 내려갔다")
+
+    scope = "" if base.get("self_check_applicable", True) else " · 자기 검사 미적용(모집단 다름)"
+    return GateResult(
+        name, True,
+        f"macro-AP 옆에 무내용 대조선 {got:.4f} 가 병기됐다 "
+        f"(단독 인용 금지 · 보조지표){scope}",
+        value={"baseline_macro_ap_freq": got, "rule": base.get("primary_rule"),
+               "self_check_applicable": base.get("self_check_applicable", True)})

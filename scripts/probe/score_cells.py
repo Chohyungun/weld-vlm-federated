@@ -62,6 +62,7 @@ from evaluation.params import (
 )
 from evaluation.probes.metadata_probe import MetaSample, trivial_bound
 from evaluation.probes.p9_runner import contexts_from_snapshot, p9_all_cells
+from evaluation.schema import PredictionRecord
 from evaluation.score import coord_health, failure_breakdown
 from evaluation.strata import (
     DEFAULT_K,
@@ -70,6 +71,35 @@ from evaluation.strata import (
     STRATUM_AXIS,
     stratified_table,
 )
+
+REGISTERED_EVAL_N = 12_461
+"""무내용 대조선 등록 상수가 대상으로 삼은 평가셋 크기.
+
+`configs/base.yaml` 의 키 이름(`..._score_eval12461`)이 스스로 밝히는 조건이다.
+다른 모집단(파일럿 스냅샷 등)에서는 재현되지 않는 것이 정상이라, 자기 검사를
+차단 조건으로 쓸 수 있는지 가르는 데 쓴다.
+"""
+
+HEADLINE_POLICY = {
+    "confirmed_headline": ["map_50"],
+    "demoted": ["macro_ap"],
+    "no_headline_axis": "classification",
+    "candidate": ["discrimination_threshold_free (Δ_AUC)"],
+    "ruling": "총괄 판정 22번 §6-2 (main dd430ae)",
+    "rules": [
+        "위치 축 map_50 회복률이 **유일한 확정 대표 숫자**다.",
+        ("macro_ap 는 보조지표다 — 무내용 대조선을 **반드시 병기**하고 단독 인용을 금한다. "
+         "분류 축에는 대표 숫자를 두지 않는다(빈자리를 급히 메우지 않는다)."),
+        ("판별력 Δ 는 **선별용**이다 — '다섯 칸 전부 신뢰구간 하한이 0 위' 한 문장으로만 "
+         "쓰고 순위·비율로 읽지 않는다."),
+        "Δ_AUC 는 **승격 후보**다. 승격 판정은 시드 3세트 집계 시점이며 그때까지 값만 쌓는다.",
+        "content_free_gate 를 AP 축으로 넓히지 않는다 — 철회한 전제를 코드에 새기는 셈이다.",
+    ],
+}
+"""**산출물이 자기 헤드라인 규칙을 말한다.** 표만 읽고 인용하는 사람이 있기 때문이다.
+
+이 딕셔너리를 고치는 것은 채점 기준을 고치는 것과 같다 — 총괄 판정 없이 바꾸지 마라.
+"""
 
 EXIT_OK = 0
 EXIT_REGRESSION = 1
@@ -324,6 +354,105 @@ def discrimination_block(pop: Population, by_cell: dict, prov: dict) -> dict:
             "헤드라인 보조지표 승격은 총괄 판정 사항이다(22번 §5 과제 4). 여기서는 값과 "
             "판정 재료만 낸다"
         ),
+    }
+
+
+def threshold_free_block(params: ScoringParams, pop: Population, prov: dict,
+                         det_tags) -> dict:
+    """**임계 독립 판별력 `Δ_AUC`** — 승격 후보 (총괄 판정 22번 §6-2-5).
+
+    운용점 `Δ` 는 임계 한 점의 발화율 차라 임계에 의존한다. 격자 안에서 칸 순위가 뒤집히는
+    것을 실측했다(17번 §12-5). 같은 질문의 임계 없는 형태가 `2·AUROC − 1` 이고, 지름길은
+    상수 점수라 여기서도 정확히 0 이다.
+
+    **하한 레코드에서 낸다** — 임계를 고르지 않는 것이 이 지표의 존재 이유이므로 운용점으로
+    자른 레코드를 쓰면 안 된다.
+
+    판정은 "시드 2·3 에서도 같은 방식으로 산출해 둔다" 이므로 이 블록은 옵션이 아니다.
+    """
+    from evaluation.discrimination import CROP, image_score, score_threshold_free
+
+    band = {r["image_id"] for r in pop.rows if prov.get(r["image_id"], "") == CROP}
+    has_defect = {r["image_id"]: r["has_defect"] == "True" for r in pop.rows}
+    groups = {r["image_id"]: r["group_id"] for r in pop.rows}
+    defect = {i for i in band if has_defect[i]}
+    normal = band - defect
+
+    by_group: dict[str, list[str]] = {}
+    for i in sorted(band):
+        by_group.setdefault(groups[i], []).append(i)
+
+    scores: dict[str, dict[str, float]] = {}
+    for tag in det_tags:
+        src = raw_record_path(params, tag)
+        if not src.exists():
+            return {"computed": False,
+                    "reason": f"하한 레코드가 없다: {src.name}. adapt 단계를 먼저 돌려라"}
+        with src.open(encoding="utf-8") as fh:
+            scores[tag] = {
+                r.image_id: image_score(r)
+                for r in (PredictionRecord.model_validate_json(ln)
+                          for ln in fh if ln.strip())
+            }
+
+    out = score_threshold_free(scores, defect, normal, by_group)
+    out["computed"] = True
+    out["provenance"] = CROP
+    out["n_defect"] = len(defect)
+    out["n_normal"] = len(normal)
+    return out
+
+
+def content_free_block(params: ScoringParams) -> dict:
+    """**무내용 대조선** — macro-AP 옆에 반드시 서야 하는 값 (총괄 판정 22번 §6-2-1).
+
+    판정이 "macro-AP 는 보조로 싣되 무내용 대조선을 **반드시 병기**" 로 못박았다. 대조선이
+    별도 스크립트를 돌려야만 생기는 상태면 시드 2·3 에서 빠뜨릴 수 있으므로, 없으면
+    **채점기가 만든다** — `prereg_recomputed_v1.json` 을 선배치하는 것과 같은 규칙이다.
+
+    이미 있으면 다시 만들지 않는다. 대조선은 동결본 `train+val` 에만 의존하므로 시드가
+    달라도 같은 값이고, 매 채점 다시 적합하면 시간만 든다.
+    """
+    from scripts.probe.content_free_baselines import (
+        BASELINE_FILE,
+        compute_baselines,
+        write_baselines,
+    )
+
+    dest = params.out / BASELINE_FILE
+    if not dest.exists():
+        write_baselines(params, compute_baselines(params, log=lambda *a, **k: None))
+    payload = json.loads(dest.read_text(encoding="utf-8"))
+    primary = f"idq{payload['primary_k']}"
+    # 등록 상수는 **평가셋 12,461장에 대해** 등록된 값이다(키 이름이 그렇게 말한다:
+    # `..._score_eval12461`). 다른 모집단에서 채점하면 재현되지 않는 것이 정상이므로,
+    # 자기 검사를 차단 조건으로 쓸 수 있는지 여부를 여기서 밝힌다.
+    n_eval = payload.get("fit_population", {}).get("n_eval")
+    applicable = n_eval == REGISTERED_EVAL_N
+    b = payload["baselines_fit_trainval"][primary]
+    pos = payload.get("position_axis", {})
+    return {
+        "source": BASELINE_FILE,
+        "primary_rule": primary,
+        "fit_population": "train+val (평가셋을 열지 않는다)",
+        "classification_axis": {
+            "macro_ap_freq": b["F"]["macro_ap"],
+            "macro_ap_hard": b["H"]["macro_ap"],
+            "macro_f1": b["macro_f1"],
+        },
+        "position_axis": {
+            "constant_box_map_50": pos.get("constant_box", {}).get("map_50"),
+            "idq_median_box_map_50": pos.get(f"{primary}_median_box", {}).get("map_50"),
+        },
+        "self_check_reproduced": payload["self_check"]["within_0.01"],
+        "self_check_applicable": applicable,
+        "self_check_scope": (
+            f"등록 상수는 평가셋 {REGISTERED_EVAL_N:,}장에 대한 값이다 — 이번 채점은 "
+            f"{n_eval if n_eval is not None else '?'}장. "
+            + ("적용" if applicable else "다른 모집단이라 재현 여부를 판정하지 않는다")
+        ),
+        "verdict": ("분류 축은 이 대조선을 넘지 못한다(22번 §6-2-1로 macro-AP 는 대표에서 "
+                    "내려갔다). 위치 축 대조선은 사실상 0 이라 map_50 만 확정 대표다"),
     }
 
 
@@ -611,13 +740,28 @@ def cmd_score(args) -> int:
     curve = curve_block(params, pop, det_tags)
     footnote = shortcut_footnote(diag["p9"], strata)
     # 22번 §5 — 판별력 Δ 배선(과제 4)과 귀속 축 분해(과제 5).
-    discrim = discrimination_block(pop, by_cell, diag.pop("_provenance"))
+    prov = diag.pop("_provenance")
+    discrim = discrimination_block(pop, by_cell, prov)
     decomp = decomposition_block(params, pop, det_tags)
+    # 총괄 판정 22번 §6 — 대조선 병기와 Δ_AUC 산출은 **정규 단계**다. 시드 2·3 에서도
+    # 같은 방식으로 나와야 하므로 별도 스크립트에 맡기지 않는다.
+    baseline = content_free_block(params)
+    free = threshold_free_block(params, pop, prov, det_tags)
     for r in discrim["results"]:
         tag = r["cell"] if not r.get("client") else f"{r['cell']}_{r['client']}"
         print(f"[판별력] {tag}: Δ {r['delta']['point']:+.4f} "
               f"[{r['delta']['ci_lo']:+.4f}, {r['delta']['ci_hi']:+.4f}] "
               f"(결함 {r['fire_rate_defect']:.4f} · 정상 {r['fire_rate_normal']:.4f})")
+    if free.get("computed"):
+        for tag, v in free["by_cell"].items():
+            print(f"[판별력·임계독립] {tag}: Δ_AUC {v['point']:+.4f} "
+                  f"[{v['ci_lo']:+.4f}, {v['ci_hi']:+.4f}]")
+        for k, v in free.get("contrasts", {}).items():
+            print(f"[판별력·대비] {k}: {v['point']:+.4f} [{v['ci_lo']:+.4f}, {v['ci_hi']:+.4f}]")
+    cf = baseline["classification_axis"]
+    print(f"[무내용 대조선] 분류축 macro-AP {cf['macro_ap_freq']:.4f}(F)·"
+          f"{cf['macro_ap_hard']:.4f}(H) · 위치축 "
+          f"{baseline['position_axis']['idq_median_box_map_50']:.4f}")
     ti = indep.get("recovery", {}).get(indep["primary"], {})
     if ti.get("recovery_pct") is not None:
         print(f"[임계 독립] {indep['primary']} 회복률 {ti['recovery_pct']:.1f}% "
@@ -653,6 +797,8 @@ def cmd_score(args) -> int:
             "threshold_independent": indep,
             "p9": diag["p9"],
             "shortcut_footnote": footnote,
+            "content_free_baseline": baseline,
+            "headline_policy": HEADLINE_POLICY,
         },
     ))
     code, why = exit_code(gates, reg)
@@ -667,9 +813,12 @@ def cmd_score(args) -> int:
             f"운용점 예시 conf={params.conf.value} — **확증적 기준 아님**(총괄 판정 1, "
             "22번 §1-2-3). 헤드라인은 threshold_independent, 칸 비교는 curve 로 한다"
         ),
+        "headline_policy": HEADLINE_POLICY,
         "threshold_independent": indep,
         "curve": curve,
         "discrimination": discrim,
+        "discrimination_threshold_free": free,
+        "content_free_baseline": baseline,
         "decomposition": decomp,
         "shortcut_footnote": footnote,
         "stratified": strata,

@@ -33,6 +33,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
+import numpy as np
+
 from evaluation.schema import PredictionRecord
 from evaluation.stats import Interval, cluster_bootstrap
 
@@ -267,21 +269,93 @@ def gini(scores: Mapping[str, float], defect: Iterable[str], normal: Iterable[st
     모든 이미지에 같은 점수를 주므로 전부 동점이 되고 AUROC 가 정확히 0.5 가 된다.
     `Δ` 가 0 에 고정되는 것과 같은 이유이고, **임계를 고르지 않아도 성립한다**는 점만 다르다.
 
+    총괄 판정 22번 §6-2-5 로 **승격 후보**가 됐다(승격 자체는 시드 3세트 집계 시점 판정).
+    그래서 본채점이 매 시드 부르고, 부트스트랩 재표집 안에서 수만 번 호출된다 — 순위를
+    numpy 로 낸다. 순수 파이썬판과 **비트 단위로 같은 값**을 내야 하며 그 동치는
+    `tests/test_discrimination_gini.py` 가 본다.
+
     Returns:
         `2·AUROC − 1`. 한쪽 층이 비면 `nan`(재표집에서 걸러내라는 신호다).
     """
-    d = [scores[i] for i in defect if i in scores]
-    n = [scores[i] for i in normal if i in scores]
-    if not d or not n:
+    d = np.fromiter((scores[i] for i in defect if i in scores), dtype=float)
+    n = np.fromiter((scores[i] for i in normal if i in scores), dtype=float)
+    if d.size == 0 or n.size == 0:
         return float("nan")
-    order = sorted(d + n)
-    rank: dict[float, float] = {}
-    i = 0
-    while i < len(order):
-        j = i
-        while j + 1 < len(order) and order[j + 1] == order[i]:
-            j += 1
-        rank[order[i]] = (i + j) / 2 + 1          # 동점은 평균 순위
-        i = j + 1
-    auc = (sum(rank[v] for v in d) - len(d) * (len(d) + 1) / 2) / (len(d) * len(n))
+    allv = np.concatenate((d, n))
+    order = np.argsort(allv, kind="stable")
+    ranks = np.empty(allv.size, dtype=float)
+    srt = allv[order]
+    # 동점 묶음마다 평균 순위를 준다 — 지름길(전부 동점)이 정확히 0.5 가 되는 근거다.
+    start = 0
+    for end in np.flatnonzero(np.diff(srt)).tolist() + [srt.size - 1]:
+        ranks[order[start:end + 1]] = (start + end) / 2 + 1
+        start = end + 1
+    auc = (ranks[:d.size].sum() - d.size * (d.size + 1) / 2) / (d.size * n.size)
     return 2 * auc - 1
+
+
+def score_threshold_free(
+    scores_by_cell: Mapping[str, Mapping[str, float]],
+    defect: Iterable[str],
+    normal: Iterable[str],
+    by_group: Mapping[str, Sequence[str]],
+    *,
+    central: str = "sep_central",
+    fed: str = "sep_fed",
+    local_prefix: str = "sep_local",
+) -> dict:
+    """칸별 `Δ_AUC` 와 칸 대비를 **같은 재표집에서 짝지어** 낸다.
+
+    칸마다 따로 낸 신뢰구간을 눈으로 겹쳐 차를 읽으면 묶음이 공통이라는 사실이 빠져
+    차의 구간이 실제보다 넓어진다. `cluster_bootstrap` 은 시드를 고정하므로 호출마다
+    같은 묶음을 뽑는다 — 그래서 대비를 별도 통계량으로 부르면 자동으로 짝지어진다.
+
+    회복률은 **분모가 양수일 때만** 낸다. 시드 1 에서 운용점 `Δ` 는 로컬평균이 중앙집중보다
+    높아 분모가 음수였다(17번 §12-5) — 그때 비율을 내면 부호가 뒤집힌 수가 나온다.
+    """
+    d_set, n_set = set(defect), set(normal)
+    units = sorted(by_group)
+    cells = sorted(scores_by_cell)
+
+    def sub(cell: str, gs: Sequence[str]) -> float:
+        ids = [i for g in gs for i in by_group[g]]
+        return gini(scores_by_cell[cell],
+                    [i for i in ids if i in d_set], [i for i in ids if i in n_set])
+
+    by_cell = {
+        c: cluster_bootstrap(units, lambda gs, k=c: sub(k, gs), drop_undefined=True).as_dict()
+        for c in cells
+    }
+
+    locals_ = [c for c in cells if c.startswith(local_prefix)]
+    contrasts: dict[str, dict] = {}
+    recovery = None
+    if central in scores_by_cell and fed in scores_by_cell and locals_:
+        def _mean_local(gs: Sequence[str]) -> float:
+            return sum(sub(c, gs) for c in locals_) / len(locals_)
+
+        pairs = {
+            "fed_minus_central": lambda gs: sub(fed, gs) - sub(central, gs),
+            "fed_minus_local_mean": lambda gs: sub(fed, gs) - _mean_local(gs),
+            "central_minus_local_mean": lambda gs: sub(central, gs) - _mean_local(gs),
+        }
+        for k, fn in pairs.items():
+            contrasts[k] = cluster_bootstrap(units, fn, drop_undefined=True).as_dict()
+        den = contrasts["central_minus_local_mean"]["point"]
+        num = contrasts["fed_minus_local_mean"]["point"]
+        recovery = None if den <= 0 else 100.0 * num / den
+
+    return {
+        "definition": "2·AUROC − 1 (출처 고정 구간, 결함 대 정상, 동점 1/2)",
+        "baseline": "0 = 순위 정보 없음. 지름길은 상수 점수라 정의상 정확히 0",
+        "computed_at": "export 하한 — 임계를 고르지 않는다",
+        "status": ("승격 후보 (총괄 판정 22번 §6-2-5). 승격 판정은 시드 3세트 집계 시점 — "
+                   "그때까지 값만 쌓는다"),
+        "ci": "묶음 클러스터 부트스트랩 (칸 대비는 같은 재표집에서 짝지음)",
+        "n_groups": len(units),
+        "by_cell": by_cell,
+        "contrasts": contrasts,
+        "recovery_pct": recovery,
+        "recovery_note": ("분모(중앙집중 − 로컬평균)가 작으면 비율이 민감하다. 점추정 단독이 "
+                          "아니라 대비 신뢰구간과 함께 읽어야 한다. 분모가 0 이하면 내지 않는다"),
+    }
