@@ -227,10 +227,18 @@ def _resolve(
 
 
 def resolve_conf(cfg: dict | None = None) -> Resolved:
-    """검출 conf 임계. configs 우선, 없으면 폴백 + 그 사실을 출처에 적는다."""
+    """검출 conf 임계 — **운용점 예시**. configs 우선, 없으면 폴백 + 그 사실을 출처에 적는다.
+
+    **여기서 configs 를 찾지 못하는 것이 정상이다**(총괄 판정 1, 22번 §1-2-2). 단일 임계를
+    사전등록하면 결과를 본 뒤 한 점을 고른 것이 되므로 등록 대상은 격자(`conf_sweep_grid`)
+    이고 단일 임계 키는 `configs/base.yaml` 에 일부러 두지 않았다. A 가 그 부재를 시험으로
+    고정했다(`tests/test_conf_sweep_grid.py`). 이 값은 65·66번 재현·운용점 표기에만 쓴다.
+    """
     return _resolve(
         CONF_KEYS, CONF_FALLBACK,
-        "fallback:evaluation.params.CONF_FALLBACK (configs 미등록 — 총괄 배분 대기)",
+        ("fallback:evaluation.params.CONF_FALLBACK — configs 에 **일부러 없다**"
+         "(총괄 판정 1, 22번 §1-2-2: 단일 임계는 사전등록하지 않는다. 등록 대상은 격자다). "
+         "운용점 예시이며 확증 기준이 아니다"),
         cfg if cfg is not None else load_base_config(),
     )
 
