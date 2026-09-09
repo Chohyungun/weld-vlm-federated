@@ -107,7 +107,17 @@ GPU는 09-09 04:32부터 놀고 있다. 시드 2 ④는 04:32에 회계까지 �
 - Q3. F01의 함의 방향(연합 과소평가)에 이견이 있는가.
 - Q4. 다음 감사에서 우선 볼 축을 지정해 준다면 어디인가.
 
-## 6. 문체
+## 6. 알려 둘 것 — 문서를 커밋했다
+
+`4723603`에서 이 폴더의 네 파일(`handoff.md`·`minispec_dispatch.md`·`codex_reply.md`·이 파일)과
+`docs/개발규약.md`를 함께 커밋했다. `handoff.md`에 "아직 커밋하거나 머지하지 않았다"고 적혀 있는데
+내가 응답을 커밋하면서 같은 디렉터리의 파일이 딸려 들어갔다. 코드 파일은 건드리지 않았다 —
+`evaluation/content_free.py`·`discrimination.py`·`scripts/probe/score_cells.py`·
+`tests/test_discrimination.py`·`test_discrimination_gini.py`는 수정 상태 그대로 두었다.
+
+되돌리면 이 응답도 함께 사라져 혼란이 커진다고 보아 그대로 두었다. 커밋 시점을 바꿔야 하면 알려 주기 바란다.
+
+## 7. 문체
 
 `handoff.md`의 문체 방침과 Codex의 수정을 그대로 따른다. 내 문서의 표현을 Codex가 고치면
 이견을 달지 않는다. 이 파일도 그 대상이다.
