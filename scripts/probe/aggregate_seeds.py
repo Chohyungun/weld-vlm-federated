@@ -4,9 +4,12 @@
         --metadata-ladder <촬영 ID 빈도 규칙 Δ_AUC 사다리 JSON> --dest outputs/main_d/seed3set
 
 **입력은 시드별 본채점 산출물(`score_cells_v1.json`)뿐이다.** 여기서 채점을 다시 하지 않는다 —
-세 산출물을 모으는 것이 이 스크립트의 전부다. 읽은 파일의 sha256 과 시드 간 파라미터 동일성은
-`provenance` 블록에 남긴다. **채점기 코드의 동일성은 그 블록으로 확인되지 않는다** — 산출물에
-코드 해시가 없기 때문이고, 그 사실을 블록이 스스로 말한다.
+세 산출물을 모으는 것이 이 스크립트의 전부다. 읽은 파일의 sha256, 시드 간 파라미터 동일성,
+그리고 **채점기 코드 해시 대조**를 `provenance` 블록에 남긴다.
+
+채점기 코드 해시가 시드마다 다르면 **멈춘다** — 다른 코드로 낸 값을 한 표에 모으는 것이
+문제의 시작이다. 해시가 없는 산출물(규칙이 생기기 전 채점)에서는 멈추지 않고 "독립 확인
+불가" 를 사실대로 싣는다. 소급 계산은 하지 않는다.
 
 ## 무엇을 지키나
 
@@ -122,7 +125,8 @@ COMPARABLE_PARAMS = (
 )
 
 
-def provenance(root: Path, payloads: dict[int, dict]) -> dict:
+def provenance(root: Path, payloads: dict[int, dict], *,
+               allow_drift: bool = False) -> dict:
     """집계가 실제로 읽은 파일과, 그 파일로 확인되는 것/안 되는 것을 갈라 적는다.
 
     **"같은 채점 코드" 는 여기서 확인되지 않는다.** 세 `score_cells_v1.json` 어디에도
@@ -147,11 +151,59 @@ def provenance(root: Path, payloads: dict[int, dict]) -> dict:
         "params_identical_across_seeds": identical,
         "params_differing_by_seed": {k: v for k, v in mism.items() if v},
         "scorer_field_in_artifacts": payloads[ref].get("scorer"),
-        "not_verified_here": (
-            "**채점기 코드의 동일성은 이 산출물로 확인되지 않는다.** 세 score_cells_v1.json "
-            "어디에도 코드 해시·커밋이 없다. 위 표가 말하는 것은 채점 파라미터와 격자가 "
-            "시드 사이에 같다는 것뿐이고, 같은 코드로 돌렸다는 것은 실행 절차에 대한 진술이다"
-        ),
+        "scorer_code": scorer_code_check(payloads, allow_drift=allow_drift),
+    }
+
+
+def scorer_code_check(payloads: dict[int, dict], *, allow_drift: bool = False) -> dict:
+    """세 시드가 **같은 채점기 코드**로 나왔는지. 파라미터 동일성으로는 못 보는 축이다.
+
+    산출물의 `scorer_code.combined`(`evaluation/provenance.py`)를 맞댄다.
+
+    - 전부 있고 같다 → 확인됨.
+    - 전부 있는데 다르다 → **멈춘다.** 다른 코드로 낸 값을 한 표에 모으는 것이 문제의 시작이다.
+      의도한 차이라면 `--allow-code-drift` 로 **기록을 남기고** 진행한다. 조용히 넘어가는
+      경로는 두지 않는다.
+    - 일부/전부 없다 → **멈추지 않는다.** 이 규칙이 생기기 전에 나온 산출물이고, 소급 계산은
+      하지 않기로 했다(`provenance.py` 머리말). 대신 "독립 확인 불가" 를 사실대로 싣는다.
+    """
+    got = {str(n): (p.get("scorer_code") or {}).get("combined") for n, p in payloads.items()}
+    present = {k: v for k, v in got.items() if v}
+    missing = sorted(k for k, v in got.items() if not v)
+    distinct = sorted(set(present.values()))
+
+    if not present:
+        status, verified = "해시 없음 — 독립 확인 불가", False
+        detail = (
+            "세 산출물 전부 `scorer_code` 가 없다. 이 규칙이 생기기 전에 나온 채점이고 "
+            "**소급 계산해 끼워 넣지 않는다** — 지금 코드의 지문을 당시 기록인 척 싣는 것이 "
+            "되기 때문이다. 같은 코드로 돌렸다는 것은 실행 절차에 대한 진술로 남는다"
+        )
+    elif missing:
+        status, verified = "일부만 해시 있음 — 독립 확인 불가", False
+        detail = (f"시드 {missing} 에 `scorer_code` 가 없어 전 시드 대조가 성립하지 않는다. "
+                  "있는 것끼리의 일치는 부분 정보다")
+    elif len(distinct) == 1:
+        status, verified = "확인됨 — 세 시드가 같은 채점기 소스", True
+        detail = f"combined {distinct[0][:16]}… 가 전 시드 동일"
+    else:
+        status, verified = "불일치", False
+        detail = f"채점기 코드 해시가 시드마다 다르다: {got}"
+        if not allow_drift:
+            raise SystemExit(
+                f"{detail} — 다른 코드로 낸 값을 한 표에 모으지 않는다. "
+                "의도한 차이라면 --allow-code-drift 로 기록을 남기고 진행하라"
+            )
+
+    return {
+        "status": status,
+        "verified_same_code": verified,
+        "combined_by_seed": got,
+        "seeds_missing_hash": missing,
+        "n_distinct": len(distinct),
+        "drift_allowed": allow_drift,
+        "detail": detail,
+        "rule_source": "evaluation/provenance.py (evaluation/**/*.py + scripts/probe/score_cells.py)",
     }
 
 
@@ -578,6 +630,8 @@ def main() -> int:
     ap.add_argument("--metadata-ladder", default=None,
                     help="촬영 ID 빈도 규칙 Δ_AUC 사다리 JSON (Codex 스크립트 출력 형식 또는 {K: 값})")
     ap.add_argument("--dest", default="outputs/main_d/seed3set")
+    ap.add_argument("--allow-code-drift", action="store_true",
+                    help="채점기 코드 해시가 시드마다 달라도 진행한다(불일치를 산출물에 기록)")
     args = ap.parse_args()
 
     root = Path(args.root)
@@ -597,12 +651,13 @@ def main() -> int:
                              f"차단 {p['gates_evaluated']['blocking_failures']}")
 
     baseline = check_baselines_identical(payloads)
-    prov = provenance(root, payloads)
+    prov = provenance(root, payloads, allow_drift=args.allow_code_drift)
     print(f"시드 {seeds} · 시드값 {seed_values} · 격자 {len(grids[seeds[0]])}점 · 대조선 3시드 동일")
     print(f"[출처] 채점 파라미터 시드 간 동일: {prov['params_identical_across_seeds']}"
           + ("" if prov["params_identical_across_seeds"]
-             else f" (차이 {prov['params_differing_by_seed']})")
-          + " · 채점기 코드 해시는 산출물에 없다(코드 동일성 미확인)")
+             else f" (차이 {prov['params_differing_by_seed']})"))
+    print(f"[출처] 채점기 코드 해시: {prov['scorer_code']['status']} — "
+          f"{prov['scorer_code']['detail']}")
 
     ladder, ladder_files = None, {}
     if args.metadata_ladder:

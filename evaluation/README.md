@@ -123,12 +123,34 @@
 시드 2·3 에서 조용히 빠진다. 대조선 파일이 없으면 채점기가 만들고(`prereg_recomputed_v1.json`
 선배치와 같은 규칙), `Δ_AUC` 는 하한 레코드에서 매번 다시 낸다.
 
+## 3-4. 채점기가 자기 코드 지문을 남긴다 (27번 §1-0-1)
+
+여러 시드를 한 표에 모으려면 **같은 채점기 코드로 나왔는지**를 확인할 수단이 있어야 한다.
+채점 파라미터가 같아도 코드가 다르면 같은 기준이 아니고, 보고서의 "같은 코드로 돌렸다" 는
+작성자의 진술이지 검증이 아니다. 그래서 산출물이 `scorer_code` 를 싣는다
+(`evaluation/provenance.py`).
+
+| 항목 | 값 |
+|---|---|
+| 대상 | `evaluation/**/*.py` + `scripts/probe/score_cells.py` (디렉터리 규칙) |
+| 방식 | 경로 + 파일 바이트 sha256 을 정렬 순서로 이어 붙여 다시 sha256 → `combined` |
+| 판정 | 집계기(`aggregate_seeds.py`)가 시드 간 `combined` 을 대조한다. **다르면 멈춘다** |
+| 예외 | `--allow-code-drift` 는 불일치를 **기록하고** 진행한다. 조용히 넘어가는 경로는 없다 |
+| 없을 때 | 이 규칙 이전 산출물은 필드가 없다. 멈추지 않고 "독립 확인 불가" 로 보고한다 |
+
+**`sys.modules` 를 쓰지 않는 이유:** 채점기가 함수 안에서 지연 임포트를 하므로 실행 경로마다
+모듈 목록이 달라진다. 같은 코드에서 다른 해시가 나오면 지표의 전제가 무너진다.
+
+**소급하지 않는다.** 이미 나온 산출물에 지금 계산한 값을 끼워 넣으면 그것은 당시 코드의
+지문이 아니다. git 커밋 해시도 함께 남기지만 **판정 근거가 아니다** — 더러운 트리에서는
+코드를 대표하지 않는다.
+
 ## 4. 산출물 (`<채점 dir>/`)
 
 | 파일 | 무엇 |
 |---|---|
 | `{cell}_s{seed}.jsonl` | 계약 #4 레코드 (검출은 `predict`, 통합형은 `score` 가 어댑터로 생성) |
-| `score_cells_v1.json` | 본채점. `metrics` · `stratified` · `gates_evaluated` · `exit_code` · `coord_health` · `recovery` · `regression` · P9 · `discrimination` · `discrimination_threshold_free` · `content_free_baseline` · `decomposition` · `headline_policy` |
+| `score_cells_v1.json` | 본채점. `scorer_code`(채점기 소스 지문) · `metrics` · `stratified` · `gates_evaluated` · `exit_code` · `coord_health` · `recovery` · `regression` · P9 · `discrimination` · `discrimination_threshold_free` · `content_free_baseline` · `decomposition` · `headline_policy` |
 | `prereg_recomputed_v1.json` | 사전등록 상수 동결본 재산출(자동 선배치). `snapshot_digest` 로 출처 고정 |
 | `stratified_compare_v1.json` | 층화 상세 (K 사다리 · 구간별 행 · 지름길 규칙) |
 | `verify_filter_parity_v1.json` | 하한+필터 ≡ 직접 추론 동치의 표본 재확인 (곡선의 전제) |

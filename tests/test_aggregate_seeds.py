@@ -8,7 +8,8 @@
    최악 참여자가 평균에 가려지지 않게 따로 낸다.
 5. **공통 평가셋 변화와 명목 자기 재질을 구분한다** — 부호가 갈릴 수 있고, 갈리는 것을 산출물이
    말해야 '참여자가 이득을 본다'로 잘못 읽히지 않는다.
-6. **채점기 코드 동일성을 주장하지 않는다** — 산출물에 코드 해시가 없다.
+6. **채점기 코드 해시를 대조한다** — 다르면 멈추고, 없으면 "독립 확인 불가"를 사실대로 적는다.
+   소급 계산해 끼워 넣지 않는다.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from scripts.probe.aggregate_seeds import (
     client_improvement,
     provenance,
     recovery_table,
+    scorer_code_check,
     secondary_ratios,
 )
 
@@ -164,13 +166,53 @@ def test_재질이_여러_클라이언트에_걸리면_자기_재질을_내지_�
         assert "분리 불가" in cli["by_client"][t]["own_material_note"]
 
 
-def test_출처_블록이_코드_동일성을_주장하지_않는다(tmp_path):
-    """산출물에 채점기 코드 해시가 없다 — 그 사실을 블록이 스스로 말해야 한다."""
+def _with_code(payloads, digests: dict[int, str]):
+    for n, d in digests.items():
+        payloads[n]["scorer_code"] = {"combined": d, "n_files": 31}
+    return payloads
+
+
+def test_해시가_없으면_멈추지_않고_확인_불가로_적는다(tmp_path):
+    """규칙이 생기기 전 산출물이다. 소급 계산해 끼워 넣지 않기로 했으니 멈추면 안 된다."""
     prov = provenance(tmp_path, three_seeds())
+    sc = prov["scorer_code"]
     assert prov["params_identical_across_seeds"] is True
-    assert "확인되지 않는다" in prov["not_verified_here"]
+    assert sc["verified_same_code"] is False
+    assert "독립 확인 불가" in sc["status"] and "소급" in sc["detail"]
+    assert sc["seeds_missing_hash"] == ["1", "2", "3"]
     # 파일이 없으면 해시는 None 이고, 없는 것을 있는 것처럼 적지 않는다
     assert all(v["sha256"] is None for v in prov["inputs"].values())
+
+
+def test_해시가_전부_같으면_확인됨():
+    out = scorer_code_check(_with_code(three_seeds(), dict.fromkeys((1, 2, 3), "a" * 64)))
+    assert out["verified_same_code"] is True
+    assert out["n_distinct"] == 1 and out["seeds_missing_hash"] == []
+
+
+def test_해시가_다르면_멈춘다():
+    """다른 코드로 낸 값을 한 표에 모으는 것이 문제의 시작이다."""
+    p = _with_code(three_seeds(), {1: "a" * 64, 2: "a" * 64, 3: "b" * 64})
+    with pytest.raises(SystemExit, match="한 표에 모으지 않는다"):
+        scorer_code_check(p)
+
+
+def test_의도한_차이는_기록을_남기고_진행한다():
+    """조용히 넘어가는 경로는 두지 않는다 — 플래그를 줘야 하고 산출물에 남는다."""
+    p = _with_code(three_seeds(), {1: "a" * 64, 2: "a" * 64, 3: "b" * 64})
+    out = scorer_code_check(p, allow_drift=True)
+    assert out["status"] == "불일치" and out["drift_allowed"] is True
+    assert out["verified_same_code"] is False and out["n_distinct"] == 2
+
+
+def test_일부만_해시가_있으면_확인되지_않는다():
+    """있는 것끼리 같아도 전 시드 대조가 아니다 — 부분 정보라고 적는다."""
+    p = three_seeds()
+    p[1]["scorer_code"] = {"combined": "a" * 64}
+    p[2]["scorer_code"] = {"combined": "a" * 64}
+    out = scorer_code_check(p)
+    assert out["verified_same_code"] is False
+    assert out["seeds_missing_hash"] == ["3"] and "부분 정보" in out["detail"]
 
 
 def test_분모_판정이_셋으로_갈라진다():
