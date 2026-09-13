@@ -74,6 +74,12 @@ def _cell_from_metrics(round_idx: int, m: dict[str, Any]) -> AccountingCell:
         optimizer_updates=int(m.get("optimizer-updates", 0)),
         resumed_from_epoch=(None if float(m.get("resumed-from-epoch", -1)) < 0
                             else int(m["resumed-from-epoch"])),
+        epochs_this_process=(None if float(m.get("epochs-this-process", -1)) < 0
+                             else int(m["epochs-this-process"])),
+        loader_reseed_per_epoch=(None if "loader-reseed-per-epoch" not in m
+                                 else bool(m["loader-reseed-per-epoch"])),
+        loader_seed=(None if int(m.get("loader-seed", -1)) < 0 else int(m["loader-seed"])),
+        profile=str(m.get("profile", "")),
         # 조기 종료 계측을 클라이언트 실측에서 받는다. -1 은 "계측 없음"이라 None 으로
         # 옮긴다 — 0 으로 접으면 재지 않은 셀이 통과한다(74번 감사 P9).
         stopper_class=str(m.get("stopper-class", "")),
@@ -171,11 +177,14 @@ def _cell_train_config(cell: str, cfg: Any, out_dir: Path) -> dict[str, Any]:
     if cell == SMOKE_CELL:
         return {"smoke-fail-at": str(cfg.get("smoke-fail-at", ""))}
     if cell == "sep_fed":
+        from detection.round_runner import validate_loader_policy
+
         return {
             "views-root": str(cfg["views-root"]),
             "model": str(cfg["model"]),
             "project": str(out_dir / "runs"),
             "profile": str(cfg.get("profile", "main")),
+            "loader-reseed-per-epoch": validate_loader_policy(cfg.get("loader-reseed-per-epoch", False)),
             **{f"num-examples-{i}": int(n)
                for i, n in enumerate(_as_list(cfg.get("num-examples", [])))},
         }

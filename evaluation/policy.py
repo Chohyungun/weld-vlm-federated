@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 ITEM_LEVEL = "item"
@@ -100,6 +100,9 @@ def filter_defect_items(
     scoring = set(scoring_codes)
     rep = DefectFilterReport()
     for d in items:
+        if not isinstance(d, Mapping):
+            rep.n_bad_item += 1
+            continue
         code = str(d.get("iso_code", ""))
         if code not in known:
             rep.n_unknown_code += 1

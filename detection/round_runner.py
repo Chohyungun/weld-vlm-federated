@@ -131,6 +131,11 @@ class RoundResult:
     #: 0 = 접촉점 6(B) 적용, 그 외 = B 가 꺼진 채 돈 실측값. ②③ 은 meta.json 으로, ④ 는 메트릭·
     #: 원자 로그 지표 행으로 남는다(14번 §B-3, 15번 G3). accounting.csv 열은 늘리지 않는다.
     val_loader_workers: int | None = None
+    epochs_this_process: int | None = None
+    loader_reseed_per_epoch: bool = False
+    loader_seed: int | None = None
+    loader_reseeds: list[tuple[int, int]] = field(default_factory=list)
+    profile: str = ""
 
 
 def derive_seed(base_seed: int, round_idx: int, client_idx: int) -> int:
@@ -146,8 +151,8 @@ def derive_seed(base_seed: int, round_idx: int, client_idx: int) -> int:
 class _LRTrace:
     """epoch별 학습률 기록. 연합 칸과 중앙집중 칸의 궤적 일치를 검증하는 근거다."""
 
-    def __init__(self) -> None:
-        self.trace: list[tuple[int, float]] = []
+    def __init__(self, previous: Sequence[Sequence[float]] = ()) -> None:
+        self.trace: list[tuple[int, float]] = [(int(ep), float(lr)) for ep, lr in previous]
 
     def __call__(self, trainer: Any) -> None:
         lrs = getattr(trainer, "lr", None) or {}
@@ -163,6 +168,13 @@ class _StepCounter:
 
     def __call__(self, trainer: Any) -> None:
         self.n += 1
+
+
+def validate_loader_policy(value: Any) -> bool:
+    """문자열 'false'를 True로 해석해 실험 정책이 바뀌는 것을 막는다."""
+    if type(value) is not bool:
+        raise ValueError("loader_reseed_per_epoch는 bool이어야 한다")
+    return value
 
 
 def train_round(
@@ -213,15 +225,20 @@ def train_round(
         loader_reseed_per_epoch: epoch 진입마다 로더 셔플 생성기를 `f(seed, epoch)` 으로
             다시 시드한다. **다섯 칸 공통 고정 항목(데이터 순서·증강 난수열)을 바꾸므로
             켜려면 다섯 칸 전부에 켜고 첫 런 착수 전에 확정해야 한다.** 켜면 시드가 실제로
-            데이터 순서를 통제하고(숨은 기본값 #9) 재개가 정확해진다.
+            데이터 순서와 워커 시드를 통제한다. 학습 궤적의 동등성까지 보장하지 않는다.
 
     Raises:
         ValueError: 5칸 공통 고정 항목을 덮어쓰려 하면 실패한다.
     """
     # 공통 고정 위반은 ultralytics 를 로드하기 **전에** 잡는다. 설정 오류를 알아내는 데
     # optional 의존성이 필요할 이유가 없고, 그래야 이 검사가 어느 환경에서든 돈다.
+    loader_reseed_per_epoch = validate_loader_policy(loader_reseed_per_epoch)
     if profile not in PROFILES:
         raise ValueError(f"알 수 없는 프로파일: {profile!r}. 허용: {sorted(PROFILES)}")
+    if total_epochs <= 0 or local_epochs <= 0 or round_idx < 0:
+        raise ValueError("epoch 예산은 양수, round_idx는 0 이상이어야 한다.")
+    if (round_idx + 1) * local_epochs > total_epochs:
+        raise ValueError("라운드의 종료 epoch이 전역 예산을 초과한다.")
     fixed = PROFILES[profile]
     overrides: dict[str, Any] = dict(fixed)
     if extra_overrides:
@@ -234,6 +251,9 @@ def train_round(
         overrides.update(extra_overrides)
 
     seed = derive_seed(base_seed, round_idx, client_idx)
+    # opt-in 정책은 라운드 경계와 무관하게 (base seed, client, global epoch)로
+    # 로더를 시드한다. 기존 기본값(False)의 데이터 순서는 바꾸지 않는다.
+    loader_seed = derive_seed(base_seed, 0, client_idx) if loader_reseed_per_epoch else None
     overrides.update(
         {
             "model": model,
@@ -283,8 +303,13 @@ def train_round(
             local_epochs=int(local_epochs),
             model=str(model),
             data=str(Path(data_yaml).resolve()),
+            loader_reseed_per_epoch=bool(loader_reseed_per_epoch),
+            loader_seed=loader_seed,
+            profile=profile,
         )
         resume_state = latest_resume(resume_dir, identity=identity)
+        if resume_state is not None:
+            validate_detection_resume(resume_state)
 
     trainer = FedDetectionTrainer(
         overrides=overrides,
@@ -294,8 +319,12 @@ def train_round(
         local_epochs=local_epochs,
         resume_state=resume_state,
         loader_reseed_per_epoch=loader_reseed_per_epoch,
+        loader_seed=loader_seed,
     )
-    lr_trace = _LRTrace()
+    previous = resume_state.payload if resume_state is not None else {}
+    trainer.n_optimizer_updates = int(previous.get("optimizer_updates", 0))
+    lr_trace = _LRTrace(previous.get("lr_trace", ()))
+    trainer._resume_lr_trace = lr_trace
     steps = _StepCounter()
     trainer.add_callback("on_fit_epoch_end", lr_trace)
     trainer.add_callback("on_train_batch_end", steps)
@@ -357,4 +386,37 @@ def train_round(
         gates_evaluated=gates["gates_evaluated"],
         gate_results=gates["gate_results"],
         val_loader_workers=getattr(trainer, "val_loader_workers", None),
+        epochs_this_process=(int(budget.epochs_ran) if budget else int(total_epochs))
+        - int(getattr(resume_state, "epochs_ran_in_round", 0) or 0),
+        loader_reseed_per_epoch=bool(loader_reseed_per_epoch),
+        loader_seed=loader_seed,
+        loader_reseeds=list(trainer.loader_reseed.reseeds) if trainer.loader_reseed else [],
+        profile=profile,
     )
+
+
+def validate_detection_resume(state: Any) -> None:
+    """학습 시작 전에 재개 커서와 회계를 검사한다. 구판의 누락값을 추정하지 않는다."""
+    ident = state.identity
+    consumed = int(state.epochs_ran_in_round)
+    if not 0 < consumed <= ident.local_epochs:
+        raise ValueError("재개 체크포인트의 완료 epoch 수가 라운드 예산 밖이다.")
+    if state.next_epoch != ident.round_idx * ident.local_epochs + consumed:
+        raise ValueError("재개 체크포인트의 전역 epoch과 라운드 누적 epoch이 맞지 않는다.")
+    if consumed == ident.local_epochs:
+        raise ValueError(
+            "라운드 예산이 이미 완료된 체크포인트다. 추가 학습은 허용하지 않는다. "
+            "이 파일을 보존하고 최종 가중치 내보내기 상태를 확인하라."
+        )
+    missing = {"optimizer_updates", "lr_trace"} - state.payload.keys()
+    if missing:
+        raise ValueError(
+            f"구판 재개 체크포인트에 회계 필드가 없다: {sorted(missing)}. "
+            "누락된 이전 갱신 횟수와 LR 이력을 0으로 간주하여 재개할 수 없다."
+        )
+    if not 0 <= int(state.payload["optimizer_updates"]) <= state.optimizer_steps:
+        raise ValueError("재개 optimizer 갱신 횟수가 배치 수와 맞지 않는다.")
+    trace = state.payload["lr_trace"]
+    expected_epochs = list(range(ident.round_idx * ident.local_epochs, state.next_epoch))
+    if [int(ep) for ep, _ in trace] != expected_epochs:
+        raise ValueError("재개 LR 이력이 완료 epoch을 빠짐없이 포함하지 않는다.")

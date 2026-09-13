@@ -102,6 +102,10 @@ def adapt_unified_generations(
         rep.n_lines += 1
         row = json.loads(raw)
         image_id = str(row["image_id"])
+        upstream_bad = row.get("n_bad_items_dropped", 0)
+        if type(upstream_bad) is not int or upstream_bad < 0:
+            raise ValueError(f"{image_id}: n_bad_items_dropped must be a nonnegative integer")
+        rep.n_bad_items += upstream_bad
         common = {
             "coord_space": row.get("coord_space"),
             "coord_cfg_hash": row.get("coord_cfg_hash"),

@@ -53,6 +53,8 @@ class Chunk:
     scope: str = "active"
     """`excluded` 행도 색인에 남긴다 — 빼면 그 조항이 영구 미검색이 되어 무근거 인용
     1차 판정의 기준 집합이 좁아진다. 대신 채점에서는 제외한다."""
+    materials: tuple[str, ...] = ()
+    """적용 재질. ALL은 공통 조항이며, 빈 값은 재질 메타가 없는 레거시 청크다."""
 
 
 @dataclass(frozen=True)
@@ -65,6 +67,7 @@ class Query:
     quality_scheme: str | None = None
     quality_level: str | None = None
     size_mm: Decimal | None = None
+    material: str | None = None
 
     def to_text(self) -> str:
         """dense 보조 검색용 **결정론적 직렬화**. 같은 키는 언제나 같은 문자열이다.
@@ -75,7 +78,9 @@ class Query:
         parts = [
             f"검사방식={self.inspection_method}",
             f"결함코드={self.defect_code}",
+            f"재질={self.material or ''}",
             f"두께={'' if self.thickness_mm is None else self.thickness_mm}mm",
+            f"품질규격={self.quality_scheme or ''}",
             f"품질수준={self.quality_level or ''}",
         ]
         return "|".join(parts)
@@ -102,6 +107,13 @@ def _level_matches(
     `STD`/`LIM` 2단, KS는 류 등급, 무등급 단일 한계 조항은 `ALL`이다. 질의의 품질수준은
     iso5817 계열 가정값이므로 `grade_map[scheme][질의 수준] ∋ chunk 수준`을 경유한다.
     """
+    if chunk.quality_scheme is not None and query.quality_scheme != chunk.quality_scheme:
+        # 기존 grade_map의 입력 규격은 ISO 5817이다. 명시된 대응만 허용하고,
+        # 우연히 같은 등급 문자열을 쓰는 다른 규격은 통과시키지 않는다.
+        if query.quality_scheme != "iso5817" or not grade_map or query.quality_level is None:
+            return False
+        allowed = grade_map.get(chunk.quality_scheme, {}).get(query.quality_level, ())
+        return any(lv in chunk.quality_levels for lv in allowed)
     if not chunk.quality_levels:
         return True                      # 등급 무관 조항
     if query.quality_level is None:
@@ -154,6 +166,8 @@ def filter_chunks(
     out = []
     for c in chunks:
         if not _method_matches(c, query):
+            continue
+        if c.materials and "ALL" not in c.materials and query.material not in c.materials:
             continue
         if c.defect_codes and query.defect_code not in c.defect_codes:
             continue
@@ -253,6 +267,7 @@ def chunk_from_meta(meta: Mapping[str, object], text: str = "") -> Chunk:
         clause_id=str(meta["clause_id"]),
         inspection_methods=tuple(str(m) for m in meta.get("inspection_methods", ())),
         defect_codes=tuple(str(c) for c in meta.get("defect_codes", ())),
+        materials=tuple(str(m) for m in meta.get("materials", ())),
         thickness_min=_dec("thickness_min"),
         thickness_max=_dec("thickness_max"),
         quality_scheme=(

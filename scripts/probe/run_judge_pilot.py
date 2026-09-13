@@ -137,6 +137,7 @@ def main() -> int:
             for code in sorted(rec.iso_codes):
                 q = Query(
                     inspection_method=ctx["modality"], defect_code=code,
+                    material=ctx["material"],
                     thickness_mm=_dec(ctx["thickness_mm"]),
                     quality_scheme="none", quality_level=ctx["quality_level"] or None,
                 )

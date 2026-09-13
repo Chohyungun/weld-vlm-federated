@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -38,37 +39,42 @@ CELLS = {
 }
 
 
-def parse_and_backproject(text: str, geom: ImageGeom) -> tuple[list | None, str | None]:
+def parse_and_backproject(
+    text: str, geom: ImageGeom, *, diagnostics: dict | None = None,
+) -> tuple[dict | None, str | None]:
     """생성문 → 원본 픽셀 bbox. 추출은 관대하게, 검증은 엄격하게."""
     s = text.strip()
     i = s.find("{")
     if i < 0:
         return None, "no_json"
-    depth = 0
-    for j in range(i, len(s)):
-        if s[j] == "{":
-            depth += 1
-        elif s[j] == "}":
-            depth -= 1
-            if depth == 0:
-                block = s[i : j + 1]
-                break
-    else:
-        return None, "truncated"
     try:
-        obj = json.loads(block)
-    except json.JSONDecodeError:
-        return None, "json_decode"
+        obj, _ = json.JSONDecoder().raw_decode(s[i:])
+    except json.JSONDecodeError as exc:
+        # 문자열 안의 중괄호는 JSON 구조가 아니다. 실제 디코더로 추출한다.
+        incomplete = exc.pos >= len(s[i:]) or exc.msg.startswith("Unterminated string")
+        return None, "truncated" if incomplete else "json_decode"
     if not isinstance(obj.get("defects"), list):
         return None, "schema_violation"
     out = []
+    n_bad = 0
     for d in obj["defects"]:
-        b = d.get("bbox_2d")
+        b = d.get("bbox_2d") if isinstance(d, dict) else None
         if not isinstance(b, list) or len(b) != 4:
-            return None, "bbox_invalid"
+            n_bad += 1
+            continue
+        try:
+            box = [float(v) for v in b]
+        except (TypeError, ValueError, OverflowError):
+            n_bad += 1
+            continue
+        if not all(math.isfinite(v) for v in box) or box[0] >= box[2] or box[1] >= box[3]:
+            n_bad += 1
+            continue
         # 역변환 1회. 정수화하지 않는다 (판정 5)
         out.append({"iso_code": str(d.get("iso_code", "")),
-                    "bbox_px": [round(float(v), 3) for v in to_px(b, geom, COORD_CFG)]})
+                    "bbox_px": [round(float(v), 3) for v in to_px(box, geom, COORD_CFG)]})
+    if diagnostics is not None:
+        diagnostics["n_bad_items_dropped"] = n_bad
     return {"defects": out, "verdict": obj.get("verdict"),
             "cited_clauses": obj.get("cited_clauses", [])}, None
 
@@ -120,12 +126,14 @@ def main() -> None:
                 dt = (time.perf_counter() - t0) * 1000
                 text = proc.batch_decode(ids[:, enc["input_ids"].shape[1]:],
                                          skip_special_tokens=True)[0]
-                parsed, err = parse_and_backproject(text, geom)
+                parse_diagnostics = {}
+                parsed, err = parse_and_backproject(text, geom, diagnostics=parse_diagnostics)
                 if err:
                     fails[err] = fails.get(err, 0) + 1
                 fh.write(json.dumps({
                     "image_id": image_id, "text": text,
                     "bbox_px_parsed": parsed, "parse_error": err,
+                    "n_bad_items_dropped": parse_diagnostics.get("n_bad_items_dropped", 0),
                     "coord_space": COORD_CFG.coord_space, "coord_cfg_hash": cfg_hash,
                     "latency_ms": round(dt, 1)}, ensure_ascii=False) + "\n")
                 if (n + 1) % 50 == 0:

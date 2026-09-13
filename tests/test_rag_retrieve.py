@@ -39,6 +39,7 @@ def chunk(cid: str, method="RT", codes=("2011",), tmin="8", tmax="25",
 def q(method="RT", code="2011", t="12", level="C") -> Query:
     return Query(
         inspection_method=method, defect_code=code,
+        material="ST",
         thickness_mm=None if t is None else Decimal(t),
         quality_scheme="iso5817", quality_level=level,
     )

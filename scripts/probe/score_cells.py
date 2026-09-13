@@ -62,6 +62,7 @@ from evaluation.params import (
 )
 from evaluation.probes.metadata_probe import MetaSample, trivial_bound
 from evaluation.probes.p9_runner import contexts_from_snapshot, p9_all_cells
+from evaluation.provenance import scorer_code_digest
 from evaluation.schema import PredictionRecord
 from evaluation.score import coord_health, failure_breakdown
 from evaluation.strata import (
@@ -92,9 +93,16 @@ HEADLINE_POLICY = {
          "분류 축에는 대표 숫자를 두지 않는다(빈자리를 급히 메우지 않는다)."),
         ("판별력 Δ 는 **선별용**이다 — '다섯 칸 전부 신뢰구간 하한이 0 위' 한 문장으로만 "
          "쓰고 순위·비율로 읽지 않는다."),
-        "Δ_AUC 는 **승격 후보**다. 승격 판정은 시드 3세트 집계 시점이며 그때까지 값만 쌓는다.",
+        ("Δ_AUC 는 과거 승격 후보였으나 2026-09-09 감사에서 메타데이터 반례를 확인했다. "
+         "현재는 탐색 지표로 보고하며 같은 모집단의 metadata_baseline 을 병기한다. "
+         "시드 3세트 완성만으로 영상 내용 학습이 입증되지는 않는다."),
         "content_free_gate 를 AP 축으로 넓히지 않는다 — 철회한 전제를 코드에 새기는 셈이다.",
     ],
+    "audit_status": {
+        "date": "2026-09-09",
+        "discrimination_threshold_free": "exploratory_with_metadata_baseline",
+        "candidate_field": "기존 판정 기록이다. 현재 해석은 audit_status 와 rules 를 따른다",
+    },
 }
 """**산출물이 자기 헤드라인 규칙을 말한다.** 표만 읽고 인용하는 사람이 있기 때문이다.
 
@@ -319,18 +327,13 @@ def threshold_independent_block(params: ScoringParams, pop: Population, det_tags
 
 
 def discrimination_block(pop: Population, by_cell: dict, prov: dict) -> dict:
-    """**출처 고정 판별력 Δ** — 지름길이 정의상 통과할 수 없는 유일한 축 (22번 §5 과제 4).
-
-    `evaluation/discrimination.py` 는 09-02 에 구현·시험까지 끝났는데 본채점 진입점이
-    부르지 않아 값이 산출물에 실린 적이 없었다. 의사결정로그가 이 지표를 "지름길이 정의상
-    통과할 수 없는 유일한 축" 으로 적어 둔 이상, 무내용 대조가 문제가 된 지금이 그 값을
-    표에 올릴 자리다.
+    """출처 고정 판별력 Δ. 출처 단일 변수 이외의 교락은 통제하지 않는다.
 
         판별력 Δ = (결함 이미지 발화율) − (정상 이미지 발화율)   [출처 고정, N-crop]
 
     출처를 상수로 묶은 구간 안에서는 출처만 읽는 예측기가 상수 예측기로 퇴화하므로 Δ 가
-    정확히 0 이 된다. **0 을 넘으려면 이미지를 봐야 한다.** 0 은 실패선이 아니라 기준선이고,
-    음수는 정상에서 더 발화했다는 뜻이다(역전).
+    정확히 0 이 된다. 다른 메타데이터 예측기는 양수가 가능하며, 이 값만으로 영상 내용의
+    사용 여부를 판단하지 않는다. 음수는 정상에서 더 발화했다는 뜻이다(역전).
 
     맥락은 P9 와 달리 **결함·정상 둘 다** 필요하다 — P9 는 정상만 본다.
     """
@@ -347,7 +350,8 @@ def discrimination_block(pop: Population, by_cell: dict, prov: dict) -> dict:
     return {
         "provenance": CROP,
         "definition": "결함 발화율 − 정상 발화율 (출처 고정, 묶음 클러스터 부트스트랩 CI)",
-        "baseline": "0 = 이미지를 안 봤다. 지름길은 정의상 0 을 넘을 수 없다",
+        "baseline": "0 = 결함과 정상의 발화율이 같다. 출처만 읽는 상수 예측기의 기준선",
+        "limitation": "다른 메타데이터 교락은 남으며 영상 내용의 사용 여부를 단정하지 않는다",
         "n_context": len(contexts),
         "results": rows,
         "promotion_note": (
@@ -359,11 +363,11 @@ def discrimination_block(pop: Population, by_cell: dict, prov: dict) -> dict:
 
 def threshold_free_block(params: ScoringParams, pop: Population, prov: dict,
                          det_tags) -> dict:
-    """**임계 독립 판별력 `Δ_AUC`** — 승격 후보 (총괄 판정 22번 §6-2-5).
+    """임계 독립 판별력 `Δ_AUC`. 메타데이터 대조선과 함께 보고하는 탐색 지표다.
 
     운용점 `Δ` 는 임계 한 점의 발화율 차라 임계에 의존한다. 격자 안에서 칸 순위가 뒤집히는
-    것을 실측했다(17번 §12-5). 같은 질문의 임계 없는 형태가 `2·AUROC − 1` 이고, 지름길은
-    상수 점수라 여기서도 정확히 0 이다.
+    것을 실측했다(17번 §12-5). 같은 질문의 임계 없는 형태가 `2·AUROC − 1` 이다.
+    출처만 읽는 상수 예측기는 0이지만, 다른 메타데이터 규칙은 양수일 수 있다.
 
     **하한 레코드에서 낸다** — 임계를 고르지 않는 것이 이 지표의 존재 이유이므로 운용점으로
     자른 레코드를 쓰면 안 된다.
@@ -395,11 +399,23 @@ def threshold_free_block(params: ScoringParams, pop: Population, prov: dict,
                           for ln in fh if ln.strip())
             }
 
+        missing = band - scores[tag].keys()
+        if missing:
+            raise ValueError(
+                f"{tag}: N-crop 하한 예측 {len(missing)}개가 없다. "
+                "모델과 메타데이터 대조선을 다른 모집단으로 비교할 수 없다"
+            )
+
     out = score_threshold_free(scores, defect, normal, by_group)
     out["computed"] = True
     out["provenance"] = CROP
     out["n_defect"] = len(defect)
     out["n_normal"] = len(normal)
+    from evaluation.discrimination_baseline import compute_metadata_baseline
+
+    out["metadata_baseline"] = compute_metadata_baseline(
+        params.snapshot, image_ids=band, classes=pop.classes,
+    )
     return out
 
 
@@ -808,6 +824,9 @@ def cmd_score(args) -> int:
         "cells_scored": list(tags),
         "cells_selection": getattr(args, "cells", "all"),
         "scorer": "evaluation.score.score_records (단일)",
+        # **채점기 자신의 코드 지문.** 여러 시드가 같은 코드로 채점됐는지 확인할 유일한
+        # 수단이다 — 파라미터가 같아도 코드가 다르면 같은 기준이 아니다(27번 §1-0·§12-1).
+        "scorer_code": scorer_code_digest(),
         "metrics": metrics,
         "metrics_role": (
             f"운용점 예시 conf={params.conf.value} — **확증적 기준 아님**(총괄 판정 1, "
@@ -1017,4 +1036,3 @@ def _measured_prereg(params: ScoringParams) -> dict:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

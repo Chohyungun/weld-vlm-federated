@@ -848,7 +848,7 @@ IV1~IV12 각각에 대해 **통과 케이스 1 + 위반 케이스 1** = 24 테�
 
 ## 9-1. 결과: **성공.** sm_120 커널 실측 통과.
 
-`uv run python scripts/check_env.py` 실측 출력 (2026-08-17, `E:\Fedvlm_for_welding_wt_A`):
+`uv run python scripts/check_env.py` 실측 출력 (2026-08-17, 트랙 A worktree):
 
 ```
 python            : 3.11.13 (AMD64)

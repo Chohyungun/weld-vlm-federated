@@ -2,9 +2,8 @@
 
 이 파일이 지키는 것은 셋이다.
 
-1. **지름길이 정확히 0** — 출처 고정 구간에서 상수 점수를 주는 예측기는 0 을 넘을 수 없다.
-   이것이 `Δ` 와 이 지표를 함께 쓸 수 있는 유일한 이유다. 근사 0 이 아니라 **정확히** 0 이어야
-   한다(부동소수 오차 없이). 넘으면 지름길이 통과할 수 있는 축이 되고 대조가 무의미해진다.
+1. **상수 점수는 정확히 0** — 출처만 읽는 예측기의 성질이다. 촬영 ID 등 다른
+   메타데이터를 쓰는 규칙은 같은 출처 안에서도 양수가 가능하다. 반례도 함께 시험한다.
 2. **임계와 무관** — 같은 순위를 주는 점수라면 값이 같아야 한다. 이 지표의 존재 이유다.
 3. **`image_score` 가 발화 정의의 연속판** — `image_score(r) >= c` 가 임계 `c` 로 자른 뒤의
    `fires(r)` 와 **항상** 같아야 한다. 어긋나면 곡선과 임계 독립판이 다른 것을 재게 된다.
@@ -40,7 +39,7 @@ def _rec(image_id: str, scores: list[float], *, parse_ok: bool = True) -> Predic
 
 
 # --------------------------------------------------------------------------------------
-# 1 — 지름길은 정확히 0
+# 1 — 상수 점수의 기준선과 비상수 메타데이터 반례
 # --------------------------------------------------------------------------------------
 
 def test_상수_점수_예측기는_정확히_0():
@@ -48,6 +47,29 @@ def test_상수_점수_예측기는_정확히_0():
     sc = dict.fromkeys([f"i{n}" for n in range(50)], 0.7)
     d, n = [f"i{n}" for n in range(30)], [f"i{n}" for n in range(30, 50)]
     assert gini(sc, d, n) == 0.0
+
+
+def test_같은_출처의_메타데이터_규칙도_양수일_수_있다(monkeypatch):
+    """train 빈도만 적합해도 ID 구간과 결함이 교락하면 영상 없이 완전 분리한다."""
+    from evaluation import content_free
+
+    bins = {"train_a": 0, "train_b": 1, "eval_a": 0, "eval_b": 1}
+    monkeypatch.setattr(content_free, "bins_for", lambda ids, k, snapshot: {i: bins[i] for i in ids})
+    rule = content_free.fit_idq(2, ["train_a", "train_b"],
+                                {"train_a": ["100"], "train_b": []}, ["100"])
+    values, _ = content_free.scored(rule, ["eval_a", "eval_b"], content_free.FREQ)
+    scores = {i: max(s for _, s in items) for i, items in values.items()}
+    # 두 평가 이미지는 같은 출처다. 정답은 점수 적합에 쓰지 않는다.
+    assert gini(scores, ["eval_a"], ["eval_b"]) == 1.0
+
+
+def test_보고서가_메타데이터_교락을_경고한다():
+    from evaluation.discrimination import score_threshold_free
+
+    report = score_threshold_free({"metadata": {"d": 1.0, "n": 0.0}},
+                                  ["d"], ["n"], {"g": ["d", "n"]})
+    assert "메타데이터" in report["limitation"]
+    assert "반례" in report["status"]
 
 
 def test_전부_미발화도_정확히_0():

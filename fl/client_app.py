@@ -137,6 +137,7 @@ def train(msg: Message, context: Context) -> Message:
             # 시드)이 다르면 거부되므로 옆 라운드 상태를 물려받는 경로는 없다.
             "resume_root": str(cfg["resume-root"]) if cfg.get("resume-root") else None,
             "run_id": str(cfg.get("run-stamp", "")),
+            "loader_reseed_per_epoch": cfg.get("loader-reseed-per-epoch", False),
         }
         arrays_out, metrics, strings = run_client_round(
             weights_in=arrays_in, canonical_keys=canonical_keys,

@@ -128,11 +128,16 @@ def _server_main(grid: Grid, context: Context) -> None:
 def _cell_train_config(cell: str, cfg: dict[str, Any], out_dir: Path) -> dict[str, Any]:
     """칸별로만 다른 설정. 라운드 루프는 두 칸이 같은 코드를 탄다."""
     if cell == "sep_fed":
+        from detection.round_runner import validate_loader_policy
+
         return {
             "views-root": str(cfg["views_root"]),
             "model": str(cfg["model"]),
             "project": str(out_dir / "runs"),
             "profile": str(cfg.get("profile", "main")),
+            "loader-reseed-per-epoch": validate_loader_policy(
+                cfg.get("loader_reseed_per_epoch", False)
+            ),
             **{f"num-examples-{i}": int(n) for i, n in enumerate(cfg["num_examples"])},
         }
     if cell == SMOKE_CELL:

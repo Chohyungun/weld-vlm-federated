@@ -58,8 +58,8 @@ def load_chunks(
 ) -> tuple[Chunk, ...]:
     """`chunk_meta.jsonl` 을 색인 청크로 만든다. 변환은 `chunk_from_meta` 한 지점이다.
 
-    `texts` 는 조항 본문(파싱 문서 유래). 없으면 메타만으로 색인한다 — 1차 필터와
-    후보 0~1 경로는 본문 없이도 성립한다.
+    `texts` 는 명시적 본문 override다. 지정하지 않은 조항은 파생 메타의 `text`를
+    보존한다. 본문이 없는 레거시 메타는 검색 진단에 쓸 수 있지만 생성 입력은 못 된다.
 
     **첫 줄 `_meta` 헤더 레코드는 건너뛴다.** B 의 파생물은 원천 sha256·재파생 명령을
     담은 헤더 한 줄로 시작한다(62번). 조항 레코드가 아니므로 청크로 만들지 않는다 —
@@ -76,7 +76,9 @@ def load_chunks(
             if "_meta" in meta:
                 n_meta += 1
                 continue
-            text = (texts or {}).get(str(meta.get("clause_id", "")), "")
+            text = (texts or {}).get(str(meta.get("clause_id", "")), meta.get("text", ""))
+            if not isinstance(text, str):
+                raise ValueError(f"조항 본문은 문자열이어야 한다: {meta.get('clause_id')}")
             chunks.append(chunk_from_meta(meta, text))
     if n_meta > 1:
         raise ValueError(f"_meta 헤더가 {n_meta}줄이다 — 파생물이 이어붙여졌을 수 있다")
@@ -132,7 +134,7 @@ class Index:
         h = hashlib.sha256()
         for c in sorted(self.chunks, key=lambda x: x.chunk_id):
             h.update(repr((
-                c.chunk_id, c.inspection_methods, c.defect_codes,
+                c.chunk_id, c.inspection_methods, c.defect_codes, c.materials,
                 str(c.thickness_min), str(c.thickness_max),
                 c.quality_scheme, c.quality_levels, c.scope, c.text,
             )).encode("utf-8"))
@@ -187,6 +189,7 @@ def queries_from_gold_rows(
             Query(
                 inspection_method=str(r["inspection_method"]),
                 defect_code=str(r["defect_code"]),
+                material=str(r["material"]),
                 thickness_mm=t,
                 quality_scheme=str(r["quality_scheme"]),
                 quality_level=str(r["quality_level"]),

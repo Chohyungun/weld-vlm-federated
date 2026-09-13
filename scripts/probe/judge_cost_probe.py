@@ -144,6 +144,7 @@ def main() -> int:
         for code in sorted({d["iso_code"] for d in ds}):
             q = Query(
                 inspection_method=r["modality"], defect_code=code,
+                material=r["material"],
                 thickness_mm=thick.get((r["modality"], code)),
                 quality_scheme="none", quality_level=None,
             )

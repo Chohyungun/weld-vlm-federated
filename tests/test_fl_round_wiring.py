@@ -495,7 +495,8 @@ def test_uni_fed_서버가_보내는_키와_클라이언트가_읽는_키가_맞
     # f-string 으로 만드는 키(client-tag-N, num-examples-N)는 위 추출에 안 잡힌다.
     read |= {"client-tag-0", "client-tag-1", "client-tag-2"}
     # sep_fed·스모크 전용 키는 uni_fed 계약이 아니다
-    read -= {"views-root", "model", "project", "profile", "num-examples-0", "smoke-fail-at"}
+    read -= {"views-root", "model", "project", "profile", "num-examples-0", "smoke-fail-at",
+             "loader-reseed-per-epoch"}
 
     missing = read - sent
     assert not missing, f"클라이언트가 읽는데 서버가 안 보내는 키: {sorted(missing)}"
