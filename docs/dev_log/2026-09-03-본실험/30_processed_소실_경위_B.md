@@ -628,3 +628,115 @@ B 소관 전 경로(`corpus/` · `tests/corpus/` · B 보고서 전부)를 훑�
 전체 **1,444 통과 · 17 skip**. skip 17 은 내 변경 탓이 아니다 — 파일럿 산출물 부재로 이미
 건너뛰던 것 13건과, `pairs_pilot_v2` 소실을 정직하게 보고하는 내 시험 2건, 워크트리에 추적
 밖 구성원이 없어 생기는 `incomplete_tree` 2건이다.
+
+---
+
+# 부록 D. 감사 신규 시험 수리 — 그리고 왜 내가 못 봤는가
+
+## D-1. 무엇이 깨졌나
+
+main `035410c` 가 외부 감사 패치를 커밋하면서 `tests/corpus/test_audit_acceptance.py` 가
+들어왔다. 그중 `test_human_sheet_omits_judge_information_and_block_order` 가 깨진다.
+
+```python
+sheet = judge_labels.build_sheet(recs, cfg, "deepseek")          # ← (시트, 메타) 튜플이 온다
+assert "judge_pass" not in json.dumps(sheet) ...                 # ← 메타까지 직렬화된다
+```
+
+내 `e697a49` 가 `build_sheet` 의 반환을 `(시트, 메타)` 로 바꿨는데 그 시험은 옛 서명대로
+결과 하나를 받아 통째로 `json.dumps` 한다. 메타의 층 이름
+(`조항검색_기준서술|judge_pass`)이 직렬화에 섞여 단언이 걸린다.
+
+**코드가 아니라 시험이 서명 변경을 못 따라간 것이다.** 시트 자체는 깨끗하고(누설 0),
+메타에 층 집계가 남는 것이 F14-P1 설계다. 총괄 판정도 같다.
+
+## D-2. 어떻게 고쳤나
+
+튜플을 풀어 **시트에만** 블라인드 단언을 걸고, **메타에는 층 집계가 있어야 한다**는 단언을
+덧붙였다.
+
+```python
+sheet, meta = judge_labels.build_sheet(recs, cfg, "deepseek")
+blob = json.dumps(sheet, ensure_ascii=False)        # 시트만
+assert "judge_pass" not in blob and "judge_fail" not in blob
+...
+# 층 기록은 지워지지 않았다 (F14-P1)
+assert set(meta["cells"]) == {"|".join(g) for g in set(groups)}
+for cell in meta["cells"].values():
+    assert {"N_population", "k_drawn", "target", "shortfall", "p_sampling"} <= set(cell)
+    assert cell["k_drawn"] <= cell["N_population"]
+assert set(meta["stratum_of"]) == {r["sample_id"] for r in sheet}
+```
+
+뒤쪽 단언을 덧붙인 이유는 총괄이 짚은 그대로다 — 없으면 "시트를 비웠다"만 지켜지고
+**메타를 통째로 없애도 시험이 통과한다.** 그러면 F14-P1 설계가 시험으로 보호되지 않는다.
+이빨 확인: `cells` 를 빈 사전으로 바꾸면 그 단언이 실제로 실패한다.
+
+## D-3. **왜 내가 못 봤는가** — 미추적 파일은 트랙에 안 보인다
+
+29번 검수 때(09-11) 나는 이렇게 적었다.
+
+> **F13-P6. 시험이 없다.** diff 의 `tests/` 변경은 F14 뿐이다.
+
+**틀렸다.** 감사 패치에는 `test_audit_acceptance.py` 와 `test_audit_snapshot_acceptance.py`
+가 있었다. 내가 못 본 이유는 둘이다.
+
+1. **내가 받은 diff 에 없었다.** `full.diff` 의 `tests/` 항목은 `test_canonical_wiring.py`
+   하나뿐이었다. 두 파일은 **신규 미추적 파일**이라 `git diff`(HEAD 대비)에 잡히지 않는다.
+   `git status` 의 `??` 로만 보이고, 그 `??` 목록은 main 작업 트리에서만 보인다.
+2. **내 워크트리에 파일이 없었다.** 나는 `c516387` 을 임시 트리에 떠서 검수했다. 미추적
+   파일은 커밋에 없으므로 그 트리에 존재하지 않았다. 내가 "없다"고 본 것은 **정확한 관찰**
+   이었고, 관찰 범위가 틀렸다.
+
+그래서 나는 **있는 시험을 없다고 보고했고**, 뒤이어 그 시험과 충돌하는 서명 변경을 했다.
+
+### 같은 구조로 두 번 물렸다
+
+| | 09-11 (F13-P6) | 09-13 (이번) |
+|---|---|---|
+| 내가 본 것 | `tests/` 변경이 F14 뿐 | 서명 바꿔도 걸리는 시험 없음 |
+| 실제 | 감사 시험 2파일이 미추적으로 존재 | 그중 하나가 옛 서명을 전제 |
+| 원인 | **미추적 파일이 diff·워크트리 어디에도 안 나타난다** | 같음 |
+
+이것은 앞서 `data/processed` 사고와도 같은 계열이다. **내 도구가 못 보는 것을 "없다"고
+읽었다.** 24번 A-2 에서 `verify_contract` 가 계약서 없는 디렉터리를 `no_contract` 로 조용히
+넘긴 것, `frozen_out` 이 5개가 사라졌는데 "깨짐 0" 을 낸 것과 같은 모양이다. 부재를
+정상으로 읽는 검사는 부재를 못 잡는다.
+
+## D-4. 재발 방지 제안 추가 (§8 에 더한다, 실행 안 함)
+
+**8-6. 패치 검수는 `git status` 를 함께 받는다.** diff 만으로는 신규 미추적 파일을 볼 수
+없다. 검수 요청 시 `git status --porcelain` 출력이나 `git add -A` 후의 diff 를 함께 주면
+된다. 어느 쪽이든 **"diff 에 없다 = 존재하지 않는다" 라는 추론을 끊는 것**이 요점이다.
+
+**8-7. 검수 트리를 커밋에서 뜨면 미추적분이 빠진다는 것을 절차에 명시한다.** 임시 워크트리
+검수는 재현성이 좋은 대신 미추적 파일을 구조적으로 잃는다. 그 한계를 검수 보고서에 한 줄로
+적게 한다 — 이번 29번에 그 한 줄이 있었다면 "시험이 없다" 가 "받은 범위에는 시험이 없다"
+로 쓰였을 것이고, 총괄이 그 차이를 바로 짚었을 것이다.
+
+**8-8. 공개 인터페이스 서명을 바꾸면 호출자를 저장소 전체에서 찾는다.** 이번에
+`build_sheet` 의 반환을 바꾸면서 내 워크트리 안의 호출자 둘만 고쳤다. `grep -rn "build_sheet"`
+를 **main 기준으로** 돌렸다면 `test_audit_acceptance.py` 가 나왔다. 트랙 워크트리는 main 의
+최신을 항상 담고 있지 않으므로, 서명 변경 전에 `git grep <이름> main` 을 한 번 거는 것이
+싸다.
+
+## D-5. 회귀 확인
+
+```
+1,576 수집 · 1,558 통과 · 18 skip · 0 실패   (3분 15초)
+```
+
+skip 18 = 파일럿 산출물(`outputs/pilot_c`·`pilot_d`) 부재로 이미 건너뛰던 14건(D 소관) +
+`pairs_pilot_v2` 소실·`incomplete_tree` 를 정직하게 보고하는 내 시험 4건.
+
+> 총괄이 말한 **1,549 통과와 9건 차이**가 난다. 내 쪽이 수집 2건 많고(내 `e697a49` 가
+> `test_canonical_wiring.py` 에 더한 시험 2개 — main 22 → 24) skip 이 7건 적다. skip 은
+> 환경 의존이라(파일럿 산출물·봉인본 유무) 트리마다 갈린다. **실패 0 은 양쪽이 같다.**
+> 숫자를 맞추려고 손대지 않았다 — 차이의 출처를 적는 편이 낫다.
+
+충돌 해소는 두 파일 다 내 판이다. merge-base 대비 main 쪽 변경이 Codex 패치 그것뿐이고
+내 판이 상위집합인 것을 diff 로 확인했다.
+
+> `git merge main --ff-only` 는 쓸 수 없었다 — `wt/B` 가 main 에 없는 커밋 4개를 들고 있어
+> 갈라져 있다(내 커밋은 아직 main 에 없다). rebase 대신 머지 커밋을 택했다. rebase 는
+> 총괄이 계속 인용해 온 커밋 해시를 바꾼다.
