@@ -260,7 +260,7 @@ D2의 유일한 소스로 남았으므로 현재 상태를 함께 보고한다.
 
 | 실패 유형 | 대상 | 증상 | 원인 | 대응 |
 |---|---|---|---|---|
-| **경로 인코딩** | PDF 31건 전부 | `Input document is not valid` / `docling-parse could not load document` | docling-parse(C++ 백엔드)가 Windows 에서 **한글·공백이 섞인 경로**를 열지 못한다. 원본이 `G:\공유 드라이브\…` 에 있다 | ASCII 임시 경로로 복사 후 변환. 동일 파일이 실패 → 성공(그림 5개)으로 바뀌었다 |
+| **경로 인코딩** | PDF 31건 전부 | `Input document is not valid` / `docling-parse could not load document` | docling-parse(C++ 백엔드)가 Windows 에서 **한글·공백이 섞인 경로**를 열지 못한다. 원본 폴더 이름에 한글·공백이 있다 | ASCII 임시 경로로 복사 후 변환. 동일 파일이 실패 → 성공(그림 5개)으로 바뀌었다 |
 | **OCR 언어 미지정** | 스캔본 10건 | 한글이 `8439 87 0]` 형태로 깨짐 | Docling 기본 OCR 이 영어 전용 | EasyOCR `lang=["ko","en"]`, `force_full_page_ocr=True`. 추출량 607자 → 4,885자 |
 
 **이 두 건은 성격이 다르다.** 문서 자체의 결함(스캔 품질·조판)이 아니라 **실행 환경의
@@ -294,7 +294,7 @@ D4 이미지-판정문 페어가 전량 합성이라 실물 시각 근거가 부
   `inspection_method`·`content_type`·`copyright_class`·`usable_for`·실패 기록)
 - 의존성: `easyocr>=1.7` 을 `corpus` 그룹에 추가(사유 주석 포함)
 - **원문 PDF 도 추출물 원문 덩어리도 커밋하지 않았다.** 산출물은
-  `G:\공유 드라이브\대한산업공학회_추계학술대회\corpus_extracted\` (150MB, 32폴더)
+  `<SHARE>/corpus_extracted/` (150MB, 32폴더 — 실제 경로는 미추적 `dispatch_LOCAL_B_경로표.md`)
 
 ## 7-6. 허용치 수치표 재확인
 

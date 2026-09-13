@@ -1,0 +1,38 @@
+{
+ "_meta": "표집 집계. 층 가중 지표의 재료다 (74번 F14-P1). 항목별 층은 여기에 없다 — 그것은 곧 항목별 후보 판정이라 따로 두고 추적하지 않는다. 층별 합계(N·k)는 모집단 사실이라 보고 대상이다.",
+ "stratified_by_judge": "deepseek",
+ "seed": 20260902,
+ "n_target": 100,
+ "n_drawn": 25,
+ "cells": {
+  "조항검색_기준서술|judge_pass": {
+   "N_population": 18,
+   "k_drawn": 18,
+   "target": 25,
+   "shortfall": 7,
+   "p_sampling": 1.0
+  },
+  "조항검색_기준서술|judge_fail": {
+   "N_population": 7,
+   "k_drawn": 7,
+   "target": 25,
+   "shortfall": 18,
+   "p_sampling": 1.0
+  },
+  "조치서술|judge_pass": {
+   "N_population": 0,
+   "k_drawn": 0,
+   "target": 25,
+   "shortfall": 25,
+   "p_sampling": null
+  },
+  "조치서술|judge_fail": {
+   "N_population": 0,
+   "k_drawn": 0,
+   "target": 25,
+   "shortfall": 25,
+   "p_sampling": null
+  }
+ },
+ "total_shortfall": 75
+}

@@ -25,7 +25,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections import Counter
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
@@ -54,12 +53,24 @@ def _stratum(rec: dict, judge_id: str) -> Optional[tuple[str, str]]:
     return (str(rec.get("axis") or "?"), "judge_pass" if v else "judge_fail")
 
 
-def build_sheet(records: Sequence[dict], cfg: dict, judge_id: str) -> list[dict]:
+def build_sheet(records: Sequence[dict], cfg: dict,
+                judge_id: str) -> tuple[list[dict], dict]:
     """층별 균등 배분 표본. 시드 고정 — 같은 입력이면 같은 표본이다.
 
     한 층이 목표에 못 미치면 그 부족분을 다른 층에 채우지 않는다. 채우면 층 비율이
-    무너지고, 그러면 정밀도·재현율이 어느 모집단의 값인지 말할 수 없다. 부족분은
-    `shortfall` 로 기록한다.
+    무너지고, 그러면 정밀도·재현율이 어느 모집단의 값인지 말할 수 없다.
+
+    **사람이 보는 것과 표집 기록을 가른다** (74번 F14, 09-13 판정). 예전에는 행마다
+    `stratum: "…|judge_pass"` 가 실려서 라벨러가 후보 판정을 그대로 읽었고, 층별로 묶여
+    나와 **순서만 봐도** 어디까지가 통과분인지 보였다. 블라인드가 아니었다.
+
+    그렇다고 층 정보를 **지우면** 안 된다. 층별 표집확률 `p = k/N` 이 없으면 나중에
+    모집단 지표를 가중할 수 없고, 그러면 정밀도·재현율이 어느 모집단의 값인지 다시
+    말할 수 없게 된다 — 표집을 층화한 이유 자체가 사라진다. 그래서 **지우지 않고 옮긴다.**
+
+    돌려주는 것은 `(사람용 시트, 표집 메타)` 둘이다. 시트에는 층이 없고 순서가 섞여
+    있으며, 메타에는 층·모집단 크기·표집 수·표집확률·부족분이 전부 남는다. 메타는
+    라벨러에게 주지 않는다.
     """
     n = int(cfg["labeling"]["n"])
     axes, verdicts = cfg["labeling"]["strata"]
@@ -74,15 +85,24 @@ def build_sheet(records: Sequence[dict], cfg: dict, judge_id: str) -> list[dict]
             pool[key].append(r)
 
     sheet: list[dict] = []
-    shortfall: dict[str, int] = {}
+    strata: dict[str, str] = {}
+    cell_meta: dict[str, dict] = {}
     for cell in cells:
+        name = "|".join(cell)
         rows = sorted(pool[cell], key=lambda r: str(r.get("sample_id")))
         k = min(per, len(rows))
-        if k < per:
-            shortfall["|".join(cell)] = per - k
+        cell_meta[name] = {
+            "N_population": len(rows),      # 이 층의 모집단 크기
+            "k_drawn": k,                   # 실제로 뽑은 수
+            "target": per,                  # 목표
+            "shortfall": per - k,           # 못 채운 수 (0 이면 충족)
+            # 층 가중의 재료. 모집단이 0이면 확률을 말할 수 없다.
+            "p_sampling": round(k / len(rows), 6) if rows else None,
+        }
         idx = rng.choice(len(rows), size=k, replace=False) if k else []
         for i in sorted(int(x) for x in idx):
             r = rows[i]
+            strata[str(r["sample_id"])] = name
             sheet.append({
                 "sample_id": r["sample_id"],
                 "axis": r.get("axis"),
@@ -94,11 +114,22 @@ def build_sheet(records: Sequence[dict], cfg: dict, judge_id: str) -> list[dict]
                 "labeler": None,
                 "note": None,
             })
-    # 층별 블록 순서도 후보 판정을 드러낸다. 표집과 같은 시드로 순서를 섞는다.
+    # 층별 블록 순서 자체가 후보 판정을 드러낸다 — 표집과 같은 시드로 순서를 섞는다.
     rng.shuffle(sheet)
-    if shortfall:
-        sheet.append({"_shortfall": {"total": sum(shortfall.values())}})
-    return sheet
+
+    meta = {
+        "_meta": ("표집 집계. 층 가중 지표의 재료다 (74번 F14-P1). 항목별 층은 여기에"
+                  " 없다 — 그것은 곧 항목별 후보 판정이라 따로 두고 추적하지 않는다."
+                  " 층별 합계(N·k)는 모집단 사실이라 보고 대상이다."),
+        "stratified_by_judge": judge_id,
+        "seed": int(cfg["labeling"]["seed"]),
+        "n_target": n,
+        "n_drawn": len(sheet),
+        "cells": cell_meta,
+        "total_shortfall": sum(c["shortfall"] for c in cell_meta.values()),
+        "stratum_of": strata,               # sample_id → 층
+    }
+    return sheet, meta
 
 
 def _basis_of(rec: dict) -> str:
@@ -166,6 +197,7 @@ def main() -> int:
 
     cfg = load_cfg()
     cyc = Path(args.cycle_dir)
+    # 정본 미지정이면 채택분이 `reasoning_pending.jsonl` 로 간다 (F13). 셋 다 읽는다.
     records = (read_jsonl(cyc / "reasoning_accepted.jsonl")
                + read_jsonl(cyc / "reasoning_pending.jsonl")
                + read_jsonl(cyc / "discarded.jsonl"))
@@ -180,14 +212,32 @@ def main() -> int:
 
     if args.cmd == "sheet":
         jid = args.judge_id or cfg["judges"]["candidates"][0]["id"]
-        sheet = build_sheet(records, cfg, jid)
+        sheet, meta = build_sheet(records, cfg, jid)
         sheet_path.parent.mkdir(parents=True, exist_ok=True)
         with sheet_path.open("w", encoding="utf-8", newline="") as fh:
             for row in sheet:
                 fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-        n = sum(1 for r in sheet if "sample_id" in r)
-        print(f"표본지 {n}건: {sheet_path}")
-        print("표본은 내부적으로 층화하며 후보 판정과 층 정보는 표본지에서 숨깁니다.")
+        # 메타를 둘로 가른다. **집계는 남기고 항목별 층은 추적하지 않는다.**
+        # 집계(층별 N·k·표집확률)는 감사가 보고하라고 한 것이고 판정을 담지 않는다.
+        # 항목별 층은 곧 그 항목의 후보 판정이라, 시트 옆에 추적돼 있으면 라벨러가
+        # 저장소만 열어도 답을 본다. 필요하면 `_stratum()` 으로 다시 계산하면 된다.
+        per_sample = meta.pop("stratum_of")
+        meta_path = sheet_path.with_suffix(".meta.json")
+        with meta_path.open("w", encoding="utf-8", newline="") as fh:
+            fh.write(json.dumps(meta, ensure_ascii=False, indent=1) + "\n")
+        strata_path = sheet_path.with_suffix(".strata.json")
+        with strata_path.open("w", encoding="utf-8", newline="") as fh:
+            fh.write(json.dumps(
+                {"_meta": "항목별 층 = 그 항목의 후보 판정이다. **추적하지 않는다.**",
+                 "stratified_by_judge": meta["stratified_by_judge"],
+                 "stratum_of": per_sample}, ensure_ascii=False, indent=1) + "\n")
+        print(f"표본지 {len(sheet)}건: {sheet_path}")
+        # 층 분포는 화면에도 찍지 않는다 — 터미널 기록도 누설 경로다.
+        print(f"표집 집계(층별 N·k·표집확률): {meta_path}   [추적]")
+        print(f"항목별 층: {strata_path}   [미추적 — 라벨러에게 주지 않는다]")
+        if meta["total_shortfall"]:
+            print(f"  ! 층 목표 미달 합계 {meta['total_shortfall']}건 —"
+                  " 부족분을 다른 층에서 채우지 않았다 (층 비율 보존).")
         print(f"**사람이 {cfg['labeling']['label_field']} 을 채운 뒤** "
               f"{labels_path} 로 저장하고 score 를 돌려라.")
         return 0
