@@ -100,5 +100,10 @@ corpus/generate/cycle_pilot_v2/*.jsonl
 corpus/generate/cycle_pilot_v2/_raw_generated.json
 !corpus/generate/cycle_pilot_v2/EVIDENCE.jsonl
 
+# 사람 검증 표본의 **항목별 층** = 그 항목의 후보 판정이다 (74번 F14).
+# 시트 옆에 추적돼 있으면 라벨러가 저장소만 열어도 답을 본다. 집계(.meta.json)만 추적한다.
+corpus/validate/judge_labels/*.strata.json
+corpus/validate/judge_labels/labels_*.jsonl
+
 # --- 분리 실행 로그 (프로브·학습). 실측 결과는 outputs/ 와 보고서에 남는다 ---
 logs/

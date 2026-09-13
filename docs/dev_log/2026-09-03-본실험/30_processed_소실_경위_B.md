@@ -47,7 +47,7 @@ mkdir -p data && cmd //c "mklink /J \"$(cygpath -w "$W/data/processed")\" \"E:\\
 
 ```powershell
 if (-not (Test-Path "$W\data\processed")) {
-  New-Item -ItemType Junction -Path "$W\data\processed" -Target "E:\Fedvlm_for_welding\data\processed"
+  New-Item -ItemType Junction -Path "$W\data\processed" -Target "<REPO>\data\processed"
 }
 ```
 
@@ -56,7 +56,7 @@ if (-not (Test-Path "$W\data\processed")) {
 ```powershell
 git worktree add --detach $B c516387
 New-Item -ItemType Directory -Force "$B\data"
-New-Item -ItemType Junction -Path "$B\data\processed" -Target "E:\Fedvlm_for_welding\data\processed"
+New-Item -ItemType Junction -Path "$B\data\processed" -Target "<REPO>\data\processed"
 ```
 
 **⑤ 삭제 — 이것이 원인이다** (Bash, 15:43:56)
@@ -205,8 +205,8 @@ scratchpad/live/pairs_v1/
 > 돌면 사라진다. 내 판단으로는 **지금 당장 밖으로 빼야 한다.** 다만 그것이 "복원"에 해당할 수
 > 있어 손대지 않았다. 총괄이 직접 하려면 이 한 줄이면 된다 (읽기만 하고 옮기지 않는다):
 > ```powershell
-> Copy-Item -Recurse "C:\Users\my\AppData\Local\Temp\claude\E--Fedvlm-for-welding-wt-B\fbb61323-9b55-492a-b120-9508e343d363\scratchpad\live\pairs_v1" "G:\<보관처>\pairs_pilot_v1_구조"
-> Copy-Item "C:\Users\my\AppData\Local\Temp\claude\E--Fedvlm-for-welding-wt-B\fbb61323-9b55-492a-b120-9508e343d363\scratchpad\backup_manifest.json" "G:\<보관처>\"
+> Copy-Item -Recurse "<SCRATCH>\live\pairs_v1" "<SHARE>\<보관처>\pairs_pilot_v1_구조"
+> Copy-Item "<SCRATCH>\backup_manifest.json" "<SHARE>\<보관처>\"
 > ```
 
 ---
@@ -386,7 +386,7 @@ git worktree remove --force $w
 **① 증거 보존 — 비임시 위치로 복사** (위험 0, 원본 미삭제)
 
 ```
-E:\Fedvlm_for_welding_rescue_20260913\
+<RESCUE>\
   backup_manifest.json                10,706 B   (2026-09-08 21:53:53)
   pairs_pilot_v1\pairs.jsonl       2,073,786 B   (2026-09-08 19:41:46)
   pairs_pilot_v1\counts.json             859 B
@@ -422,7 +422,7 @@ E:\Fedvlm_for_welding_rescue_20260913\
 
 **③ 복원 — `data/processed/pairs_pilot_v1/`**
 
-정션이 아닌 본체 경로 `E:\Fedvlm_for_welding\data\processed\pairs_pilot_v1` 에 직접 썼다.
+정션이 아닌 본체 경로 `<REPO>/data/processed/pairs_pilot_v1` 에 직접 썼다.
 복원 전 `data/processed` 파일 수 0 을 확인하고, 기존 디렉터리가 있으면 중단하도록 걸었다.
 
 복원 후 확인:
@@ -481,3 +481,150 @@ $ uv run python -m corpus.generate.frozen_out
 - **워크트리 동결 중.** `wt_C_pr` 의 정션 5개를 포함해 47개가 살아 있고, 총괄이 안전 절차를
   정할 때까지 아무도 워크트리를 지우지 않는다.
 - **`verify_contract` 구멍 수리는 이번 구조 뒤로 승인됐다** (§8-4 나). 대기한다.
+
+---
+
+# 부록 B. 사람 검증 시트 교체 (게시 차단, 09-13 총괄 승인)
+
+29번 §2-2 가 올린 건이다. 추적 산출물 `corpus/validate/judge_labels/sheet_v1.jsonl`
+(커밋 `8ad3885`, 09-02)이 기계 판정을 그대로 담고 있었다.
+
+**선행 조건 확인 (3).** `labels_v1.jsonl` 이 없다 — 사람 응답이 아직 하나도 없으므로
+교체로 잃는 라벨이 없다. 지금이 가장 싼 시점이라는 29번 판단이 유효했다.
+
+## B-1. 전후
+
+| | 교체 전 | 교체 후 |
+|---|---|---|
+| `judge_pass`/`judge_fail` 문자열 | **26건** | **0** |
+| `stratum` 키 | **25건** | **0** |
+| `judge_*` 키 | 0 | 0 |
+| 층 블록 순서 (인접 층 변화) | **1** (통과분 18 → 기각분 7, 순서가 곧 판정) | **8** (섞임) |
+| 행 키 | `…, stratum, …` | `axis·basis·human_ok·labeler·note·sample_id·text` |
+| **표집된 sample_id 집합** | 25 | **동일** |
+
+표본 자체는 바뀌지 않았다. `rng.shuffle` 이 층별 추출 **뒤**에 오므로 무엇을 뽑는지는
+그대로고 순서만 섞인다.
+
+## B-2. 층별 메타 — 삭제가 아니라 분리 (총괄 조건 1)
+
+Codex 패치는 `_shortfall` 을 `{"total": 75}` 로 뭉갰다. 그러면 층별 표집확률 `p = k/N` 을
+낼 근거가 사라지고, 층 가중을 못 하면 정밀도·재현율이 어느 모집단의 값인지 말할 수 없다 —
+**층화 표집을 한 이유 자체가 없어진다.** 그래서 지우지 않고 옮겼다.
+
+`build_sheet` 이 이제 `(사람용 시트, 표집 메타)` 둘을 돌려준다. 산출도 셋으로 갈린다.
+
+| 파일 | 내용 | 추적 |
+|---|---|---|
+| `sheet_v1.jsonl` | 사람이 보는 것. 층 없음, 순서 섞임 | 추적 |
+| `sheet_v1.meta.json` | **집계** — 층별 `N_population`·`k_drawn`·`target`·`shortfall`·`p_sampling`, 시드, 층화 기준 후보 | 추적 |
+| `sheet_v1.strata.json` | **항목별 층** (= 항목별 후보 판정) | **미추적** |
+
+집계는 추적한다 — 감사가 "층별 결과·표집확률을 보고한다"고 한 것이고 판정을 담지 않는다.
+**항목별 층은 추적하지 않는다.** 그것은 곧 그 항목의 후보 판정이라, 시트 옆에 추적돼 있으면
+라벨러가 저장소만 열어도 답을 본다. 필요하면 `_stratum()` 으로 다시 계산하면 되므로 저장할
+이유가 없다. `.gitignore` 에 `*.strata.json` 과 `labels_*.jsonl` 을 넣었다.
+
+실측된 집계:
+
+```
+조항검색_기준서술|judge_pass   N=18  k=18  목표=25  부족= 7  p=1.0
+조항검색_기준서술|judge_fail   N= 7  k= 7  목표=25  부족=18  p=1.0
+조치서술|judge_pass            N= 0  k= 0  목표=25  부족=25  p=null
+조치서술|judge_fail            N= 0  k= 0  목표=25  부족=25  p=null
+총 부족분 75
+```
+
+여기서 드러나는 사실 하나 — **지금 층화는 이름뿐이다.** 두 유효 층에서 모집단을 **전부**
+뽑았으므로(`p = 1.0`) 가중이 필요 없고, 조치 축 두 층은 모집단이 0이다(조치 축 레코드에
+판정 키가 없다). 목표 100건 중 25건만 채운 것이 그 결과다. 층 가중이 실제로 문제가 되는
+것은 모집단이 커진 뒤이고, **그때를 위해 지금 기록을 남겨 두는 것**이다.
+
+## B-3. 짚어야 할 것 둘
+
+**(가) 이 교체는 HEAD 만 고친다. git 이력의 누설본은 남는다.** 누설 시트는 `8ad3885`
+(09-02)에 커밋돼 있고, 공개 GitHub 저장소에서 그 커밋을 꺼내면 그대로 읽힌다. 파일을
+바꿔도 이력은 안 바뀐다. 지우려면 이력 재작성이 필요한데 그건 이 지시 범위 밖이고,
+총괄이 Codex 에 "이력 재작성 금지"를 이미 걸어 두었다. **총괄 판정 사항으로 올린다.**
+
+**(나) 블라인드는 기술적 통제가 아니라 절차적 통제다.** 시트에서 판정을 빼도,
+**추적 중인** `corpus/generate/cycle_pilot_v2/EVIDENCE.jsonl` 이 `sample_id` 별로
+`judge`·`judge_pass` 를 담고 있다. 시트 25건 **전부** 그 파일에서 판정을 찾을 수 있다.
+즉 저장소에 접근할 수 있는 라벨러는 여전히 답을 볼 수 있다. 시트 교체는 "우연히 보이는 것"을
+막지 "찾으면 못 찾게" 하지는 못한다. 실질 통제는 **라벨러에게 저장소를 주지 않는 것**이고,
+그 전제를 라벨링 절차에 명시해야 한다. EVIDENCE 는 통과율의 근거 보존물이라(74번 P5)
+지울 수 없다 — 상충하는 두 요구가 만나는 자리다. **판정 요청.**
+
+## B-4. 보존 (총괄 조건 2)
+
+원본 시트와 대응표를 `_workspace/2026-09-13-sheet-replace/` 에 뒀다(`.gitignore:87`로 미추적).
+`sheet_v1_ORIGINAL_leaked.jsonl`(18,135 B) + `correspondence.json`(25행: 원본 행 ↔ 신규 행
+↔ 층). 실제 경로는 미추적 `dispatch_LOCAL_B_경로표.md`.
+
+## B-5. Codex 패치와의 관계
+
+**내 변경이 Codex 미커밋 패치의 상위집합이다.** 같은 파일을 건드리므로 게이트에서 충돌한다.
+Codex 패치의 네 가지(행에서 `stratum` 제거 · `rng.shuffle` · `reasoning_pending.jsonl` 읽기 ·
+출력 문구)는 그대로 들어갔고, `_shortfall` 뭉개기만 메타 분리로 바꿨다. **내 쪽을 취하면 된다.**
+시험도 29번 F14-P2 지적대로 고쳤다 — 키만이 아니라 **값** 안의 `judge_pass` 를 훑고, 순서가
+층 블록이 아닌지 인접 층 변화 수로 잰다(옛 시험은 키만 봐서 값 누설을 구조적으로 못 봤다).
+
+---
+
+# 부록 C. 규약 2-6 위생 — 로컬 절대경로 분리
+
+총괄이 지목한 4파일 11건에, 내가 09-13 에 쓴 30번 6건을 더해 **17건**을 처리했다.
+방식은 main 이 같은 날 `11_재부팅_복구절차.md` 에 쓴 것과 같다 — 자리표시자 치환 +
+미추적 파일 분리.
+
+| 파일 | 건수 | 조치 |
+|---|---|---|
+| `corpus/parse/extract_candidates.py` | 3 | **코드 변경** — 아래 C-1 |
+| `docs/corpus_후보_판정.md` | 2 | `<SHARE>/…` 치환, 실패 사유는 "원본 폴더 이름에 한글·공백" 으로 일반화 |
+| `24_동결가드_B.md` | 5 | `<REPO>`·`<WT_B>` 치환 |
+| `30_processed_소실_경위_B.md` | 6 | `<REPO>`·`<RESCUE>`·`<SCRATCH>`·`<SHARE>` 치환 (세션 식별자 포함) |
+| `tests/corpus/test_release_and_backup.py` | 1 | **의도적 — 두었다.** C-2 |
+
+실제 경로는 `docs/dev_log/2026-09-03-본실험/dispatch_LOCAL_B_경로표.md` 에 뒀다
+(`.gitignore:81` 의 `dispatch_*.md` 로 미추적). 자리표시자 ↔ 실제 경로 대응, 왜 가리는지,
+구조본·보존본 위치가 거기 있다.
+
+## C-1. `extract_candidates.py` — 위생이자 이식성
+
+`SRC`/`DST` 가 공유 드라이브 경로로 박혀 있었다. 총괄 지적대로 **경로 한 줄이 "어느 조직이
+어떤 자료를 어디에 두는가"를 말한다** — 폴더명이 학회 이름이고, 그 아래가 비반출 자료의
+적재 위치다. 그리고 다른 기계에서는 아예 돌지 않는다.
+
+인자·환경변수로 뺐다. 둘 다 없으면 무엇을 줘야 하는지 말하고 멈춘다.
+
+```
+$ uv run python -m corpus.parse.extract_candidates
+원본·추출물 폴더를 줘라 — --src/--dst 또는 $WELDFL_CORPUS_SRC/$WELDFL_CORPUS_DST.
+  경로를 소스에 박지 않는다 (규약 2-6): 저장소가 공개라 비반출 자료의 적재 위치가
+  드러나고, 다른 기계에서는 돌지 않는다.
+```
+
+`extract_one()` 이 모듈 전역 `DST` 를 읽던 것도 인자로 바꿨다 — 전역이 사라지면 조용히
+`NameError` 가 날 자리였다. 주석의 `"G:\공유 드라이브\…"` 언급도 일반화했다.
+
+## C-2. 시험 픽스처는 의도적이다 — 보고만 한다
+
+`tests/corpus/test_release_and_backup.py:55`
+
+```python
+hits = S.screen_text(r"E:\Fedvlm_for_welding\corpus 에서 읽었다", set())
+assert "local_path" in [h[0] for h in hits]
+```
+
+**공개 검수기의 `local_path` 탐지를 거는 픽스처다.** 실제 적재 위치를 알리는 문장이 아니라
+"이런 모양이 잡히는가"를 보는 합성 문자열이다. 게다가 탐지기
+(`screen_public_release.LOCAL_PATH`)의 정규식 자체가 `Fedvlm` 을 대안 중 하나로 들고 있어야
+동작하므로, 이 토큰은 어차피 소스에 남는다. **바꾸지 않았다.**
+
+## C-3. 확인
+
+B 소관 전 경로(`corpus/` · `tests/corpus/` · B 보고서 전부)를 훑어 남은 것은 위 픽스처
+한 줄뿐이다. 새 lint 0(파일별로 `git show HEAD` 판본과 대조), `tests/corpus` 510 통과,
+전체 **1,444 통과 · 17 skip**. skip 17 은 내 변경 탓이 아니다 — 파일럿 산출물 부재로 이미
+건너뛰던 것 13건과, `pairs_pilot_v2` 소실을 정직하게 보고하는 내 시험 2건, 워크트리에 추적
+밖 구성원이 없어 생기는 `incomplete_tree` 2건이다.

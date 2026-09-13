@@ -7,7 +7,15 @@
 
 산출물은 공유 드라이브에 두고 저장소에는 스크립트와 메타데이터만 남긴다.
 
-실행: uv run python -m corpus.parse.extract_candidates [--only 파일명조각] [--no-ocr]
+후보 원본·추출물이 놓인 공유 드라이브 경로는 **인자나 환경변수로 받는다.** 소스에 박으면
+저장소가 공개일 때 비반출 자료의 적재 위치와 소속 정보가 함께 드러나고(규약 2-6), 다른
+기계에서는 아예 못 돈다.
+
+    export WELDFL_CORPUS_SRC="<후보 원본 폴더>"
+    export WELDFL_CORPUS_DST="<추출물 폴더>"
+
+실행: uv run python -m corpus.parse.extract_candidates --src <원본> --dst <추출물>
+                                                       [--only 파일명조각] [--no-ocr]
 """
 
 from __future__ import annotations
@@ -24,8 +32,9 @@ from pathlib import Path
 # sm_120/Windows: triton 부재로 torch.compile 이 docling layout 모델에서 치명 오류가 된다
 os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
 
-SRC = Path("G:/공유 드라이브/대한산업공학회_추계학술대회/corpus_candidate")
-DST = Path("G:/공유 드라이브/대한산업공학회_추계학술대회/corpus_extracted")
+#: 후보 원본·추출물 폴더. **기본값을 소스에 박지 않는다** (규약 2-6) — 환경변수나
+#: `--src`/`--dst` 로 받고, 둘 다 없으면 무엇을 줘야 하는지 말하고 멈춘다.
+ENV_SRC, ENV_DST = "WELDFL_CORPUS_SRC", "WELDFL_CORPUS_DST"
 REPO = Path(__file__).resolve().parents[2]
 META_OUT = REPO / "corpus/parse/extracted_manifest.json"
 
@@ -120,7 +129,7 @@ def classify_content(text: str) -> list[str]:
 
 
 # docling-parse(C++ 백엔드)는 Windows 에서 한글·공백이 섞인 경로를 열지 못한다.
-# 원본이 "G:\공유 드라이브\..." 에 있어 전량 실패하므로 ASCII 임시 경로로 옮겨 넣는다.
+# 원본 폴더 이름에 한글·공백이 있어 전량 실패하므로 ASCII 임시 경로로 옮겨 넣는다.
 # (지정 함정 구간 #7 의 실패 사례 — 문서 결함이 아니라 경로 인코딩 문제다)
 STAGE = Path(os.environ.get("TEMP", "/tmp")) / "weldfl_stage"
 
@@ -152,7 +161,7 @@ def convert(pdf_path: Path, use_ocr: bool):
     return conv.convert(pdf_path)
 
 
-def extract_one(path: Path, args) -> dict:
+def extract_one(path: Path, args, dst: Path) -> dict:
     rec: dict = {"file": path.name, "sha256": sha256(path),
                  "size_mb": round(path.stat().st_size / 1e6, 2)}
     cls, why = COPYRIGHT.get(path.name, DEFAULT_COPYRIGHT)
@@ -161,7 +170,7 @@ def extract_one(path: Path, args) -> dict:
     # 공개가 아니면 색인·학습 투입을 막는다. 판단은 총괄이 한다.
     rec["usable_for"] = "색인후보" if cls == "공개" else "참고전용"
 
-    out_dir = DST / path.stem
+    out_dir = dst / path.stem
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if path.suffix.lower() == ".docx":
@@ -250,10 +259,24 @@ def extract_one(path: Path, args) -> dict:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--src", default=os.environ.get(ENV_SRC),
+                    help=f"후보 원본 폴더 (미지정 시 ${ENV_SRC})")
+    ap.add_argument("--dst", default=os.environ.get(ENV_DST),
+                    help=f"추출물 폴더 (미지정 시 ${ENV_DST})")
     ap.add_argument("--only", default=None, help="파일명 부분 일치만 처리")
     ap.add_argument("--no-ocr", action="store_true")
     ap.add_argument("--resume", action="store_true", help="이미 성공한 문서는 건너뛴다")
     args = ap.parse_args()
+
+    if not args.src or not args.dst:
+        raise SystemExit(
+            f"원본·추출물 폴더를 줘라 — --src/--dst 또는 ${ENV_SRC}/${ENV_DST}.\n"
+            "  경로를 소스에 박지 않는다 (규약 2-6): 저장소가 공개라 비반출 자료의"
+            " 적재 위치가 드러나고, 다른 기계에서는 돌지 않는다."
+        )
+    SRC, DST = Path(args.src), Path(args.dst)
+    if not SRC.is_dir():
+        raise SystemExit(f"원본 폴더가 없다: {SRC}")
 
     DST.mkdir(parents=True, exist_ok=True)
     done: dict[str, dict] = {}
@@ -272,7 +295,7 @@ def main() -> None:
             out.append(done[p.name]); continue
         print(f"[{k}/{len(files)}] {p.name}", flush=True)
         args._idx = k
-        rec = extract_one(p, args)
+        rec = extract_one(p, args, DST)
         print(f"    -> {rec.get('status')} {rec.get('inspection_method','')} "
               f"표{rec.get('n_tables',0)} 그림{rec.get('n_pictures',0)} "
               f"({rec.get('elapsed_sec','?')}s)", flush=True)

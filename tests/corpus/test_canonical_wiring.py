@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import ast
+import itertools
 import re
 from pathlib import Path
 
@@ -271,15 +272,65 @@ def test_라벨_표본이_층화되고_기계판정을_보여주지_않는다():
              "topic": "아크 스트라이크", "remedy_ko": "제거한다",
              "source_ref": "IACS Rec.47", "inspection_method": "VT"}
             for i in range(200)]
-    sheet = J.build_sheet(recs, cfg, "deepseek")
-    rows = [r for r in sheet if "sample_id" in r]
+    rows, meta = J.build_sheet(recs, cfg, "deepseek")
     assert len(rows) == cfg["labeling"]["n"]
-    strata = {r["stratum"] for r in rows}
-    assert len(strata) == 4, strata
+
+    # 층화는 **여전히 한다** — 메타에 남는다. 사람 시트에서만 안 보일 뿐이다.
+    assert len(meta["cells"]) == 4, meta["cells"]
+    assert len(meta["stratum_of"]) == len(rows)
+    for cell in meta["cells"].values():
+        assert {"N_population", "k_drawn", "target", "shortfall", "p_sampling"} <= set(cell)
+
     for r in rows:
         assert r["human_ok"] is None
+        assert "stratum" not in r, "층 표시가 표본지에 실렸다"
         assert not any(k.startswith("judge_") for k in r), "기계 판정이 표본지에 실렸다"
+        # **키만 보면 안 된다.** 옛 시험이 키만 봐서 `stratum` 값 안의
+        # `judge_pass` 를 통째로 놓쳤다 — 감사가 잡을 때까지 초록이었다 (F14).
+        for v in r.values():
+            if isinstance(v, str):
+                assert "judge_pass" not in v and "judge_fail" not in v, \
+                    f"기계 판정이 **값** 안에 실렸다: {v[:60]}"
         assert r["basis"], "사람도 기계와 같은 자료를 봐야 한다 (G4-1)"
+
+
+def test_라벨_표본의_순서가_층을_드러내지_않는다():
+    """값을 지워도 **순서**가 남으면 블라인드가 아니다.
+
+    층별로 뽑아 이어 붙이면 통과분 블록 뒤에 기각분 블록이 온다. 라벨러는 값을 못 봐도
+    '앞쪽이 통과분' 이라는 것을 안다. 인접 행의 층이 바뀌는 횟수로 잰다 — 블록이면
+    층 수보다 작고(≤3), 섞였으면 그보다 훨씬 크다.
+    """
+    from corpus.validate import judge_labels as J
+
+    cfg = J.load_cfg()
+    recs = [{"sample_id": f"s{i}",
+             "axis": "조항검색_기준서술" if i % 2 else "조치서술",
+             "judge_deepseek_pass": bool(i % 3), "text": f"문장 {i}",
+             "topic": "아크 스트라이크", "remedy_ko": "제거한다",
+             "source_ref": "IACS Rec.47", "inspection_method": "VT"}
+            for i in range(200)]
+    rows, meta = J.build_sheet(recs, cfg, "deepseek")
+    seq = [meta["stratum_of"][r["sample_id"]] for r in rows]
+    changes = sum(1 for a, b in itertools.pairwise(seq) if a != b)
+    assert changes > len(meta["cells"]), (
+        f"인접 층 변화 {changes}회 — 층이 블록으로 묶여 순서가 판정을 드러낸다")
+
+
+def test_표집_메타는_사람_시트와_다른_파일이다():
+    """지우지 않고 **옮긴다**. 층별 표집확률이 없으면 층 가중을 할 수 없고,
+    그러면 층화 표집을 한 이유 자체가 사라진다 (F14-P1)."""
+    import ast
+
+    src = (REPO / "corpus/validate/judge_labels.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    fn = next(n for n in ast.walk(tree)
+              if isinstance(n, ast.FunctionDef) and n.name == "build_sheet")
+    # 시트와 메타를 함께 돌려주는 형태여야 한다 — 한 덩어리면 다시 섞인다.
+    ret = [n for n in ast.walk(fn) if isinstance(n, ast.Return)][-1]
+    assert isinstance(ret.value, ast.Tuple) and len(ret.value.elts) == 2
+    assert "sheet_v1.meta.json" not in src, "메타 경로를 박지 말고 시트 경로에서 파생시켜라"
+    assert '.with_suffix(".meta.json")' in src, "메타를 따로 쓰지 않는다"
 
 
 def test_라벨_없이는_정본이_없다():
