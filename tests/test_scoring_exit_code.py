@@ -367,3 +367,23 @@ def test_본채점이_임계독립_판별력을_낸다(scoring_runs) -> None:
     # 대비는 짝지어 낸다 — 셋 다 있거나(다섯 칸 다 있을 때) 하나도 없거나다
     assert set(free["contrasts"]) in (
         set(), {"fed_minus_central", "fed_minus_local_mean", "central_minus_local_mean"})
+
+
+def test_채점_산출물이_자기_코드_해시를_싣는다(scoring_runs) -> None:
+    """여러 시드가 같은 채점기 코드로 나왔는지 확인할 유일한 수단이다(27번 §12-1).
+
+    파라미터가 같아도 코드가 다르면 같은 기준이 아니다. 고정 문자열은 입력 검증을
+    대신하지 못하므로, 채점기가 자기 소스의 지문을 산출물에 남긴다.
+    """
+    _, out = scoring_runs["clean"]
+    payload = json.loads((out / "score_cells_v1.json").read_text(encoding="utf-8"))
+    code = payload["scorer_code"]
+    assert len(code["combined"]) == 64
+    assert code["n_files"] > 20
+    assert "evaluation/score.py" in code["files"]
+    assert "scripts/probe/score_cells.py" in code["files"]
+    # 실행 시점에 실제로 계산한 값이어야 한다 — 같은 트리를 다시 해싱하면 같다
+    from evaluation.provenance import scorer_code_digest
+    assert code["combined"] == scorer_code_digest()["combined"]
+    # git 은 참고지 판정 근거가 아니다
+    assert "참고" in code["git"]["role"]

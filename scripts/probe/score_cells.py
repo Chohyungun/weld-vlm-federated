@@ -62,6 +62,7 @@ from evaluation.params import (
 )
 from evaluation.probes.metadata_probe import MetaSample, trivial_bound
 from evaluation.probes.p9_runner import contexts_from_snapshot, p9_all_cells
+from evaluation.provenance import scorer_code_digest
 from evaluation.schema import PredictionRecord
 from evaluation.score import coord_health, failure_breakdown
 from evaluation.strata import (
@@ -823,6 +824,9 @@ def cmd_score(args) -> int:
         "cells_scored": list(tags),
         "cells_selection": getattr(args, "cells", "all"),
         "scorer": "evaluation.score.score_records (단일)",
+        # **채점기 자신의 코드 지문.** 여러 시드가 같은 코드로 채점됐는지 확인할 유일한
+        # 수단이다 — 파라미터가 같아도 코드가 다르면 같은 기준이 아니다(27번 §1-0·§12-1).
+        "scorer_code": scorer_code_digest(),
         "metrics": metrics,
         "metrics_role": (
             f"운용점 예시 conf={params.conf.value} — **확증적 기준 아님**(총괄 판정 1, "
