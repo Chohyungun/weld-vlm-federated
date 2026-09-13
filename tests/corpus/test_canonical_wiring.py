@@ -274,11 +274,13 @@ def test_라벨_표본이_층화되고_기계판정을_보여주지_않는다():
     sheet = J.build_sheet(recs, cfg, "deepseek")
     rows = [r for r in sheet if "sample_id" in r]
     assert len(rows) == cfg["labeling"]["n"]
-    strata = {r["stratum"] for r in rows}
+    by_id = {r["sample_id"]: r for r in recs}
+    strata = {J._stratum(by_id[r["sample_id"]], "deepseek") for r in rows}
     assert len(strata) == 4, strata
     for r in rows:
         assert r["human_ok"] is None
         assert not any(k.startswith("judge_") for k in r), "기계 판정이 표본지에 실렸다"
+        assert "stratum" not in r
         assert r["basis"], "사람도 기계와 같은 자료를 봐야 한다 (G4-1)"
 
 

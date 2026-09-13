@@ -1,0 +1,123 @@
+{
+  "title": "2026-09-13 회의 결과표 근거",
+  "verified_date": "2026-09-13",
+  "source_results_date": "2026-09-11까지 생성된 기존 정책 산출물",
+  "method": "원본 score JSON을 읽고 로컬 산술평균 및 회복률을 별도로 계산. 기존 집계기는 사용하지 않음.",
+  "definitions": {
+    "local_mean": "같은 공통 평가셋에서 채점한 로컬 C1/C2/C3 mAP@50의 산술평균",
+    "recovery_pct": "100 * (fed - local_mean) / (central - local_mean)",
+    "mean_recovery": "시드별 recovery_pct의 산술평균",
+    "nominal_AL": "데이터셋의 명목 출처 라벨. 실제 알루미늄 재질을 뜻한다고 확인되지 않음"
+  },
+  "limitations": [
+    "회복률 부트스트랩 CI 미산출",
+    "기존 loader 정책의 결과이며 수정 정책 검증 결과와 합산하지 않음",
+    "입력 JSON의 SHA256은 채점 코드 동일성 또는 원본 이미지 전수 무결성의 증명이 아님",
+    "원본 이미지·합성문·예측 레코드는 포함하지 않음",
+    "공통 평가셋과 명목 AL 부분집합은 다른 모집단"
+  ],
+  "seeds": [
+    {
+      "seed_number": 1,
+      "seed_value": 20260828,
+      "source": "outputs/main_d/seed1/score_cells_v1.json",
+      "source_sha256": "69dc57c6ff63b230b66befb81cf709551d6347dbd2fb49665ec9bdc7dd39fc32",
+      "n_eval": 12461,
+      "conf_floor": 0.01,
+      "max_det": 300,
+      "classes": [
+        "crack",
+        "porosity",
+        "lack_of_fusion",
+        "slag_inclusion"
+      ],
+      "map_50": {
+        "sep_central": 0.49259751542416635,
+        "sep_fed": 0.28200445519156186,
+        "sep_local_C1": 0.3583908085666838,
+        "sep_local_C2": 0.13584144331726178,
+        "sep_local_C3": 0.09321328108111251
+      },
+      "local_mean_map_50": 0.19581517765501935,
+      "recovery_pct": 29.041242206126533,
+      "nominal_AL": {
+        "n_images": 1786,
+        "local_C3_map_50": 0.46291390977487995,
+        "fed_map_50": 0.23725008391752678
+      }
+    },
+    {
+      "seed_number": 2,
+      "seed_value": 20260829,
+      "source": "outputs/main_d/seed2/score_cells_v1.json",
+      "source_sha256": "188e2667d0aa7d7903bd440ab26fb6e2cf2073e54ae6bcf8e46b200fa204bbd2",
+      "n_eval": 12461,
+      "conf_floor": 0.01,
+      "max_det": 300,
+      "classes": [
+        "crack",
+        "porosity",
+        "lack_of_fusion",
+        "slag_inclusion"
+      ],
+      "map_50": {
+        "sep_central": 0.4915943981947463,
+        "sep_fed": 0.2639454123217927,
+        "sep_local_C1": 0.357739010756738,
+        "sep_local_C2": 0.13205623799292038,
+        "sep_local_C3": 0.10249421953068814
+      },
+      "local_mean_map_50": 0.19742982276011548,
+      "recovery_pct": 22.611692608941723,
+      "nominal_AL": {
+        "n_images": 1786,
+        "local_C3_map_50": 0.4805530301484437,
+        "fed_map_50": 0.21414452245284266
+      }
+    },
+    {
+      "seed_number": 3,
+      "seed_value": 20260830,
+      "source": "outputs/main_d/seed3/score_cells_v1.json",
+      "source_sha256": "f8f4aaa775830fbb03599ef1c1da1c4564966075cfbd5706f1c2bb33c6ebb6a0",
+      "n_eval": 12461,
+      "conf_floor": 0.01,
+      "max_det": 300,
+      "classes": [
+        "crack",
+        "porosity",
+        "lack_of_fusion",
+        "slag_inclusion"
+      ],
+      "map_50": {
+        "sep_central": 0.49974556487520183,
+        "sep_fed": 0.2667986022584939,
+        "sep_local_C1": 0.3623055557895491,
+        "sep_local_C2": 0.13380151216868721,
+        "sep_local_C3": 0.0994714705590436
+      },
+      "local_mean_map_50": 0.19852617950576,
+      "recovery_pct": 22.665348270662804,
+      "nominal_AL": {
+        "n_images": 1786,
+        "local_C3_map_50": 0.49712325614206826,
+        "fed_map_50": 0.22864879055438742
+      }
+    }
+  ],
+  "means": {
+    "map_50": {
+      "sep_central": 0.49464582616470487,
+      "sep_fed": 0.27091615659061613,
+      "sep_local_C1": 0.3594784583709903,
+      "sep_local_C2": 0.13389973115962314,
+      "sep_local_C3": 0.09839299039028142
+    },
+    "local_mean_map_50": 0.1972570599736316,
+    "recovery_pct": 24.77276102857702,
+    "nominal_AL": {
+      "local_C3_map_50": 0.4801967320217973,
+      "fed_map_50": 0.22668113230825226
+    }
+  }
+}

@@ -141,7 +141,14 @@ def judge_image(
             cited_clauses=(), basis=NO_CLAUSE,
             parse_ok=True, generated=False,
         )
-    prompt = build_prompt(template, defects, clauses)
+    supplied = {c.chunk_id: c for c in clauses}
+    if len(supplied) != len(clauses) or set(supplied) != set(retrieval.chunk_ids):
+        raise ValueError("검색 결과와 생성 입력 조항이 일치하지 않는다")
+    missing_text = [cid for cid in retrieval.chunk_ids if not supplied[cid].text.strip()]
+    if missing_text:
+        # 색인/배선 오류를 모델의 성공이나 파싱 실패로 계상하지 않는다.
+        raise ValueError(f"조항 본문이 비어 있어 생성할 수 없다: {missing_text}")
+    prompt = build_prompt(template, defects, [supplied[cid] for cid in retrieval.chunk_ids])
     raw = generate_fn(prompt)                       # greedy 1회. 여기가 유일한 호출이다
     obj, err = parse_generation(raw)
     if obj is None:

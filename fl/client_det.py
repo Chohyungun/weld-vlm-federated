@@ -66,6 +66,7 @@ def run_client_round(
         resume_dir=(Path(cfg["resume_root"]).resolve() / f"r{round_idx:03d}_c{client_idx}"
                     if cfg.get("resume_root") else None),
         run_id=str(cfg.get("run_id", "")),
+        loader_reseed_per_epoch=cfg.get("loader_reseed_per_epoch", False),
     )
     eff = result.effective_optimizer
     metrics: dict[str, Any] = {
@@ -77,6 +78,11 @@ def run_client_round(
         "optimizer-steps": float(result.optimizer_steps),
         # 배치 수와 실제 갱신 횟수는 다르다(숨은 기본값 #10). 논문의 "총 갱신 횟수"는 아래다.
         "optimizer-updates": float(getattr(result, "optimizer_updates", 0) or 0),
+        "epochs-this-process": float(
+            result.epochs_this_process if getattr(result, "epochs_this_process", None) is not None else -1
+        ),
+        "loader-reseed-per-epoch": float(bool(getattr(result, "loader_reseed_per_epoch", False))),
+        "loader-seed": int(result.loader_seed) if getattr(result, "loader_seed", None) is not None else -1,
         # 재개해서 이어 간 라운드인가. -1 은 재개 아님. 이어 간 런은 궤적이 다르다.
         "resumed-from-epoch": float(
             result.resumed_from_epoch if getattr(result, "resumed_from_epoch", None) is not None else -1
@@ -110,5 +116,6 @@ def run_client_round(
         "stopper-class": str(result.stopper_class),
         # 가중 단위를 클라이언트가 스스로 밝힌다 — 회계의 단위 일치 감사가 이걸 대조한다.
         "weight-unit": "num_examples",
+        "profile": str(getattr(result, "profile", profile)),
     }
     return result.ndarrays, metrics, strings

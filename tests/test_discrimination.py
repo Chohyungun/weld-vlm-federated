@@ -46,7 +46,7 @@ def test_발화_정의가_P9_와_같은_함수다() -> None:
 
 
 def test_출처만_읽는_규칙은_정확히_0_을_받는다() -> None:
-    """지름길이 통과할 수 없다는 것이 이 지표의 존재 이유다."""
+    """출처 단일 변수만 읽는 규칙의 성질이다. 모든 메타데이터 규칙으로 확대하지 않는다."""
     contexts = ctx([
         ("d1", "g1", True, CROP), ("d2", "g1", True, CROP),
         ("n1", "g2", False, CROP), ("n2", "g2", False, CROP),
@@ -62,7 +62,7 @@ def test_출처만_읽는_규칙은_정확히_0_을_받는다() -> None:
     assert r.fire_rate_normal == 1.0
     assert r.delta.point == 0.0
     assert (r.delta.lo, r.delta.hi) == (0.0, 0.0)
-    assert r.verdict.startswith("지름길선")
+    assert r.verdict.startswith("발화율 차이 없음")
 
 
 def test_섞인_묶음에서도_규칙은_0_이다() -> None:

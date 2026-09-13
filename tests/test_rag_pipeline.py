@@ -49,6 +49,7 @@ def write_chunk_meta(tmp_path, metas):
 
 def q(code="2011", t="12", method="RT", level="ALL", scheme="none") -> Query:
     return Query(inspection_method=method, defect_code=code,
+                 material="ST",
                  thickness_mm=Decimal(t), quality_scheme=scheme, quality_level=level)
 
 

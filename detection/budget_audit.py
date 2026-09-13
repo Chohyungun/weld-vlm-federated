@@ -88,6 +88,10 @@ _CSV_COLUMNS = [
     "optimizer_updates",
     # 재개해서 이어 간 칸인가. 이어 간 런은 무중단 런과 다른 궤적을 그린다.
     "resumed_from_epoch",
+    "epochs_this_process",
+    "loader_reseed_per_epoch",
+    "loader_seed",
+    "profile",
     # FedAvg 가 실제로 쓴 가중과 그 단위. 총괄 판정 2(2026-09-02)로 통합형은 감독 토큰
     # 총합이 됐고, 검출은 표본 수다. **어느 단위로 잰 값인지 산출물이 말해야** RQ3 을
     # 해석할 수 있다 — 단위가 바뀌면 C3 비중이 1.52배 움직인다.
@@ -125,6 +129,10 @@ class AccountingCell:
     stopper_calls: int | None = None
     optimizer_updates: int = 0
     resumed_from_epoch: int | None = None
+    epochs_this_process: int | None = None
+    loader_reseed_per_epoch: bool | None = None
+    loader_seed: int | None = None
+    profile: str = ""
     participated: bool = True
     #: "measured" | "reconstructed". 재구성 셀은 감사 보고서에 따로 센다.
     value_source: str = "measured"
@@ -162,6 +170,10 @@ class AccountingCell:
                            if getattr(result, "stopper_calls", None) is not None else None),
             optimizer_updates=int(getattr(result, "optimizer_updates", 0) or 0),
             resumed_from_epoch=getattr(result, "resumed_from_epoch", None),
+            epochs_this_process=getattr(result, "epochs_this_process", None),
+            loader_reseed_per_epoch=getattr(result, "loader_reseed_per_epoch", None),
+            loader_seed=getattr(result, "loader_seed", None),
+            profile=str(getattr(result, "profile", "")),
             fedavg_weight=float(result.num_examples),
             fedavg_weight_unit="num_examples",
         )
@@ -260,7 +272,17 @@ class AccountingMatrix:
             # **재개한 셀은 이 프로세스가 돈 epoch 만 stopper 를 지난다.** `epochs_ran` 은
             # 라운드 누적치라 그대로 비교하면 재개 런이 무조건 실패한다 — §4-6 게이트
             # 실행에서 실제로 그렇게 났다(33 epoch 누적 대 이번 프로세스 2회).
-            ran_here = cell.epochs_ran - int(cell.resumed_from_epoch or 0)
+            # 검출의 resumed_from_epoch은 전역 좌표다. E에서 이를 바로 빼면
+            # 후반 라운드에서는 음수가 되어 호출 누락을 검사하지 못한다.
+            if cell.epochs_this_process is not None:
+                ran_here = cell.epochs_this_process
+            elif cell.resumed_from_epoch is not None and cell.stopper_calls is not None:
+                consumed = cell.resumed_from_epoch - r * self.local_epochs
+                ran_here = cell.epochs_ran - consumed
+            else:
+                ran_here = cell.epochs_ran
+            if cell.stopper_calls is not None and not 0 <= ran_here <= cell.epochs_ran:
+                failures.append(f"라운드 {r} 클라이언트 {c}: 재개 epoch 좌표가 예산과 맞지 않는다")
             if cell.stopper_calls is not None and cell.stopper_calls < ran_here:
                 failures.append(
                     f"라운드 {r} 클라이언트 {c}: stopper 호출 {cell.stopper_calls}회 < "
@@ -330,6 +352,11 @@ class AccountingMatrix:
             )
 
         # (5) 최적화 설정이 실제로 고정됐는가 — 'auto' 교체를 여기서 잡는다
+        policies = {cell.loader_reseed_per_epoch for cell in self.cells.values()
+                    if cell.loader_reseed_per_epoch is not None}
+        profiles = {cell.profile for cell in self.cells.values() if cell.profile}
+        if len(policies) > 1 or len(profiles) > 1:
+            failures.append("같은 run에 서로 다른 loader 정책 또는 학습 profile이 섞였다")
         opts = {cell.optimizer for cell in self.cells.values() if cell.optimizer}
         if len(opts) > 1:
             failures.append(f"실사용 optimizer 가 셀마다 다르다: {sorted(opts)}")

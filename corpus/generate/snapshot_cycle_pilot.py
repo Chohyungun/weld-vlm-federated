@@ -72,6 +72,7 @@ def members(out_dir: Path) -> tuple[str, ...]:
 # 구분해 담는다 — judge_agreement.json 의 일치도가 이 둘의 대조값이다.
 ITEM_FILES = (
     ("reasoning_accepted.jsonl", "deepseek", "accepted"),
+    ("reasoning_pending.jsonl", "deepseek", "pending"),
     ("remedy_accepted.jsonl", "-", "accepted"),
     ("discarded.jsonl", "deepseek", "discarded"),
     ("_phi_reasoning.jsonl", "phi", "accepted"),
@@ -80,6 +81,7 @@ ITEM_FILES = (
 )
 
 REASON_CAP = 120   # 기각 사유는 분포 집계용이라 앞부분이면 충분하다
+POLICY_KIND = "acceptance_policy"
 
 
 def sha256_bytes(b: bytes) -> str:
@@ -108,8 +110,41 @@ def _kind(rec: dict) -> str:
     return "reasoning" if "axis" in rec else "qa"
 
 
+def _acceptance_policy(out_dir: Path) -> dict | None:
+    """새 계약의 식별자만 보존한다. 보고서의 통과 수는 근거로 복사하지 않는다.
+
+    구형 v1/v2에는 메타 레코드를 추가하지 않아 기존 직렬화를 유지한다.
+    빈 축도 재계산하도록 축과 후보 목록을 남긴다.
+    """
+    path = out_dir / "cycle_corpus_report.json"
+    report = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    axes = report.get("axes", {})
+    selected = {axis: block for axis, block in axes.items()
+                if "acceptance_status" in block or "n_pending" in block}
+    pending = out_dir / "reasoning_pending.jsonl"
+    if not selected:
+        if pending.exists():
+            raise ValueError("reasoning_pending.jsonl에 대응하는 채택 계약이 없다")
+        return None
+    if not pending.exists():
+        raise ValueError("새 채택 계약에 reasoning_pending.jsonl이 없다")
+    policies = {}
+    for axis, block in selected.items():
+        if "canonical_judge" not in block:
+            raise ValueError(f"{axis}: canonical_judge가 없다")
+        canonical = block["canonical_judge"]
+        candidates = sorted((block.get("stage2_judges") or {}).keys())
+        if canonical is not None and (
+                not isinstance(canonical, str) or not canonical or canonical not in candidates):
+            raise ValueError(f"{axis}: 정본이 후보 목록에 없다")
+        policies[axis] = {"canonical_judge": canonical, "judge_candidates": candidates}
+    return {"kind": POLICY_KIND, "version": 1,
+            "axes": sorted(axes), "policies": policies}
+
+
 def build_evidence(out_dir: Path) -> list[dict]:
     """항목 축약 레코드. 생성문 자체는 담지 않고 sha256 만 담는다."""
+    policy = _acceptance_policy(out_dir)
     items: list[dict] = []
     for fname, judge, stage in ITEM_FILES:
         p = out_dir / fname
@@ -130,6 +165,10 @@ def build_evidence(out_dir: Path) -> list[dict]:
                 "stage0_reasons": r.get("stage0_reasons") or [],
                 "text_sha256": sha256_bytes((r.get("text") or "").encode("utf-8")),
             }
+            if policy is not None:
+                # 새 파일은 특정 판정기 실행본이 아니다. 후보별 플래그와 별도
+                # 정본 계약이 판정 주체를 나타낸다. 구형 deepseek 표기는 보존한다.
+                rec["judge"] = "-"
             if kind == "reasoning":
                 sk = r.get("skeleton") or {}
                 rec["axis"] = r.get("axis")
@@ -153,6 +192,8 @@ def build_evidence(out_dir: Path) -> list[dict]:
                 rec["passage_id"] = r.get("passage_id")
             items.append(rec)
     items.sort(key=lambda r: (r["judge"], r["kind"], r["stage"], str(r["sample_id"])))
+    if policy is not None:
+        items.insert(0, policy)
     return items
 
 
@@ -211,19 +252,76 @@ def recompute(items: list[dict]) -> dict:
     return out
 
 
+def _recompute_acceptance(rs: list[dict], policy: dict) -> dict:
+    """정본 플래그와 실제 배출 파일을 항목별로 대조한다."""
+    canonical = policy["canonical_judge"]
+    seen = set()
+    accepted = pending = eligible = 0
+    for r in rs:
+        sid = r.get("sample_id")
+        if not isinstance(sid, str) or not sid or sid in seen:
+            raise ValueError(f"채택 근거의 sample_id가 없거나 중복됐다: {sid!r}")
+        seen.add(sid)
+        if type(r.get("stage0_pass")) is not bool:
+            raise ValueError(f"{sid}: stage0_pass가 bool이 아니다")
+        expected = "discarded"
+        if r["stage0_pass"]:
+            if type(r.get("stage1_pass")) is not bool:
+                raise ValueError(f"{sid}: stage1_pass가 bool이 아니다")
+            if r["stage1_pass"]:
+                eligible += 1
+                for cid in policy["judge_candidates"]:
+                    if any(type(r.get(f"judge_{cid}_{key}")) is not bool
+                           for key in ("pass", "parse_ok")):
+                        raise ValueError(f"{sid}: 후보 {cid}의 판정 플래그가 없거나 잘못됐다")
+                if canonical is None:
+                    pending += 1
+                    expected = "pending"
+                elif r[f"judge_{canonical}_pass"] and r[f"judge_{canonical}_parse_ok"]:
+                    accepted += 1
+                    expected = "accepted"
+        expected_file = {
+            "accepted": "reasoning_accepted.jsonl",
+            "pending": "reasoning_pending.jsonl",
+            "discarded": "discarded.jsonl",
+        }[expected]
+        if r["stage"] != expected or r["source_file"] != expected_file:
+            raise ValueError(
+                f"{sid}: 배출 {r['source_file']}:{r['stage']} ≠ 플래그 재계산 {expected_file}"
+            )
+    return {
+        "canonical_judge": canonical,
+        "acceptance_status": "pending_canonical" if canonical is None else "validated",
+        "n_accepted": accepted,
+        "n_pending": pending,
+        "stage2_canonical": {
+            "n_in": eligible, "n_pass": accepted, "n_fail": eligible - accepted,
+        },
+    }
+
+
 def recompute_axes(items: list[dict]) -> dict:
     """재실행분 축약본 → 축별 단계·후보별 통과 수. 원본 jsonl 없이 성립해야 한다."""
+    headers = [r for r in items if r["kind"] == POLICY_KIND]
+    if len(headers) > 1:
+        raise ValueError("채택 계약 근거가 중복됐다")
+    header = headers[0] if headers else {}
+    policies = header.get("policies", {})
+    axes = {r.get("axis") for r in items if r.get("axis")}
+    axes.update(axis for axis in header.get("axes", ()) if axis != "QA")
     out: dict = {}
-    for axis in sorted({r.get("axis") for r in items if r.get("axis")}):
+    for axis in sorted(axes):
         rs = [r for r in items if r.get("axis") == axis]
+        acceptance = _recompute_acceptance(rs, policies[axis]) if axis in policies else None
         s0 = [r for r in rs if r["stage0_pass"]]
         s1 = [r for r in s0 if r.get("stage1_pass")]
         stages = {"stage0_numeric_lock": {"n_in": len(rs), "n_pass": len(s0)}}
-        if any("stage1_pass" in r for r in rs):
+        if acceptance is not None or any("stage1_pass" in r for r in rs):
             stages["stage1_rule"] = {"n_in": len(s0), "n_pass": len(s1)}
         judges: dict[str, dict] = {}
         cids = {k[len("judge_"):-len("_pass")] for r in rs for k in r
                 if k.startswith("judge_") and k.endswith("_pass")}
+        cids.update(policies.get(axis, {}).get("judge_candidates", ()))
         for cid in sorted(c for c in cids if c):   # `judge_pass`(v1 키)는 후보가 아니다
             judged = [r for r in s1 if r.get(f"judge_{cid}_pass") is not None]
             j_pass = [r for r in judged if r[f"judge_{cid}_pass"]]
@@ -237,6 +335,11 @@ def recompute_axes(items: list[dict]) -> dict:
                                         if r.get(f"judge_{cid}_reason_is_echo")),
             }
         out[f"axis:{axis}"] = {"n_in": len(rs), "stages": stages, "judges": judges}
+        if acceptance is not None:
+            canonical_stage = acceptance.pop("stage2_canonical")
+            if acceptance["canonical_judge"] is not None:
+                stages["stage2_canonical"] = canonical_stage
+            out[f"axis:{axis}"].update(acceptance)
 
     qa = [r for r in items if r["kind"] == "qa"]
     seen: dict[str, dict] = {}
@@ -275,6 +378,40 @@ def crosscheck(recomputed: dict, out_dir: Path) -> list[str]:
     return _crosscheck_flat(recomputed, out_dir)
 
 
+def _check_count(problems: list[str], name: str, reported, expected) -> None:
+    if type(reported) is not int or reported < 0 or reported != expected:
+        problems.append(f"{name}: 보고서 {reported!r} ≠ 재계산 {expected!r} (음이 아닌 정수)")
+
+
+def _crosscheck_acceptance(axis: str, block: dict, got: dict) -> list[str]:
+    problems = []
+    for field in ("canonical_judge", "acceptance_status"):
+        if field not in block or field not in got or block[field] != got[field]:
+            problems.append(f"{axis}.{field}: 보고서와 채택 근거 불일치")
+    for field in ("n_in", "n_accepted", "n_pending"):
+        _check_count(problems, f"{axis}.{field}", block.get(field), got.get(field))
+    reported_stages = block.get("stages", {})
+    for name, expected in got["stages"].items():
+        reported = reported_stages.get(name)
+        if not isinstance(reported, dict) or reported.get("status") != "ran":
+            problems.append(f"{axis}.{name}: 실행 단계가 없다")
+            continue
+        for field, count in (
+            ("n_in", expected["n_in"]),
+            ("n_pass", expected["n_pass"]),
+            ("n_fail", expected["n_in"] - expected["n_pass"]),
+        ):
+            _check_count(problems, f"{axis}.{name}.{field}", reported.get(field), count)
+    if "stage2_canonical" not in got["stages"] and "stage2_canonical" in reported_stages:
+        problems.append(f"{axis}.stage2_canonical: 정본 미지정인데 단계가 있다")
+    for cid, expected in got["judges"].items():
+        reported = (block.get("stage2_judges") or {}).get(cid, {})
+        for field in ("n_in", "n_pass", "n_fail", "n_format_violation", "n_reason_is_echo"):
+            _check_count(problems, f"{axis}.후보 {cid}.{field}",
+                         reported.get(field), expected[field])
+    return problems
+
+
 def _crosscheck_axes(recomputed: dict, rep: dict) -> list[str]:
     """재실행분 스키마 — 축별 stages + 후보별 stage2."""
     problems: list[str] = []
@@ -284,6 +421,8 @@ def _crosscheck_axes(recomputed: dict, rep: dict) -> list[str]:
         if got is None:
             problems.append(f"{axis}: 축약본에 대응 축이 없다")
             continue
+        if "acceptance_status" in block or "acceptance_status" in got or "n_pending" in block:
+            problems.extend(_crosscheck_acceptance(axis, block, got))
         if block["n_in"] != got["n_in"]:
             problems.append(f"{axis} n_in: 보고서 {block['n_in']} ≠ 재계산 {got['n_in']}")
         for name, st in block["stages"].items():
@@ -351,6 +490,10 @@ def render_summary(recomputed: dict, entries: list[tuple[str, str]],
         "recomputed": recomputed,
         "crosscheck_vs_reports": "일치" if not problems else problems,
     }
+    if any("acceptance_status" in v for v in recomputed.values()):
+        doc["_meta"]["evidence_count_note"] = (
+            "n_evidence_items는 정책 헤더 1건을 포함한 근거 레코드 수이며 표본 수가 아니다."
+        )
     return json.dumps(doc, ensure_ascii=False, indent=1) + "\n"
 
 
@@ -389,11 +532,15 @@ def main() -> int:
         return 2
 
     entries = [(sha256_file(out_dir / n), n) for n in members(out_dir)]
-    items = build_evidence(out_dir)
-    new_schema = "axes" in json.loads(
-        (out_dir / "cycle_corpus_report.json").read_text(encoding="utf-8"))
-    recomputed = recompute_axes(items) if new_schema else recompute(items)
-    problems = crosscheck(recomputed, out_dir)
+    try:
+        items = build_evidence(out_dir)
+        new_schema = "axes" in json.loads(
+            (out_dir / "cycle_corpus_report.json").read_text(encoding="utf-8"))
+        recomputed = recompute_axes(items) if new_schema else recompute(items)
+        problems = crosscheck(recomputed, out_dir)
+    except ValueError as exc:
+        print(f"채택 근거 오류: {exc}", file=sys.stderr)
+        return 3
     if problems:
         # 조용히 지나가면 스냅샷이 틀린 수치를 고정한다.
         print("보고서 대조 불일치:", *problems, sep="\n  ", file=sys.stderr)
@@ -422,6 +569,11 @@ def main() -> int:
     print(f"스냅샷 {len(entries)}개 파일 / 축약 {len(items)}건")
     print(f"snapshot_digest {snapshot_digest(entries)}")
     for k, v in recomputed.items():
+        if "acceptance_status" in v:
+            judge = v["canonical_judge"]
+            label = "정본 미선정" if judge is None else f"정본 {judge}"
+            print(f"  {k}: 채택 {v['n_accepted']} / 보류 {v['n_pending']} / {label}")
+            continue
         rate = v.get("end_to_end_rate", v.get("pass_rate"))
         if rate is None and "stages" in v:
             last = list(v["stages"].values())[-1]

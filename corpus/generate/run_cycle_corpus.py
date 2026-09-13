@@ -690,16 +690,38 @@ def write_report(recs, qa_recs, cands, cfg, payload, out_dir: Path) -> None:
             "quantization": cfg["judges"].get("quantization"),
         }
     canonical = cfg["judges"].get("canonical")
+    accepted = []
+    pending = []
+    rejected_by_judge = []
+    if canonical is None:
+        pending = s1
+    else:
+        if canonical not in {c["id"] for c in cands}:
+            raise ValueError(f"정본 검증기가 이번 실행에 없다: {canonical}")
+        for r in s1:
+            verdict = r.get(f"judge_{canonical}_pass")
+            parsed = r.get(f"judge_{canonical}_parse_ok")
+            if type(verdict) is not bool or type(parsed) is not bool:
+                raise ValueError(f"정본 판정이 없거나 형식이 잘못됐다: {r['sample_id']}")
+            (accepted if verdict and parsed else rejected_by_judge).append(r)
+        stages["stage2_canonical"] = stage(
+            len(s1), len(accepted), {"canonical_rejected": len(rejected_by_judge)},
+        )
     axes[AXIS_CLAUSE] = axis_block(
         AXIS_CLAUSE, len(clause), stages,
-        validated_by="cross_family" if judged else "rule",
-        measures=["format", "groundedness"],
+        validated_by="cross_family" if canonical is not None else "rule",
+        measures=["format", "groundedness"] if canonical is not None else ["format"],
         extra={"stage2_judges": judged,
                "canonical_judge": canonical,
                "canonical_note": (
                    "정본 미정 — 사람 라벨 100건 비교 전까지 어느 후보도 정본이 아니다."
                    " 후보별 통과율은 judge_agreement 로만 읽는다 (G12-3)."
                    if not canonical else None)})
+    axes[AXIS_CLAUSE].update({
+        "n_accepted": len(accepted), "n_pending": len(pending),
+        "acceptance_status": "validated" if canonical is not None else "pending_canonical",
+        "end_to_end_pass_rate": len(accepted) / len(clause) if clause and canonical is not None else None,
+    })
 
     axes[AXIS_REMEDY] = axis_block(
         AXIS_REMEDY, len(remedy),
@@ -739,14 +761,16 @@ def write_report(recs, qa_recs, cands, cfg, payload, out_dir: Path) -> None:
         "git_commit": git_commit(),
     }
     write_jsonl(out_dir / "reasoning_accepted.jsonl",
-                [r for r in clause if r.get("stage1_pass")])
+                accepted)
+    write_jsonl(out_dir / "reasoning_pending.jsonl", pending)
     write_jsonl(out_dir / "remedy_accepted.jsonl",
                 [r for r in remedy if r.get("stage0_pass")])
     write_jsonl(out_dir / "qa_accepted.jsonl",
                 [r for r in qa_recs if r.get("stage0_pass")])
     write_jsonl(out_dir / "discarded.jsonl",
                 [r for r in recs + qa_recs
-                 if not (r.get("stage0_pass") and r.get("stage1_pass", True))])
+                 if not (r.get("stage0_pass") and r.get("stage1_pass", True))]
+                + rejected_by_judge)
     write_json(out_dir / "cycle_corpus_report.json", report)
     print("\n" + json.dumps(axes, ensure_ascii=False, indent=1))
     print("산출:", out_dir)

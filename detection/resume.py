@@ -89,6 +89,9 @@ class ResumeIdentity:
     local_epochs: int
     model: str
     data: str
+    loader_reseed_per_epoch: bool = False
+    loader_seed: int | None = None
+    profile: str = ""
 
     def mismatch(self, other: "ResumeIdentity") -> list[str]:
         return [
@@ -203,8 +206,7 @@ class ResumeCheckpointer:
     def save(self, trainer: Any) -> Path:
         import torch
 
-        model = getattr(trainer.model, "module", trainer.model)
-        sd = model.state_dict()
+        sd = self.state_dict_fn(trainer)
         if self.canonical_keys is None:
             self.canonical_keys = serialize.canonical_keys(sd)
         arrays = serialize.state_dict_to_ndarrays(sd, self.canonical_keys)
@@ -227,6 +229,12 @@ class ResumeCheckpointer:
             "rng": _rng_snapshot(),
             "loader_generator": loader_generator_state(trainer),
         }
+        # 검출의 배치 수와 optimizer 갱신 횟수는 다른 카운터다. 후자는
+        # trainer에서 재개 이전 누적값을 복원한 뒤 계속 센다.
+        if hasattr(trainer, "n_optimizer_updates"):
+            payload["optimizer_updates"] = int(trainer.n_optimizer_updates)
+        if hasattr(trainer, "_resume_lr_trace"):
+            payload["lr_trace"] = list(trainer._resume_lr_trace.trace)
         for k, v in self.extra.items():
             if k in payload:
                 raise ValueError(f"예약된 체크포인트 키를 덮어쓸 수 없다: {k!r}")

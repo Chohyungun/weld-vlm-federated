@@ -86,7 +86,6 @@ def build_sheet(records: Sequence[dict], cfg: dict, judge_id: str) -> list[dict]
             sheet.append({
                 "sample_id": r["sample_id"],
                 "axis": r.get("axis"),
-                "stratum": "|".join(cell),
                 # 사람이 보는 것도 기계가 본 것과 **같은 자료**여야 한다 (G4-1).
                 "basis": _basis_of(r),
                 "text": r.get("text"),
@@ -95,8 +94,10 @@ def build_sheet(records: Sequence[dict], cfg: dict, judge_id: str) -> list[dict]
                 "labeler": None,
                 "note": None,
             })
+    # 층별 블록 순서도 후보 판정을 드러낸다. 표집과 같은 시드로 순서를 섞는다.
+    rng.shuffle(sheet)
     if shortfall:
-        sheet.append({"_shortfall": shortfall})
+        sheet.append({"_shortfall": {"total": sum(shortfall.values())}})
     return sheet
 
 
@@ -165,7 +166,9 @@ def main() -> int:
 
     cfg = load_cfg()
     cyc = Path(args.cycle_dir)
-    records = read_jsonl(cyc / "reasoning_accepted.jsonl") + read_jsonl(cyc / "discarded.jsonl")
+    records = (read_jsonl(cyc / "reasoning_accepted.jsonl")
+               + read_jsonl(cyc / "reasoning_pending.jsonl")
+               + read_jsonl(cyc / "discarded.jsonl"))
     records = [r for r in records if r.get("axis")]
     if not records:
         print("판정 레코드가 없다 — corpus 사이클을 먼저 돌려라 (체크리스트 19)",
@@ -184,7 +187,7 @@ def main() -> int:
                 fh.write(json.dumps(row, ensure_ascii=False) + "\n")
         n = sum(1 for r in sheet if "sample_id" in r)
         print(f"표본지 {n}건: {sheet_path}")
-        print(f"층 분포: {dict(Counter(r['stratum'] for r in sheet if 'stratum' in r))}")
+        print("표본은 내부적으로 층화하며 후보 판정과 층 정보는 표본지에서 숨깁니다.")
         print(f"**사람이 {cfg['labeling']['label_field']} 을 채운 뒤** "
               f"{labels_path} 로 저장하고 score 를 돌려라.")
         return 0

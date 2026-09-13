@@ -108,9 +108,8 @@ class LoaderReseed:
        `6148914691236517205 + RANK` 로 시드하므로, 기본 상태에서는 `args.seed` 가 셔플
        순열에도 워커 증강 난수열에도 닿지 않는다(숨은 기본값 #9). 시드 3세트가 무엇을
        흔드는지가 헤드 초기화로 좁아진다.
-    2. **재개가 정확해진다.** 로더 상태가 이력이 아니라 `(seed, epoch)` 의 함수가 되므로,
-       중단 후 이어 간 런과 무중단으로 완주한 런이 같은 데이터 순서를 본다. 되돌리기가
-       아니라 **다시 계산하기**라서 프리페치·base seed draw 같은 내부 사정에 걸리지 않는다.
+    2. 로더 상태를 `(seed, epoch)`에서 다시 계산한다. 데이터 순서와 워커 시드를
+       재현하지만, 저장하지 않는 누적 gradient 등 때문에 학습 궤적의 동등성은 보장하지 않는다.
 
     ## 대가
 
@@ -182,6 +181,7 @@ class FedDetectionTrainer(DetectionTrainer):
         local_epochs: int | None = None,
         resume_state: Any = None,
         loader_reseed_per_epoch: bool = False,
+        loader_seed: int | None = None,
     ) -> None:
         self._weights_in = weights_in
         self._canonical_keys = list(canonical_keys) if canonical_keys is not None else None
@@ -190,6 +190,7 @@ class FedDetectionTrainer(DetectionTrainer):
         #: `detection.resume.ResumeState` 또는 None. 있으면 `_setup_train` 에서 적용한다.
         self._resume_state = resume_state
         self._loader_reseed_per_epoch = bool(loader_reseed_per_epoch)
+        self._loader_seed = loader_seed
         self.injection_digest: list[float] = []
         self.budget: RoundBudget | None = None
         self.loader_reseed: LoaderReseed | None = None
@@ -206,6 +207,8 @@ class FedDetectionTrainer(DetectionTrainer):
 
         if self._local_epochs is not None:
             resumed = int(getattr(self._resume_state, "epochs_ran_in_round", 0) or 0)
+            if resumed >= self._local_epochs:
+                raise ValueError("라운드 예산이 이미 완료된 체크포인트다. 추가 학습은 허용하지 않는다.")
             self.budget = RoundBudget(self._local_epochs, resumed_epochs=resumed)
             # 인스턴스 로컬 등록. 전역 default_callbacks 를 건드리면 라운드마다 콜백이 쌓인다.
             self.add_callback("on_fit_epoch_end", self.budget)
@@ -214,7 +217,9 @@ class FedDetectionTrainer(DetectionTrainer):
             # `on_train_epoch_start` 는 학습 루프에서 `enumerate(self.train_loader)` 와
             # close_mosaic 재적용보다 **앞**에 발화한다. 그래서 여기서 다시 시드하면
             # 그 epoch 이 쓰는 순열이 전부 새 시드에서 나온다.
-            self.loader_reseed = LoaderReseed(int(self.args.seed))
+            self.loader_reseed = LoaderReseed(
+                int(self.args.seed) if self._loader_seed is None else int(self._loader_seed)
+            )
             self.add_callback("on_train_epoch_start", self.loader_reseed)
 
     # -- 접촉점 1 -----------------------------------------------------------
@@ -289,7 +294,17 @@ class FedDetectionTrainer(DetectionTrainer):
         열리고, 예산 정지로 `self.stop`이 켜져도 마찬가지다. 라운드별 지표는 서버가 val로
         산출하므로 여기서 도는 검증은 시간만 쓴다.
         """
-        return {}, None
+        # Ultralytics는 이 반환값으로 self.metrics를 교체한다. 빈 dict를 반환하면
+        # 마지막 epoch만 CSV 열 수가 줄어 LR이 검증 지표 열에 들어간다.
+        return dict.fromkeys(getattr(self, "metrics", {}), float("nan")), None
+
+    def save_metrics(self, metrics: dict) -> None:
+        """검증 미실행을 NaN으로 표시하고 학습 손실·LR은 원래 값으로 기록한다."""
+        recorded = {
+            key: (float("nan") if key.startswith(("val/", "metrics/")) else value)
+            for key, value in metrics.items()
+        }
+        super().save_metrics(recorded)
 
     def final_eval(self) -> None:
         """no-op. stock은 `best.pt`를 로드해 검증한다 — best 선택 경로 자체를 제거한다."""
