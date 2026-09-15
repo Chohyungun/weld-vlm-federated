@@ -127,14 +127,21 @@ def test_single_seed_cannot_estimate_variance():
 
 # --- 회복률 분모 판정 -------------------------------------------------------------
 
-def test_wide_denominator_is_reportable():
+def test_wide_denominator_passes_tripwire_but_is_unjudged_without_ci():
+    """트립와이어만 통과한 상태는 **미판정**이다 — True 로 적으면 종합 통과로 읽힌다."""
     v = recovery_denominator_verdict(0.80, [0.60], seed_values=[0.60, 0.61, 0.60])
-    assert v.tripwire_pass and v.reportable
+    assert v.tripwire_pass and v.tripwire_only_reportable
+    assert v.ci_pass is None
+    assert v.recovery_reportable is None
+    assert "미판정" in v.detail
+    assert v.as_dict()["recovery_reportable"] is None
+    assert v.as_dict()["tripwire_only_reportable"] is True
 
 
 def test_narrow_denominator_blocks_reporting():
     v = recovery_denominator_verdict(0.62, [0.60], seed_values=[0.58, 0.62, 0.60])
-    assert not v.tripwire_pass and not v.reportable
+    assert not v.tripwire_pass and not v.tripwire_only_reportable
+    assert v.recovery_reportable is False       # CI 를 볼 것도 없이 불가
     assert "세 절대값만" in v.detail
 
 
@@ -144,17 +151,24 @@ def test_wide_recovery_ci_blocks_even_if_tripwire_passes():
     v = recovery_denominator_verdict(
         0.80, [0.60], seed_values=[0.60, 0.601, 0.60], recovery_ci=wide
     )
-    assert v.tripwire_pass
-    assert v.ci_pass is False and not v.reportable
+    assert v.tripwire_pass and v.tripwire_only_reportable
+    assert v.ci_pass is False and v.recovery_reportable is False
 
 
 def test_narrow_recovery_ci_passes_secondary_check():
+    """CI 가 산출되고 통과한 뒤에야 recovery_reportable 이 True 가 된다."""
     tight = Interval(0.90, 0.82, 0.98, 2000, 300)
     v = recovery_denominator_verdict(
         0.80, [0.60], seed_values=[0.60, 0.601, 0.60], recovery_ci=tight
     )
-    assert v.ci_pass is True and v.reportable
+    assert v.ci_pass is True and v.recovery_reportable is True
     assert tight.half_width <= MAX_RECOVERY_HALF_WIDTH
+
+
+def test_as_dict_carries_policy_sentence():
+    """산출물을 읽는 사람이 두 필드의 뜻을 필드 안에서 본다."""
+    d = recovery_denominator_verdict(0.80, [0.60], seed_values=[0.60, 0.61, 0.60]).as_dict()
+    assert "CI 산출·통과 뒤에만" in d["recovery_reportable_policy"]
 
 
 def test_verdict_carries_seed_diagnostic():
