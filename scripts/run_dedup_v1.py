@@ -80,9 +80,11 @@ def paired_histograms(packed: np.ndarray, group_codes: np.ndarray,
                       tile: int = 1024) -> tuple[np.ndarray, np.ndarray]:
     """(같은 묶음 안 쌍, 다른 묶음 쌍) 거리 히스토그램. 전수·무편향이다.
 
-    같은 묶음 안 쌍은 **이미 E2 가 묶은 것**이라 같은 용접부라는 근거가 있다. 그 분포가
-    "같은 용접부는 pHash 거리가 얼마나 벌어지는가"의 실측 기준선이 된다. 눈 확인 없이
-    골짜기를 찍으면 근거가 없어지므로, 이 기준선을 분포 위에 겹쳐 놓고 고른다.
+    같은 묶음 안 쌍은 **이미 E2 가 묶은 것**(연속 ID 기반)이다 — 같은 용접부의 대용이지
+    실측된 동일성이 아니다. 그 분포가 "ID 기반 묶음 안에서 pHash 거리가 얼마나 벌어지는가"의
+    실측 기준선이 된다. 눈 확인 없이 골짜기를 찍으면 근거가 없어지므로, 이 기준선을 분포
+    위에 겹쳐 놓고 고른다. 묶음 안팎이 갈리지 않으면 양수 임계를 채택하지 않는다(2026-09-15
+    표현 정정, Codex 11-1).
     """
     n = len(packed)
     same = np.zeros(HASH_BITS + 1, dtype=np.int64)
@@ -152,7 +154,7 @@ def stage_measure(manifest, cache: dict[str, str], tile: int) -> int:
         same, diff = paired_histograms(packed, codes, tile=tile)
         print(f"  거리 계산 {time.time()-t0:.0f}초 · "
               f"같은묶음 쌍 {same.sum():,} · 다른묶음 쌍 {diff.sum():,}")
-        print(f"  같은 묶음(= 같은 용접부) 거리 분위 {quantiles(same)}")
+        print(f"  같은 묶음(ID 기반 E2 묶음) 거리 분위 {quantiles(same)}")
         print(f"  다른 묶음 거리 분위 {quantiles(diff)}")
 
         # 후보 임계별로 "다른 묶음인데 t 이하"인 쌍이 몇 개인지. E3 가 새로 붙일 엣지다.
