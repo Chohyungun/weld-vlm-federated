@@ -3,7 +3,9 @@
 지키는 것:
 1. **대조선이 시드 사이에 다르면 멈춘다** — 동결본이 바뀐 신호다(24번 §4).
 2. **회복률의 평균과 평균의 회복률을 둘 다 낸다** — 다른 수다.
-3. **분모 게이트가 사전등록 함수를 실호출한다** — 풀링 sd 로.
+3. **분모 게이트가 사전등록 함수를 실호출한다** — 세 sd 정의로 각각. 판정은 셋으로 갈라
+   적고, 트립와이어 단독 결과(`tripwire_only_reportable`)와 게재 가부(`recovery_reportable`,
+   CI 산출·통과 뒤에만 true, 그 전에는 null)를 섞지 않는다.
 4. **부차 지표의 일반식** — 연합÷중앙집중, (연합−로컬평균)÷로컬평균, 로컬 모델별 (연합−로컬_c)÷로컬_c.
    최악 참여자가 평균에 가려지지 않게 따로 낸다.
 5. **공통 평가셋 변화와 명목 자기 재질을 구분한다** — 부호가 갈릴 수 있고, 갈리는 것을 산출물이
@@ -100,8 +102,13 @@ def test_분모_게이트가_세_정의로_각각_판정한다():
     assert tw["pooled_df10"]["pass"] is True and tw["max_per_cell_df2"]["pass"] is True
     assert g["denominator"] > tw["max_per_cell_df2"]["threshold_3sd"]
     assert "분모 D 자체" in tw["denominator_sd_df2"]["seed_sd_definition"]
-    # 하위 필드의 recovery_reportable 이 종합 판정으로 읽히지 않게 단서를 단다
-    assert "트립와이어 한 줄" in tw["denominator_sd_df2"]["field_caveat"]
+    # 총괄 확정 정책(35번 과제 3): 트립와이어 단독 결과와 게재 가부를 가른다.
+    dsd = tw["denominator_sd_df2"]
+    assert dsd["tripwire_only_reportable"] is True
+    assert dsd["ci_pass"] is None
+    assert dsd["recovery_reportable"] is None, "CI 미산출이면 미판정(null)이어야 한다"
+    assert "CI 산출·통과 뒤에만" in dsd["recovery_reportable_policy"]
+    assert "미판정" in dsd["field_caveat"]
 
 
 def test_분모가_시드_잡음_안이면_게이트가_막는다():
@@ -219,9 +226,50 @@ def test_분모_판정이_셋으로_갈라진다():
     """트립와이어 충족 / 회복률 CI 미산출 / 대표 채택 미결 — 종합 통과로 읽히면 안 된다."""
     v = recovery_table(three_seeds(), {})["map_50"]["denominator_gate"]["verdict"]
     assert v["1_tripwire_3sigma"] == "충족"
+    # ①은 세 정의 **전부**의 결과를 함께 싣는다 — 둘만 보고 "충족"을 내지 않는다
+    assert set(v["1_tripwire_by_definition"]) == {"pooled_df10", "max_per_cell_df2",
+                                                  "denominator_sd_df2"}
+    assert all(v["1_tripwire_by_definition"].values())
     assert "미산출" in v["2_recovery_ci"]
     assert "미결" in v["3_headline_adoption"]
     assert "종합 검증 통과가 아니다" in v["combined"]
+
+
+def test_한_정의만_실패하면_정의에_따라_갈림():
+    """세 정의 중 하나라도 갈리면 "충족"이 아니다 — 정의 선택이 판정을 가르는 상태를
+    숨기지 않는다(35번 과제 4). 연합 칸의 시드 분산만 크게 해 칸별 최대 sd 정의는 막히고
+    풀링·분모 sd 정의는 통과하는 픽스처다."""
+    base = dict(S1)
+    p = {n: _payload(n, base) for n in (1, 2, 3)}
+    for n, fed in ((1, 0.20), (2, 0.30), (3, 0.40)):       # sd 0.10 → 3·sd 0.30 > D 0.297
+        p[n]["threshold_independent"]["per_tag"]["sep_fed"]["map_50"] = fed
+    g = recovery_table(p, {})["map_50"]["denominator_gate"]
+    tw = g["tripwire_by_definition"]
+    assert tw["max_per_cell_df2"]["pass"] is False
+    assert tw["pooled_df10"]["pass"] is True
+    assert tw["denominator_sd_df2"]["tripwire_3sigma_pass"] is True
+    v = g["verdict"]
+    assert v["1_tripwire_3sigma"] == "정의에 따라 갈림"
+    assert v["1_tripwire_by_definition"] == {"pooled_df10": True, "max_per_cell_df2": False,
+                                              "denominator_sd_df2": True}
+
+
+def test_세_정의_전부_실패하면_불충족():
+    near = {"sep_central": 0.30, "sep_local_C1": 0.29, "sep_local_C2": 0.30, "sep_local_C3": 0.31,
+            "sep_fed": 0.30}
+    p = {1: _payload(1, near),
+         2: _payload(2, {t: v + 0.03 for t, v in near.items()}),
+         3: _payload(3, {t: v - 0.03 for t, v in near.items()})}
+    g = recovery_table(p, {})["map_50"]["denominator_gate"]
+    assert g["verdict"]["1_tripwire_3sigma"] == "불충족"
+    assert not any(g["verdict"]["1_tripwire_by_definition"].values())
+
+
+def test_풀링_가정에_짝지음_문장이_있다():
+    """같은 시드로 학습한 다섯 모델 값은 짝지어져 있다 — 독립 표본 가정도 성립하지 않는다."""
+    g = recovery_table(three_seeds(), {})["map_50"]["denominator_gate"]
+    a = g["seed_sd_pooled"]["assumption"]
+    assert "짝지어져" in a and "독립 표본" in a and "자유도" in a
 
 
 def test_모델별_sd_가_풀링보다_먼저_실린다():
