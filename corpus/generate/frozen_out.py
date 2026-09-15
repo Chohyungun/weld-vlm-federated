@@ -45,8 +45,10 @@ _REPO = Path(__file__).resolve().parents[2]
 
 __all__ = [
     "CONTRACT_NAME",
+    "EXPECTED_SEALED",
     "FrozenDirectoryError",
     "assert_not_frozen",
+    "check_registry",
     "confirm_overwrite",
     "find_sealed",
     "is_frozen",
@@ -164,9 +166,9 @@ def tracked_names(directory: Path) -> frozenset[str] | None:
                      for x in r.stdout.splitlines() if x.strip())
 
 
-def verify_contract(directory: Path, *,
+def _verify_present(directory: Path, *,
                     tracked: frozenset[str] | None = None) -> dict:
-    """계약서와 실물 대조. 판정은 넷이다.
+    """계약서와 실물 대조 — **명부를 모르는** 판정. 판정은 넷이다.
 
     * `no_contract`     — 계약 파일이 없다. 봉인본이 아니다.
     * `ok`              — 구성원이 전부 이 트리에 있고 이름이 맞는다. **엄격히 봤다.**
@@ -210,6 +212,97 @@ def verify_contract(directory: Path, *,
     return out
 
 
+#: 있어야 할 봉인처 명부. **계약서가 있는 디렉터리만 찾으면, 디렉터리째 사라진 봉인본은
+#: 목록에서 같이 사라진다.** 09-11 에 data/processed 가 비었을 때 이 도구는 "깨짐 0" 을
+#: 냈다(30번 §8-4 나). 그래서 무엇이 있어야 하는지를 따로 들고 대조한다.
+#:
+#: status  expected — 있어야 한다. 없으면 missing_contract(실패) 또는 absent_tree(알림)
+#:         lost     — 소실이 기록됐다. 없으면 lost_recorded(알림, 실패 아님),
+#:                    다시 나타나면 lost_but_present(실패 — 같은 이름 재생성은 규약 1-6 위반)
+EXPECTED_SEALED: dict[str, dict[str, str]] = {
+    "corpus/generate/cycle_pilot": {"status": "expected", "owner": "B"},
+    "corpus/generate/cycle_pilot_v2": {"status": "expected", "owner": "B"},
+    "data/processed/pairs_pilot_v1": {
+        "status": "expected", "owner": "B",
+        "record": "09-11 소실 → 09-13 해시 일치 복원 (30번 부록 A)"},
+    "data/processed/pairs_pilot_v2": {
+        "status": "lost", "owner": "B",
+        "record": "09-11 소실 확정 · 사본 없음 · 입력 부재로 재생성 불가 (30번 부록 A-3)"},
+    "data/processed/aihub71761_rt_v1_pilot3000": {
+        "status": "lost", "owner": "A", "record": "09-11 소실 · 처리 판정 대기 (30번 §4)"},
+    "data/processed/aihub71761_rt_v1_pilot3000_crop_only": {
+        "status": "lost", "owner": "A", "record": "09-11 소실 · 처리 판정 대기 (30번 §4)"},
+    "data/processed/aihub71761_rt_v1_pilot3000_scale_control": {
+        "status": "lost", "owner": "A", "record": "09-11 소실 · 처리 판정 대기 (30번 §4)"},
+}
+
+#: 실패로 세는 판정.
+FAILING = frozenset({"broken", "missing_contract", "lost_but_present"})
+
+
+def verify_contract(directory: Path, *,
+                    tracked: frozenset[str] | None = None,
+                    expectation: dict[str, str] | None = None) -> dict:
+    """계약서와 실물 대조. `_verify_present` 의 판정에 **명부의 기대**를 겹친다.
+
+    명부 없이(`expectation=None`) 부르면 옛 판정 넷 그대로다. 그때 `no_contract` 는
+    "봉인본이 아니다" 로 읽히는데, **봉인본이 디렉터리째 사라져도 똑같이 `no_contract`**
+    가 나온다. 둘을 가르려면 "여기에 있어야 한다" 는 기대가 필요하다.
+
+    * `missing_contract` — 있어야 하는데 계약서가 없다. **실패.** 저장 뿌리(부모 디렉터리)가
+      이 트리에 있거나, git 이 계약서를 추적하는데도 없을 때다.
+    * `absent_tree`      — 저장 뿌리 자체가 이 트리에 없다(정션을 안 붙인 새 clone 등).
+      소실인지 판단할 수 없다. 실패가 아니라 **알린다.**
+    * `lost_recorded`    — 소실이 기록된 자리이고 실제로 없다. 실패가 아니지만 **매번 알린다.**
+      기록된 소실까지 매번 실패로 만들면 사람들은 이 검사를 끈다.
+    * `lost_but_present` — 소실이 기록됐는데 계약서가 있다. **실패.** 명부가 낡았거나 같은
+      이름으로 재생성됐다 — 후자는 규약 1-6 위반이다.
+    """
+    d = Path(directory)
+    out = _verify_present(d, tracked=tracked)
+    status = (expectation or {}).get("status")
+    if status is None:
+        return out
+    out["expected_status"] = status
+    record = (expectation or {}).get("record")
+    if out["verdict"] == "no_contract":
+        if status == "lost":
+            out["verdict"] = "lost_recorded"
+            out["reason"] = record or "소실이 기록된 자리다"
+            return out
+        if tracked is None:
+            tracked = tracked_names(d)
+        contract_tracked = CONTRACT_NAME in (tracked or frozenset())
+        if contract_tracked or d.parent.is_dir():
+            why = "git 이 계약서를 추적한다" if contract_tracked else "저장 뿌리는 이 트리에 있다"
+            out["verdict"] = "missing_contract"
+            out["reason"] = f"있어야 할 봉인처인데 계약서가 없다 — {why}. 디렉터리째 사라졌을 수 있다"
+        else:
+            out["verdict"] = "absent_tree"
+            out["reason"] = (f"저장 뿌리 {d.parent.name}/ 가 이 트리에 없다 —"
+                             " 여기서는 볼 수 없다 (소실인지 판단 못 함)")
+        return out
+    if status == "lost":
+        out["verdict"] = "lost_but_present"
+        out["reason"] = ("소실이 기록된 자리에 계약서가 있다 — 명부가 낡았거나 같은 이름으로"
+                         f" 재생성됐다 (규약 1-6). 기록: {record or '-'}")
+    return out
+
+
+def check_registry(registry: dict[str, dict[str, str]] | None = None,
+                   root: Path | None = None) -> list[dict]:
+    """명부의 봉인처를 전부 대조한다. 명부·뿌리는 **부를 때** 읽는다 — 시험이 갈아 끼울 수 있게."""
+    reg = EXPECTED_SEALED if registry is None else registry
+    base = _REPO if root is None else Path(root)
+    results = []
+    for rel, entry in reg.items():
+        r = verify_contract(base / rel, expectation=entry)
+        r["rel"] = rel
+        r["owner"] = entry.get("owner")
+        results.append(r)
+    return results
+
+
 def find_sealed(*roots: Path) -> list[Path]:
     """계약 파일을 가진 디렉터리. 하위 1단만 훑는다 — 정션 아래를 재귀하면 멈춘다."""
     found: list[Path] = []
@@ -227,34 +320,58 @@ def main(argv: list[str] | None = None) -> int:
     """`uv run python -m corpus.generate.frozen_out [디렉터리…]`
 
     게이트가 어느 트리에서든 돌려 "여기서 무엇을 못 봤는지" 를 볼 수 있게 한다.
-    깨진 것이 있을 때만 실패한다 — 트리에 원본이 없는 것은 실패가 아니다.
+    인자가 없으면 **봉인처 명부**를 먼저 대조하고, 명부 밖에서 계약서가 발견된 곳을 더한다.
+    실패는 `FAILING` 셋뿐이다 — 트리에 원본이 없는 것과 기록된 소실은 실패가 아니라 알림이다.
     """
     ap = argparse.ArgumentParser(description="봉인 계약서와 실물 대조")
-    ap.add_argument("dirs", nargs="*", help="미지정 시 corpus/generate·data/processed 를 훑는다")
+    ap.add_argument("dirs", nargs="*",
+                    help="미지정 시 봉인처 명부 + corpus/generate·data/processed 를 훑는다")
     ap.add_argument("--json", action="store_true", help="판정을 JSON 으로 출력")
     args = ap.parse_args(argv)
 
-    targets = [Path(x) for x in args.dirs] if args.dirs else find_sealed()
-    results = [verify_contract(t) for t in targets]
+    if args.dirs:
+        results = []
+        for x in args.dirs:
+            p = Path(x).absolute()          # resolve 하지 않는다 — 정션을 풀면 명부와 안 맞는다
+            try:
+                entry = EXPECTED_SEALED.get(p.relative_to(_REPO).as_posix())
+            except ValueError:
+                entry = None
+            results.append(verify_contract(p, expectation=entry))
+    else:
+        # 명부가 먼저다. 계약서로만 찾으면 디렉터리째 사라진 것은 목록에 안 나온다.
+        results = check_registry()
+        known = {Path(r["dir"]) for r in results}
+        results += [verify_contract(t) for t in find_sealed() if t not in known]
+
     if args.json:
         print(json.dumps(results, ensure_ascii=False, indent=1))
     else:
+        marks = {"ok": "○", "incomplete_tree": "△", "broken": "✕", "unverifiable": "?",
+                 "no_contract": "-", "missing_contract": "✕", "absent_tree": "·",
+                 "lost_recorded": "!", "lost_but_present": "✕"}
         for r in results:
-            mark = {"ok": "○", "incomplete_tree": "△", "broken": "✕",
-                    "unverifiable": "?", "no_contract": "-"}[r["verdict"]]
             try:
                 shown = Path(r["dir"]).relative_to(_REPO)
             except ValueError:
                 shown = Path(r["dir"])
-            print(f"{mark} {shown}  구성원 {r['n_members']}개  [{r['verdict']}]")
+            owner = f"  (소관 {r['owner']})" if r.get("owner") else ""
+            print(f"{marks[r['verdict']]} {shown}  구성원 {r['n_members']}개"
+                  f"  [{r['verdict']}]{owner}")
             if r.get("missing_tracked"):
                 print(f"    실물 없음(추적분): {r['missing_tracked']}")
             if r.get("unverified"):
                 print(f"    이 트리에서 대조 못 함: {r['unverified']}")
-        n_broken = sum(1 for r in results if r["verdict"] == "broken")
+            if r["verdict"] in ("missing_contract", "absent_tree",
+                                "lost_recorded", "lost_but_present"):
+                print(f"    {r.get('reason')}")
+        n_fail = sum(1 for r in results if r["verdict"] in FAILING)
+        n_lost = sum(1 for r in results if r["verdict"] == "lost_recorded")
+        n_absent = sum(1 for r in results if r["verdict"] == "absent_tree")
         n_skip = sum(len(r.get("unverified") or []) for r in results)
-        print(f"\n봉인 {len(results)}곳 · 깨짐 {n_broken} · 대조 못 한 구성원 {n_skip}개")
-    return 1 if any(r["verdict"] == "broken" for r in results) else 0
+        print(f"\n봉인처 {len(results)}곳 · 깨짐 {n_fail} · 소실 기록 {n_lost}"
+              f" · 이 트리에 없음 {n_absent} · 대조 못 한 구성원 {n_skip}개")
+    return 1 if any(r["verdict"] in FAILING for r in results) else 0
 
 
 if __name__ == "__main__":
