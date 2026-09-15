@@ -221,7 +221,14 @@ class DenominatorVerdict:
     seed_sd: float
     tripwire_pass: bool
     ci_pass: bool | None
-    reportable: bool
+    tripwire_only_reportable: bool
+    """트립와이어 **한 줄**의 결과. CI 가 없어도 계산된다 — 그래서 이름에 그 사실을 박았다."""
+    recovery_reportable: bool | None
+    """회복률을 헤드라인으로 실어도 되는가. **CI 가 산출·통과된 뒤에만 True.**
+
+    CI 가 없으면 `None`(미판정)이다 — 트립와이어만 통과한 상태를 True 로 적으면 "종합 검증
+    통과" 로 읽힌다(총괄 확정, 35번 과제 3). 예전 `reportable` 은 그 둘을 한 값에 섞었다.
+    """
     detail: str
     diagnostic: SeedSdDiagnostic | None = None
 
@@ -229,7 +236,13 @@ class DenominatorVerdict:
         out = {
             "denominator_d": self.d, "seed_sd": self.seed_sd,
             "tripwire_3sigma_pass": self.tripwire_pass,
-            "ci_pass": self.ci_pass, "recovery_reportable": self.reportable,
+            "ci_pass": self.ci_pass,
+            "tripwire_only_reportable": self.tripwire_only_reportable,
+            "recovery_reportable": self.recovery_reportable,
+            "recovery_reportable_policy": (
+                "CI 산출·통과 뒤에만 true. CI 미산출이면 null(미판정) — 트립와이어 단독 "
+                "결과는 tripwire_only_reportable 로 따로 본다"
+            ),
             "detail": self.detail,
         }
         if self.diagnostic:
@@ -261,7 +274,9 @@ def recovery_denominator_verdict(
       - 보조: 회복률 자체의 묶음 클러스터 부트스트랩 CI 반폭. 평가셋이 크므로 이쪽은
         잘 추정된다.
 
-    둘 중 **하나라도 불합격이면 회복률을 헤드라인으로 싣지 않는다.**
+    둘 중 **하나라도 불합격이면 회복률을 헤드라인으로 싣지 않는다.** 그리고 보조 판정이
+    **아직 없으면** 헤드라인 여부는 미판정(`recovery_reportable=None`)이다 — 트립와이어만
+    통과한 것을 "실어도 된다" 로 적지 않는다(총괄 확정, 35번 과제 3).
     """
     local_mean = float(np.mean(local_values)) if len(local_values) else 0.0
     d = central - local_mean
@@ -273,7 +288,17 @@ def recovery_denominator_verdict(
     if recovery_ci is not None:
         ci_pass = recovery_ci.half_width <= MAX_RECOVERY_HALF_WIDTH
 
-    reportable = tripwire and (ci_pass is not False)
+    # 트립와이어 한 줄의 결과와, 회복률 게재 가부를 **갈라** 낸다.
+    #   - 트립와이어 불합격 → 게재 불가(False). CI 를 볼 것도 없다.
+    #   - 트립와이어 통과 + CI 없음 → **미판정(None).** 통과가 아니다.
+    #   - 트립와이어 통과 + CI 있음 → CI 반폭 판정이 곧 게재 가부.
+    tripwire_only = tripwire
+    if not tripwire:
+        recovery_reportable: bool | None = False
+    elif ci_pass is None:
+        recovery_reportable = None
+    else:
+        recovery_reportable = ci_pass
     parts = [f"분모 D={d:.4f}", f"시드sd={sd:.4f}", f"3·sd={3 * sd:.4f}"]
     parts.append("트립와이어 통과" if tripwire else "트립와이어 불합격")
     if ci_pass is not None:
@@ -281,11 +306,14 @@ def recovery_denominator_verdict(
             f"회복률 CI 반폭 {recovery_ci.half_width:.3f} "
             f"({'≤' if ci_pass else '>'} {MAX_RECOVERY_HALF_WIDTH})"
         )
-    if not reportable:
+    if recovery_reportable is False:
         parts.append("→ 회복률을 산출하지 않고 세 절대값만 CI 와 함께 보고한다")
+    elif recovery_reportable is None:
+        parts.append("→ 회복률 CI 미산출: 게재 가부 미판정(트립와이어만 통과)")
     return DenominatorVerdict(
         d=d, seed_sd=sd, tripwire_pass=tripwire, ci_pass=ci_pass,
-        reportable=reportable, detail=" · ".join(parts), diagnostic=diag,
+        tripwire_only_reportable=tripwire_only, recovery_reportable=recovery_reportable,
+        detail=" · ".join(parts), diagnostic=diag,
     )
 
 
