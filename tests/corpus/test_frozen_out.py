@@ -24,6 +24,7 @@ from pathlib import Path
 
 import pytest
 
+from corpus.generate import frozen_out as FO
 from corpus.generate import make_pairs_pilot as P
 from corpus.generate import run_cycle_corpus as R
 from corpus.generate import snapshot_cycle_pilot as S
@@ -296,8 +297,11 @@ FROZEN_REAL = (
 
 @pytest.mark.parametrize("d", FROZEN_REAL, ids=lambda p: p.name)
 def test_실물_봉인본이_아직_잠겨_있다(d: Path):
+    entry = FO.EXPECTED_SEALED.get(d.relative_to(REPO).as_posix(), {})
     if not d.is_dir():
-        pytest.skip("워크트리에 없다")
+        if entry.get("status") == "lost":
+            pytest.skip(f"{d.name}: 소실 기록 — {entry.get('record')}")
+        pytest.skip(f"{d.name}: 이 트리에 없다 — 있어야 하는지는 계약 대조 시험이 판정한다")
     assert is_frozen(d), f"{CONTRACT_NAME} 이 없다 — 봉인이 풀렸다"
     with pytest.raises(FrozenDirectoryError):
         assert_not_frozen(d)
@@ -335,15 +339,19 @@ def test_봉인_구성원이_실물과_이름이_맞는다(d: Path):
     미추적분이 없으면 이 트리에 원본이 없을 뿐이라 건너뛴다. 건너뛸 때는 **경고와
     skip 사유에 이름을 남긴다** — 조용히 통과하면 다음 사람은 다 본 줄 안다.
     """
-    if not d.is_dir():
-        pytest.skip(f"{d.name}: 워크트리에 디렉터리가 없다")
+    rel = d.relative_to(REPO).as_posix()
+    entry = FO.EXPECTED_SEALED.get(rel)
+    assert entry is not None, f"{rel}: 봉인처 명부에 없다 — frozen_out.EXPECTED_SEALED 에 올려라"
+    # 옛 판정은 디렉터리가 없으면 그냥 건너뛰었다 — 09-11 소실이 그렇게 초록으로 지나갔다.
+    r = verify_contract(d, expectation=entry)
 
-    r = verify_contract(d)
-    if r["verdict"] == "no_contract":
-        pytest.skip(f"{d.name}: 계약 파일이 없다 — 봉인본이 아니다")
+    if r["verdict"] in ("lost_recorded", "absent_tree"):
+        msg = f"{d.name}: [{r['verdict']}] {r.get('reason')}"
+        warnings.warn(msg, IncompleteTreeWarning, stacklevel=2)
+        pytest.skip(msg)
 
-    assert r["verdict"] != "broken", (
-        f"{d}: {r.get('reason')} — {r['missing_tracked']}")
+    assert r["verdict"] not in FO.FAILING, (
+        f"{d}: [{r['verdict']}] {r.get('reason')} — {r.get('missing_tracked')}")
 
     if r["unverified"]:
         msg = (f"{d.name}: 계약 구성원 {r['n_members']}개 중 "
@@ -434,3 +442,93 @@ def test_사이클_보고서가_봉인본을_가리키면_계약이_그것을_�
         names, _ = snapshot_summary(d)
         assert "cycle_corpus_report.json" in names, f"{d}: 보고서가 계약에 없다"
         json.loads((d / "cycle_corpus_report.json").read_text(encoding="utf-8"))
+
+
+# ---------------------------------------------------------- 봉인처 명부 (30번 §8-4 나)
+#
+# 계약서가 있는 디렉터리만 찾으면, 디렉터리째 사라진 봉인본은 목록에서 같이 사라진다.
+# 09-11 에 data/processed 가 비었을 때 frozen_out 이 "깨짐 0" 을 낸 이유다.
+
+
+def _registry_tree(tmp_path: Path, *, with_root: bool) -> Path:
+    """가짜 저장소 뿌리. `with_root` 면 저장 뿌리(data/processed)만 있고 봉인본은 없다."""
+    root = tmp_path / "repo"
+    (root / "corpus/generate").mkdir(parents=True)
+    if with_root:
+        (root / "data/processed").mkdir(parents=True)
+    return root
+
+
+def test_명부가_실물_봉인처를_전부_덮는다():
+    """명부에 없는 봉인처는 사라져도 아무도 모른다."""
+    for d in FROZEN_REAL:
+        assert d.relative_to(REPO).as_posix() in FO.EXPECTED_SEALED, d
+
+
+def test_있어야_할_봉인처가_통째로_없으면_실패한다(tmp_path, monkeypatch, capsys):
+    """09-11 사고 그대로 — 저장 뿌리는 있는데 봉인 디렉터리가 계약서째 없다."""
+    root = _registry_tree(tmp_path, with_root=True)
+    monkeypatch.setattr(FO, "_REPO", root)
+    monkeypatch.setattr(FO, "EXPECTED_SEALED",
+                        {"data/processed/pairs_x": {"status": "expected", "owner": "B"}})
+    assert FO.main([]) == 1
+    out = capsys.readouterr().out
+    assert "missing_contract" in out and "pairs_x" in out
+
+
+def test_명부가_없으면_옛_동작처럼_조용히_지나간다(tmp_path, monkeypatch, capsys):
+    """이빨 시험 — 위 실패가 **명부 때문에** 나는지. 명부를 비우면 같은 트리가 초록이다."""
+    root = _registry_tree(tmp_path, with_root=True)
+    monkeypatch.setattr(FO, "_REPO", root)
+    monkeypatch.setattr(FO, "EXPECTED_SEALED", {})
+    assert FO.main([]) == 0
+    assert "깨짐 0" in capsys.readouterr().out
+
+
+def test_저장_뿌리가_없는_트리는_실패가_아니라_알린다(tmp_path, monkeypatch, capsys):
+    """정션을 안 붙인 새 clone — 여기서는 볼 수 없을 뿐 소실이라고 단정할 수 없다."""
+    root = _registry_tree(tmp_path, with_root=False)
+    monkeypatch.setattr(FO, "_REPO", root)
+    monkeypatch.setattr(FO, "EXPECTED_SEALED",
+                        {"data/processed/pairs_x": {"status": "expected", "owner": "B"}})
+    assert FO.main([]) == 0
+    out = capsys.readouterr().out
+    assert "absent_tree" in out and "이 트리에 없음 1" in out
+
+
+def test_추적된_계약서가_없으면_뿌리가_없어도_실패한다(tmp_path):
+    """git 이 계약서를 들고 있는데 파일이 없다면 트리 차이가 아니라 훼손이다."""
+    d = tmp_path / "없는뿌리" / "sealed"
+    r = verify_contract(d, tracked=frozenset({CONTRACT_NAME}),
+                        expectation={"status": "expected"})
+    assert r["verdict"] == "missing_contract"
+
+
+def test_소실_기록은_알리되_실패시키지_않는다(tmp_path, monkeypatch, capsys):
+    """기록된 소실까지 매번 실패로 만들면 사람들이 이 검사를 끈다. 대신 매번 말한다."""
+    root = _registry_tree(tmp_path, with_root=True)
+    monkeypatch.setattr(FO, "_REPO", root)
+    monkeypatch.setattr(FO, "EXPECTED_SEALED", {
+        "data/processed/pairs_gone": {"status": "lost", "owner": "B",
+                                      "record": "소실 확정 기록 X"}})
+    assert FO.main([]) == 0
+    out = capsys.readouterr().out
+    assert "lost_recorded" in out and "소실 확정 기록 X" in out and "소실 기록 1" in out
+
+
+def test_소실_기록된_이름이_다시_나타나면_실패한다(tmp_path, monkeypatch):
+    """같은 이름으로 되살아났다면 명부가 낡았거나 재생성이다 — 후자는 규약 1-6 위반."""
+    root = _registry_tree(tmp_path, with_root=True)
+    _seal(root / "data/processed/pairs_gone")
+    monkeypatch.setattr(FO, "_REPO", root)
+    monkeypatch.setattr(FO, "EXPECTED_SEALED", {
+        "data/processed/pairs_gone": {"status": "lost", "owner": "B", "record": "기록"}})
+    assert [x["verdict"] for x in FO.check_registry()] == ["lost_but_present"]
+    assert FO.main([]) == 1
+
+
+def test_실제_트리에서_소실이_조용히_사라지지_않는다(capsys):
+    """회귀 — pairs_pilot_v2 는 없어졌다. 출력에 그 사실이 **매번** 나와야 한다."""
+    FO.main([])
+    out = capsys.readouterr().out
+    assert "pairs_pilot_v2" in out and "lost_recorded" in out

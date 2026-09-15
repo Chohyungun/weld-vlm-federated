@@ -1,6 +1,7 @@
 {
- "src": "G:\\공유 드라이브\\대한산업공학회_추계학술대회\\corpus_candidate",
- "dst": "G:\\공유 드라이브\\대한산업공학회_추계학술대회\\corpus_extracted",
+ "src": "corpus_candidate",
+ "dst": "corpus_extracted",
+ "paths": "실제 경로는 기록하지 않는다 (규약 2-6). --src/--dst 로 준다",
  "documents": [
   {
    "file": "000000031173_20260823231838.pdf",
