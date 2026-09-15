@@ -171,15 +171,61 @@ def test_실물_백업_목록이_계약과_맞는다():
     """총괄이 옮길 실물. 목록이 계약과 어긋나면 사람이 잘못된 것을 복사한다.
 
     09-08 판정으로 cycle_pilot·cycle_pilot_v2 가 한 벌에 들어왔다(추적 전환 기각).
+    09-15 부터 목록은 봉인처 명부에서 파생한다 — 소실 기록(v2)은 빠지고, 봉인 아닌
+    `judge_labels/` 가 들어온다. 그래서 파일 수를 상수로 박지 않고 구성으로 센다.
     """
     plan = B.build_plan(B.DEFAULT_DIRS)
     if plan["problems"]:
         pytest.skip(f"이 트리에서 대상이 온전하지 않다: {plan['problems']}")
     assert {Path(d).name for d in B.DEFAULT_DIRS} == set(plan["dirs"])
-    assert plan["n_files"] == 25, plan["n_files"]
+    expected = 0
+    for d in B.SEALED_DIRS:
+        names, _ = B.snapshot_summary(d)
+        expected += len(names) + 1                      # 구성원 + 계약서
+    for d in B.UNSEALED_DIRS:
+        expected += sum(1 for p in d.iterdir() if p.is_file())
+    assert plan["n_files"] == expected, (plan["n_files"], expected)
     for it in plan["items"]:
         if it["contract_sha256"] is not None:
             assert it["sha256"] == it["contract_sha256"], it["rel"]
+
+
+def test_백업_목록은_봉인처_명부에서_파생된다():
+    """두 목록이 따로 살면 한쪽만 고쳐진다 — 09-13 에 이 목록이 소실된 v2 를 계속 들고 있었다."""
+    from corpus.generate.frozen_out import EXPECTED_SEALED
+
+    expected = {B.REPO / rel for rel, e in EXPECTED_SEALED.items() if e["status"] == "expected"}
+    lost = {B.REPO / rel for rel, e in EXPECTED_SEALED.items() if e["status"] == "lost"}
+    assert set(B.SEALED_DIRS) == expected
+    assert not (set(B.DEFAULT_DIRS) & lost), "소실 기록된 곳은 옮길 실물이 없다"
+    assert B.REPO / "corpus/validate/judge_labels" in B.DEFAULT_DIRS
+
+
+def test_사람_라벨_폴더가_백업_목록에_있고_미추적분이_위험분으로_잡힌다(tmp_path, monkeypatch):
+    """labels_*.jsonl 은 미추적이다. 백업 목록에 없으면 09-11 과 같은 단일 사본 구조다."""
+    d = tmp_path / "judge_labels"
+    d.mkdir()
+    (d / "sheet_v1.jsonl").write_text("{}\n", encoding="utf-8", newline="")
+    (d / "labels_v1.jsonl").write_text('{"labeler": "x"}\n', encoding="utf-8", newline="")
+    monkeypatch.setattr(B, "UNSEALED_DIRS", (d,))
+    monkeypatch.setattr(B, "tracked_names", lambda _d: frozenset({"sheet_v1.jsonl"}))
+    plan = B.build_plan([d])
+    assert not plan["problems"]
+    by = {it["name"]: it for it in plan["items"]}
+    assert by["labels_v1.jsonl"]["tracked"] is False and by["labels_v1.jsonl"]["sealed"] is False
+    assert by["sheet_v1.jsonl"]["tracked"] is True
+    assert plan["n_at_risk"] == 1
+    # 봉인 아닌 항목은 계약 대조가 없다 — 그 사실이 항목에 남아야 verify 가 속지 않는다
+    assert all(it["contract_sha256"] is None for it in plan["items"])
+
+
+def test_봉인도_아니고_목록에도_없는_디렉터리는_여전히_문제로_적는다(tmp_path):
+    """아무 디렉터리나 넘기면 전부 담아 주는 것이 아니다 — 명시된 곳만."""
+    d = tmp_path / "아무거나"
+    d.mkdir()
+    (d / "x.txt").write_text("x", encoding="utf-8")
+    plan = B.build_plan([d])
+    assert plan["problems"] and "봉인본이 아니다" in plan["problems"][0]
 
 
 def test_위험분과_안전분을_목록이_가른다():
