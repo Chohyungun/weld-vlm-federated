@@ -129,10 +129,12 @@ def provenance(root: Path, payloads: dict[int, dict], *,
                allow_drift: bool = False) -> dict:
     """집계가 실제로 읽은 파일과, 그 파일로 확인되는 것/안 되는 것을 갈라 적는다.
 
-    **"같은 채점 코드" 는 여기서 확인되지 않는다.** 세 `score_cells_v1.json` 어디에도
-    채점기 코드의 해시·커밋이 없다. 그래서 이 블록은 (a) 읽은 파일의 sha256, (b) 산출물에
-    실제로 있는 파라미터의 시드 간 동일성만 낸다. 코드 동일성은 실행 절차에 대한 진술이지
-    이 산출물이 뒷받침하는 사실이 아니며, 그 구분을 `not_verified_here` 가 말한다.
+    이 블록은 (a) 읽은 파일의 sha256, (b) 산출물에 실제로 있는 파라미터의 시드 간 동일성,
+    (c) 채점기 코드 해시(`scorer_code.combined`) 대조를 낸다. **같은 채점 코드인지는 (c) 로만
+    확인된다** — 파라미터가 같아도 코드가 다를 수 있다. 확인 결과는
+    `scorer_code.verified_same_code` 가 말한다: 세 산출물 전부에 해시가 있고 같으면 True,
+    해시가 없는 산출물(이 규칙 이전의 채점)이 하나라도 있으면 False 이고 `status` 가
+    "독립 확인 불가" 를 담는다. 그 경우 소급 계산하지 않는다.
     """
     files, mism = {}, {}
     ref = min(payloads)
@@ -251,6 +253,16 @@ def axis_table(payloads: dict[int, dict]) -> dict:
     return out
 
 
+def _tripwire_verdict(*passes: bool) -> str:
+    """세 정의의 트립와이어 결과를 한 줄로. **전부** 같아야 충족/불충족이고, 갈리면 갈렸다고
+    적는다 — 어느 정의를 고르느냐가 판정을 가르는 상태를 숨기지 않기 위해서다."""
+    if all(passes):
+        return "충족"
+    if not any(passes):
+        return "불충족"
+    return "정의에 따라 갈림"
+
+
 def recovery_table(payloads: dict[int, dict], table: dict) -> dict:
     """축별 회복률 — 시드별 값, 그 평균, 평균의 회복률, 분모 게이트."""
     seeds = sorted(payloads)
@@ -312,9 +324,11 @@ def recovery_table(payloads: dict[int, dict], table: dict) -> dict:
                         "role": "보조 요약 — 모델별 sd 를 먼저 읽고 그다음에 본다",
                         "assumption": (
                             "**다섯 칸의 시드 간 분산이 같다는 가정**에서만 성립한다. 칸마다 "
-                            "성능 수준이 다르므로 그 가정은 검증된 것이 아니다. 아래 "
-                            "tripwire_by_definition 이 가정 없는 보수적 정의(칸별 최대 sd)로도 "
-                            "판정하는 이유다"
+                            "성능 수준이 다르므로 그 가정은 검증된 것이 아니다. 또한 같은 시드로 "
+                            "학습한 다섯 모델의 값은 **짝지어져** 있어(시드 하나가 다섯 칸을 함께 "
+                            "움직인다) 풀링이 전제하는 독립 표본 가정도 성립하지 않는다 — 자유도 "
+                            "10 은 명목이다. 아래 tripwire_by_definition 이 가정 없는 보수적 "
+                            "정의(칸별 최대 sd)로도 판정하는 이유다"
                         ),
                     },
                     "tripwire_by_definition": {
@@ -329,18 +343,21 @@ def recovery_table(payloads: dict[int, dict], table: dict) -> dict:
                             "seed_sd_definition": "분모 D 자체의 시드 간 sd(자유도 2)",
                             **verdict_dsd.as_dict(),
                             "field_caveat": (
-                                "이 하위 딕셔너리의 `recovery_reportable` 은 **트립와이어 한 줄의 "
-                                "결과**다(CI 보조 판정이 없으면 통과로 계산된다). 종합 판정은 "
-                                "위 `verdict` 세 줄을 읽어라"
+                                "`tripwire_only_reportable` 은 트립와이어 한 줄의 결과다. "
+                                "`recovery_reportable` 은 CI 가 산출·통과된 뒤에만 true 이고 "
+                                "지금은 null(미판정)이다. 종합 판정은 위 `verdict` 세 줄을 읽어라"
                             ),
                         },
                     },
                     # (3) 세 가지를 갈라 적는다. 하나라도 종합 통과로 읽히면 안 된다.
+                    # ①은 **세 정의 전부**를 본다 — 둘만 보면 세 번째가 갈려도 "충족"이 난다.
                     "verdict": {
-                        "1_tripwire_3sigma": (
-                            "충족" if (ok_pooled and ok_cell)
-                            else ("정의에 따라 갈림" if (ok_pooled or ok_cell) else "불충족")
-                        ),
+                        "1_tripwire_3sigma": _tripwire_verdict(
+                            ok_pooled, ok_cell, verdict_dsd.tripwire_pass),
+                        "1_tripwire_by_definition": {
+                            "pooled_df10": ok_pooled, "max_per_cell_df2": ok_cell,
+                            "denominator_sd_df2": verdict_dsd.tripwire_pass,
+                        },
                         "2_recovery_ci": (
                             "**미산출.** 본채점이 이 축의 묶음 클러스터 부트스트랩 CI 를 내지 "
                             "않는다. 41번이 처방한 보조 판정(CI 반폭 ≤ 0.25)은 적용되지 않았다 — "
