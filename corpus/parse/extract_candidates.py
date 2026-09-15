@@ -35,6 +35,9 @@ os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
 #: 후보 원본·추출물 폴더. **기본값을 소스에 박지 않는다** (규약 2-6) — 환경변수나
 #: `--src`/`--dst` 로 받고, 둘 다 없으면 무엇을 줘야 하는지 말하고 멈춘다.
 ENV_SRC, ENV_DST = "WELDFL_CORPUS_SRC", "WELDFL_CORPUS_DST"
+#: 메타데이터에 남기는 경로 표기. 추적 파일이라 실제 경로를 쓰면 적재 위치와 소속이
+#: 공개된다 (규약 2-6) — 폴더 이름만 남기고 이 문구를 함께 적는다.
+PATH_NOTE = "실제 경로는 기록하지 않는다 (규약 2-6). --src/--dst 로 준다"
 REPO = Path(__file__).resolve().parents[2]
 META_OUT = REPO / "corpus/parse/extracted_manifest.json"
 
@@ -300,9 +303,11 @@ def main() -> None:
               f"표{rec.get('n_tables',0)} 그림{rec.get('n_pictures',0)} "
               f"({rec.get('elapsed_sec','?')}s)", flush=True)
         out.append(rec)
-        META_OUT.write_text(json.dumps(
-            {"src": str(SRC), "dst": str(DST), "documents": out},
-            ensure_ascii=False, indent=1), encoding="utf-8")
+        # newline="" — write_text 는 win32 에서 LF 를 CRLF 로 바꾼다 (.gitattributes eol=lf)
+        with META_OUT.open("w", encoding="utf-8", newline="") as fh:
+            fh.write(json.dumps(
+                {"src": SRC.name, "dst": DST.name, "paths": PATH_NOTE, "documents": out},
+                ensure_ascii=False, indent=1))
 
     ok = sum(1 for r in out if r.get("status") == "ok")
     print(f"\n성공 {ok} / 실패 {len(out)-ok}  메타: {META_OUT}")

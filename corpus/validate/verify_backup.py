@@ -2,7 +2,7 @@
 
 `data/processed/pairs_pilot_v1|v2` 는 AI허브 71761 파생 좌표를 담아 **git 으로 보낼 수
 없다** — `origin` 이 공개 GitHub 이고 해외 호스팅이라 레드라인 1(국외 반출 금지) 위반이다.
-그런데 `data/processed` 는 정션이라 물리 사본이 `E:\\Fedvlm_for_welding\\data\\processed`
+그런데 `data/processed` 는 정션이라 물리 사본이 `<저장소 루트>/data/processed`
 한 곳뿐이고, 그 디스크가 죽으면 논문에 실을 해시의 실물이 사라진다. 그래서 **국내 공유
 드라이브 2사본**으로 간다.
 

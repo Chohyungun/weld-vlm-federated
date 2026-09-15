@@ -36,7 +36,7 @@ git worktree add --detach "$W" c516387
 **② 정션 부착 시도 — 실패** (Bash)
 
 ```bash
-mkdir -p data && cmd //c "mklink /J \"$(cygpath -w "$W/data/processed")\" \"E:\\Fedvlm_for_welding\\data\\processed\""
+mkdir -p data && cmd //c "mklink /J \"$(cygpath -w "$W/data/processed")\" \"<저장소 루트>\\data\\processed\""
 ```
 
 → `파일 이름, 디렉터리 이름 또는 볼륨 레이블 구문이 잘못되었습니다.` 따옴표·경로 변환 문제로
@@ -47,7 +47,7 @@ mkdir -p data && cmd //c "mklink /J \"$(cygpath -w "$W/data/processed")\" \"E:\\
 
 ```powershell
 if (-not (Test-Path "$W\data\processed")) {
-  New-Item -ItemType Junction -Path "$W\data\processed" -Target "<REPO>\data\processed"
+  New-Item -ItemType Junction -Path "$W\data\processed" -Target "<저장소 루트>\data\processed"
 }
 ```
 
@@ -56,7 +56,7 @@ if (-not (Test-Path "$W\data\processed")) {
 ```powershell
 git worktree add --detach $B c516387
 New-Item -ItemType Directory -Force "$B\data"
-New-Item -ItemType Junction -Path "$B\data\processed" -Target "<REPO>\data\processed"
+New-Item -ItemType Junction -Path "$B\data\processed" -Target "<저장소 루트>\data\processed"
 ```
 
 **⑤ 삭제 — 이것이 원인이다** (Bash, 15:43:56)
@@ -605,14 +605,14 @@ $ uv run python -m corpus.parse.extract_candidates
 ```
 
 `extract_one()` 이 모듈 전역 `DST` 를 읽던 것도 인자로 바꿨다 — 전역이 사라지면 조용히
-`NameError` 가 날 자리였다. 주석의 `"G:\공유 드라이브\…"` 언급도 일반화했다.
+`NameError` 가 날 자리였다. 주석의 공유 드라이브 경로 언급도 일반화했다.
 
 ## C-2. 시험 픽스처는 의도적이다 — 보고만 한다
 
 `tests/corpus/test_release_and_backup.py:55`
 
 ```python
-hits = S.screen_text(r"E:\Fedvlm_for_welding\corpus 에서 읽었다", set())
+hits = S.screen_text(r"<저장소 루트>\corpus 에서 읽었다", set())
 assert "local_path" in [h[0] for h in hits]
 ```
 
@@ -740,3 +740,178 @@ skip 18 = 파일럿 산출물(`outputs/pilot_c`·`pilot_d`) 부재로 이미 건
 > `git merge main --ff-only` 는 쓸 수 없었다 — `wt/B` 가 main 에 없는 커밋 4개를 들고 있어
 > 갈라져 있다(내 커밋은 아직 main 에 없다). rebase 대신 머지 커밋을 택했다. rebase 는
 > 총괄이 계속 인용해 온 커밋 해시를 바꾼다.
+
+---
+
+# 부록 E. `cycle_pilot` 추적 구성원 3개의 줄바꿈 — F 31번 확인 (09-15)
+
+## E-1. 사실이다. 어느 3개인지, 어디서 갈리는지
+
+`corpus/generate/cycle_pilot` 계약 구성원 8개 중 git 이 추적하는 3개가 전부 걸린다.
+`cycle_pilot_v2` 의 추적 구성원 1개와 A 의 `data/mock/*` 2곳(추적 3+3)은 **문제없다.**
+
+| 구성원 | 계약서 | `wt_B` 작업 파일 | git blob (`cat-file -p`) | blob 을 CRLF 로 | CR 수 |
+|---|---|---|---|---|---|
+| `_phi_report.json` | `fb1eef4a…` | 일치 (CRLF) | `1609571d…` 불일치 (LF) | **일치** | 49 |
+| `cycle_corpus_report.json` | `381d4351…` | 일치 (CRLF) | `8cacb1a9…` 불일치 (LF) | **일치** | 50 |
+| `judge_agreement.json` | `7e19ef0a…` | 일치 (CRLF) | `7f7db7d0…` 불일치 (LF) | **일치** | 33 |
+
+`main` 체크아웃의 작업 파일은 blob 과 같은 LF 라 **3/3 불일치**다. 이력 전 구간에서 세 파일의
+blob 은 처음 커밋(`e259989`·`dfd6954`·`92eefae`, 08-24)부터 CR 0바이트다. `.gitattributes`
+(`* text=auto eol=lf`)는 초기 공개 커밋(08-21)부터 있었다.
+
+**경위.** 세 파일은 08-24 에 `write_text` 로 쓰였다 — 09-01 `newline=""` 수정 **전** 코드라
+디스크에는 CRLF 로 떨어졌다. `git add` 가 속성대로 LF 로 정규화해 저장했고, 작업 파일은 그대로
+CRLF 로 남았다. 09-01·09-02 봉인은 **작업 파일 바이트**를 해시했다. 즉 계약서는 git 이 한 번도
+저장한 적 없는 바이트 형태를 적었다. `git status` 는 wt_B 를 깨끗하다고 본다 — 색인에 넣을 때
+같은 정규화를 거쳐 blob 과 같아지기 때문이다. **wt_B 에서만 계약이 맞는 것은 이 트리가 그
+파일들을 다시 체크아웃한 적이 없어서다.** 다른 어떤 체크아웃에서도 안 맞는다.
+
+**같은 사각이다.** 내가 `snapshot_cycle_pilot --check` 를 돌린 자리는 늘 wt_B 였고, 그래서 늘
+초록이었다. 새 clone 에서 `--check` 를 한 번만 돌렸어도 09-02 에 잡혔다 — 부록 D 의 "내
+트리가 보는 것을 전부라고 읽었다" 와 같은 모양이다.
+
+## E-2. 해결안 — 제안만 (봉인 파일·blob 은 건드리지 않았다)
+
+버리는 저장소 둘을 만들어 A·C 를 실측했다. 각각 `autocrlf=true`·`false` 로 새로 clone 해 작업
+파일 해시를 계약과 대조하고, LF 로 남은 기존 트리(main 과 같은 상태)에서 `git status` 를 봤다.
+
+**A. `.gitattributes` 에 세 경로만 `text eol=crlf` — 권고.**
+
+```
+corpus/generate/cycle_pilot/_phi_report.json          text eol=crlf
+corpus/generate/cycle_pilot/cycle_corpus_report.json  text eol=crlf
+corpus/generate/cycle_pilot/judge_agreement.json      text eol=crlf
+```
+
+- 실측: 새 clone 작업 파일 → 계약 일치 **3/3** (`autocrlf` 양쪽 모두).
+- **blob 을 바꾸지 않는다.** 저장은 LF 그대로, 체크아웃 때만 CRLF 로 편다. 이력 영향 0.
+- 영향 범위: 속성이 바뀐 뒤 **이미 LF 로 체크아웃된 트리**(main·다른 워크트리)는 세 파일이
+  `M` 으로 뜬다(실측). `git checkout -- corpus/generate/cycle_pilot/` 로 작업 파일만 다시
+  펴면 사라진다 — blob 쓰기가 아니라 체크아웃이다. wt_B 는 이미 CRLF 라 아무 일도 없다.
+- 남는 것: blob 을 직접 읽는 도구(`git show`, GitHub raw)는 LF 를 본다. 그 해시는 계약과
+  다르다. **"계약 바이트는 체크아웃 결과" 라고 어딘가에 적어야 한다** — 이 부록이 그 기록이고,
+  `frozen_out` 명부 항목에 한 줄 더 두는 것을 제안한다.
+- `.gitattributes` 는 A 소관(10_spec_A §6-9)이다. **배분은 총괄.**
+
+**B. 대조기가 줄바꿈을 정규화 — 통과 기준으로는 기각, 진단으로는 채택 제안.**
+
+통과 기준으로 삼으면 봉인이 약해진다. `sha256sum -c` 같은 외부 대조는 여전히 실패하고, 논문에
+실은 해시가 "어느 바이트의 해시인지" 가 대조기 구현에 매이게 된다. 대신 **불일치가 났을 때만**
+CRLF↔LF 정규화 해시를 추가로 재 보고 맞으면 `eol_mismatch` 로 이유를 붙이는 진단은 값이 있다 —
+F 가 손으로 알아낸 것을 도구가 말해 준다. 자리는 구성원을 실제로 해시하는
+`snapshot_cycle_pilot --check` 와 `verify_backup verify` 다(`verify_contract` 는 존재·추적만 본다).
+이번에 넣지 않았다 — (2) 는 제안만 하라는 지시였다.
+
+**C. 세 경로에 `-text` 를 주고 blob 을 CRLF 바이트로 다시 커밋 — 기각.**
+
+- 실측: blob 이 계약과 **바이트 동일**, 새 clone 3/3 (양쪽 `autocrlf`). 결과만 보면 가장 정확하다.
+- 그러나 **봉인 구성원 3개의 blob 을 새로 쓰는 커밋**이 생긴다. `git log -- <파일>` 에 봉인 뒤
+  수정 이력이 남고, GitHub 에서는 49·50·33줄 전체가 바뀐 diff 로 보인다. 그 커밋 이전 어느
+  시점을 체크아웃해도 다시 불일치다. 이력 재작성은 아니지만 **"봉인된 파일을 커밋으로 건드렸다"**
+  는 사실이 영구히 남고, A 로 같은 체크아웃 결과를 blob 변경 0 으로 얻을 수 있으므로 택할
+  이유가 없다.
+
+**D. 재봉인 — 지시대로 하지 않는다.** 규약 1-6 이고, 논문에 실을 digest `fb316682…` 가 바뀐다.
+
+## E-3. 재발 방지 (§8 에 더한다)
+
+**8-9. 봉인 해시는 git 이 저장하는 바이트로 잰다, 아니면 새 clone 에서 대조한다.** 작업 파일을
+해시하면 그 트리에서만 맞는 계약이 나올 수 있다. `snapshot_cycle_pilot` 이 추적 구성원은
+`git show HEAD:<path>` 바이트를 해시하거나, 봉인 직후 새 clone 에서 `--check` 를 한 번 돌리는
+것을 봉인 절차에 넣는다. 둘 중 뒤쪽이 더 정직하다 — 도구가 아니라 다른 트리가 확인한다.
+
+---
+
+# 부록 F. `verify_contract` — 계약서 부재를 조용히 넘기던 구멍 수리 (§8-4 나)
+
+09-13 승인분. 계약서가 있는 디렉터리**만** 찾으면 디렉터리째 사라진 봉인본은 목록에서 같이
+사라진다. 09-11 에 `data/processed` 5곳이 비었을 때 이 도구가 "깨짐 0" 을 낸 이유다.
+
+## F-1. 무엇을 바꿨나
+
+`corpus/generate/frozen_out.py` 에 **있어야 할 봉인처 명부** `EXPECTED_SEALED` 를 두고,
+`verify_contract` 가 명부의 기대를 겹쳐 판정한다. 옛 판정 넷은 `_verify_present` 로 그대로 남겼다.
+
+| 새 판정 | 뜻 | 실패? |
+|---|---|---|
+| `missing_contract` | 있어야 하는데 계약서가 없다 — 저장 뿌리가 이 트리에 있거나 git 이 계약서를 추적하는데도 | **실패** |
+| `absent_tree` | 저장 뿌리 자체가 이 트리에 없다 (정션 안 붙인 새 clone 등). 소실인지 판단 못 함 | 알림 |
+| `lost_recorded` | 소실이 기록된 자리이고 실제로 없다 | 알림 — **매번** |
+| `lost_but_present` | 소실 기록된 이름에 계약서가 있다 — 명부가 낡았거나 같은 이름 재생성(규약 1-6 위반) | **실패** |
+
+기록된 소실을 매번 실패로 만들면 사람들은 이 검사를 끈다. 그래서 실패 대신 **매번 말한다.**
+명부 항목에 `owner` 와 `record`(소실·복원 기록 한 줄)를 달아 출력에 같이 찍는다.
+
+CLI (`python -m corpus.generate.frozen_out`)는 인자가 없으면 **명부를 먼저** 대조하고, 명부 밖에서
+계약서가 발견된 곳을 더한다. 실물 트리 실측:
+
+```
+○ corpus/generate/cycle_pilot                              구성원 8  [ok]  (소관 B)
+○ corpus/generate/cycle_pilot_v2                           구성원 6  [ok]  (소관 B)
+○ data/processed/pairs_pilot_v1                            구성원 3  [ok]  (소관 B)
+! data/processed/pairs_pilot_v2                            구성원 0  [lost_recorded]  (소관 B)
+    09-11 소실 확정 · 사본 없음 · 입력 부재로 재생성 불가 (30번 부록 A-3)
+! data/processed/aihub71761_rt_v1_pilot3000                구성원 0  [lost_recorded]  (소관 A)
+! data/processed/aihub71761_rt_v1_pilot3000_crop_only      구성원 0  [lost_recorded]  (소관 A)
+! data/processed/aihub71761_rt_v1_pilot3000_scale_control  구성원 0  [lost_recorded]  (소관 A)
+봉인처 7곳 · 깨짐 0 · 소실 기록 4 · 이 트리에 없음 0
+```
+
+**같은 트리, 명부를 비우면:** exit 0, 소실 언급 0, `pairs_pilot_v2` 라는 글자 자체가 안 나온다.
+이것이 09-11 의 출력이었다.
+
+## F-2. 시험 7건 (`tests/corpus/test_frozen_out.py`)
+
+이빨을 둘 걸었다. ① 저장 뿌리는 있는데 봉인 디렉터리가 계약서째 없는 가짜 트리 → `missing_contract`,
+exit 1. ② **같은 트리에서 명부를 비우면** exit 0, "깨짐 0" — 즉 ①의 실패는 명부 때문이다.
+그 밖에: 뿌리 없는 트리는 알림만 · git 이 계약서를 추적하면 뿌리가 없어도 실패 · 소실 기록은
+알리되 실패 아님 · 소실 기록된 이름이 되살아나면 실패 · 명부가 실물 봉인처를 전부 덮는지 ·
+실물 트리 출력에 `pairs_pilot_v2` 소실이 매번 나오는지.
+
+`test_봉인_구성원이_실물과_이름이_맞는다` 도 바꿨다 — 디렉터리가 없으면 그냥 건너뛰던 것을
+명부 판정으로 바꿨고, 명부에 없는 봉인처는 **시험이 실패**한다.
+
+## F-3. 짚을 것
+
+- 명부는 B 파일 안에 있는데 **A 소관 자산 3개**(pilot3000 계열)를 `lost` 로 들고 있다. A 가
+  처리를 판정하면 그 항목을 A 가 고쳐야 하는데 파일은 B 것이다. 명부를 `configs/` 같은 공용
+  자리로 옮기는 것이 맞아 보인다 — **배분은 총괄.**
+- 부록 E 의 줄바꿈 표기(A 안 채택 시 "계약 바이트는 체크아웃 결과")도 이 명부 항목에 `note`
+  로 붙이는 자리가 있다.
+
+---
+
+# 부록 G. 위생 2차 — 부록 C 스윕이 놓친 것 (09-15)
+
+총괄이 30번 2건을 짚었고, 같은 정규식 문제로 놓친 것을 더 찾아 **추적 파일 3개 6건 + 쓰는 코드**
+를 고쳤다.
+
+| 파일 | 건수 | 무엇 |
+|---|---|---|
+| `30_processed_소실_경위_B.md` | 3 | §1 ② mklink 원문 1 · 부록 C 산문 1 · 부록 C-2 코드 인용 1 |
+| `corpus/validate/verify_backup.py` | 1 | 모듈 문서의 본체 경로 |
+| `corpus/parse/extracted_manifest.json` | 2 | `src`·`dst` — 공유 드라이브 뿌리 + **학회 폴더명** (F 31번 §1-5 가 같은 것을 지목) |
+
+**왜 놓쳤나.** 부록 C 의 정규식이 역슬래시 **하나**만 잡았다. Python 소스·JSON 은 역슬래시를
+두 개로 이스케이프하므로 그 꼴은 빠졌다. 30번의 셋은 부록 C 가 원문을 **인용**하면서 다시
+들여온 것이다 — 위생 보고서가 위생 위반을 재생산했다.
+
+명령 원문을 보존하는 §1 은 지시대로 **경로만 `<저장소 루트>` 로** 바꾸고 명령 형태는 그대로
+뒀다. 같은 절의 `<REPO>` 둘도 한 절 안에서 자리표시자를 하나로 맞췄고, 미추적 경로표에 별칭을
+한 줄 더했다.
+
+`extracted_manifest.json` 은 값을 폴더 이름만(`corpus_candidate`·`corpus_extracted`) 남기고
+"실제 경로는 기록하지 않는다" 를 `paths` 키로 적었다. **쓰는 쪽도 같이 고쳤다** —
+`extract_candidates.py` 가 다음 실행에서 `SRC.name` 만 적고, `newline=""` 로 연다. 안 고치면
+다음 실행이 실제 경로를 도로 박는다. 소비자는 `docs/corpus_후보_판정.md:293` 의 언급뿐이라
+`src`·`dst` 값을 읽는 코드는 없다.
+
+넓힌 정규식(이스케이프된 역슬래시·학회 폴더명·`AppData`)으로 B 소관 추적 파일을 다시 훑어 남은
+것은 `test_release_and_backup.py:55` 의 의도적 픽스처 한 줄뿐이다.
+
+## 회귀
+
+`tests/corpus` 547 통과 · 4 skip. 전체 **1,566 통과 · 18 skip · 0 실패**. skip 18 은 전과 같다
+(파일럿 산출물 부재 14 · 소실 기록 2 · `incomplete_tree` 2). 봉인 파일·blob 은 쓰지 않았다 —
+실측은 전부 버리는 저장소와 읽기로 했다. 워크트리 삭제 동결 유지.
