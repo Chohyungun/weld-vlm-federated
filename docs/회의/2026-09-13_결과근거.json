@@ -1,11 +1,12 @@
 {
   "title": "2026-09-13 회의 결과표 근거",
-  "verified_date": "2026-09-13",
+  "verified_date": "2026-09-15",
+  "initial_verified_date": "2026-09-13",
   "source_results_date": "2026-09-11까지 생성된 기존 정책 산출물",
   "method": "원본 score JSON을 읽고 로컬 산술평균 및 회복률을 별도로 계산. 기존 집계기는 사용하지 않음.",
   "definitions": {
     "local_mean": "같은 공통 평가셋에서 채점한 로컬 C1/C2/C3 mAP@50의 산술평균",
-    "recovery_pct": "100 * (fed - local_mean) / (central - local_mean)",
+    "recovery_pct": "((fed - local_mean) / (central - local_mean)) * 100; local_mean = sum(C1, C2, C3) / 3",
     "mean_recovery": "시드별 recovery_pct의 산술평균",
     "nominal_AL": "데이터셋의 명목 출처 라벨. 실제 알루미늄 재질을 뜻한다고 확인되지 않음"
   },
@@ -118,6 +119,42 @@
     "nominal_AL": {
       "local_C3_map_50": 0.4801967320217973,
       "fed_map_50": 0.22668113230825226
+    }
+  },
+  "recheck_20260915": {
+    "source_score_hashes_unchanged": true,
+    "arithmetic_note": "산술 순서를 명시했다. 원본 채점 결과와 이전 공개 mAP·회복률 수치는 바꾸지 않았다.",
+    "seed1_threshold_025": {
+      "sep_central": {
+        "n_boxes_floor": 149131,
+        "n_boxes_025": 16243,
+        "retained_pct": 10.89176629942802,
+        "discarded_pct": 89.10823370057199
+      },
+      "sep_local_C1": {
+        "n_boxes_floor": 153927,
+        "n_boxes_025": 16377,
+        "retained_pct": 10.639458964314253,
+        "discarded_pct": 89.36054103568574
+      },
+      "sep_local_C2": {
+        "n_boxes_floor": 181483,
+        "n_boxes_025": 14235,
+        "retained_pct": 7.843709879162236,
+        "discarded_pct": 92.15629012083777
+      },
+      "sep_local_C3": {
+        "n_boxes_floor": 88831,
+        "n_boxes_025": 11024,
+        "retained_pct": 12.410082065945446,
+        "discarded_pct": 87.58991793405455
+      },
+      "sep_fed": {
+        "n_boxes_floor": 188911,
+        "n_boxes_025": 11041,
+        "retained_pct": 5.844551137837394,
+        "discarded_pct": 94.1554488621626
+      }
     }
   }
 }

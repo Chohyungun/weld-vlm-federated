@@ -1,11 +1,30 @@
 # 감사 수정 및 Claude 인계 — 2026-09-09
 
-상태: 1차 코드 수정과 CPU 통합 회귀 검증 완료. Claude의 수정 코드 검토, GPU 검증,
-공개 문서·커밋 메시지 전수 윤문은 남아 있다. 사용자 요청으로 Codex가 수정하고 Claude가 후속 검토한다.
+9/15 추가: 사용자가 Notion·연결 Sheet·팀 Drive까지 관리 범위를 지정했다. 1차 읽기 검토와
+수정 요청은 `codex_reply.md` §15, 내부 상세는 `_workspace/2026-09-15-003/external_audit.md`에
+있다. 원격 본문·수식은 미수정이며 데이터 전수 검증도 미완료다. 새 Notion 수치 근거 한 건은
+전체 JSON을 대조해 값 일치를 확인했다. 회의자료·보고서의 전체 게시 완료와 구분한다.
+별도 회의 설명 자료는 `docs/회의/2026-09-15_회의_설명흐름.md`이며 기존 원고 세 개를 대체하지 않는다.
+회의 제안·실제 결정·공개 게시 상태를 나눠 기록하고 Claude 회신 후 원격 본문을 다시 확인한다.
+
+9/15 현재: Claude의 §11 회신 8건을 재검토해 회의 자료·상세 보고와 정정 기록에 반영했다.
+최신 CPU 회귀는 1,553통과·21건너뜀·5제외·실패0이며 GPU 재개 동치·사람 평가와 자산 일부의
+실물 검증은 남아 있다. 전체 공개 문서·커밋 메시지 윤문과 실제 게시도 완료로 보고하지 않는다.
+
 감사 기준 커밋은 `465f8a2cb962b9cda07ff3e8c01968d64d783220`이다. 초기 인계 문서는 Claude가
-`4723603`에 포함했으며, Codex의 코드 수정은 아직 미커밋 상태다. Codex는 커밋·머지·원격 게시를 하지 않았다.
+`4723603`에 포함했고 9/9에 미커밋이었던 감사 패치는 이후 `035410c`에 보존됐다.
+Codex가 커밋·머지·원격 게시를 한 것은 아니다. 이번 미커밋 보완과 Claude에게 보낸 후속 질문은
+`codex_reply.md`의 9/15 절과 `monitor_2026-09-15.md`를 먼저 읽는다.
 
 ## 다음 세션에서 먼저 확인할 것
+
+9/15 재개 검토 완료: Codex가 `claude_response.md` §11의 8개 질문을 원자료와 대조했다. 이번 수정은
+회의 자료·상세 보고·감사 회신과 F13-P3 비율 표기 보완에 한정한다. 해당 문서는 중복 수정하지 말고 새 의견을 응답 파일에
+남겨 달라. 정정 전 9/13 원문 대신 `_workspace/2026-09-15-001/claude_publish_request.md`의
+세 파일·새 해시를 기준으로 검토한다. 개인정보·공유 이력 등 나머지 게시 조건은 따로 확인한다.
+학습 코드·동결 자산·기존 결과·Git 이력은 이번 재개 작업에서 변경하지 않는다.
+F13-P3은 `run_cycle_corpus.write_report()`의 비율 반올림과 새 시험 하나만 Codex가 맡는다.
+상세 범위는 `dispatch_2026-09-15_재검토.md`에 적었다.
 
 9/13 우선 인계: 오늘 회의 자료와 수치 근거를 `docs/회의/`에 작성했다. Claude는
 `_workspace/2026-09-13-001/claude_publish_request.md`의 원문·해시·범위를 기준으로 검토하고
@@ -78,7 +97,7 @@ worker 1개 CPU 로더의 반복성, 저장 훅, CSV writer와 잘못된 입력�
 게시하는 역할로 정정했다. 미푸시분 우선과 전체 이력 완료를 구분한다. 사용자 지시에 따라
 Codex는 GitHub 직접 연동·push·이력 재작성을 하지 않는다.
 
-사용자가 지정한 원본은 [epoko77-ai/im-not-ai](https://github.com/epoko77-ai/im-not-ai)다. 기존 Codex `humanize-korean` 등록을 확인했고 SKILL.md·quick-rules.md가 원본 커밋 `9747f036cdc28a1a8aea4dc71fef1f7846eb96f7`과 일치했다. 기존 설치는 덮어쓰지 않았다. 원본 스크립트는 로컬 `C:/Users/my/.codex/skill-sources/im-not-ai`에 확보했다.
+사용자가 지정한 원본은 [epoko77-ai/im-not-ai](https://github.com/epoko77-ai/im-not-ai)다. 기존 Codex `humanize-korean` 등록을 확인했고 SKILL.md·quick-rules.md가 원본 커밋 `9747f036cdc28a1a8aea4dc71fef1f7846eb96f7`과 일치했다. 기존 설치는 덮어쓰지 않았다. 원본 스크립트는 로컬 스킬 소스 디렉터리에 확보했다. 개인 설치 경로는 공개본에 적지 않는다.
 
 문서 수정은 사실·결론 교정 후, 스킬의 의미 보존 규칙에 따라 문체를 다듬는 순서로 진행한다. 과장된 보증, 불필요한 대조 문장, 과한 비유를 줄이되 수치·조건·불확실성은 보존한다. 문체만 보고 AI 작성 여부를 확정하거나 탐지 회피를 보장하지 않는다.
 
@@ -94,7 +113,7 @@ Claude는 자체 등록된 `humanize-korean` 스킬을 사용할 수 있다. 실
 최종 통합 회귀: 1,510 passed, 5 skipped, 5 deselected, 2 warnings (87.64초).
 
 ```powershell
-.venv/Scripts/python.exe -X utf8 -B -m pytest -q -m 'not resource_heavy' --basetemp=E:/Fedvlm_for_welding/outputs/audit_20260909/pytest_integration_03 -p no:cacheprovider --tb=short
+.venv/Scripts/python.exe -X utf8 -B -m pytest -q -m 'not resource_heavy' --basetemp=outputs/audit_20260909/pytest_integration_03 -p no:cacheprovider --tb=short
 git diff --check
 ```
 
