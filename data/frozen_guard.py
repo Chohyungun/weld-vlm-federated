@@ -17,6 +17,11 @@
 
     assert_writable(V1)                       # 동결됐으면 FrozenDirectoryError
     p = legacy_path("manifest_pre_mask.csv")  # attic/ 을 먼저 본다
+
+## 봉인처 명부
+
+`EXPECTED_SEALED` — 있어야 할 봉인 디렉터리의 단일 명부(2026-09-16, 32번 과제 6). 대조기와
+백업 목록이 여기서 읽는다. 상태 어휘와 갱신 규칙은 명부 위 주석.
 """
 
 from __future__ import annotations
@@ -26,6 +31,8 @@ from pathlib import Path
 __all__ = [
     "ATTIC_NAME",
     "CONTRACT_NAME",
+    "EXPECTED_SEALED",
+    "SEALED_STATUSES",
     "FrozenDirectoryError",
     "assert_writable",
     "is_frozen",
@@ -39,6 +46,65 @@ CONTRACT_NAME = "SNAPSHOT.sha256"
 ATTIC_NAME = "attic"
 
 _V1 = Path(__file__).resolve().parents[1] / "data/interim/manifest_v1"
+
+# ======================================================================================
+# 봉인처 명부 — 저장소 전체의 **단일 명부** (2026-09-16, 32번 과제 6)
+#
+# B 의 `corpus/generate/frozen_out.EXPECTED_SEALED` 에서 옮겨 왔다. 계약서가 있는 디렉터리만
+# 찾으면 디렉터리째 사라진 봉인본은 목록에서 같이 사라진다 — 09-11 에 data/processed 가 비었을 때
+# 대조기가 "깨짐 0" 을 냈다(30번 §8-4 나). 그래서 "무엇이 있어야 하는지"를 따로 들고 대조한다.
+# 두 곳에 살면 한쪽만 고쳐진다 — 09-13 에 백업 목록이 소실된 v2 를 계속 들고 있었다. 대조기
+# (`frozen_out.check_registry`)·백업 목록(`verify_backup.SEALED_DIRS`)은 여기서 import 한다.
+#
+# 키: 저장소 루트 기준 **POSIX 상대경로**. 드라이브 문자·역슬래시·선행 슬래시 금지(규약 2-6).
+# 항목: `status`(아래 어휘) · `owner`(트랙 문자) · `record`(lost·restored 는 필수 — 언제 왜 그런지)
+#       · `evidence`(restored 만 — 근거 등급).
+#
+# 상태 어휘 (`SEALED_STATUSES`):
+#   expected — 있어야 한다. 대조기: 없으면 missing_contract(실패) 또는 absent_tree(알림 — 저장 뿌리
+#              자체가 이 트리에 없을 때, 정션을 안 붙인 새 clone 등).
+#   lost     — 소실이 기록됐다. 없으면 lost_recorded(알림, 실패 아님). 다시 나타나면
+#              lost_but_present(실패 — 같은 이름 재생성은 규약 1-6 위반).
+#   restored — 소실 뒤 **동일 바이트**로 복원됐다(재생성이 아니다). 검사는 expected 와 같고
+#              `evidence` 에 근거 등급을 적는다("64자 digest 전체 일치" / "8자 접두 + 구성 일치" 등).
+#              원 경로에 실물이 돌아온 **뒤에만** 붙인다 — 그 전에 붙이면 대조기가 missing_contract
+#              로 실패한다. 대조기의 restored 분기는 B 소관(import 전환 때 expected 와 같게).
+#
+# 상태 갱신은 총괄 판정을 따른다. pilot3000 계열 3개는 09-16 복원 판정(의사결정로그 17ca38b)이
+# 났지만 원 경로 복사가 B 40번 뒤라 아직 `lost` 다 — 복사·해시 4/4×3 확인 뒤 `restored` 로 바꾼다.
+# ======================================================================================
+SEALED_STATUSES: tuple[str, ...] = ("expected", "lost", "restored")
+
+EXPECTED_SEALED: dict[str, dict[str, str]] = {
+    # --- 본실험 매니페스트 계약 (A). 본실험 데이터의 단일 진실. git 밖(.gitignore data/interim/).
+    #     F 39번 Important 1: 명부와 백업 목록이 이것을 몰랐다.
+    "data/interim/manifest_v1": {
+        "status": "expected", "owner": "A",
+        "record": "본실험 매니페스트 계약 4/4(manifest·annotations·data_capabilities·tiles) · "
+                  "digest 1f80e98b… · 동결 08-31(58번) · 위생 정리 09-02(80번 G11-1)"},
+    # --- 코퍼스 봉인 (B)
+    "corpus/generate/cycle_pilot": {"status": "expected", "owner": "B"},
+    "corpus/generate/cycle_pilot_v2": {"status": "expected", "owner": "B"},
+    "data/processed/pairs_pilot_v1": {
+        "status": "expected", "owner": "B",
+        "record": "09-11 소실 → 09-13 해시 일치 복원 (30번 부록 A)"},
+    "data/processed/pairs_pilot_v2": {
+        "status": "lost", "owner": "B",
+        "record": "09-11 소실 확정 · 사본 없음 · 입력 부재로 재생성 불가 (30번 부록 A-3)"},
+    # --- 파일럿 표본과 어블레이션 두 팔 (A). 새 경로 재생성 digest 가 기록값과 일치(32번 §1-3).
+    "data/processed/aihub71761_rt_v1_pilot3000": {
+        "status": "lost", "owner": "A",
+        "record": "09-11 소실 · 09-16 복원 판정(근거: 60번 64자 digest 전체 일치, 2회 동일) · "
+                  "원 경로 복사는 B 40번 뒤 (32번 §1-4)"},
+    "data/processed/aihub71761_rt_v1_pilot3000_crop_only": {
+        "status": "lost", "owner": "A",
+        "record": "09-11 소실 · 09-16 복원 판정(근거: 76번 8자 접두 + 구성 일치) · "
+                  "원 경로 복사는 B 40번 뒤 (32번 §1-4)"},
+    "data/processed/aihub71761_rt_v1_pilot3000_scale_control": {
+        "status": "lost", "owner": "A",
+        "record": "09-11 소실 · 09-16 복원 판정(근거: 76번 8자 접두 + 구성 일치) · "
+                  "원 경로 복사는 B 40번 뒤 (32번 §1-4)"},
+}
 
 
 class FrozenDirectoryError(RuntimeError):
