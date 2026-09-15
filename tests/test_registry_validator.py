@@ -133,7 +133,9 @@ def test_eligible_with_matching_contract_passes(base: dict) -> None:
 
 def test_absolute_path_rejected(base: dict) -> None:
     d = copy.deepcopy(base)
-    d["acquisition"]["staging_path_hint"] = "G:\\공유 드라이브\\대한산업공학회_추계학술대회\\weld-fl-datasets\\riawelc"
+    # 합성 경로다. 검사 정규식은 `^[A-Za-z]:[\\/]` 라 드라이브 문자 + 구분자면 충분하고,
+    # 실제 드라이브·폴더 이름을 픽스처에 두면 그 자체가 규약 2-6 위반이 된다.
+    d["acquisition"]["staging_path_hint"] = "X:\\some\\abs\\path\\riawelc"
     assert any("절대경로" in e for e in _run(d).errors)
 
 
