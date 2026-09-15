@@ -16,10 +16,17 @@
 
 from __future__ import annotations
 
+import json
+import math
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
 from scripts.probe.aggregate_seeds import (
     DET_TAGS,
+    apply_recovery_ci,
     check_baselines_identical,
     client_improvement,
     provenance,
@@ -28,8 +35,16 @@ from scripts.probe.aggregate_seeds import (
     secondary_ratios,
 )
 
+REPO = Path(__file__).resolve().parents[1]
+
 BASE = {"classification_axis": {"macro_ap_freq": 0.95}, "position_axis": {"constant_box_map_50": 0.001},
         "primary_rule": "idq512", "self_check_reproduced": True}
+
+
+def _rec_pct(v: dict[str, float]) -> float | None:
+    lm = (v["sep_local_C1"] + v["sep_local_C2"] + v["sep_local_C3"]) / 3
+    d = v["sep_central"] - lm
+    return None if d <= 0 else 100.0 * (v["sep_fed"] - lm) / d
 
 
 def _payload(seed: int, floor: dict[str, float], op: dict[str, float] | None = None,
@@ -42,11 +57,14 @@ def _payload(seed: int, floor: dict[str, float], op: dict[str, float] | None = N
         "scorer": "evaluation.score.score_records (단일)",
         "decomposition": {
             "axis": "material",
+            "limitation": "픽스처 — 평가셋에 client 열이 없어 재질이 유일한 귀속 축",
             "client_mapping": {"AL": "C3 (알루미늄 단독 클라이언트)",
                                "ST": "C1 ∪ C2 (강재 두 클라이언트, 평가셋에서 분리 불가)"},
             "by_group": {
-                "AL": {"n_images": 1786, "per_tag": {t: {"map_50": al[t]} for t in DET_TAGS}},
-                "ST": {"n_images": 10675, "per_tag": {t: {"map_50": floor[t]} for t in DET_TAGS}},
+                "AL": {"n_images": 1786, "per_tag": {t: {"map_50": al[t]} for t in DET_TAGS},
+                       "recovery": {"map_50": {"recovery_pct": _rec_pct(al)}}},
+                "ST": {"n_images": 10675, "per_tag": {t: {"map_50": floor[t]} for t in DET_TAGS},
+                       "recovery": {"map_50": {"recovery_pct": _rec_pct(floor)}}},
             },
         },
         "content_free_baseline": dict(BASE),
@@ -281,3 +299,229 @@ def test_모델별_sd_가_풀링보다_먼저_실린다():
     assert g["seed_sd_pooled"]["role"].startswith("보조")
     # 가정 없는 보수적 정의로도 판정한다
     assert "max_per_cell_df2" in g["tripwire_by_definition"]
+
+
+# ======================================================================================
+# C 34번 Important 4 — 변이 5개를 전부 잡는 픽스처
+#   m1 평균의 회복률 ↔ 회복률의 평균 치환 · m2 miss_rate 부호 반전 · m3 sd 무시 ·
+#   m4 풀링 sd ×2 · m5 대조선 검사가 위치 축을 건너뜀
+# ======================================================================================
+
+# 비례가 아닌 세 시드 — 두 회복률이 다르다. 손계산 값을 함께 둔다.
+NP = {
+    1: {"sep_central": 0.50, "sep_local_C1": 0.30, "sep_local_C2": 0.10, "sep_local_C3": 0.20,
+        "sep_fed": 0.30},   # lm 0.20 · D 0.30 · R (0.30−0.20)/0.30 = 0.3333
+    2: {"sep_central": 0.40, "sep_local_C1": 0.20, "sep_local_C2": 0.10, "sep_local_C3": 0.15,
+        "sep_fed": 0.35},   # lm 0.15 · D 0.25 · R 0.20/0.25 = 0.8000
+    3: {"sep_central": 0.60, "sep_local_C1": 0.40, "sep_local_C2": 0.20, "sep_local_C3": 0.30,
+        "sep_fed": 0.31},   # lm 0.30 · D 0.30 · R 0.01/0.30 = 0.0333
+}
+
+
+def nonprop() -> dict[int, dict]:
+    return {n: _payload(n, v) for n, v in NP.items()}
+
+
+def test_m1_회복률의_평균과_평균의_회복률이_다른_픽스처에서_각각_손계산과_같다():
+    rec = recovery_table(nonprop(), {})["map_50"]
+    by = [p["recovery_pct"] for p in rec["by_seed"]]
+    assert by == pytest.approx([33.333, 80.0, 3.333], abs=0.01)
+    assert rec["mean_of_seed_recoveries_pct"] == pytest.approx((33.333 + 80.0 + 3.333) / 3, abs=0.01)
+    # 평균의 회복률: 중앙 0.50 · 연합 0.32 · 로컬평균 0.21667 → (0.32−0.21667)/(0.28333) = 36.47 %
+    assert rec["recovery_of_seed_means_pct"] == pytest.approx(36.47, abs=0.02)
+    assert rec["mean_of_seed_recoveries_pct"] != pytest.approx(rec["recovery_of_seed_means_pct"], abs=1.0)
+
+
+@pytest.mark.parametrize("fed_better", [True, False])
+def test_m2_놓침은_낮을수록_좋다_연합이_로컬평균보다_좋은_경우와_나쁜_경우(fed_better):
+    """miss_rate 는 부호를 뒤집어 잰다 — 연합이 로컬평균보다 **덜** 놓치면 회복률이 양수다."""
+    op = {"sep_central": 0.60, "sep_local_C1": 0.40, "sep_local_C2": 0.40, "sep_local_C3": 0.40,
+          "sep_fed": 0.55 if fed_better else 0.35}
+    # _payload 는 miss_rate = 1 − op 로 만든다 → 중앙 0.40 · 로컬 0.60 · 연합 0.45 / 0.65
+    p = {n: _payload(n, S1, op=op) for n in (1, 2, 3)}
+    rec = recovery_table(p, {})["miss_rate"]
+    r = rec["by_seed"][0]
+    assert r["central"] == pytest.approx(0.40) and r["local_mean"] == pytest.approx(0.60)
+    assert r["denominator"] == pytest.approx(0.20)          # 부호 반전 후 양수
+    expected = ((0.60 - 0.45) / 0.20 * 100) if fed_better else ((0.60 - 0.65) / 0.20 * 100)
+    assert r["recovery_pct"] == pytest.approx(expected, abs=1e-9)
+    assert (r["recovery_pct"] > 0) is fed_better
+
+
+def test_m4_풀링_sd_와_카이제곱_CI_를_수치로_대조():
+    """풀링 sd = sqrt(Σ(n_i−1)s_i² / Σ(n_i−1)). 손계산과 맞아야 한다 — ×2 변이는 여기서 죽는다."""
+    import statistics as st
+
+    from scipy import stats as sps
+
+    p = nonprop()
+    g = recovery_table(p, {})["map_50"]["denominator_gate"]
+    vals = {t: [NP[n][t] for n in (1, 2, 3)] for t in DET_TAGS}
+    ss = sum(st.variance(v) * 2 for v in vals.values())
+    pooled = math.sqrt(ss / 10)
+    assert g["seed_sd_pooled"]["sd"] == pytest.approx(pooled, rel=1e-12)
+    assert g["seed_sd_pooled"]["df"] == 10
+    lo = pooled * math.sqrt(10 / sps.chi2.ppf(0.975, 10))
+    hi = pooled * math.sqrt(10 / sps.chi2.ppf(0.025, 10))
+    assert g["seed_sd_pooled"]["ci"] == pytest.approx([lo, hi], rel=1e-12)
+    for t in DET_TAGS:
+        assert g["seed_sd_by_cell"][t]["sd"] == pytest.approx(st.stdev(vals[t]), rel=1e-12)
+    assert g["tripwire_by_definition"]["max_per_cell_df2"]["seed_sd"] == pytest.approx(
+        max(st.stdev(v) for v in vals.values()), rel=1e-12)
+
+
+def test_m3_근접_픽스처에서_sd_가_실제로_막는다():
+    """0 < D < 3·sd 구간 — sd 인자를 0 으로 바꾸는 변이는 여기서 죽는다."""
+    base = {"sep_central": 0.310, "sep_local_C1": 0.300, "sep_local_C2": 0.300,
+            "sep_local_C3": 0.300, "sep_fed": 0.305}         # D = 0.010
+    p = {1: _payload(1, base),
+         2: _payload(2, {t: v + 0.006 for t, v in base.items()}),
+         3: _payload(3, {t: v - 0.006 for t, v in base.items()})}   # 칸별 sd 0.006 → 3·sd 0.018 > D
+    g = recovery_table(p, {})["map_50"]["denominator_gate"]
+    assert g["denominator"] == pytest.approx(0.010)
+    tw = g["tripwire_by_definition"]
+    assert tw["max_per_cell_df2"]["pass"] is False
+    assert tw["pooled_df10"]["pass"] is False
+    # 세 시드가 같은 방향으로 움직이면 분모 D 자체의 시드 sd 는 0 이라 그 정의만 통과한다 —
+    # 정의가 갈리는 상태를 "갈림" 으로 드러내는 것이 설계다. sd 를 0 으로 바꾸는 변이는
+    # 위 두 단언에서 죽는다.
+    assert tw["denominator_sd_df2"]["tripwire_3sigma_pass"] is True
+    assert g["verdict"]["1_tripwire_3sigma"] == "정의에 따라 갈림"
+
+
+@pytest.mark.parametrize("axis", ["classification_axis", "position_axis"])
+def test_m5_대조선은_두_축_각각_흔들어도_멈춘다(axis):
+    p = three_seeds()
+    changed = dict(BASE[axis])
+    k = next(iter(changed))
+    changed[k] = changed[k] + 1e-6
+    p[3]["content_free_baseline"] = {**BASE, axis: changed}
+    with pytest.raises(SystemExit, match="동결본"):
+        check_baselines_identical(p)
+
+
+# ======================================================================================
+# Minor 8 — 시드 2개 미만이면 미판정
+# ======================================================================================
+
+def test_시드가_하나면_트립와이어는_미판정():
+    g = recovery_table({1: _payload(1, S1)}, {})["map_50"]["denominator_gate"]
+    assert g["verdict"]["1_tripwire_3sigma"].startswith("미판정")
+    assert g["tripwire_by_definition"]["pooled_df10"]["pass"] is None
+    assert g["tripwire_by_definition"]["denominator_sd_df2"]["recovery_reportable"] is None
+
+
+# ======================================================================================
+# T5 — 회복률 CI 배선 정책: CI 없음 → null · 통과 → true · 미달 → false
+# ======================================================================================
+
+def _ci_payload(half_width: float, d_lo: float = 0.2, undefined: int = 0) -> dict:
+    return {
+        "point": {"R_bar": 0.25},
+        "statistic": {"n_resamples": 2000, "n_groups": 1245},
+        "ci": {"R_bar": {"ci_lo": 0.25 - half_width, "ci_hi": 0.25 + half_width,
+                         "half_width": half_width, "n_undefined": undefined},
+               "D_by_seed": {"1": {"ci_lo": d_lo}, "2": {"ci_lo": d_lo}, "3": {"ci_lo": d_lo}}},
+        "verdict": {
+            "2_half_width": {"pass": half_width <= 0.25},
+            "3_denominator_ci_excludes_zero": {"pass": d_lo > 0},
+            "4_undefined_fraction": {"value": undefined / 2000, "pass": undefined / 2000 <= 0.10},
+            "ci_pass": (half_width <= 0.25) and (d_lo > 0) and (undefined / 2000 <= 0.10),
+        },
+        "registration": {"status": "픽스처"}, "seed_caveat": "픽스처",
+        "inputs": {"artifact_name": "score_cells_v1.json"},
+    }
+
+
+def test_CI_없으면_recovery_reportable_은_null():
+    rec = apply_recovery_ci(recovery_table(three_seeds(), {}), None)
+    g = rec["map_50"]["denominator_gate"]
+    assert g["recovery_reportable"] is None
+    assert "미산출" in g["verdict"]["2_recovery_ci"]
+
+
+def test_CI_통과면_true():
+    rec = apply_recovery_ci(recovery_table(three_seeds(), {}), _ci_payload(0.10))
+    g = rec["map_50"]["denominator_gate"]
+    assert g["recovery_reportable"] is True
+    assert "통과" in g["verdict"]["2_recovery_ci"]
+    assert g["recovery_ci"]["interval"]["ci_lo"] == pytest.approx(0.15)
+
+
+@pytest.mark.parametrize("bad", [
+    {"half_width": 0.30},                       # ② 반폭 초과
+    {"half_width": 0.10, "d_lo": -0.01},        # ③ 분모 CI 가 0 을 품음
+    {"half_width": 0.10, "undefined": 300},     # ④ 미정의 15 %
+])
+def test_규칙_하나라도_미달이면_false(bad):
+    rec = apply_recovery_ci(recovery_table(three_seeds(), {}), _ci_payload(**bad))
+    assert rec["map_50"]["denominator_gate"]["recovery_reportable"] is False
+
+
+def test_트립와이어가_불충족이면_CI_가_통과해도_false():
+    near = {"sep_central": 0.30, "sep_local_C1": 0.29, "sep_local_C2": 0.30, "sep_local_C3": 0.31,
+            "sep_fed": 0.30}
+    p = {1: _payload(1, near), 2: _payload(2, {t: v + 0.03 for t, v in near.items()}),
+         3: _payload(3, {t: v - 0.03 for t, v in near.items()})}
+    rec = apply_recovery_ci(recovery_table(p, {}), _ci_payload(0.10))
+    assert rec["map_50"]["denominator_gate"]["recovery_reportable"] is False
+
+
+# ======================================================================================
+# Minor 6·Important 4 — main() 을 실제로 돈다 (D ≤ 0 포함). 집계본이 먼저 써져야 한다
+# ======================================================================================
+
+def _write_seed_dir(root, n, floor, **kw):
+    d = root / f"seed{n}"
+    d.mkdir(parents=True, exist_ok=True)
+    p = _payload(n, floor, **kw)
+    p.update({
+        "curve": {"grid": [0.01, 0.25, 0.5]}, "exit_code": 0,
+        "gates_evaluated": {"blocking_failures": [], "ok": True, "n_evaluated": 11},
+        "discrimination": {"results": [
+            {"cell": t.split("_")[0] + ("_" + "_".join(t.split("_")[1:]) if False else ""),
+             "client": None, "delta": {"point": 0.3, "ci_lo": 0.2, "ci_hi": 0.4}}
+            for t in DET_TAGS]},
+        "discrimination_threshold_free": {"by_cell": {t: {"point": 0.5, "ci_lo": 0.4, "ci_hi": 0.6}
+                                                      for t in DET_TAGS},
+                                          "contrasts": {}, "n_defect": 7086, "n_normal": 654},
+        "stratified": {"default_k": 64, "by_k": {"64": {**{t: {"stratified_lift": -0.01} for t in DET_TAGS},
+                                                          "__shortcut__": {"stratified_lift": 0.0}}}},
+        "p9": {"results": [], "all_equivalent": False},
+    })
+    # discrimination.results 의 cell/client 를 실제 규약대로
+    p["discrimination"]["results"] = [
+        {"cell": "sep_local" if t.startswith("sep_local") else t,
+         "client": t.split("_")[-1] if t.startswith("sep_local") else None,
+         "delta": {"point": 0.3, "ci_lo": 0.2, "ci_hi": 0.4}} for t in DET_TAGS]
+    (d / "score_cells_v1.json").write_text(json.dumps(p, ensure_ascii=False), encoding="utf-8")
+
+
+@pytest.mark.parametrize("degenerate", [False, True])
+def test_main_이_실제로_돌고_집계본이_먼저_써진다(tmp_path, degenerate):
+    """D ≤ 0 인 시드가 있어도 집계본은 써진다(C 34번 Minor 6) — 회복률 무관 표까지 잃지 않는다."""
+    import os
+
+    root = tmp_path / "main_d"
+    for n in (1, 2, 3):
+        floor = dict(S1)
+        if degenerate and n == 2:
+            floor["sep_central"] = 0.10          # 로컬평균 0.196 > 중앙 → D < 0
+        _write_seed_dir(root, n, floor)
+    dest = tmp_path / "seed3set"
+    env = {**os.environ, "PYTHONPATH": str(REPO), "PYTHONIOENCODING": "utf-8"}
+    proc = subprocess.run(
+        [sys.executable, str(REPO / "scripts/probe/aggregate_seeds.py"), "--root", str(root),
+         "--seeds", "1,2,3", "--dest", str(dest)],
+        capture_output=True, text=True, encoding="utf-8", env=env, cwd=REPO, check=False,
+    )
+    assert (dest / "aggregate_v1.json").exists(), proc.stderr[-800:]
+    assert proc.returncode == 0, proc.stderr[-800:]
+    agg = json.loads((dest / "aggregate_v1.json").read_text(encoding="utf-8"))
+    rec = agg["recovery"]["map_50"]
+    if degenerate:
+        assert rec["by_seed"][1]["recovery_pct"] is None
+        assert rec["n_seeds_recovery_defined"] == 2
+        assert "미정의" in proc.stdout
+    assert agg["recovery"]["map_50"]["denominator_gate"]["recovery_reportable"] is None
+    assert agg["local_mean_definition"].startswith("로컬 평균")

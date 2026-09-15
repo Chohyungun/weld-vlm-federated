@@ -82,14 +82,17 @@ def test_같은_트리에서_언제나_같은_값(tmp_path):
     assert scorer_code_digest(root)["combined"] == scorer_code_digest(root)["combined"]
 
 
-def test_파일_순서에_좌우되지_않는다(tmp_path):
-    """`combined_digest` 는 정렬된 목록을 받기로 돼 있다 — 뒤섞어 넣어도 같아야 한다."""
+def test_합산_해시는_입력_순서에_의존하고_정렬은_목록_함수가_보장한다(tmp_path):
+    """`combined_digest` 자체는 순서에 **의존한다**(경로를 이어 붙여 해싱한다). 결정론은
+    `scorer_source_files` 가 정렬된 목록을 돌려주는 데서 온다 — 두 사실을 따로 단언한다.
+    (C 34번 Minor 14: 이전 시험은 docstring 과 단언이 반대였다.)"""
     root = _repo(tmp_path)
     files = scorer_source_files(root)
+    assert files == sorted(files, key=lambda p: p.relative_to(root).as_posix())
     a, _ = combined_digest(files, root)
-    b, _ = combined_digest(sorted(files, reverse=True), root)
-    assert a != b, "정렬을 호출부가 보장한다 — 이 성질이 깨지면 scorer_source_files 를 거쳐야 한다"
-    assert scorer_source_files(root) == files
+    b, _ = combined_digest(list(reversed(files)), root)
+    assert a != b                                   # 순서 의존 — 그래서 목록 함수를 거쳐야 한다
+    assert scorer_code_digest(root)["combined"] == scorer_code_digest(root)["combined"]
 
 
 def test_바이트코드_캐시는_제외한다(tmp_path):
@@ -139,3 +142,32 @@ def test_실제_저장소에서_돈다():
     assert "evaluation/score.py" in d["files"]
     assert "scripts/probe/score_cells.py" in d["files"]
     assert len(d["combined"]) == 64
+
+
+def test_채점_경로의_트리_밖_모듈이_지문에_들어간다():
+    """C 34번 Important 3 — 클래스 사상·층화 절단점·레코드 생성기가 지문 밖이면 그 모듈이
+    바뀌어도 지문이 같다."""
+    d = scorer_code_digest()
+    for rel in ("data/label_map.py", "data/id_strata.py", "data/manifest_io.py",
+                "scripts/probe/content_free_baselines.py", "scripts/probe/adapt_main_detections.py",
+                "detection/serialize.py", "scripts/probe/score_cells.py"):
+        assert rel in d["files"], rel
+
+
+def test_시작_끝_지문이_다르면_stable_False(tmp_path):
+    from evaluation.provenance import stable_digest
+
+    root = _repo(tmp_path)
+    a = scorer_code_digest(root)
+    (root / "evaluation/score.py").write_text("x = 2\n", encoding="utf-8")
+    b = scorer_code_digest(root)
+    out = stable_digest(a, b)
+    assert out["stable"] is False and out["files_changed_during_run"] == ["evaluation/score.py"]
+    assert stable_digest(a, a)["stable"] is True
+
+
+def test_상대경로는_정션을_따라가지_않는다():
+    from evaluation.provenance import relpath
+
+    assert relpath("outputs/main_d/seed1/score_cells_v1.json") == "outputs/main_d/seed1/score_cells_v1.json"
+    assert "/" not in relpath("E:/somewhere/else/x.json")     # 저장소 밖이면 이름만
