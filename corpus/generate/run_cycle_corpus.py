@@ -720,7 +720,7 @@ def write_report(recs, qa_recs, cands, cfg, payload, out_dir: Path) -> None:
     axes[AXIS_CLAUSE].update({
         "n_accepted": len(accepted), "n_pending": len(pending),
         "acceptance_status": "validated" if canonical is not None else "pending_canonical",
-        "end_to_end_pass_rate": len(accepted) / len(clause) if clause and canonical is not None else None,
+        "end_to_end_pass_rate": round(len(accepted) / len(clause), 4) if clause and canonical is not None else None,
     })
 
     axes[AXIS_REMEDY] = axis_block(
