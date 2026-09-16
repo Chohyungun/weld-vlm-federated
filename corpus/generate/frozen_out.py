@@ -38,14 +38,24 @@ import sys
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-# 계약·예외형의 정본은 `data.frozen_guard` 하나다 — 여기서는 가져다 쓰기만 한다.
-from data.frozen_guard import CONTRACT_NAME, FrozenDirectoryError, is_frozen
+# 계약·예외형·봉인처 명부의 정본은 `data.frozen_guard` 하나다 — 여기서는 가져다 쓰기만 한다.
+# 명부(EXPECTED_SEALED)는 09-16 A 가 옮겼다(62f660b). 이 모듈의 속성으로 다시 내보내므로
+# `frozen_out.EXPECTED_SEALED` 를 읽던 코드·시험은 그대로 돈다.
+from data.frozen_guard import (
+    CONTRACT_NAME,
+    EXPECTED_SEALED,
+    SEALED_STATUSES,
+    FrozenDirectoryError,
+    is_frozen,
+)
 
 _REPO = Path(__file__).resolve().parents[2]
 
 __all__ = [
     "CONTRACT_NAME",
     "EXPECTED_SEALED",
+    "FAILING",
+    "PRESENT_STATUSES",
     "FrozenDirectoryError",
     "assert_not_frozen",
     "check_registry",
@@ -212,29 +222,22 @@ def _verify_present(directory: Path, *,
     return out
 
 
-#: 있어야 할 봉인처 명부. **계약서가 있는 디렉터리만 찾으면, 디렉터리째 사라진 봉인본은
-#: 목록에서 같이 사라진다.** 09-11 에 data/processed 가 비었을 때 이 도구는 "깨짐 0" 을
-#: 냈다(30번 §8-4 나). 그래서 무엇이 있어야 하는지를 따로 들고 대조한다.
+#: 봉인처 명부는 `data.frozen_guard.EXPECTED_SEALED` 다(위 import). **계약서가 있는 디렉터리만
+#: 찾으면, 디렉터리째 사라진 봉인본은 목록에서 같이 사라진다.** 09-11 에 data/processed 가
+#: 비었을 때 이 도구는 "깨짐 0" 을 냈다(30번 §8-4 나). 그래서 무엇이 있어야 하는지를 따로
+#: 들고 대조한다. 상태 어휘(`SEALED_STATUSES`)마다 이 모듈이 내리는 판정:
 #:
 #: status  expected — 있어야 한다. 없으면 missing_contract(실패) 또는 absent_tree(알림)
+#:         restored — 소실 뒤 동일 바이트로 돌아왔다. 판정은 expected 와 **같다**
 #:         lost     — 소실이 기록됐다. 없으면 lost_recorded(알림, 실패 아님),
 #:                    다시 나타나면 lost_but_present(실패 — 같은 이름 재생성은 규약 1-6 위반)
-EXPECTED_SEALED: dict[str, dict[str, str]] = {
-    "corpus/generate/cycle_pilot": {"status": "expected", "owner": "B"},
-    "corpus/generate/cycle_pilot_v2": {"status": "expected", "owner": "B"},
-    "data/processed/pairs_pilot_v1": {
-        "status": "expected", "owner": "B",
-        "record": "09-11 소실 → 09-13 해시 일치 복원 (30번 부록 A)"},
-    "data/processed/pairs_pilot_v2": {
-        "status": "lost", "owner": "B",
-        "record": "09-11 소실 확정 · 사본 없음 · 입력 부재로 재생성 불가 (30번 부록 A-3)"},
-    "data/processed/aihub71761_rt_v1_pilot3000": {
-        "status": "lost", "owner": "A", "record": "09-11 소실 · 처리 판정 대기 (30번 §4)"},
-    "data/processed/aihub71761_rt_v1_pilot3000_crop_only": {
-        "status": "lost", "owner": "A", "record": "09-11 소실 · 처리 판정 대기 (30번 §4)"},
-    "data/processed/aihub71761_rt_v1_pilot3000_scale_control": {
-        "status": "lost", "owner": "A", "record": "09-11 소실 · 처리 판정 대기 (30번 §4)"},
-}
+#:
+#: 명부 값(상태 갱신·항목 추가)은 A 파일에서 총괄 판정으로 바꾼다 — 여기서 고치지 않는다.
+
+#: 실물이 있어야 하는 상태. 어휘에 단어가 늘면 시험이 멈춰 세운다 — 새 단어가 "있어야 하는지"
+#: 는 이쪽이 정해야 판정이 선다(`test_상태_어휘를_빠짐없이_판정한다`).
+PRESENT_STATUSES = frozenset({"expected", "restored"})
+ABSENT_STATUSES = frozenset({"lost"})
 
 #: 실패로 세는 판정.
 FAILING = frozenset({"broken", "missing_contract", "lost_but_present"})
@@ -257,16 +260,25 @@ def verify_contract(directory: Path, *,
       기록된 소실까지 매번 실패로 만들면 사람들은 이 검사를 끈다.
     * `lost_but_present` — 소실이 기록됐는데 계약서가 있다. **실패.** 명부가 낡았거나 같은
       이름으로 재생성됐다 — 후자는 규약 1-6 위반이다.
+
+    `restored`(소실 뒤 동일 바이트 복원)는 `expected` 와 똑같이 판정하고, 명부의 `evidence`
+    (근거 등급)를 결과에 옮겨 적는다. 어휘 밖 상태는 **거부한다** — 모르는 단어를 expected 로
+    읽어 넘기면 명부의 오타가 판정을 조용히 바꾼다.
     """
     d = Path(directory)
-    out = _verify_present(d, tracked=tracked)
     status = (expectation or {}).get("status")
+    if status is not None and status not in PRESENT_STATUSES | ABSENT_STATUSES:
+        raise ValueError(f"{d}: 봉인처 명부 상태 {status!r} 는 어휘 {SEALED_STATUSES} 밖이다"
+                         " — data/frozen_guard.py 의 명부를 확인하라")
+    out = _verify_present(d, tracked=tracked)
     if status is None:
         return out
     out["expected_status"] = status
     record = (expectation or {}).get("record")
+    if status == "restored":
+        out["evidence"] = (expectation or {}).get("evidence")
     if out["verdict"] == "no_contract":
-        if status == "lost":
+        if status in ABSENT_STATUSES:
             out["verdict"] = "lost_recorded"
             out["reason"] = record or "소실이 기록된 자리다"
             return out
@@ -282,7 +294,7 @@ def verify_contract(directory: Path, *,
             out["reason"] = (f"저장 뿌리 {d.parent.name}/ 가 이 트리에 없다 —"
                              " 여기서는 볼 수 없다 (소실인지 판단 못 함)")
         return out
-    if status == "lost":
+    if status in ABSENT_STATUSES:
         out["verdict"] = "lost_but_present"
         out["reason"] = ("소실이 기록된 자리에 계약서가 있다 — 명부가 낡았거나 같은 이름으로"
                          f" 재생성됐다 (규약 1-6). 기록: {record or '-'}")
@@ -362,6 +374,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"    실물 없음(추적분): {r['missing_tracked']}")
             if r.get("unverified"):
                 print(f"    이 트리에서 대조 못 함: {r['unverified']}")
+            if r.get("expected_status") == "restored":
+                print(f"    복원 근거: {r.get('evidence') or '-'}")
             if r["verdict"] in ("missing_contract", "absent_tree",
                                 "lost_recorded", "lost_but_present"):
                 print(f"    {r.get('reason')}")

@@ -341,7 +341,8 @@ def test_봉인_구성원이_실물과_이름이_맞는다(d: Path):
     """
     rel = d.relative_to(REPO).as_posix()
     entry = FO.EXPECTED_SEALED.get(rel)
-    assert entry is not None, f"{rel}: 봉인처 명부에 없다 — frozen_out.EXPECTED_SEALED 에 올려라"
+    assert entry is not None, (f"{rel}: 봉인처 명부에 없다 — data/frozen_guard.py 의 "
+                               "EXPECTED_SEALED(A 소관)에 올리도록 총괄에 보고하라")
     # 옛 판정은 디렉터리가 없으면 그냥 건너뛰었다 — 09-11 소실이 그렇게 초록으로 지나갔다.
     r = verify_contract(d, expectation=entry)
 
@@ -532,3 +533,91 @@ def test_실제_트리에서_소실이_조용히_사라지지_않는다(capsys):
     FO.main([])
     out = capsys.readouterr().out
     assert "pairs_pilot_v2" in out and "lost_recorded" in out
+
+
+# ------------------------------------------ 명부 단일화 (09-16, A 62f660b 뒤의 B 전환)
+
+
+def test_명부는_data_frozen_guard_의_단일_명부다():
+    """두 곳에 살면 한쪽만 고쳐진다. 이 모듈은 A 의 명부를 **같은 객체로** 내보내기만 한다."""
+    import ast
+
+    from corpus.validate import verify_backup as VB
+    from data import frozen_guard as FG
+
+    assert FO.EXPECTED_SEALED is FG.EXPECTED_SEALED
+    assert VB.EXPECTED_SEALED is FG.EXPECTED_SEALED
+    for mod in (FO, VB):
+        tree = ast.parse(Path(mod.__file__).read_text(encoding="utf-8"))
+        for node in tree.body:
+            targets = (node.targets if isinstance(node, ast.Assign)
+                       else [node.target] if isinstance(node, ast.AnnAssign) else [])
+            names = {t.id for t in targets if isinstance(t, ast.Name)}
+            assert "EXPECTED_SEALED" not in names, f"{mod.__name__} 가 명부를 다시 정의한다"
+
+
+def test_상태_어휘를_빠짐없이_판정한다():
+    """A 가 어휘에 단어를 더하면 여기서 멈춘다 — 그 단어가 "있어야 하는지" 를 B 가 정해야
+    대조기와 백업 목록이 함께 선다. 모르는 단어를 조용히 expected 로 읽지 않는다."""
+    from data.frozen_guard import SEALED_STATUSES
+
+    assert FO.PRESENT_STATUSES | FO.ABSENT_STATUSES == set(SEALED_STATUSES)
+    assert not (FO.PRESENT_STATUSES & FO.ABSENT_STATUSES)
+
+
+def _real_seal(d: Path) -> Path:
+    """해시가 맞는 작은 봉인본 — 대조기가 `ok` 를 낼 수 있게."""
+    import hashlib
+
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "pairs.jsonl").write_bytes(b'{"a": 1}\n')
+    h = hashlib.sha256((d / "pairs.jsonl").read_bytes()).hexdigest()
+    line = f"{h}  pairs.jsonl"
+    digest = hashlib.sha256((line + "\n").encode()).hexdigest()
+    (d / CONTRACT_NAME).write_text(f"{line}\n# snapshot_digest {digest}\n", encoding="utf-8")
+    return d
+
+
+def test_restored_는_expected_와_같게_판정하고_근거를_옮긴다(tmp_path, monkeypatch, capsys):
+    """복원 자리가 비면 expected 와 똑같이 실패, 차 있으면 통과 — 근거 등급은 결과·출력에 남는다."""
+    root = _registry_tree(tmp_path, with_root=True)
+    reg = {"data/processed/back": {"status": "restored", "owner": "A",
+                                   "record": "소실 뒤 복원", "evidence": "64자 digest 전체 일치"}}
+    monkeypatch.setattr(FO, "_REPO", root)
+    monkeypatch.setattr(FO, "EXPECTED_SEALED", reg)
+
+    [r] = FO.check_registry()
+    assert r["verdict"] == "missing_contract" and r["verdict"] in FO.FAILING
+    assert FO.main([]) == 1
+    capsys.readouterr()
+
+    _real_seal(root / "data/processed/back")
+    [r] = FO.check_registry()
+    assert r["verdict"] == "ok", r
+    assert r["expected_status"] == "restored" and r["evidence"] == "64자 digest 전체 일치"
+    assert FO.main([]) == 0
+    assert "복원 근거: 64자 digest 전체 일치" in capsys.readouterr().out
+
+
+def test_실물_트리에서_명부_전체_대조가_실패_0이다():
+    """명부 **전체**를 실물에 대조한다 — A 소유 자리(`manifest_v1`·복원된 pilot3000 계열)까지.
+
+    `FROZEN_REAL` 은 B 네 곳만 채점하고, A 의 `test_restored_자리에_실물과_계약서가_있다` 는
+    세 자리 중 **하나라도 없으면 skip** 한다. 둘을 합쳐도 복원 자리 하나가 사라지면 스위트는
+    초록이다 — 09-11 과 같은 모양이다(45번 I-1). 여기서는 저장 뿌리가 있는데 봉인본이 없으면
+    `missing_contract` 로 실패한다. 뿌리 자체가 없는 트리(정션 없는 clone)는 `absent_tree` 라
+    실패가 아니고, 그 사실은 경고로 남긴다.
+    """
+    results = FO.check_registry()
+    bad = [(r["rel"], r["verdict"], r.get("reason")) for r in results if r["verdict"] in FO.FAILING]
+    assert not bad, bad
+    absent = [r["rel"] for r in results if r["verdict"] == "absent_tree"]
+    if absent:
+        warnings.warn(f"이 트리에서 볼 수 없는 봉인처 {len(absent)}곳: {absent}",
+                      IncompleteTreeWarning, stacklevel=2)
+
+
+def test_어휘_밖_상태는_거부한다(tmp_path):
+    """명부의 오타("expectd")를 expected 로 읽어 넘기면 판정이 조용히 바뀐다."""
+    with pytest.raises(ValueError, match="어휘"):
+        verify_contract(tmp_path / "x", expectation={"status": "expectd", "owner": "B"})
