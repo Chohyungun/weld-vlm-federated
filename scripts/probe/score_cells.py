@@ -62,7 +62,7 @@ from evaluation.params import (
 )
 from evaluation.probes.metadata_probe import MetaSample, trivial_bound
 from evaluation.probes.p9_runner import contexts_from_snapshot, p9_all_cells
-from evaluation.provenance import scorer_code_digest
+from evaluation.provenance import hash_files, scorer_code_digest, stable_digest
 from evaluation.schema import PredictionRecord
 from evaluation.score import coord_health, failure_breakdown
 from evaluation.strata import (
@@ -107,6 +107,11 @@ HEADLINE_POLICY = {
 """**산출물이 자기 헤드라인 규칙을 말한다.** 표만 읽고 인용하는 사람이 있기 때문이다.
 
 이 딕셔너리를 고치는 것은 채점 기준을 고치는 것과 같다 — 총괄 판정 없이 바꾸지 마라.
+"""
+
+ARTIFACT_VERSIONS = {"v1": "score_cells_v1.json", "v2": "score_cells_v2.json"}
+"""산출물 파일명. **v2 는 새 경로다** — 세 시드를 한 코드 상태(하나의 커밋)로 다시 채점할 때
+v1 을 덮어쓰지 않고 옆에 둔다(총괄 판정 09-16, C 34번 Important 1). v1 은 역사 기록으로 남는다.
 """
 
 EXIT_OK = 0
@@ -519,6 +524,8 @@ def decomposition_block(params: ScoringParams, pop: Population, det_tags) -> dic
         "computed_at": f"conf >= {params.conf_floor} (하한 — 임계 독립 축)",
         "client_mapping": {"AL": "C3 (알루미늄 단독 클라이언트)",
                            "ST": "C1 ∪ C2 (강재 두 클라이언트, 평가셋에서 분리 불가)"},
+        # 산문이 아니라 **구조**로 — 집계기가 정규식으로 산문을 되읽지 않게(C 34번 Minor 10).
+        "clients_of_material": {"AL": ["C3"], "ST": ["C1", "C2"]},
         "limitation": (
             "평가셋은 회사별 분할보다 먼저 뗐으므로 `client` 열이 비어 있다(실측 12,461행 전부). "
             "3분할 클라이언트 분해는 원리적으로 불가능하고 재질이 유일한 귀속 축이다"
@@ -734,6 +741,9 @@ def check_regressions(params: ScoringParams, metrics: dict) -> dict:
 
 
 def cmd_score(args) -> int:
+    # 지문은 **시작과 끝**에 두 번 — 긴 채점 중 트리가 바뀌면 끝 지문이 시작 코드를 대표하지
+    # 않는다(C 34번 Minor 15). 둘이 다르면 산출물이 `stable=False` 로 말한다.
+    code_start = scorer_code_digest()
     params = params_from_args(args)
     params.out.mkdir(parents=True, exist_ok=True)
     pop = load_population(params)
@@ -824,9 +834,15 @@ def cmd_score(args) -> int:
         "cells_scored": list(tags),
         "cells_selection": getattr(args, "cells", "all"),
         "scorer": "evaluation.score.score_records (단일)",
+        "artifact_version": ARTIFACT_VERSIONS[getattr(args, "artifact_version", "v1")],
         # **채점기 자신의 코드 지문.** 여러 시드가 같은 코드로 채점됐는지 확인할 유일한
         # 수단이다 — 파라미터가 같아도 코드가 다르면 같은 기준이 아니다(27번 §1-0·§12-1).
-        "scorer_code": scorer_code_digest(),
+        # 시작·끝 두 번 계산해 채점 중 트리 변경을 잡는다.
+        "scorer_code": stable_digest(code_start, scorer_code_digest()),
+        # **입력 레코드의 해시.** 채점이 읽은 레코드가 무엇이었는지 — 코드 지문만으로는
+        # 같은 입력을 봤다는 것이 확인되지 않는다(C 34번 Important 3).
+        "input_records": hash_files(
+            [record_path(params, t) for t in tags] + [raw_record_path(params, t) for t in det_tags]),
         "metrics": metrics,
         "metrics_role": (
             f"운용점 예시 conf={params.conf.value} — **확증적 기준 아님**(총괄 판정 1, "
@@ -852,11 +868,13 @@ def cmd_score(args) -> int:
         "exit_reason": why,
         **diag,
     }
-    dest = params.out / "score_cells_v1.json"
+    dest = params.out / ARTIFACT_VERSIONS[getattr(args, "artifact_version", "v1")]
     with dest.open("w", encoding="utf-8", newline="\n") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
     print(f"저장: {dest}")
+    if not payload["scorer_code"]["stable"]:
+        print("  ! 채점 중 채점기 트리가 바뀌었다 — 이 산출물은 한 코드 상태로 나온 것이 아니다")
 
     print(f"게이트 {gates['n_evaluated']}/{gates['n_registered']} 평가 · "
           f"차단 실패 {gates['blocking_failures'] or '없음'} · "
@@ -1002,6 +1020,8 @@ def main() -> int:
                      ("predict", cmd_predict), ("sweep", cmd_sweep)):
         p = sub.add_parser(name)
         add_common_args(p)
+        p.add_argument("--artifact-version", choices=sorted(ARTIFACT_VERSIONS), default="v1",
+                       help="산출물 파일명 판. v2 = 새 경로 재채점(v1 보존)")
         p.add_argument("--root", default=".")
         p.add_argument("--at-conf", action="store_true",
                        help="predict: 하한이 아니라 운용 임계로 추론한다(65번 레코드 생성)")

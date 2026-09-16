@@ -19,10 +19,14 @@ from evaluation.provenance import (
 
 
 def _tree(root, files: dict[str, str]) -> None:
+    """**바이트로 쓴다.** `write_text` 는 윈도우에서 `
+` 을 `
+` 로 바꿔 버려서
+    "LF 기준" 픽스처가 성립하지 않는다 — 줄끝 시험이 그 변환에 가려진다."""
     for rel, body in files.items():
         p = root / rel
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(body, encoding="utf-8")
+        p.write_bytes(body.encode("utf-8"))
 
 
 def _repo(tmp_path, body: str = "x = 1\n"):
@@ -82,14 +86,17 @@ def test_같은_트리에서_언제나_같은_값(tmp_path):
     assert scorer_code_digest(root)["combined"] == scorer_code_digest(root)["combined"]
 
 
-def test_파일_순서에_좌우되지_않는다(tmp_path):
-    """`combined_digest` 는 정렬된 목록을 받기로 돼 있다 — 뒤섞어 넣어도 같아야 한다."""
+def test_합산_해시는_입력_순서에_의존하고_정렬은_목록_함수가_보장한다(tmp_path):
+    """`combined_digest` 자체는 순서에 **의존한다**(경로를 이어 붙여 해싱한다). 결정론은
+    `scorer_source_files` 가 정렬된 목록을 돌려주는 데서 온다 — 두 사실을 따로 단언한다.
+    (C 34번 Minor 14: 이전 시험은 docstring 과 단언이 반대였다.)"""
     root = _repo(tmp_path)
     files = scorer_source_files(root)
+    assert files == sorted(files, key=lambda p: p.relative_to(root).as_posix())
     a, _ = combined_digest(files, root)
-    b, _ = combined_digest(sorted(files, reverse=True), root)
-    assert a != b, "정렬을 호출부가 보장한다 — 이 성질이 깨지면 scorer_source_files 를 거쳐야 한다"
-    assert scorer_source_files(root) == files
+    b, _ = combined_digest(list(reversed(files)), root)
+    assert a != b                                   # 순서 의존 — 그래서 목록 함수를 거쳐야 한다
+    assert scorer_code_digest(root)["combined"] == scorer_code_digest(root)["combined"]
 
 
 def test_바이트코드_캐시는_제외한다(tmp_path):
@@ -139,3 +146,59 @@ def test_실제_저장소에서_돈다():
     assert "evaluation/score.py" in d["files"]
     assert "scripts/probe/score_cells.py" in d["files"]
     assert len(d["combined"]) == 64
+
+
+def test_채점_경로의_트리_밖_모듈이_지문에_들어간다():
+    """C 34번 Important 3 — 클래스 사상·층화 절단점·레코드 생성기가 지문 밖이면 그 모듈이
+    바뀌어도 지문이 같다."""
+    d = scorer_code_digest()
+    for rel in ("data/label_map.py", "data/id_strata.py", "data/manifest_io.py",
+                "scripts/probe/content_free_baselines.py", "scripts/probe/adapt_main_detections.py",
+                "detection/serialize.py", "scripts/probe/score_cells.py"):
+        assert rel in d["files"], rel
+
+
+def test_시작_끝_지문이_다르면_stable_False(tmp_path):
+    from evaluation.provenance import stable_digest
+
+    root = _repo(tmp_path)
+    a = scorer_code_digest(root)
+    (root / "evaluation/score.py").write_text("x = 2\n", encoding="utf-8")
+    b = scorer_code_digest(root)
+    out = stable_digest(a, b)
+    assert out["stable"] is False and out["files_changed_during_run"] == ["evaluation/score.py"]
+    assert stable_digest(a, a)["stable"] is True
+
+
+def test_상대경로는_정션을_따라가지_않는다():
+    from evaluation.provenance import relpath
+
+    assert relpath("outputs/main_d/seed1/score_cells_v1.json") == "outputs/main_d/seed1/score_cells_v1.json"
+    assert "/" not in relpath("E:/somewhere/else/x.json")     # 저장소 밖이면 이름만
+
+
+def test_줄끝만_다르면_같은_지문이다(tmp_path):
+    """`core.autocrlf` 가 다른 체크아웃에서 같은 커밋이 다른 지문을 내면, 지문이 커밋이 아니라
+    **체크아웃**을 가리킨다 — "같은 코드로 채점됐는가" 에 답하지 못한다(외부 검토 09-16).
+
+    실측 배경: wt/D 는 `core.autocrlf=true` 라 작업 트리가 CRLF 인데 git blob 은 LF 여서,
+    지문 39파일 중 7개가 줄끝만으로 달랐다(37번 §3-4).
+    """
+    root = _repo(tmp_path)
+    lf = scorer_code_digest(root)["combined"]
+    for rel in ("evaluation/score.py", "evaluation/metrics/detection.py"):
+        p = root / rel
+        p.write_bytes(p.read_bytes().replace(b"\n", b"\r\n"))
+    assert b"\r\n" in (root / "evaluation/score.py").read_bytes()
+    assert scorer_code_digest(root)["combined"] == lf
+    assert scorer_code_digest(root)["newline_normalized"] is True
+
+
+def test_줄끝_말고_실제_변경은_여전히_잡는다(tmp_path):
+    """정규화가 코드 변경까지 지우면 지표가 죽는다 — CRLF 로 둔 채 한 글자를 바꾼다."""
+    root = _repo(tmp_path)
+    p = root / "evaluation/score.py"
+    p.write_bytes(b"x = 1\r\n")
+    a = scorer_code_digest(root)["combined"]
+    p.write_bytes(b"x = 2\r\n")
+    assert scorer_code_digest(root)["combined"] != a

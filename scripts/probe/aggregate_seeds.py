@@ -44,8 +44,22 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
-from evaluation.prereg import recovery_denominator_ok
-from evaluation.stats import recovery_denominator_verdict
+from evaluation.prereg import (
+    RECOVERY_CI_DENOMINATOR_MUST_EXCLUDE_ZERO,
+    RECOVERY_CI_MAX_HALF_WIDTH,
+    RECOVERY_CI_MAX_UNDEFINED_FRACTION,
+    recovery_denominator_ok,
+)
+from evaluation.provenance import combined_digest, relpath, scorer_code_digest
+from evaluation.recovery_ci import (
+    check_binding,
+    check_identity,
+    check_points,
+    make_binding,
+    read_artifact,
+    rejudge_ci_rules,
+)
+from evaluation.stats import Interval, recovery_denominator_verdict
 
 DET_TAGS = ("sep_central", "sep_local_C1", "sep_local_C2", "sep_local_C3", "sep_fed")
 LOCALS = ("sep_local_C1", "sep_local_C2", "sep_local_C3")
@@ -53,6 +67,19 @@ FLOOR_METRICS = ("map_50", "map_50_95", "macro_ap")
 OPERATING_METRICS = ("macro_f1", "miss_rate", "defect_recall", "class_jaccard", "bbox_iou")
 HEADLINE_AXIS = "map_50"
 """총괄 판정 22번 §6-2-3 — 유일한 확정 대표 후보 축."""
+
+LOCAL_MEAN_DEFINITION = "로컬 평균 = 로컬 세 칸(C1·C2·C3) 점수의 **비가중** 산술평균"
+"""C1:C2:C3 = 26,451:16,253:7,143 이라 가중이면 D·회복률이 달라진다. 집계기는 비가중을 쓰고
+그 사실을 산출물에 적는다(C 34번 Minor 13 — 의사결정로그 확정은 총괄)."""
+
+PUBLIC_STATUS = {
+    "ci_bound_passed": "CI 산출 완료, 코드·출처 최종 검수 및 대표 채택 대기",
+    "ci_bound_failed": "CI 산출 완료 — 규칙 미달로 회복률을 헤드라인으로 싣지 않음. 코드·출처 최종 검수 대기",
+    "ci_unbound": "CI 산출물이 이 집계의 입력과 결속되지 않음 — 회복률 게재 가부 미판정",
+    "ci_missing": "CI 미산출 — 회복률 게재 가부 미판정",
+}
+"""공개 문구(총괄 09-16). `recovery_reportable=true` 여도 **코드·출처 최종 검수와 대표 채택은
+남아 있다** — 게재 가능 판정을 완료로 읽지 않게 문구가 그 두 가지를 함께 말한다."""
 
 VARIANCE_INTERPRETATION = (
     "세 시드의 분산은 **기존 난수 정책(라운드마다 같은 첫 두 epoch 순열, 감사 F01) 아래의 "
@@ -126,7 +153,8 @@ COMPARABLE_PARAMS = (
 
 
 def provenance(root: Path, payloads: dict[int, dict], *,
-               allow_drift: bool = False) -> dict:
+               allow_drift: bool = False, artifact: str = "score_cells_v1.json",
+               entries: dict[int, dict] | None = None) -> dict:
     """집계가 실제로 읽은 파일과, 그 파일로 확인되는 것/안 되는 것을 갈라 적는다.
 
     이 블록은 (a) 읽은 파일의 sha256, (b) 산출물에 실제로 있는 파라미터의 시드 간 동일성,
@@ -139,8 +167,10 @@ def provenance(root: Path, payloads: dict[int, dict], *,
     files, mism = {}, {}
     ref = min(payloads)
     for n, payload in payloads.items():
-        path = root / f"seed{n}" / "score_cells_v1.json"
-        files[str(n)] = {"path": str(path), "sha256": _sha256(path)}
+        path = root / f"seed{n}" / artifact
+        # 집계기가 **실제로 파싱한 바이트**의 해시를 쓴다 — 다시 읽으면 그 사이 바뀐 파일을 적는다
+        sha = entries[n]["sha256"] if entries and n in entries else _sha256(path)
+        files[str(n)] = {"path": relpath(path), "sha256": sha}
         mism[str(n)] = [
             k for k in COMPARABLE_PARAMS
             if payload["params"].get(k) != payloads[ref]["params"].get(k)
@@ -209,11 +239,16 @@ def scorer_code_check(payloads: dict[int, dict], *, allow_drift: bool = False) -
     }
 
 
-def load_seed(root: Path, n: int) -> dict:
-    p = root / f"seed{n}" / "score_cells_v1.json"
+def load_seed(root: Path, n: int, artifact: str = "score_cells_v1.json") -> dict:
+    return load_seed_entry(root, n, artifact)[0]
+
+
+def load_seed_entry(root: Path, n: int, artifact: str = "score_cells_v1.json") -> tuple[dict, dict]:
+    """산출물을 **한 번만** 읽어 `(payload, 결속 항목)` — CI 생성기와 같은 함수(`read_artifact`)."""
+    p = root / f"seed{n}" / artifact
     if not p.exists():
         raise SystemExit(f"시드 {n} 본채점 산출물이 없다: {p}")
-    return json.loads(p.read_text(encoding="utf-8"))
+    return read_artifact(p)
 
 
 def check_baselines_identical(payloads: dict[int, dict]) -> dict:
@@ -296,12 +331,21 @@ def recovery_table(payloads: dict[int, dict], table: dict) -> dict:
             # "시드 sd" 의 정의를 정하지 않았으므로 하나를 골라 싣지 않는다.
             per_cell_sd = {t: (statistics.stdev(v) if len(v) >= 2 else None)
                            for t, v in cell_vals.items()}
+            # 시드가 2개 미만이면 sd 가 정의되지 않는다 — 0 으로 두면 트립와이어가 자동 "충족"
+            # 이 된다(C 34번 Minor 8). 미판정으로 남긴다.
+            sd_defined = len(seeds) >= 2
             max_cell_sd = max((v for v in per_cell_sd.values() if v is not None), default=0.0)
-            ok_pooled, d_val, msg_pooled = recovery_denominator_ok(
-                sign * cm, sign * lmm, pooled["sd"] or 0.0)
-            ok_cell, _, msg_cell = recovery_denominator_ok(sign * cm, sign * lmm, max_cell_sd)
-            verdict_dsd = recovery_denominator_verdict(
-                sign * cm, [sign * lmm], seed_values=d_per_seed)
+            if sd_defined:
+                ok_pooled, d_val, msg_pooled = recovery_denominator_ok(
+                    sign * cm, sign * lmm, pooled["sd"] or 0.0)
+                ok_cell, _, msg_cell = recovery_denominator_ok(sign * cm, sign * lmm, max_cell_sd)
+                verdict_dsd = recovery_denominator_verdict(
+                    sign * cm, [sign * lmm], seed_values=d_per_seed)
+            else:
+                ok_pooled = ok_cell = None
+                d_val = sign * (cm - lmm)
+                msg_pooled = msg_cell = "시드 2개 미만 — sd 를 정의할 수 없어 미판정"
+                verdict_dsd = None
             out[m] = {
                 "tier": tier,
                 "by_seed": per_seed,
@@ -338,10 +382,16 @@ def recovery_table(payloads: dict[int, dict], table: dict) -> dict:
                         "max_per_cell_df2": {"seed_sd": max_cell_sd,
                                              "threshold_3sd": 3 * max_cell_sd,
                                              "pass": ok_cell, "detail": msg_cell,
-                                             "role": "가정 없는 보수적 정의"},
+                                             "role": "가정 없는 보수적 정의",
+                                             "definition": ("다섯 칸 중 시드 sd 최대 — **연합 포함.** "
+                                                            "연합은 분모 D 에 들어가지 않지만 그 분산이 "
+                                                            "커도 막는다(보수적 방향, C 34번 M16)")},
                         "denominator_sd_df2": {
                             "seed_sd_definition": "분모 D 자체의 시드 간 sd(자유도 2)",
-                            **verdict_dsd.as_dict(),
+                            **(verdict_dsd.as_dict() if verdict_dsd else
+                               {"tripwire_3sigma_pass": None, "ci_pass": None,
+                                "tripwire_only_reportable": None, "recovery_reportable": None,
+                                "detail": msg_cell}),
                             "field_caveat": (
                                 "`tripwire_only_reportable` 은 트립와이어 한 줄의 결과다. "
                                 "`recovery_reportable` 은 CI 가 산출·통과된 뒤에만 true 이고 "
@@ -352,11 +402,12 @@ def recovery_table(payloads: dict[int, dict], table: dict) -> dict:
                     # (3) 세 가지를 갈라 적는다. 하나라도 종합 통과로 읽히면 안 된다.
                     # ①은 **세 정의 전부**를 본다 — 둘만 보면 세 번째가 갈려도 "충족"이 난다.
                     "verdict": {
-                        "1_tripwire_3sigma": _tripwire_verdict(
-                            ok_pooled, ok_cell, verdict_dsd.tripwire_pass),
+                        "1_tripwire_3sigma": (_tripwire_verdict(
+                            ok_pooled, ok_cell, verdict_dsd.tripwire_pass) if verdict_dsd
+                            else "미판정(시드 2개 미만)"),
                         "1_tripwire_by_definition": {
                             "pooled_df10": ok_pooled, "max_per_cell_df2": ok_cell,
-                            "denominator_sd_df2": verdict_dsd.tripwire_pass,
+                            "denominator_sd_df2": verdict_dsd.tripwire_pass if verdict_dsd else None,
                         },
                         "2_recovery_ci": (
                             "**미산출.** 본채점이 이 축의 묶음 클러스터 부트스트랩 CI 를 내지 "
@@ -411,6 +462,7 @@ def secondary_ratios(payloads: dict[int, dict], axis: str = HEADLINE_AXIS) -> di
         "definitions": {
             "fed_over_central_pct": "연합 ÷ 중앙집중 × 100",
             "improvement_over_local_mean_pct": "(연합 − 로컬 평균) ÷ 로컬 평균 × 100",
+            "local_mean": LOCAL_MEAN_DEFINITION,
         },
         "by_seed": per_seed,
         "fed_over_central_pct": {**_summary(r1), "of_seed_means": 100.0 * fm / cm if cm > 0 else None},
@@ -438,11 +490,16 @@ def client_improvement(payloads: dict[int, dict], axis: str = HEADLINE_AXIS) -> 
     seeds = sorted(payloads)
 
     # 재질 → 클라이언트 귀속. 한 재질이 한 클라이언트에만 대응할 때만 '자기 재질'이 있다.
-    mapping = payloads[seeds[0]]["decomposition"].get("client_mapping", {})
+    decomp = payloads[seeds[0]]["decomposition"]
+    structured = decomp.get("clients_of_material")
+    mapping = structured if structured else decomp.get("client_mapping", {})
     own_material: dict[str, str] = {}
     shared: dict[str, list[str]] = {}
     for mat, desc in mapping.items():
-        clients = sorted(set(re.findall(r"C[123]", str(desc))))
+        # v2 산출물은 구조화된 목록을 준다. v1 은 산문뿐이라 정규식으로 되읽는다 — 그 사실을
+        # `attribution_source` 가 밝힌다(C 34번 Minor 10).
+        clients = (sorted(desc) if isinstance(desc, list)
+                   else sorted(set(re.findall(r"C[123]", str(desc)))))
         if len(clients) == 1:
             own_material[f"sep_local_{clients[0]}"] = mat
         elif len(clients) > 1:
@@ -517,6 +574,8 @@ def client_improvement(payloads: dict[int, dict], axis: str = HEADLINE_AXIS) -> 
         "definition_own_material": "(연합 − 로컬_c) ÷ 로컬_c × 100  [그 클라이언트 재질만]",
         "own_material_map": own_material,
         "own_material_unresolvable": shared,
+        "attribution_source": ("구조화 필드 clients_of_material" if structured
+                               else "산문 client_mapping 을 정규식으로 되읽음(v1 산출물)"),
         "by_seed": per_seed,
         "by_client": by_client,
         "worst_client_by_seed": worst_by_seed,
@@ -531,6 +590,140 @@ def client_improvement(payloads: dict[int, dict], axis: str = HEADLINE_AXIS) -> 
             "최악 참여자의 공통 변화가 전 시드 음수면 평균이 그 사실을 가린다"
         ),
     }
+
+
+def observed_points(rec: dict, payloads: dict[int, dict], axis: str = HEADLINE_AXIS) -> dict:
+    """집계기가 **지금 읽은 채점 파일**에서 직접 계산한 점추정 — CI 기록과 맞댈 값.
+
+    회복률은 **비율 단위**로 낸다(집계 표의 백분율 ÷ 100). 정의되지 않은 시드(D ≤ 0)는 None 이고,
+    그러면 R̄ 도 None 이다 — CI 쪽도 그 시드를 미정의로 적었어야 한다.
+    """
+    r = rec[axis]
+    by = {p["seed"]: p for p in r["by_seed"]}
+    rs = {s: (None if p["recovery_pct"] is None else p["recovery_pct"] / 100) for s, p in by.items()}
+    tpi = {n: payloads[n]["threshold_independent"]["per_tag"] for n in payloads}
+    return {
+        "R_bar": (None if any(v is None for v in rs.values())
+                  else r["mean_of_seed_recoveries_pct"] / 100),
+        "R": rs,
+        "D": {s: p["denominator"] for s, p in by.items()},
+        "map_50": {n: {t: tpi[n][t][axis] for t in DET_TAGS} for n in payloads},
+        "identity_basis": {n: {t: {"map_50": tpi[n][t]["map_50"], "map_50_95": tpi[n][t]["map_50_95"]}
+                               for t in DET_TAGS} for n in payloads},
+    }
+
+
+def apply_recovery_ci(rec: dict, ci_payload: dict | None, observed: dict | None = None,
+                      points: dict | None = None, axis: str = HEADLINE_AXIS) -> dict:
+    """회복률 CI 를 대표 축의 판정에 배선한다 — **결속을 확인하고, 판정은 다시 한다.**
+
+    정책(총괄 09-15·09-16, 외부 검토 codex_reply §18):
+
+    1. CI 가 없으면 `recovery_reportable = null`(미산출).
+    2. CI 의 결속(`binding` — 산출물 이름·시드 집합·시드별 산출물 sha256·채점기 지문과 규칙 표기)이
+       이 집계가 **실제로 읽은** 입력과 하나라도 다르면 CI 를 쓰지 않고 `null`. 사유를 전부 남긴다.
+    3. CI 에 T1 항등 검사 결과가 없거나 실패(칸 × 시드 전부 통과·차 0 이 아님)면 `null`.
+       항등 검사의 기준값이 지금 채점 파일의 값과 달라도 `null`.
+    4. CI 의 점추정(R̄·R_s·D_s·칸별 map_50)이 집계기가 **지금 읽은 채점 파일**로 계산한 값과
+       `POINT_TOLERANCE`(1e-12, 근거는 `evaluation/recovery_ci.py`) 넘게 다르면 `null`.
+    5. 기록된 `ci_pass` 는 **믿지 않는다.** 구간·반폭·미정의 수에서 규칙 ②③④를 다시 판정한다
+       (`evaluation/prereg.py`). 기록이 자기모순이거나 등록 조건과 다르면 `null`.
+    6. 위를 전부 지나면 트립와이어 ① ∧ 재판정 ②③④ → `true`, 아니면 `false`.
+    7. 대표 채택은 어느 경우에도 총괄 판정이다 — `public_status` 가 그것을 말한다.
+
+    검사 2~4 는 서로를 대신하지 않는다. 해시가 같아도 항등·점추정을 따로 본다.
+    """
+    r = rec[axis]
+    g = r["denominator_gate"]
+    v = g["verdict"]
+    g["recovery_reportable_policy"] = (
+        "CI 산출·통과 뒤에만 true. CI 가 이 집계의 입력과 결속되지 않았거나 기록이 자기모순이면 "
+        "null. 기록된 ci_pass 는 쓰지 않고 집계기가 다시 판정한다")
+
+    def _unjudged(status_key: str, reasons: list[str], headline: str) -> dict:
+        v["2_recovery_ci"] = headline
+        v["combined"] = "회복률 게재 가부 미판정 — " + (reasons[0] if reasons else headline)
+        g["recovery_reportable"] = None
+        g["recovery_ci_rejected"] = {"reasons": reasons} if reasons else None
+        g["public_status"] = PUBLIC_STATUS[status_key]
+        return rec
+
+    if not ci_payload:
+        return _unjudged("ci_missing", [],
+                         "**미산출.** recovery_ci_v1.json 이 없다 — 41번 보조 판정 미적용. "
+                         "통과가 아니라 판정 자체가 없다")
+    if observed is None:
+        return _unjudged("ci_unbound", ["집계 입력의 결속 정보가 주어지지 않았다"],
+                         "**사용 안 함.** 집계 입력과 대조할 수 없다")
+
+    seeds = observed["seeds"]
+    # 세 검사는 **서로를 대신하지 않는다** — 전부 돌리고 사유를 모은다.
+    reasons = check_binding(ci_payload, observed)              # 시드·해시·지문
+    if points is None:
+        reasons.append("집계기 점추정이 주어지지 않아 CI 기록과 맞댈 수 없다")
+    else:
+        reasons += check_identity(ci_payload, seeds, DET_TAGS, points["identity_basis"])   # 요구 5
+        reasons += check_points(ci_payload, seeds, points)     # 요구 6
+    if reasons:
+        return _unjudged("ci_unbound", reasons,
+                         f"**사용 안 함.** CI 가 이 집계의 입력과 결속되지 않는다({len(reasons)}건)")
+
+    rj, rj_reasons = rejudge_ci_rules(ci_payload, seeds)
+    if rj is None:
+        return _unjudged("ci_unbound", rj_reasons,
+                         f"**사용 안 함.** CI 기록으로 규칙을 다시 판정할 수 없다({len(rj_reasons)}건)")
+
+    ci = ci_payload["ci"]["R_bar"]
+    interval = Interval(float(ci_payload["point"]["R_bar"]), float(ci["ci_lo"]), float(ci["ci_hi"]),
+                        int(ci_payload["statistic"]["n_resamples"]),
+                        int(ci_payload["statistic"]["n_groups"]), int(ci["n_undefined"]))
+    tripwire_ok = v["1_tripwire_3sigma"] == "충족"
+    reportable = bool(tripwire_ok and rj["ci_pass"])
+    v["2_recovery_ci"] = (
+        f"**{'통과' if rj['ci_pass'] else '불합격'}(집계기 재판정).** R̄ 95% CI "
+        f"[{ci['ci_lo'] * 100:+.1f}%, {ci['ci_hi'] * 100:+.1f}%] · 반폭 {rj['2_half_width']['value']:.3f} "
+        f"(≤ {RECOVERY_CI_MAX_HALF_WIDTH}: {rj['2_half_width']['pass']}) · 분모 CI 0 배제 "
+        f"{rj['3_denominator_ci_excludes_zero']['pass']} (요구 {RECOVERY_CI_DENOMINATOR_MUST_EXCLUDE_ZERO}) · "
+        f"미정의 {rj['4_undefined_fraction']['value']:.3f} "
+        f"(≤ {RECOVERY_CI_MAX_UNDEFINED_FRACTION}: {rj['4_undefined_fraction']['pass']})")
+    v["combined"] = ("트립와이어 ①과 CI 규칙 ②③④(집계기 재판정) 전부 충족 → 회복률 게재 가능"
+                     "(recovery_reportable=true). ③ 대표 채택은 총괄 판정" if reportable else
+                     "①~④ 중 미달이 있다 → 회복률을 헤드라인으로 싣지 않는다(recovery_reportable=false)")
+    g["recovery_reportable"] = reportable
+    g["recovery_ci_rejected"] = None
+    g["public_status"] = PUBLIC_STATUS["ci_bound_passed" if reportable else "ci_bound_failed"]
+    g["recovery_ci"] = {
+        "source": "recovery_ci_v1.json",
+        "binding": ("성립 — 산출물 이름·시드 집합·시드별 sha256·채점기 지문·규칙 표기 일치, "
+                    "T1 항등 칸 × 시드 전부 통과·차 0, 점추정 일치(허용 1e-12)"),
+        "interval": interval.as_dict(),
+        "rules_rejudged": rj,
+        "registration": ci_payload.get("registration"),
+        "seed_caveat": ci_payload.get("seed_caveat"),
+    }
+    return rec
+
+
+def _ladder_population_check(payloads: dict[int, dict], ladder_path: str | None) -> dict:
+    """촬영 ID 대조선의 모집단(결함·정상 수·스냅샷 digest)이 payload 의 값과 같은지 — 고정
+    문자열이 아니라 대조로(C 34번 Minor 9). 사다리 JSON 이 Codex 형식(리스트)일 때만 가능하다."""
+    if not ladder_path or not Path(ladder_path).exists():
+        return {"checked": False, "reason": "사다리 파일 없음"}
+    raw = json.loads(Path(ladder_path).read_text(encoding="utf-8"))
+    if not isinstance(raw, list) or not raw:
+        return {"checked": False, "reason": "모집단 필드가 없는 형식"}
+    ref = raw[0]
+    out = {"checked": True, "ladder": {"n_defect": ref.get("n_defect"), "n_normal": ref.get("n_normal"),
+                                       "snapshot_digest": ref.get("snapshot_digest")}, "by_seed": {}}
+    ok = True
+    for n, p in payloads.items():
+        dt = p.get("discrimination_threshold_free", {})
+        same = (dt.get("n_defect") == ref.get("n_defect") and dt.get("n_normal") == ref.get("n_normal"))
+        out["by_seed"][str(n)] = {"n_defect": dt.get("n_defect"), "n_normal": dt.get("n_normal"),
+                                  "matches_ladder": same}
+        ok = ok and same
+    out["all_match"] = ok
+    return out
 
 
 def discrimination_tables(payloads: dict[int, dict], ladder: dict | None,
@@ -647,13 +840,20 @@ def main() -> int:
     ap.add_argument("--metadata-ladder", default=None,
                     help="촬영 ID 빈도 규칙 Δ_AUC 사다리 JSON (Codex 스크립트 출력 형식 또는 {K: 값})")
     ap.add_argument("--dest", default="outputs/main_d/seed3set")
+    ap.add_argument("--artifact", default="score_cells_v1.json",
+                    help="시드별 채점 산출물 파일명(v1/v2). 집계본 이름은 여기서 파생한다")
+    ap.add_argument("--recovery-ci", default=None,
+                    help="recovery_bootstrap.py 산출물. 미지정이면 <dest>/recovery_ci_v1.json 이 있을 때 읽는다")
     ap.add_argument("--allow-code-drift", action="store_true",
                     help="채점기 코드 해시가 시드마다 달라도 진행한다(불일치를 산출물에 기록)")
     args = ap.parse_args()
 
     root = Path(args.root)
     seeds = [int(s) for s in args.seeds.split(",")]
-    payloads = {s: load_seed(root, s) for s in seeds}
+    loaded = {s: load_seed_entry(root, s, args.artifact) for s in seeds}
+    payloads = {s: v[0] for s, v in loaded.items()}
+    entries = {s: v[1] for s, v in loaded.items()}
+    observed = make_binding(args.artifact, entries)
 
     # 시드 값·격자·코드 동일성 — 세 산출물이 한 기준인지
     seed_values = {s: p["params"]["seed"] for s, p in payloads.items()}
@@ -668,7 +868,12 @@ def main() -> int:
                              f"차단 {p['gates_evaluated']['blocking_failures']}")
 
     baseline = check_baselines_identical(payloads)
-    prov = provenance(root, payloads, allow_drift=args.allow_code_drift)
+    prov = provenance(root, payloads, allow_drift=args.allow_code_drift,
+                      artifact=args.artifact, entries=entries)
+    prov["scorer_code_stable_by_seed"] = {
+        str(n): (p.get("scorer_code") or {}).get("stable") for n, p in payloads.items()}
+    prov["input_records_by_seed"] = {
+        str(n): p.get("input_records") for n, p in payloads.items()}
     print(f"시드 {seeds} · 시드값 {seed_values} · 격자 {len(grids[seeds[0]])}점 · 대조선 3시드 동일")
     print(f"[출처] 채점 파라미터 시드 간 동일: {prov['params_identical_across_seeds']}"
           + ("" if prov["params_identical_across_seeds"]
@@ -691,18 +896,65 @@ def main() -> int:
 
     table = axis_table(payloads)
     rec = recovery_table(payloads, table)
+    ci_path = Path(args.recovery_ci) if args.recovery_ci else Path(args.dest) / "recovery_ci_v1.json"
+    ci_payload = json.loads(ci_path.read_text(encoding="utf-8")) if ci_path.exists() else None
+    # 이름만 보고 멈추거나 통과시키지 않는다 — 결속 전체를 대조하고, 어긋나면 CI 를 쓰지 않는다
+    rec = apply_recovery_ci(rec, ci_payload, observed, observed_points(rec, payloads))
     disc = discrimination_tables(payloads, ladder, ladder_files)
+    disc["delta_auc"]["metadata_baseline"]["population_check"] = _ladder_population_check(
+        payloads, args.metadata_ladder)
     strat = stratified_table(payloads)
     p9 = p9_tables(payloads)
     decomp = decomposition_table(payloads)
     sec = secondary_ratios(payloads)
     cli = client_improvement(payloads)
 
+    def _pct(x):
+        return "미정의" if x is None else f"{x:+.1f}%"
+
+    payload = {
+        "seeds": seeds, "seed_values": seed_values,
+        "artifact": args.artifact,
+        "input_binding": observed,
+        "public_status": rec[HEADLINE_AXIS]["denominator_gate"]["public_status"],
+        # 집계기 자신의 코드도 남긴다 — 판정 로직이 여기 있다
+        "aggregator_code": {
+            "scorer_tree_combined": scorer_code_digest(include_files=False)["combined"],
+            # 채점기 지문과 같은 규칙(줄끝 LF 정규화) — 체크아웃의 CRLF 가 값을 바꾸지 않게
+            "aggregate_seeds_sha256": combined_digest([Path(__file__).resolve()])[1].popitem()[1],
+            "newline_normalized": True,
+        },
+        "provenance": prov,
+        "grid": list(grids[seeds[0]]),
+        "headline_policy": payloads[seeds[0]].get("headline_policy"),
+        "headline_axis": HEADLINE_AXIS,
+        "local_mean_definition": LOCAL_MEAN_DEFINITION,
+        "content_free_baseline": baseline,
+        "cells": table,
+        "recovery": rec,
+        "discrimination": disc,
+        "stratified": strat,
+        "p9": p9,
+        "decomposition": decomp,
+        "secondary_ratios": sec,
+        "client_improvement": cli,
+        "variance_interpretation": VARIANCE_INTERPRETATION,
+        "gates_by_seed": {s: {"exit_code": p["exit_code"], "ok": p["gates_evaluated"]["ok"],
+                              "n_evaluated": p["gates_evaluated"]["n_evaluated"]}
+                          for s, p in payloads.items()},
+    }
+    # **JSON 을 먼저 쓴다** — 출력 포맷이 죽어도 집계본은 남는다(C 34번 Minor 6).
+    dest = Path(args.dest)
+    dest.mkdir(parents=True, exist_ok=True)
+    suffix = "v2" if "v2" in args.artifact else "v1"
+    out = dest / f"aggregate_{suffix}.json"
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
     head = rec[HEADLINE_AXIS]
     print(f"[{HEADLINE_AXIS}] 시드별 회복률 "
-          + " / ".join(f"{p['recovery_pct']:+.1f}%" for p in head["by_seed"])
-          + f" · 평균 {head['mean_of_seed_recoveries_pct']:+.1f}% "
-          + f"· 평균의 회복률 {head['recovery_of_seed_means_pct']:+.1f}%")
+          + " / ".join(_pct(p['recovery_pct']) for p in head["by_seed"])
+          + f" · 평균 {_pct(head['mean_of_seed_recoveries_pct'])} "
+          + f"· 평균의 회복률 {_pct(head['recovery_of_seed_means_pct'])}")
     gate = head["denominator_gate"]
     sds = {t: v["sd"] for t, v in gate["seed_sd_by_cell"].items() if v["sd"] is not None}
     print(f"[{HEADLINE_AXIS}] 모델별 시드 sd: "
@@ -712,9 +964,13 @@ def main() -> int:
           f"칸별최대sd {tw['max_per_cell_df2']['seed_sd']:.4f}→{'충족' if tw['max_per_cell_df2']['pass'] else '불충족'}"
           f" · 풀링sd {tw['pooled_df10']['seed_sd']:.4f}→{'충족' if tw['pooled_df10']['pass'] else '불충족'}")
     v = gate["verdict"]
-    print(f"[{HEADLINE_AXIS}] 판정 ① 트립와이어 {v['1_tripwire_3sigma']}"
-          f" · ② 회복률 CI 미산출 · ③ 대표 채택 미결 — 종합 검증 통과 아님")
-    print("[macro_ap] 시드별 회복률 " + " / ".join(f"{p['recovery_pct']:+.1f}%" for p in rec['macro_ap']['by_seed'])
+    rr = gate.get("recovery_reportable")
+    print(f"[{HEADLINE_AXIS}] 판정 ① 트립와이어 {v['1_tripwire_3sigma']} · ② {v['2_recovery_ci'][:60]} "
+          f"· ③ 대표 채택 미결 → recovery_reportable={rr}")
+    for why in (gate.get("recovery_ci_rejected") or {}).get("reasons", [])[:8]:
+        print(f"    CI 미사용 사유: {why}")
+    print(f"[{HEADLINE_AXIS}] 공개 상태: {gate['public_status']}")
+    print("[macro_ap] 시드별 회복률 " + " / ".join(_pct(p['recovery_pct']) for p in rec['macro_ap']['by_seed'])
           + f" — 대조선 {baseline['classification_axis']['macro_ap_freq']:.4f} 병기, 대표 아님")
     mb = disc["delta_auc"]["metadata_baseline"]
     print("[Δ_AUC] 3시드 평균 " + ", ".join(f"{t} {v['mean']:+.4f}" for t, v in disc["delta_auc"]["by_cell"].items())
@@ -746,30 +1002,6 @@ def main() -> int:
           + (f" · 부호가 갈리는 클라이언트 {cli['clients_with_sign_disagreement']}"
              if cli["clients_with_sign_disagreement"] else ""))
 
-    payload = {
-        "seeds": seeds, "seed_values": seed_values,
-        "provenance": prov,
-        "grid": list(grids[seeds[0]]),
-        "headline_policy": payloads[seeds[0]].get("headline_policy"),
-        "headline_axis": HEADLINE_AXIS,
-        "content_free_baseline": baseline,
-        "cells": table,
-        "recovery": rec,
-        "discrimination": disc,
-        "stratified": strat,
-        "p9": p9,
-        "decomposition": decomp,
-        "secondary_ratios": sec,
-        "client_improvement": cli,
-        "variance_interpretation": VARIANCE_INTERPRETATION,
-        "gates_by_seed": {s: {"exit_code": p["exit_code"], "ok": p["gates_evaluated"]["ok"],
-                              "n_evaluated": p["gates_evaluated"]["n_evaluated"]}
-                          for s, p in payloads.items()},
-    }
-    dest = Path(args.dest)
-    dest.mkdir(parents=True, exist_ok=True)
-    out = dest / "aggregate_v1.json"
-    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"저장: {out}")
     return 0
 

@@ -255,9 +255,6 @@ def coco_map(
     import contextlib
     import io as _io
 
-    from pycocotools.coco import COCO
-    from pycocotools.cocoeval import COCOeval
-
     image_ids = sorted(gold)
     if not scores_present:
         return {
@@ -267,6 +264,42 @@ def coco_map(
             "note": ("예측에 신뢰도가 없다. mAP 는 순위 지표라 상수 점수에서 산출하면 "
                      "다른 칸과 비교 불가능한 수가 된다 — 산출하지 않는다"),
         }
+    built = build_cocoeval(pred, gold, classes)
+    if built is None:
+        return {"map_50_95": None, "map_50": None, "note": "GT 박스 0건 — 산출 불가"}
+    ev, n_gt, n_dt = built
+    with contextlib.redirect_stdout(_io.StringIO()):
+        ev.accumulate()
+        ev.summarize()
+    return {
+        "map_50_95": float(ev.stats[0]),
+        "map_50": float(ev.stats[1]),
+        "n_gt_boxes": n_gt,
+        "n_pred_boxes": n_dt,
+    }
+
+
+def build_cocoeval(
+    pred: Mapping[str, Sequence[tuple[str, Box, float]]],
+    gold: Mapping[str, Sequence[tuple[str, Box]]],
+    classes: Sequence[str],
+):
+    """`coco_map` 의 COCOeval 구축 + `evaluate()`(이미지별 매칭)까지. `accumulate` 는 안 한다.
+
+    부트스트랩(`evaluation.recovery_ci`)이 이 함수로 매칭을 한 번 얻어 캐시하고, 재표집마다
+    집계만 다시 한다. **`coco_map` 과 같은 함수여야** 항등 검사(중복도 전부 1 → `map_50`
+    일치)가 뜻을 갖는다 — 구축이 둘로 갈리면 항등이 우연이 된다.
+
+    Returns:
+        `(COCOeval, n_gt_boxes, n_pred_boxes)`. GT 박스가 0 이면 `None`.
+    """
+    import contextlib
+    import io as _io
+
+    from pycocotools.coco import COCO
+    from pycocotools.cocoeval import COCOeval
+
+    image_ids = sorted(gold)
     img_map = {iid: i + 1 for i, iid in enumerate(image_ids)}
     cat_map = {c: i + 1 for i, c in enumerate(classes)}
 
@@ -300,7 +333,7 @@ def coco_map(
             })
 
     if not gt["annotations"]:
-        return {"map_50_95": None, "map_50": None, "note": "GT 박스 0건 — 산출 불가"}
+        return None
     with contextlib.redirect_stdout(_io.StringIO()):
         coco_gt = COCO()
         coco_gt.dataset = gt
@@ -311,11 +344,4 @@ def coco_map(
             coco_dt.createIndex()
         ev = COCOeval(coco_gt, coco_dt, iouType="bbox")
         ev.evaluate()
-        ev.accumulate()
-        ev.summarize()
-    return {
-        "map_50_95": float(ev.stats[0]),
-        "map_50": float(ev.stats[1]),
-        "n_gt_boxes": len(gt["annotations"]),
-        "n_pred_boxes": len(dt),
-    }
+    return ev, len(gt["annotations"]), len(dt)
