@@ -356,3 +356,79 @@ D 의 계산은 **전부 끝났다** — 게이트를 열어도 된다. 캐시(`
 - 회귀(09-16 20:30~20:33, 본체 B·C 게이트 종료 뒤): **1,609 passed / 7 skipped / 31 deselected**
   (`-m "not resource_heavy"`, C 소유 `tests/test_fl_round_wiring.py` 31건 제외 — resource_heavy 5건이
   그 안에 있다). `tests/test_aggregate_seeds.py` 단독 67 passed. D 소관 5파일 ruff 통과.
+
+## 9. 추기 — C 42번 후속: I-1·I-2 와 Minor (09-16 밤)
+
+C 42번 판정은 `72e005e`·`9f01b31`·`24a1224` **Critical 0 · Important 2 · Minor 13, 머지 가**다.
+`24a1224` 는 main `8826f1a` 로 머지됐고, 이 후속은 그 위(wt/D 를 `8826f1a` 로 앞당김)에서 했다.
+총괄 추기(dispatch 09-16 20:58)에 따라 **이 후속이 C 검수를 거쳐 main 에 들어간 뒤에만** v3 채점과
+CI 재산출을 한다.
+
+### 9-1. Important
+
+| # | 지적 | 처리 |
+|---|---|---|
+| **I-1** | 재판정이 신뢰수준·구간 방식을 등록값과 대조하지 않아, 90 % 구간 CI 가 true 가 됐다 | `evaluation/prereg.py` 에 `RECOVERY_CI_ALPHA = 0.05`·`RECOVERY_CI_INTERVAL = "백분위"` 를 두고 등록 블록(`RECOVERY_CI_REGISTRATION.interval`)에도 싣는다. 생성기는 이 상수로 구간을 내고(`percentile_ci`), 재판정은 CI 기록의 `statistic.alpha`·`interval` 을 맞대 다르면 **null**(`ci_invalid`)로 둔다. 생성기 안의 따로 둔 `ALPHA` 는 없앴다 |
+| **I-2** | v3 산출이 보존 대상 v1·v2 를 덮는다 — 집계기는 v3 입력을 `aggregate_v1.json` 에 쓰고, CI 생성기는 늘 `recovery_ci_v1.json` 에 쓴다 | `evaluation/provenance.py` 에 `artifact_version`(`_v(\d+)\.json$`)·`versioned_output`·`write_new_text`(배타 생성 `"x"`)를 두었다. **집계기**는 `aggregate_v<n>` 에 쓰고, 대상이 있으면 **계산 전에** 멈추며, 기본 CI 경로도 `recovery_ci_v<n>` 이다. **CI 생성기**는 `recovery_ci_v<n>`(항등만 돌릴 때는 `identity_check_<stem>`)이 있으면 계산 전에 멈추고, 쓸 때 다시 배타 생성으로 막는다. **채점기**는 `ARTIFACT_VERSIONS` 에 v3 를 추가했고, v2 부터는 대상이 있으면 채점 전에 멈추고 배타 생성으로 쓴다 |
+
+- **채점기 v1 은 기존 동작(같은 경로에 다시 씀)을 유지했다.** 파일럿·시험 경로가 그 동작에 기대고,
+  본실험 v1 은 이미 역사 기록이라 v1 판으로 다시 채점할 일이 없다. 막을지는 총괄 판단에 맡긴다.
+- **기존 `seed3set/recovery_ci_v1.json` 은 이름 규칙 이전에 v2 산출물로 만든 CI 다.** 새 규칙이라면
+  `recovery_ci_v2.json` 이 될 이름이지만, 파일은 이름 그대로 보존한다. 기본 경로로는 읽히지 않으므로
+  v2 를 다시 집계할 일이 생기면 `--recovery-ci` 로 지정하고 다른 `--dest` 를 준다(`aggregate_v2.json`
+  이 이미 있어 같은 dest 로는 멈춘다).
+
+### 9-2. Minor — 처리와 보류
+
+| # | 판단 | 내용 |
+|---|---|---|
+| m-1 | 처리 | 재판정이 `n_defined + n_undefined == n_resamples` 를 맞댄다. 다르면 자기모순으로 null |
+| m-2 | 처리 | 결속 항목에 산출물의 `input_records` 를 싣고, CI 가 캐시를 만들며 **직접 잰** 원시 레코드 해시(`inputs.records_by_seed`)와 맞댄다 — CI 키가 산출물 키의 부분집합인지, 값이 같은지, 해시가 비어 있지 않은지. 실물 v2 에서 세 시드 모두 CI 키 5개 ⊆ 산출물 키 10개, 값 5/5 일치를 먼저 확인했다(기존 판정에 영향 없음) |
+| m-3 | 처리 | 결속 판 번호 불일치·뒤집힌 구간·CI 생성기의 지문 포함을 시험으로 고정 |
+| m-4 | 처리 | 시험 픽스처 `_bound_ci` 의 점추정을 검사 대상(`observed_points`)이 아니라 생성기와 같은 계산(`recovery_from`, np.mean)으로 채점 파일 값에서 만든다 |
+| m-5 | 처리 | 이미지·카테고리당 검출 111건 픽스처 — 12위 참검출(10건으로 자르면 사라짐)과 111위 참검출(100건 절단이 버림)을 넣고, 절단이 실제로 일어났음을 단언한다. 같은 이미지 안 동점 tp·fp 를 두 번 뽑는 픽스처로 블록 반복(손계산 AP)과 원소 반복(AP 1.0)을 가른다 |
+| m-6 | 부분 처리 | 재표집 루프를 `recovery_ci.paired_bootstrap`·`percentile_ci` 로 옮기고 직접 시험했다 — 추첨 재생, 같은 캐시를 받은 두 시드의 비트 동일, 미정의·R̄ nan 전파, 백분위. 연산과 순서는 바꾸지 않았으므로 **v3 CI 가 v2 CI 와 비트 단위로 같은지**가 옮긴 것의 실물 확인이 된다(49번에서 보고). `main()` 전체(모집단 적재부터)를 부르는 시험은 여전히 없다 — 합성 모집단을 만드는 비용에 비해 실물 실행과 C 의 재실행 대조가 더 강하다고 보고 보류한다 |
+| m-7 | 처리 | `test_scorer_provenance._tree` docstring 을 raw 문자열로 복원(작업 트리에 CR 1바이트가 남아 있던 것도 사라짐) |
+| m-8 | 처리 | `RECOVERY_CI_MAX_HALF_WIDTH == stats.MAX_RECOVERY_HALF_WIDTH` 시험 추가 — docstring 의 약속을 사실로 만들었다 |
+| m-9 | 처리 | 항진명제 단언 삭제 |
+| m-10 | 처리 | 기록 `ci_pass` 와 재판정이 갈리면 판정은 재판정을 따르고, `recovery_ci_warnings` 와 판정 문장에 경고를 남긴다 |
+| m-11 | 처리 | 공개 상태에 `ci_invalid` 를 두었다. 결속 실패(시드·해시·지문·레코드)는 `ci_unbound`, 항등·점추정·등록 조건·기록 자기모순은 `ci_invalid` |
+| m-12 | 처리 | 집계본 `aggregator_code` 에 `tree_matches_scoring`·`scoring_combined` 를 싣는다. 달라도 멈추지 않는다 — 옛 판을 새 코드로 다시 집계하는 것은 정당하고, 그 사실을 적을 뿐이다 |
+| m-13 | 기록 | 트랙 회귀는 C 소유 `tests/test_fl_round_wiring.py` 를 통째로 뺀다(비중량 26건 포함). 전량은 본체 게이트가 돈다 |
+
+### 9-3. 변이 — 새 시험이 이빨을 가졌는가
+
+작업 트리를 `git stash create` 로 스냅샷(스택에 올리지 않음)해 스크래치에 `git archive` 로 풀고, 변이를
+하나씩 걸어 관련 시험 파일을 돌렸다. 기준(변이 없음)은 143 passed. wt_D 는 읽기만 했고, 매 실행 전에
+게이트 플래그를 확인했다(21:17~21:22, F 게이트 종료 뒤 창).
+
+| 변이 | 결과 |
+|---|---|
+| G6 한 시드 미정의여도 R̄ 를 None 으로 두지 않음(m-4) | 잡힘 |
+| I-1 α 대조 제거 · 구간 방식 대조 제거 · 생성기만 α 0.10 | 잡힘 ×3 |
+| I-2 옛 이름 규칙(`"v2" in 이름`) | 잡힘 |
+| I-2 집계기 **사전 확인만** 제거(쓰기 시점 배타 생성은 남김) | **처음엔 생존** → 시험을 빈 루트 + "이미 있다" 문구 + 트레이스백 없음으로 보강한 뒤 잡힘 |
+| I-2 집계기 덮어쓰기(사전 확인·배타 생성 둘 다 제거) · CI 생성기 옛 이름·무확인 · 채점기 v2+ 확인 제거 | 잡힘 ×3 |
+| m-1 합계 대조 제거 · m-2 레코드 대조 제거 · R17 판 번호 무시 · R20 뒤집힘 무시 · P3 생성기를 지문에서 뺌 | 잡힘 ×5 |
+| M1 원소 반복 · M13 `MAX_DETS` 10 · M13b 상수는 두고 절단값만 10 | 잡힘 ×3 — **새 픽스처 하나만 골라 돌려도**(`-k 동점`·`-k 100건`) 잡힌다 |
+| m-6 시드마다 추첨 · 칸마다 추첨 · R̄ nan 무시(`nanmean`) · 백분위 α 반쪽 | 잡힘 ×4 |
+| m-10 경고 제거 · m-11 상태 합침 · m-12 트리 대조 항상 참 | 잡힘 ×3 |
+
+**24개 중 24개가 잡힌다**(1개는 시험 보강 뒤). 스크립트는 세션 스크래치에 두었다(저장소 밖).
+
+### 9-4. 검증
+
+- D 시험 3파일(`test_aggregate_seeds`·`test_recovery_ci`·`test_scorer_provenance`) **143 passed**, 경고 0.
+- 트랙 회귀(21:22~21:24, 본체 F 게이트 종료 뒤, 다른 pytest 없음): **1,806 passed / 7 skipped /
+  31 deselected**(`-m "not resource_heavy"`, C 소유 `tests/test_fl_round_wiring.py` 31건 제외 — resource_heavy
+  5건 포함). 경고 3건은 모두 D 밖 시험의 `IncompleteTreeWarning` 계열이다(main 에서 들어온 봉인 자산 시험).
+- D 소관 9파일 ruff 통과.
+- 공유 산출물(`outputs/main_d/…`)에는 쓰지 않았다. 읽은 것은 m-2 사전 확인(v2 CI·산출물 세 개의
+  레코드 해시 형식) 한 번뿐이다.
+
+### 9-5. 다음
+
+C 가 이 커밋을 짧게 검수(42번 추기) → 총괄 게이트 → **머지된 main 커밋**에서 v3. v3 실행 전 계획 한 줄
+(커밋 SHA·입력 해시·예상 시간)을 먼저 올리고, 게이트와 겹치지 않게 돌린다. 산출은 `score_cells_v3.json`
+×3·`recovery_ci_v3.json`·`aggregate_v3.json`, 보고는 49번(v2↔v3 차이표·결속 판정·`recovery_reportable`,
+그리고 §9-2 m-6 의 v2↔v3 CI 비트 대조).

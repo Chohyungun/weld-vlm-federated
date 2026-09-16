@@ -10,18 +10,21 @@
 
 from __future__ import annotations
 
+import pytest
+
 from evaluation.provenance import (
     RULE,
+    artifact_version,
     combined_digest,
     scorer_code_digest,
     scorer_source_files,
+    versioned_output,
+    write_new_text,
 )
 
 
 def _tree(root, files: dict[str, str]) -> None:
-    """**바이트로 쓴다.** `write_text` 는 윈도우에서 `
-` 을 `
-` 로 바꿔 버려서
+    r"""**바이트로 쓴다.** `write_text` 는 윈도우에서 `\n` 을 `\r\n` 로 바꿔 버려서
     "LF 기준" 픽스처가 성립하지 않는다 — 줄끝 시험이 그 변환에 가려진다."""
     for rel, body in files.items():
         p = root / rel
@@ -154,7 +157,8 @@ def test_채점_경로의_트리_밖_모듈이_지문에_들어간다():
     d = scorer_code_digest()
     for rel in ("data/label_map.py", "data/id_strata.py", "data/manifest_io.py",
                 "scripts/probe/content_free_baselines.py", "scripts/probe/adapt_main_detections.py",
-                "detection/serialize.py", "scripts/probe/score_cells.py"):
+                "detection/serialize.py", "scripts/probe/score_cells.py",
+                "scripts/probe/recovery_bootstrap.py"):      # CI 생성기 — 24a1224, C 42번 m-3
         assert rel in d["files"], rel
 
 
@@ -202,3 +206,53 @@ def test_줄끝_말고_실제_변경은_여전히_잡는다(tmp_path):
     a = scorer_code_digest(root)["combined"]
     p.write_bytes(b"x = 2\r\n")
     assert scorer_code_digest(root)["combined"] != a
+
+
+# --------------------------------------------------------------------------------------
+# C 42번 I-2 — 산출물 판 번호 · 옛 판을 덮지 않는 쓰기
+# --------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("name,n", [
+    ("score_cells_v1.json", 1), ("score_cells_v3.json", 3),
+    ("outputs/main_d/seed1/score_cells_v12.json", 12),
+])
+def test_판_번호는_파일명_끝에서_읽는다(name, n):
+    assert artifact_version(name) == n
+
+
+@pytest.mark.parametrize("name", [
+    "score_cells.json", "score_cells_v2.jsonl", "score_cells_v2_old.json",
+    "v2/score_cells.json", "score_cells_vx.json", "score_cells_latest_v2.json.bak",
+])
+def test_판_번호가_없는_이름은_거부(name):
+    with pytest.raises(ValueError, match="판 번호"):
+        artifact_version(name)
+
+
+def test_판_출력_경로는_입력_판을_따르고_있으면_거부(tmp_path):
+    (tmp_path / "recovery_ci_v1.json").write_bytes("v2 로 만든 옛 CI\n".encode())
+    assert versioned_output(tmp_path, "recovery_ci", "score_cells_v3.json") == tmp_path / "recovery_ci_v3.json"
+    with pytest.raises(FileExistsError, match="덮지 않는다"):
+        versioned_output(tmp_path, "recovery_ci", "score_cells_v1.json")
+
+
+def test_새_파일만_쓴다(tmp_path):
+    p = tmp_path / "aggregate_v3.json"
+    write_new_text(p, "첫 판\n")
+    with pytest.raises(FileExistsError):
+        write_new_text(p, "둘째\n")
+    assert p.read_bytes() == "첫 판\n".encode()           # 줄끝은 LF 그대로
+
+
+def test_채점기_판_이름은_판_번호와_맞고_v3_부터_덮지_않는다(tmp_path):
+    from scripts.probe.score_cells import ARTIFACT_VERSIONS, artifact_dest
+
+    assert "v3" in ARTIFACT_VERSIONS
+    for key, name in ARTIFACT_VERSIONS.items():
+        assert artifact_version(name) == int(key[1:]), key
+    for key in ("v2", "v3"):
+        (tmp_path / ARTIFACT_VERSIONS[key]).write_bytes(b"old\n")
+        with pytest.raises(SystemExit, match="덮지 않는다"):
+            artifact_dest(tmp_path, key)
+    (tmp_path / "score_cells_v1.json").write_bytes(b"old\n")
+    assert artifact_dest(tmp_path, "v1") == tmp_path / "score_cells_v1.json"   # v1 은 기존 동작

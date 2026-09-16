@@ -267,6 +267,64 @@ def recovery_from(central: float, fed: float, locals_: Sequence[float]) -> tuple
     return (float("nan") if d <= 0 else (fed - lm) / d), d
 
 
+def percentile_ci(draws: np.ndarray, alpha: float) -> dict:
+    """백분위 구간. 미정의(nan) 재표집은 **버리고 센다** — `n_defined + n_undefined == 전체`.
+
+    전부 미정의면 구간 없음(None). 규칙 ④ 가 미정의 비율을 따로 본다.
+    """
+    ok = np.isfinite(draws)
+    kept = draws[ok]
+    if kept.size == 0:
+        return {"ci_lo": None, "ci_hi": None, "half_width": None,
+                "n_defined": 0, "n_undefined": int((~ok).sum())}
+    lo, hi = np.percentile(kept, [100 * alpha / 2, 100 * (1 - alpha / 2)])
+    return {"ci_lo": float(lo), "ci_hi": float(hi), "half_width": float((hi - lo) / 2),
+            "n_defined": int(kept.size), "n_undefined": int((~ok).sum())}
+
+
+def paired_bootstrap(
+    caches: Mapping[int, Mapping[str, EvalCache]],
+    group_of_image: np.ndarray,
+    n_groups: int,
+    *,
+    seeds: Sequence[int],
+    central: str,
+    locals_: Sequence[str],
+    fed: str,
+    n_resamples: int,
+    rng: np.random.Generator,
+    progress=None,
+) -> dict:
+    """짝지은 묶음 부트스트랩 — **추첨마다 중복도를 한 번** 만들어 시드 × 칸 전부에 같이 쓴다.
+
+    Returns:
+        `{"map": {seed: {칸: 배열}}, "R": {seed: 배열}, "D": {seed: 배열}, "R_bar": 배열}`.
+        `R_s` 는 `D_s ≤ 0` 이면 nan, `R̄` 는 세 `R_s` 중 하나라도 nan 이면 nan 이다(버리고 센다).
+
+    생성기(`recovery_bootstrap.py`)의 루프를 옮긴 것이다(C 42번 m-6). 연산과 순서는 그대로다 —
+    같은 입력·같은 난수면 옮기기 전과 같은 비트가 나온다.
+    """
+    tags = (central, *locals_, fed)
+    draws_map = {n: {t: np.empty(n_resamples) for t in tags} for n in seeds}
+    draws_r = {n: np.empty(n_resamples) for n in seeds}
+    draws_d = {n: np.empty(n_resamples) for n in seeds}
+    draws_rbar = np.empty(n_resamples)
+    for b in range(n_resamples):
+        w = group_weights(group_of_image, n_groups, rng)
+        rs = []
+        for n in seeds:
+            m = {t: weighted_map(caches[n][t], w)[0] for t in tags}
+            for t in tags:
+                draws_map[n][t][b] = m[t]
+            r, d = recovery_from(m[central], m[fed], [m[t] for t in locals_])
+            draws_r[n][b], draws_d[n][b] = r, d
+            rs.append(r)
+        draws_rbar[b] = float(np.mean(rs)) if all(np.isfinite(rs)) else float("nan")
+        if progress is not None:
+            progress(b + 1)
+    return {"map": draws_map, "R": draws_r, "D": draws_d, "R_bar": draws_rbar}
+
+
 # ======================================================================================
 # CI 산출물의 입력 결속 · 규칙 재판정 (외부 검토 codex_reply §18, 09-16)
 #
@@ -326,6 +384,8 @@ def read_artifact(path: Path) -> tuple[dict, dict]:
         "scorer_code_rule": sc.get("rule"),
         "newline_normalized": bool(sc.get("newline_normalized", False)),
         "scorer_code_stable": sc.get("stable"),
+        # 채점 때 읽은 레코드의 해시(산출물 기록). CI 가 캐시를 만들 때 잰 해시와 맞댄다(C 42번 m-2)
+        "input_records": payload.get("input_records"),
     }
     return payload, entry
 
@@ -373,6 +433,28 @@ def check_binding(ci_payload: dict, observed: dict) -> list[str]:
                 reasons.append(f"시드 {s} 의 {f} 가 다르다: CI {str(got.get(f))[:16]} · "
                                f"집계 {str(obs.get(f))[:16]}")
 
+    # CI 가 캐시를 만들며 **직접 잰** 원시 레코드 해시 = 채점 산출물이 기록한 해시인가(C 42번 m-2).
+    # sha256 결속은 산출물 파일만 묶는다. 레코드가 채점 뒤에 바뀌면 산출물은 그대로라도 CI 는 다른
+    # 입력으로 계산된다. map_50 이 안 바뀌는 레코드 변화는 항등·점추정 대조도 못 잡는다.
+    ci_records = ((ci_payload.get("inputs") or {}).get("records_by_seed")) or {}
+    for s, obs in zip(observed["seeds"], obs_arts, strict=True):
+        got_rec = ci_records.get(str(s))
+        art_rec = obs.get("input_records")
+        if not isinstance(got_rec, Mapping) or not got_rec:
+            reasons.append(f"시드 {s} CI 에 원시 레코드 해시가 없다")
+            continue
+        if not isinstance(art_rec, Mapping) or not art_rec:
+            reasons.append(f"시드 {s} 채점 산출물에 입력 레코드 해시가 없다 — CI 가 읽은 레코드와 맞댈 수 없다")
+            continue
+        for k, h in sorted(got_rec.items()):
+            if h is None:
+                reasons.append(f"시드 {s} CI 가 레코드 {Path(k).name} 를 읽지 못했다(해시 없음)")
+            elif k not in art_rec:
+                reasons.append(f"시드 {s} CI 가 읽은 레코드 {Path(k).name} 가 채점 산출물의 입력에 없다")
+            elif art_rec[k] != h:
+                reasons.append(f"시드 {s} 레코드 {Path(k).name} 의 해시가 채점 때와 다르다: "
+                               f"CI {str(h)[:16]} · 채점 {str(art_rec[k])[:16]}")
+
     # CI 를 계산한 코드가 채점한 코드와 같은가 — 지문이 CI 생성기까지 덮는다
     ci_code = ci_payload.get("scorer_code") or {}
     combos = {a.get("scorer_code_combined") for a in obs_arts}
@@ -399,7 +481,9 @@ def rejudge_ci_rules(ci_payload: dict, seeds: Sequence[int]) -> tuple[dict | Non
         판정 없이 사유만 낸다 — 그 CI 로는 판정할 수 없다는 뜻이다.
     """
     from evaluation.prereg import (
+        RECOVERY_CI_ALPHA,
         RECOVERY_CI_DENOMINATOR_MUST_EXCLUDE_ZERO,
+        RECOVERY_CI_INTERVAL,
         RECOVERY_CI_MAX_HALF_WIDTH,
         RECOVERY_CI_MAX_UNDEFINED_FRACTION,
     )
@@ -412,6 +496,12 @@ def rejudge_ci_rules(ci_payload: dict, seeds: Sequence[int]) -> tuple[dict | Non
         reasons.append(f"재표집 횟수가 등록값과 다르다: {n_res} ≠ {BOOTSTRAP_N}")
     if stat.get("rng_seed") != BOOTSTRAP_SEED:
         reasons.append(f"재표집 난수 시드가 등록값과 다르다: {stat.get('rng_seed')} ≠ {BOOTSTRAP_SEED}")
+    # 규칙 ② 의 반폭 상한은 95 % 백분위 구간에 대해 정했다 — 신뢰수준·방식도 등록 조건이다(C 42번 I-1)
+    alpha = stat.get("alpha")
+    if isinstance(alpha, bool) or alpha != RECOVERY_CI_ALPHA:
+        reasons.append(f"신뢰수준이 등록값과 다르다: alpha {alpha!r} ≠ {RECOVERY_CI_ALPHA}")
+    if stat.get("interval") != RECOVERY_CI_INTERVAL:
+        reasons.append(f"구간 방식이 등록값과 다르다: {stat.get('interval')!r} ≠ {RECOVERY_CI_INTERVAL!r}")
 
     rb = ((ci_payload.get("ci") or {}).get("R_bar")) or {}
     lo, hi, hw, n_undef = rb.get("ci_lo"), rb.get("ci_hi"), rb.get("half_width"), rb.get("n_undefined")
@@ -423,6 +513,11 @@ def rejudge_ci_rules(ci_payload: dict, seeds: Sequence[int]) -> tuple[dict | Non
     half = (hi - lo) / 2
     if isinstance(n_res, int) and n_undef > n_res:
         reasons.append(f"미정의 수 {n_undef} 가 재표집 수 {n_res} 보다 크다 — 기록이 자기모순이다")
+    n_def = rb.get("n_defined")
+    if (not isinstance(n_def, int) or isinstance(n_def, bool)
+            or not isinstance(n_res, int) or n_def + n_undef != n_res):
+        reasons.append(f"정의된 수 {n_def!r} + 미정의 수 {n_undef} 가 재표집 수 {n_res!r} 와 맞지 않는다 "
+                       "— 기록이 자기모순이다")
     if lo > hi:
         reasons.append(f"R̄ 구간이 뒤집혀 있다: [{lo}, {hi}]")
     if abs(half - hw) > 1e-12:

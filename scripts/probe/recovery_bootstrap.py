@@ -1,7 +1,10 @@
 """회복률 CI — 시드 3세트 × 칸 5 의 짝지은 묶음 부트스트랩 (36번 미니스펙, 총괄 게이트 09-16).
 
     python scripts/probe/recovery_bootstrap.py --root outputs/main_d --seeds 1,2,3 \\
-        --artifact score_cells_v2.json --dest outputs/main_d/seed3set
+        --artifact score_cells_v3.json --dest outputs/main_d/seed3set
+
+출력 이름은 입력의 판을 따른다(`score_cells_v3.json` → `recovery_ci_v3.json`). 같은 이름이 이미 있으면
+계산 전에 멈춘다 — 옛 판은 보존한다(C 42번 I-2).
 
 순서(스펙 §2): (칸, 시드) 15개마다 `COCOeval.evaluate()` 한 번 → 캐시(중간물) → **항등 검사**
 (중복도 전부 1 = 채점기 `map_50`·`map_50_95` 비트 일치, 아니면 멈춤) → 묶음 추첨 2,000회를
@@ -28,7 +31,9 @@ sys.path.insert(0, str(REPO))
 from evaluation.adapters import read_records
 from evaluation.params import ScoringParams
 from evaluation.prereg import (
+    RECOVERY_CI_ALPHA,
     RECOVERY_CI_DENOMINATOR_MUST_EXCLUDE_ZERO,
+    RECOVERY_CI_INTERVAL,
     RECOVERY_CI_MAX_HALF_WIDTH,
     RECOVERY_CI_MAX_UNDEFINED_FRACTION,
     RECOVERY_CI_REGISTRATION,
@@ -37,13 +42,16 @@ from evaluation.provenance import (
     hash_files,
     scorer_code_digest,
     stable_digest,
+    versioned_output,
+    write_new_text,
 )
 from evaluation.recovery_ci import (
     EvalCache,
     build_cache,
-    group_weights,
     identity_check,
     make_binding,
+    paired_bootstrap,
+    percentile_ci,
     read_artifact,
     recovery_from,
     weighted_map,
@@ -52,18 +60,11 @@ from evaluation.stats import BOOTSTRAP_N, BOOTSTRAP_SEED, MAX_RECOVERY_HALF_WIDT
 
 DET_TAGS = ("sep_central", "sep_local_C1", "sep_local_C2", "sep_local_C3", "sep_fed")
 LOCALS = ("sep_local_C1", "sep_local_C2", "sep_local_C3")
-ALPHA = 0.05
 
 
 def _percentile_ci(draws: np.ndarray) -> dict:
-    ok = np.isfinite(draws)
-    kept = draws[ok]
-    if kept.size == 0:
-        return {"ci_lo": None, "ci_hi": None, "half_width": None,
-                "n_defined": 0, "n_undefined": int((~ok).sum())}
-    lo, hi = np.percentile(kept, [100 * ALPHA / 2, 100 * (1 - ALPHA / 2)])
-    return {"ci_lo": float(lo), "ci_hi": float(hi), "half_width": float((hi - lo) / 2),
-            "n_defined": int(kept.size), "n_undefined": int((~ok).sum())}
+    """신뢰수준은 등록 상수(`RECOVERY_CI_ALPHA`) — 집계기 재판정이 같은 값을 읽는다(C 42번 I-1)."""
+    return percentile_ci(draws, RECOVERY_CI_ALPHA)
 
 
 def _load_seed(root: Path, n: int, artifact: str) -> tuple[dict, ScoringParams, dict]:
@@ -134,8 +135,19 @@ def main() -> int:
     if RECOVERY_CI_MAX_HALF_WIDTH != MAX_RECOVERY_HALF_WIDTH:
         raise SystemExit("prereg 와 stats 의 반폭 상한이 다르다 — 등록값을 먼저 맞춰라")
 
-    code_start = scorer_code_digest()
     root, dest = Path(args.root), Path(args.dest)
+    # **옛 판을 덮지 않는다**(C 42번 I-2). 출력 이름은 입력 산출물의 판에서 뽑는다 —
+    # score_cells_v3.json → recovery_ci_v3.json. 30분 계산 전에 확인하고, 쓸 때 배타 생성으로 한 번 더 막는다.
+    identity_out = dest / f"identity_check_{Path(args.artifact).stem}.json"
+    try:
+        out = (None if args.identity_only
+               else versioned_output(dest, "recovery_ci", args.artifact))
+    except (ValueError, FileExistsError) as e:
+        raise SystemExit(f"{e} (dest={dest})") from None
+    if args.identity_only and identity_out.exists():
+        raise SystemExit(f"{identity_out.name} 이 이미 있다 — 덮지 않는다 (dest={dest})")
+
+    code_start = scorer_code_digest()
     dest.mkdir(parents=True, exist_ok=True)
     seeds = [int(s) for s in args.seeds.split(",")]
     t_all = time.perf_counter()
@@ -167,37 +179,28 @@ def main() -> int:
     n_checks = sum(len(v) for v in checks.values())
     print(f"항등 검사 {n_checks}/{n_checks} 통과 · 묶음 {n_groups:,} · 이미지 {len(image_ids):,}")
     if args.identity_only:
-        out = dest / f"identity_check_{Path(args.artifact).stem}.json"
-        out.write_text(json.dumps({"artifact": args.artifact, "identity_check": checks,
-                                   "inputs": {"artifacts": artifact_hash, "records_by_seed": inputs},
-                                   "binding": make_binding(args.artifact, entries),
-                                   "scorer_code": code_start}, ensure_ascii=False, indent=2) + "\n",
-                       encoding="utf-8")
-        print(f"항등 검사만 — 저장: {out}")
+        write_new_text(identity_out, json.dumps(
+            {"artifact": args.artifact, "identity_check": checks,
+             "inputs": {"artifacts": artifact_hash, "records_by_seed": inputs},
+             "binding": make_binding(args.artifact, entries),
+             "scorer_code": code_start}, ensure_ascii=False, indent=2) + "\n")
+        print(f"항등 검사만 — 저장: {identity_out}")
         return 0
 
     # ---- 짝지은 재표집 — 한 번의 추첨을 15개에 같이 쓴다
     rng = np.random.default_rng(args.seed)
     n_res = args.n_resamples
-    draws_map = {n: {t: np.empty(n_res) for t in DET_TAGS} for n in seeds}
-    draws_R = {n: np.empty(n_res) for n in seeds}
-    draws_D = {n: np.empty(n_res) for n in seeds}
-    draws_Rbar = np.empty(n_res)
     t_bs = time.perf_counter()
-    for b in range(n_res):
-        w = group_weights(group_of_image, n_groups, rng)
-        rs = []
-        for n in seeds:
-            m = {t: weighted_map(caches[n][t], w)[0] for t in DET_TAGS}
-            for t in DET_TAGS:
-                draws_map[n][t][b] = m[t]
-            r, d = recovery_from(m["sep_central"], m["sep_fed"], [m[t] for t in LOCALS])
-            draws_R[n][b], draws_D[n][b] = r, d
-            rs.append(r)
-        draws_Rbar[b] = float(np.mean(rs)) if all(np.isfinite(rs)) else float("nan")
-        if (b + 1) % 200 == 0:
+
+    def _progress(k: int) -> None:
+        if k % 200 == 0:
             el = time.perf_counter() - t_bs
-            print(f"  재표집 {b + 1}/{n_res} · {el:.0f}s 경과 · 예상 잔여 {el / (b + 1) * (n_res - b - 1):.0f}s")
+            print(f"  재표집 {k}/{n_res} · {el:.0f}s 경과 · 예상 잔여 {el / k * (n_res - k):.0f}s")
+
+    draws = paired_bootstrap(caches, group_of_image, n_groups, seeds=seeds,
+                             central="sep_central", locals_=LOCALS, fed="sep_fed",
+                             n_resamples=n_res, rng=rng, progress=_progress)
+    draws_map, draws_R, draws_D, draws_Rbar = draws["map"], draws["R"], draws["D"], draws["R_bar"]
 
     # ---- 점추정(중복도 1)과 CI
     ones = np.ones(len(image_ids), dtype=np.int64)
@@ -249,7 +252,8 @@ def main() -> int:
             "judged": "R̄ = mean_s (fed_s − localmean_s) / (central_s − localmean_s)",
             "localmean": "로컬 세 칸의 비가중 산술평균",
             "resample_unit": "group_id", "n_groups": n_groups, "n_images": len(image_ids),
-            "n_resamples": n_res, "rng_seed": args.seed, "alpha": ALPHA, "interval": "백분위",
+            "n_resamples": n_res, "rng_seed": args.seed,
+            "alpha": RECOVERY_CI_ALPHA, "interval": RECOVERY_CI_INTERVAL,
             "paired": "한 번의 묶음 추첨을 칸 5 × 시드 3 전부에 같이 썼다",
             "undefined_rule": "D_s ≤ 0 이면 R_s 는 nan — 버리고 센다",
         },
@@ -271,8 +275,10 @@ def main() -> int:
                   "role": "중간물 — 봉인하지 않는다"},
         "runtime_seconds": round(time.perf_counter() - t_all, 1),
     }
-    out = dest / "recovery_ci_v1.json"
-    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    try:
+        write_new_text(out, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    except FileExistsError:
+        raise SystemExit(f"{out} 이 계산 도중 생겼다 — 덮지 않는다") from None
     print(f"저장: {out} · {payload['runtime_seconds']}s")
     return 0
 
