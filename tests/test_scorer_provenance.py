@@ -19,10 +19,14 @@ from evaluation.provenance import (
 
 
 def _tree(root, files: dict[str, str]) -> None:
+    """**바이트로 쓴다.** `write_text` 는 윈도우에서 `
+` 을 `
+` 로 바꿔 버려서
+    "LF 기준" 픽스처가 성립하지 않는다 — 줄끝 시험이 그 변환에 가려진다."""
     for rel, body in files.items():
         p = root / rel
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(body, encoding="utf-8")
+        p.write_bytes(body.encode("utf-8"))
 
 
 def _repo(tmp_path, body: str = "x = 1\n"):
@@ -171,3 +175,30 @@ def test_상대경로는_정션을_따라가지_않는다():
 
     assert relpath("outputs/main_d/seed1/score_cells_v1.json") == "outputs/main_d/seed1/score_cells_v1.json"
     assert "/" not in relpath("E:/somewhere/else/x.json")     # 저장소 밖이면 이름만
+
+
+def test_줄끝만_다르면_같은_지문이다(tmp_path):
+    """`core.autocrlf` 가 다른 체크아웃에서 같은 커밋이 다른 지문을 내면, 지문이 커밋이 아니라
+    **체크아웃**을 가리킨다 — "같은 코드로 채점됐는가" 에 답하지 못한다(외부 검토 09-16).
+
+    실측 배경: wt/D 는 `core.autocrlf=true` 라 작업 트리가 CRLF 인데 git blob 은 LF 여서,
+    지문 39파일 중 7개가 줄끝만으로 달랐다(37번 §3-4).
+    """
+    root = _repo(tmp_path)
+    lf = scorer_code_digest(root)["combined"]
+    for rel in ("evaluation/score.py", "evaluation/metrics/detection.py"):
+        p = root / rel
+        p.write_bytes(p.read_bytes().replace(b"\n", b"\r\n"))
+    assert b"\r\n" in (root / "evaluation/score.py").read_bytes()
+    assert scorer_code_digest(root)["combined"] == lf
+    assert scorer_code_digest(root)["newline_normalized"] is True
+
+
+def test_줄끝_말고_실제_변경은_여전히_잡는다(tmp_path):
+    """정규화가 코드 변경까지 지우면 지표가 죽는다 — CRLF 로 둔 채 한 글자를 바꾼다."""
+    root = _repo(tmp_path)
+    p = root / "evaluation/score.py"
+    p.write_bytes(b"x = 1\r\n")
+    a = scorer_code_digest(root)["combined"]
+    p.write_bytes(b"x = 2\r\n")
+    assert scorer_code_digest(root)["combined"] != a
