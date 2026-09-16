@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -55,8 +56,8 @@ def test_로컬_절대경로를_잡는다():
     """입력은 **존재하지 않는 가짜 경로**다 — 드라이브(Q:)도 폴더 이름도 이 저장소·사용자와 무관하다.
 
     실제 위치 형태를 픽스처로 박으면 탐지기를 시험하려다 규약 2-6 을 스스로 어긴다(F 46번 §4).
-    규칙은 드라이브 다음 첫 폴더가 `Users`·`Program Files`·저장소 이름 접두일 때 잡으므로,
-    어느 저장소에나 있는 `Users` 갈래로 시험한다.
+    옛 규칙(첫 폴더 이름 목록)에서도 잡히던 `Users` 형태다. 규칙을 넓힌 뒤 새로 잡는 형태는
+    아래 시험이 따로 건다(50번 §6).
     """
     hits = S.screen_text(r"Q:\Users\example_user\sample_project\corpus 에서 읽었다", set())
     assert "local_path" in [h[0] for h in hits]
@@ -66,10 +67,13 @@ def test_로컬_절대경로를_잡는다():
 @pytest.mark.parametrize("text", [
     # 문자열 안에 JSON 이 한 번 더 들어 있으면 json.loads 뒤에도 역슬래시가 2개로 남는다
     r"raw 출력의 경로 Q:\\sample_project\\notes.md",
+    # 위 입력은 UNC 갈래(\\sample_project\\notes.md)로도 읽혀서, 드라이브 갈래의 구분자 {1,2} 를
+    # {1} 로 줄여도 통과한다(F 51번 m-3). 뒤에 구분자가 더 없어 UNC 로 못 읽는 입력을 따로 둔다.
+    r"설정값 Q:\\sample_project 를 읽었다",
     r"출처는 Q:\sample_project\notes.md 이다",           # 첫 폴더가 옛 목록(Users 등) 밖
     r"적재 위치 Q:\공유 드라이브\sample 확인",              # 공유 드라이브 이름
     r"원본은 \\example-host\sample_share\x 에 있다",       # UNC
-], ids=["JSON_이스케이프", "목록_밖_첫_폴더", "공유_드라이브", "UNC"])
+], ids=["JSON_이스케이프", "JSON_이스케이프_드라이브만", "목록_밖_첫_폴더", "공유_드라이브", "UNC"])
 def test_폴더_이름_목록과_무관하게_로컬_경로를_잡는다(text):
     """옛 규칙은 첫 폴더가 `Users`·`Program Files`·저장소 이름일 때만 잡았다 (50번 추기)."""
     assert "local_path" in [h[0] for h in S.screen_text(text, set())]
@@ -88,9 +92,15 @@ def test_경로가_아닌_콜론_표기는_잡지_않는다(text):
 
 
 def test_경로_규칙은_폴더_이름_목록을_들고_있지_않다():
-    """목록에 기대면 목록 밖 경로가 빠진다 — 저장소 이름 갈래도 뺐다."""
-    assert "Program Files" not in S.LOCAL_PATH.pattern
-    assert "Fedvlm" not in S.LOCAL_PATH.pattern
+    """목록에 기대면 목록 밖 경로가 빠진다 — 드라이브 뒤에 폴더 이름 대안 묶음이 없어야 한다.
+
+    옛 규칙은 드라이브 구분자 바로 뒤에 `(?:Users|…)` 대안을 두었다(저장소 이름 포함).
+    POSIX 갈래의 `(?:home|Users)` 는 지시대로 남긴 것이라 여기서 보지 않는다.
+    """
+    p = S.LOCAL_PATH.pattern
+    assert "(?:Users|" not in p
+    assert "Program Files" not in p
+    assert re.search(r"\](?:\{1,2\})?\(\?:", p) is None, "드라이브 구분자 뒤에 대안 묶음이 있다"
 
 
 def test_원문_연속_일치를_잡는다():
