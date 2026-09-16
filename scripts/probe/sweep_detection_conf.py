@@ -58,7 +58,10 @@ def n_boxes(records) -> int:
 # --------------------------------------------------------------------------------------
 
 def stage_predict(params, eval_rows, root: Path) -> dict:
-    ckpts = checkpoint_paths(params.pilot)
+    try:        # 표가 프로파일과 맞지 않으면 멈춘다(49번 §7-4)
+        ckpts = checkpoint_paths(params.pilot, profile=params.profile)
+    except ValueError as e:
+        raise SystemExit(str(e)) from None
     for p in ckpts.values():
         reject_best_checkpoint(p)
         if not p.exists():

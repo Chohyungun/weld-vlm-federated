@@ -147,10 +147,11 @@ def test_분모_게이트가_세_정의로_각각_판정한다():
     # 총괄 확정 정책(35번 과제 3): 트립와이어 단독 결과와 게재 가부를 가른다.
     dsd = tw["denominator_sd_df2"]
     assert dsd["tripwire_only_reportable"] is True
-    assert dsd["ci_pass"] is None
-    assert dsd["recovery_reportable"] is None, "CI 미산출이면 미판정(null)이어야 한다"
-    assert "CI 산출·통과 뒤에만" in dsd["recovery_reportable_policy"]
-    assert "미판정" in dsd["field_caveat"]
+    # 게재 가부는 이 블록에 없다(49번 §5) — 최상위 한 곳에만 둔다
+    for k in ("ci_pass", "recovery_reportable", "recovery_reportable_policy"):
+        assert k not in dsd, k
+    assert "최상위" in dsd["field_caveat"] and "지금은" not in dsd["field_caveat"]
+    assert "게재 가능이 아니다" in dsd["field_caveat"]      # 트립와이어 단독 결과를 게재 가능으로 읽지 않게
 
 
 def test_분모가_시드_잡음_안이면_게이트가_막는다():
@@ -432,7 +433,9 @@ def test_시드가_하나면_트립와이어는_미판정():
     g = recovery_table({1: _payload(1, S1)}, {})["map_50"]["denominator_gate"]
     assert g["verdict"]["1_tripwire_3sigma"].startswith("미판정")
     assert g["tripwire_by_definition"]["pooled_df10"]["pass"] is None
-    assert g["tripwire_by_definition"]["denominator_sd_df2"]["recovery_reportable"] is None
+    dsd = g["tripwire_by_definition"]["denominator_sd_df2"]
+    assert dsd["tripwire_3sigma_pass"] is None and dsd["tripwire_only_reportable"] is None
+    assert "recovery_reportable" not in dsd
 
 
 # ======================================================================================
@@ -761,6 +764,30 @@ def test_요구5_항등_검사_결과가_없거나_실패면_null(breakage):
     assert g["recovery_reportable"] is None, breakage
     assert any("항등" in r for r in g["recovery_ci_rejected"]["reasons"]), breakage
     assert g["public_status"] == PUBLIC_STATUS["ci_invalid"], breakage      # m-11
+
+
+def _walk_keys(o, path=""):
+    if isinstance(o, dict):
+        for k, v in o.items():
+            yield f"{path}/{k}", k
+            yield from _walk_keys(v, f"{path}/{k}")
+    elif isinstance(o, list):
+        for i, v in enumerate(o):
+            yield from _walk_keys(v, f"{path}[{i}]")
+
+
+def test_49_5_게재_가부는_게이트_최상위_한_곳에만_있다():
+    """v3 집계본에서 최상위는 true 인데 트립와이어 하위 블록에 null·"지금은 미판정" 이 남아 있었다.
+    판정이 true 로 채워진 뒤에도 게이트 안에 `recovery_reportable` 이 한 곳에만 있어야 한다."""
+    p = _coded(three_seeds())
+    obs = _observed(p)
+    g = _judge(p, _bound_ci(p, obs), obs)
+    assert g["recovery_reportable"] is True
+    paths = [path for path, k in _walk_keys(g) if k == "recovery_reportable"]
+    assert paths == ["/recovery_reportable"], paths
+    tw = g["tripwire_by_definition"]
+    assert not [path for path, k in _walk_keys(tw) if k == "ci_pass"]   # CI 판정은 recovery_ci 에만
+    assert "지금은" not in json.dumps(tw, ensure_ascii=False)
 
 
 def test_정상_조합은_항등_점추정_결속을_모두_지나_true():
@@ -1095,3 +1122,62 @@ def test_I2_CI_생성기는_같은_판_CI_가_있으면_계산_전에_멈춘다(
     assert ("덮지 않는다" in proc.stderr) is stops_for_overwrite, proc.stderr[-600:]
     assert (dest / existing).read_bytes() == b"old\n"
     assert sorted(x.name for x in dest.iterdir()) == [existing]
+
+
+# ======================================================================================
+# C 42번 §9-6 n-3 · n-5 — CI 생성기 항등 전용 사전 멈춤, 본문 판 = 파일명
+# ======================================================================================
+
+def test_n3_CI_생성기_항등_전용도_같은_결과가_있으면_계산_전에_멈춘다(tmp_path):
+    dest = tmp_path / "seed3set"
+    dest.mkdir()
+    existing = dest / "identity_check_score_cells_v3.json"
+    existing.write_bytes(b"old\n")
+    proc = _run_bootstrap(tmp_path / "no_root", dest, "--artifact", ART3, "--identity-only")
+    assert proc.returncode != 0
+    assert "identity_check_score_cells_v3.json 이 이미 있다" in proc.stderr, proc.stderr[-600:]
+    assert "Traceback" not in proc.stderr
+    assert existing.read_bytes() == b"old\n"
+    assert sorted(x.name for x in dest.iterdir()) == [existing.name]
+
+
+def _rename_artifact(root, n, declared):
+    """시드 n 의 v3 파일 본문에 다른 판을 적는다 — v2 파일을 v3 이름으로 옮긴 상황."""
+    f = root / f"seed{n}" / ART3
+    body = json.loads(f.read_bytes().decode("utf-8"))
+    body["artifact_version"] = declared
+    f.write_bytes(json.dumps(body, ensure_ascii=False).encode("utf-8"))
+
+
+def test_n5_본문_판이_파일명과_다르면_읽지_않는다(tmp_path):
+    from evaluation.recovery_ci import ArtifactNameMismatch, read_artifact
+
+    root = tmp_path / "main_d"
+    _write_seed_dir(root, 1, dict(S1), artifact=ART3)
+    payload, _ = read_artifact(root / "seed1" / ART3)          # 필드 없음(v1 형식) — 대조하지 않는다
+    assert "artifact_version" not in payload
+    _rename_artifact(root, 1, ART3)                            # 같으면 통과
+    assert read_artifact(root / "seed1" / ART3)[0]["artifact_version"] == ART3
+    _rename_artifact(root, 1, "score_cells_v2.json")
+    with pytest.raises(ArtifactNameMismatch, match="score_cells_v2.json"):
+        read_artifact(root / "seed1" / ART3)
+
+
+def test_n5_집계기와_CI_생성기_둘_다_이름을_바꾼_산출물에서_멈춘다(tmp_path):
+    root, dest = tmp_path / "main_d", tmp_path / "seed3set"
+    for n in (1, 2, 3):
+        _write_seed_dir(root, n, dict(S1), artifact=ART3, code=CODE)
+    _rename_artifact(root, 2, "score_cells_v2.json")
+
+    agg = _run_main(root, dest, "--artifact", ART3)
+    assert agg.returncode != 0
+    assert "시드 2" in agg.stderr and "파일명과 판이 다른" in agg.stderr, agg.stderr[-600:]
+    assert "Traceback" not in agg.stderr
+    assert not (dest / "aggregate_v3.json").exists()
+
+    ci_dest = tmp_path / "ci"
+    ci = _run_bootstrap(root, ci_dest, "--artifact", ART3, "--seeds", "2")
+    assert ci.returncode != 0
+    assert "시드 2" in ci.stderr and "파일명과 판이 다른" in ci.stderr, ci.stderr[-600:]
+    assert "Traceback" not in ci.stderr
+    assert not (ci_dest / "recovery_ci_v3.json").exists()

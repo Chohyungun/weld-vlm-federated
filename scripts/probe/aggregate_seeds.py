@@ -59,6 +59,7 @@ from evaluation.provenance import (
     write_new_text,
 )
 from evaluation.recovery_ci import (
+    ArtifactNameMismatch,
     check_binding,
     check_identity,
     check_points,
@@ -257,7 +258,10 @@ def load_seed_entry(root: Path, n: int, artifact: str = "score_cells_v1.json") -
     p = root / f"seed{n}" / artifact
     if not p.exists():
         raise SystemExit(f"시드 {n} 본채점 산출물이 없다: {p}")
-    return read_artifact(p)
+    try:
+        return read_artifact(p)
+    except ArtifactNameMismatch as e:        # C 42번 §9-6 n-5
+        raise SystemExit(f"시드 {n}: {e}") from None
 
 
 def check_baselines_identical(payloads: dict[int, dict]) -> dict:
@@ -397,14 +401,11 @@ def recovery_table(payloads: dict[int, dict], table: dict) -> dict:
                                                             "커도 막는다(보수적 방향, C 34번 M16)")},
                         "denominator_sd_df2": {
                             "seed_sd_definition": "분모 D 자체의 시드 간 sd(자유도 2)",
-                            **(verdict_dsd.as_dict() if verdict_dsd else
-                               {"tripwire_3sigma_pass": None, "ci_pass": None,
-                                "tripwire_only_reportable": None, "recovery_reportable": None,
-                                "detail": msg_cell}),
+                            **_tripwire_only(verdict_dsd, msg_cell),
                             "field_caveat": (
-                                "`tripwire_only_reportable` 은 트립와이어 한 줄의 결과다. "
-                                "`recovery_reportable` 은 CI 가 산출·통과된 뒤에만 true 이고 "
-                                "지금은 null(미판정)이다. 종합 판정은 위 `verdict` 세 줄을 읽어라"
+                                "이 블록은 트립와이어 ① 의 한 정의(분모 sd)만 담는다. CI 판정과 게재 가부는 "
+                                "여기 없다 — 같은 게이트의 최상위 `recovery_reportable`·`verdict` 를 읽어라. "
+                                "`tripwire_only_reportable` 은 이 한 줄의 결과이지 게재 가능이 아니다"
                             ),
                         },
                     },
@@ -435,6 +436,23 @@ def recovery_table(payloads: dict[int, dict], table: dict) -> dict:
                 },
             }
     return out
+
+
+_GATE_ONLY_FIELDS = ("ci_pass", "recovery_reportable", "recovery_reportable_policy")
+"""게이트 최상위에만 두는 필드(49번 §5). 트립와이어 정의별 블록에는 싣지 않는다."""
+
+
+def _tripwire_only(verdict, detail_if_none: str) -> dict:
+    """`DenominatorVerdict` 에서 **트립와이어 몫만** — CI·게재 가부 필드는 뺀다(49번 §5).
+
+    이 블록의 판정 함수는 CI 없이 불린다. 그래서 `ci_pass`·`recovery_reportable` 은 구조상 늘 null 이고,
+    최상위 판정이 true 로 채워진 뒤에도 "null(미판정)" 으로 남아 하위 필드만 읽는 소비자가 오독한다
+    (v3 집계본에서 실제로 그랬다). 최상위 값을 복사해 맞추지 않고 **뺀다** — 같은 판정을 두 곳에 두면
+    한쪽만 바뀌는 경로가 생긴다. 판정은 최상위 한 곳에만 둔다.
+    """
+    if verdict is None:
+        return {"tripwire_3sigma_pass": None, "tripwire_only_reportable": None, "detail": detail_if_none}
+    return {k: v for k, v in verdict.as_dict().items() if k not in _GATE_ONLY_FIELDS}
 
 
 def _floor(payloads: dict[int, dict], s: int, tag: str, m: str) -> float:

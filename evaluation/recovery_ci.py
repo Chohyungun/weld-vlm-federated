@@ -47,6 +47,10 @@ class IdentityCheckFailed(RuntimeError):
     """중복도 전부 1 의 집계가 채점기의 mAP 와 다르다 — 집계 재구현이 pycocotools 와 갈렸다."""
 
 
+class ArtifactNameMismatch(ValueError):
+    """산출물 본문의 `artifact_version` 이 실제 파일명과 다르다 — 판을 바꿔 이름만 옮긴 파일이다."""
+
+
 @dataclass
 class CategoryCache:
     """카테고리 하나의 이미지별 매칭을 **이미지 순서로 평탄화**한 것.
@@ -375,6 +379,14 @@ def read_artifact(path: Path) -> tuple[dict, dict]:
 
     raw = Path(path).read_bytes()
     payload = json.loads(raw.decode("utf-8"))
+    # 본문이 스스로 적은 판과 파일명이 다르면 쓰지 않는다(C 42번 §9-6 n-5). 판을 파일명에서 뽑아
+    # 출력 이름을 짓기 때문에(`provenance.artifact_version`), 이름만 바꾼 v2 파일이 v3 로 집계될 수 있다.
+    # 필드가 없는 산출물(v1 — 필드 도입 전)은 대조하지 않는다.
+    declared = payload.get("artifact_version")
+    if declared is not None and declared != Path(path).name:
+        raise ArtifactNameMismatch(
+            f"{Path(path).name} 의 본문 artifact_version 은 {declared!r} 다 — 파일명과 판이 다른 산출물은 "
+            "쓰지 않는다")
     sc = payload.get("scorer_code") or {}
     entry = {
         "path": relpath(path),
