@@ -21,10 +21,12 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from detection import serialize
-from detection.round_runner import RoundResult, train_round
-from fl.atomic_log import AtomicLog, RoundTimer, new_run_id
+from detection.round_runner import RoundResult, derive_seed, train_round
+from fl.atomic_log import (AtomicLog, LedgerIdentityMismatch, RoundTimer, new_run_id,
+                           policy_stamp)
 
-__all__ = ["run_local_cell", "run_central_cell", "save_cell_weights"]
+__all__ = ["run_local_cell", "run_central_cell", "save_cell_weights",
+           "assert_prior_meta_compatible"]
 
 
 def _log_result(log: AtomicLog, result: RoundResult, client_id: int | str, wall: float) -> None:
@@ -47,14 +49,62 @@ def _log_result(log: AtomicLog, result: RoundResult, client_id: int | str, wall:
     )
 
 
-def save_cell_weights(out_dir: Path, tag: str, result: RoundResult) -> Path:
-    """최종 가중치와 실행 메타를 남긴다. 채점은 이 산출물을 읽는다."""
+def _identity(*, run_id: str, base_seed: int, split_hash: str,
+              loader_reseed_per_epoch: bool) -> dict[str, Any]:
+    """meta.json 의 `identity` 블록. 다음 실행이 같은 out_dir 에 들어올 때 대조한다(34번 §3-1 8-4)."""
+    return {"run_id": str(run_id), "base_seed": int(base_seed), "split_hash": str(split_hash),
+            "loader_reseed_per_epoch": bool(loader_reseed_per_epoch)}
+
+
+def assert_prior_meta_compatible(out_dir: str | Path, tag: str, *, client_idx: int,
+                                 base_seed: int, identity: dict[str, Any]) -> None:
+    """기존 `<tag>.meta.json` 이 있으면 신원을 대조하고, 다르면 `LedgerIdentityMismatch`.
+
+    원장(`atomic_log.csv`)이 지워진 뒤에도 가중치·meta 는 남을 수 있으므로 원장 검사의
+    두 번째 방어선이다. 옛 파일은 고치지 않고 그대로 읽는다(뒤호환):
+    - 신판 meta(`identity` 블록): run_id·base_seed·split_hash·loader_reseed_per_epoch 대조.
+    - 구판 meta(세 시드 본실험, `identity` 없음): 파생 시드 `derive_seed(base_seed, 0, client_idx)`
+      와 `loader_reseed_per_epoch`(키가 없으면 F01 이전 코드 → False)만 대조한다.
+    """
+    p = Path(out_dir) / f"{tag}.meta.json"
+    if not p.exists():
+        return
+    meta = json.loads(p.read_text(encoding="utf-8"))
+    diff: dict[str, tuple[Any, Any]] = {}
+    old = meta.get("identity")
+    if isinstance(old, dict):
+        for k in ("run_id", "base_seed", "split_hash", "loader_reseed_per_epoch"):
+            if k in old and old[k] != identity[k]:
+                diff[k] = (old[k], identity[k])
+    else:
+        want_seed = derive_seed(base_seed, 0, client_idx)
+        if "seed" in meta and int(meta["seed"]) != want_seed:
+            diff["seed"] = (meta["seed"], want_seed)
+        old_policy = bool(meta.get("loader_reseed_per_epoch", False))
+        if old_policy != bool(identity["loader_reseed_per_epoch"]):
+            diff["loader_reseed_per_epoch"] = (old_policy, identity["loader_reseed_per_epoch"])
+    if diff:
+        raise LedgerIdentityMismatch(
+            f"다른 실행의 산출물 위에 쓰지 않는다: {p} — 기존≠새 {diff}. "
+            "다른 정책·시드·분할의 실행은 별도 출력 경로로 돌려라."
+        )
+
+
+def save_cell_weights(out_dir: Path, tag: str, result: RoundResult,
+                      identity: dict[str, Any] | None = None) -> Path:
+    """최종 가중치와 실행 메타를 남긴다. 채점은 이 산출물을 읽는다.
+
+    `identity` 를 주면 meta 에 `identity` 블록(run_id·base_seed·split_hash·정책)을 덧붙인다 —
+    키 추가만이라 기존 소비자(채점기)는 영향이 없다.
+    """
     import numpy as np
 
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{tag}.npz"
     np.savez(path, *result.ndarrays)
     meta = {k: v for k, v in asdict(result).items() if k != "ndarrays"}
+    if identity is not None:
+        meta["identity"] = dict(identity)
     (out_dir / f"{tag}.meta.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
     )
@@ -83,9 +133,18 @@ def run_local_cell(
     돌아야 비교가 성립하므로, `total_epochs` 는 연합의 `R × E` 와 같은 값을 넣는다.
     """
     out = Path(out_dir).resolve()
+    # 34번 §3-1 8-4 — 정책 접미를 stamp 에 새기고(꺼져 있으면 그대로), 기존 meta·원장과 신원을
+    # 대조한 뒤에야 학습한다. 원장 대조는 `AtomicLog` 생성자가 한다.
+    stamp = policy_stamp(run_stamp, loader_reseed_per_epoch)
+    run_id = new_run_id("sep_local", base_seed, stamp)
+    ident = _identity(run_id=run_id, base_seed=base_seed, split_hash=split_hash,
+                      loader_reseed_per_epoch=loader_reseed_per_epoch)
+    for client_idx in sorted(client_data_yamls):
+        assert_prior_meta_compatible(out, f"sep_local_c{client_idx}", client_idx=client_idx,
+                                     base_seed=base_seed, identity=ident)
     log = AtomicLog(
         out / "atomic_log.csv",
-        run_id=new_run_id("sep_local", base_seed, run_stamp),
+        run_id=run_id,
         seed=base_seed,
         cell="sep_local",
         split_hash=split_hash,
@@ -110,11 +169,11 @@ def run_local_cell(
             # 재개 경로를 켠다 — 채점 대상이 아니라 재개용이다(detection/resume.py).
             resume_dir=(Path(resume_root).resolve() / f"sep_local_c{client_idx}"
                         if resume_root else None),
-            run_id=run_stamp,
+            run_id=stamp,
             loader_reseed_per_epoch=loader_reseed_per_epoch,
         )
         _log_result(log, result, client_idx, timer.lap())
-        save_cell_weights(out, f"sep_local_c{client_idx}", result)
+        save_cell_weights(out, f"sep_local_c{client_idx}", result, identity=ident)
         results[client_idx] = result
     return results
 
@@ -140,9 +199,15 @@ def run_central_cell(
     성능 상한 참조용이다. 현실에서는 데이터를 모을 수 없으므로 결과표에 그 각주를 단다.
     """
     out = Path(out_dir).resolve()
+    stamp = policy_stamp(run_stamp, loader_reseed_per_epoch)
+    run_id = new_run_id("sep_central", base_seed, stamp)
+    ident = _identity(run_id=run_id, base_seed=base_seed, split_hash=split_hash,
+                      loader_reseed_per_epoch=loader_reseed_per_epoch)
+    assert_prior_meta_compatible(out, "sep_central", client_idx=0, base_seed=base_seed,
+                                 identity=ident)
     log = AtomicLog(
         out / "atomic_log.csv",
-        run_id=new_run_id("sep_central", base_seed, run_stamp),
+        run_id=run_id,
         seed=base_seed,
         cell="sep_central",
         split_hash=split_hash,
@@ -164,9 +229,9 @@ def run_central_cell(
         # ③ 은 학습 풀 전체로 도는 N epoch **단일 런**이다. 본실험에서 가장 긴 검출 런이고
         # 도중에 죽으면 처음부터다. 재개 경로를 켠다 — 채점 대상이 아니다.
         resume_dir=(Path(resume_root).resolve() / "sep_central" if resume_root else None),
-        run_id=run_stamp,
+        run_id=stamp,
         loader_reseed_per_epoch=loader_reseed_per_epoch,
     )
     _log_result(log, result, "central", timer.lap())
-    save_cell_weights(out, "sep_central", result)
+    save_cell_weights(out, "sep_central", result, identity=ident)
     return result

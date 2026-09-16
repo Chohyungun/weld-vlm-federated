@@ -82,6 +82,9 @@ project = "outputs/pilot_c"
 views-root = "outputs/pilot_c/views"
 profile = "main"
 # 기존 seed 실행은 False를 유지한다. True는 별도 식별자로 실행하는 난수 정책 통제용이다.
+# True 면 서버가 run_id·run-stamp 에 접미 `_rs1` 을 붙이고, 같은 project 경로에 다른 실행의
+# atomic_log.csv 가 있으면 초기 가중치를 읽기 전에 거부한다(LedgerIdentityMismatch, 34번 §3-1 8-4).
+# False 실행의 run_id 는 종전과 같다. 정책 실행은 별도 project 경로(또는 다른 run-stamp)로 돌려라.
 loader-reseed-per-epoch = false
 num-examples = "1,1,1"
 client-tags = "C1,C2,C3"
