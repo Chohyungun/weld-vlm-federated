@@ -59,6 +59,7 @@ SCORER_FILES: tuple[str, ...] = (
     "data/id_strata.py",                        # id 구간 층화 절단점
     "data/manifest_io.py",                      # 매니페스트 읽기
     "detection/serialize.py",                   # 레코드 직렬화
+    "scripts/probe/recovery_bootstrap.py",      # 회복률 CI 생성기 — CI 가 채점과 같은 코드로 났는지 대조한다
 )
 """`evaluation/` 밖에 있지만 채점 값을 결정하는 모듈. C 34번 Important 3 이 짚은 구멍이다 —
 "같은 코드로 채점됐는가" 를 물으면서 클래스 사상·층화 절단점·레코드 생성기를 지문 밖에

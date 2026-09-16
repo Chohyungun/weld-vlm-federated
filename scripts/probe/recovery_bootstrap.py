@@ -35,7 +35,6 @@ from evaluation.prereg import (
 )
 from evaluation.provenance import (
     hash_files,
-    relpath,
     scorer_code_digest,
     stable_digest,
 )
@@ -44,6 +43,8 @@ from evaluation.recovery_ci import (
     build_cache,
     group_weights,
     identity_check,
+    make_binding,
+    read_artifact,
     recovery_from,
     weighted_map,
 )
@@ -65,15 +66,15 @@ def _percentile_ci(draws: np.ndarray) -> dict:
             "n_defined": int(kept.size), "n_undefined": int((~ok).sum())}
 
 
-def _load_seed(root: Path, n: int, artifact: str) -> tuple[dict, ScoringParams]:
-    art_path = root / f"seed{n}" / artifact
-    art = json.loads(art_path.read_text(encoding="utf-8"))
+def _load_seed(root: Path, n: int, artifact: str) -> tuple[dict, ScoringParams, dict]:
+    """산출물을 **한 번만** 읽는다 — 결속 해시와 파싱이 같은 바이트에서 나온다."""
+    art, entry = read_artifact(root / f"seed{n}" / artifact)
     p = art["params"]
     params = ScoringParams(
         snapshot=Path(p["snapshot"]), pilot=Path(p["pilot"]), out=root / f"seed{n}",
         seed=int(p["seed"]), profile=p["profile"],
     )
-    return art, params
+    return art, params, entry
 
 
 def _caches_for_seed(params: ScoringParams, art: dict, cache_dir: Path,
@@ -145,12 +146,17 @@ def main() -> int:
     artifact_hash: dict[str, dict] = {}
     group_of_image = None
     n_groups = 0
+    entries: dict[int, dict] = {}
     for n in seeds:
-        art, params = _load_seed(root, n, args.artifact)
-        art_path = root / f"seed{n}" / args.artifact
-        artifact_hash[str(n)] = {"path": relpath(art_path), **hash_files([art_path]),
-                                 "scorer_code_in_artifact": (art.get("scorer_code") or {}).get("combined")}
-        print(f"[시드 {n}] {args.artifact} · 채점기 지문 {(art.get('scorer_code') or {}).get('combined', '없음')[:16]}")
+        art, params, entry = _load_seed(root, n, args.artifact)
+        entries[n] = entry
+        artifact_hash[str(n)] = entry
+        print(f"[시드 {n}] {args.artifact} · 채점기 지문 {str(entry['scorer_code_combined'])[:16]}")
+        # CI 는 **채점과 같은 코드**로만 낸다. 다르면 집계기가 어차피 쓰지 않으므로 계산 전에 멈춘다.
+        if entry["scorer_code_combined"] != code_start["combined"]:
+            raise SystemExit(
+                f"시드 {n} 채점 지문 {str(entry['scorer_code_combined'])[:16]} 이 지금 코드 "
+                f"{code_start['combined'][:16]} 와 다르다 — 채점한 커밋에서 CI 를 내라")
         c, chk, meta = _caches_for_seed(params, art, root / f"seed{n}")
         caches[n], checks[str(n)] = c, chk
         inputs[str(n)] = meta["input_records"]
@@ -164,6 +170,7 @@ def main() -> int:
         out = dest / f"identity_check_{Path(args.artifact).stem}.json"
         out.write_text(json.dumps({"artifact": args.artifact, "identity_check": checks,
                                    "inputs": {"artifacts": artifact_hash, "records_by_seed": inputs},
+                                   "binding": make_binding(args.artifact, entries),
                                    "scorer_code": code_start}, ensure_ascii=False, indent=2) + "\n",
                        encoding="utf-8")
         print(f"항등 검사만 — 저장: {out}")
@@ -256,6 +263,9 @@ def main() -> int:
         "verdict": verdict,
         "inputs": {"artifacts": artifact_hash, "records_by_seed": inputs,
                    "artifact_name": args.artifact},
+        # **입력 결속.** 집계기는 이 블록이 자기가 읽은 산출물과 하나라도 다르면 CI 를 쓰지 않는다
+        # (codex_reply §18). 집계기와 같은 함수(`make_binding`)로 만든다.
+        "binding": make_binding(args.artifact, entries),
         "scorer_code": stable_digest(code_start, code_end),
         "cache": {"path_pattern": "outputs/main_d/seed{n}/coco_evalimgs_{tag}_s{seed}.npz",
                   "role": "중간물 — 봉인하지 않는다"},

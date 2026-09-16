@@ -155,12 +155,25 @@
 
 | 값 | 뜻 | 언제 |
 |---|---|---|
-| `null` | **미판정.** CI 가 아직 없다 | `recovery_ci_v1.json` 이 없을 때 |
-| `true` | 게재 가능 — ①과 ②③④ 전부 충족 | CI 산출·통과 뒤 |
-| `false` | 게재 불가 — ①~④ 중 미달 | CI 가 있고 하나라도 미달 |
+| `null` | **미판정.** CI 가 없거나, 있어도 이 집계의 입력과 결속되지 않는다 | `recovery_ci_v1.json` 이 없을 때 · 아래 결속 검사 중 하나라도 어긋날 때(사유는 `recovery_ci_rejected.reasons`) |
+| `true` | 게재 가능 — ①과 ②③④ 전부 충족 | CI 가 결속되고 집계기 재판정으로 통과한 뒤 |
+| `false` | 게재 불가 — ①~④ 중 미달 | CI 가 결속됐고 하나라도 미달 |
 
 `null` 을 "게재 불가" 로 읽으면 안 되고, `tripwire_only_reportable: true` 를 게재 가능으로
 읽어도 안 된다(C 34번 M17). 두 필드는 `recovery_reportable_policy` 가 산출물 안에서 설명한다.
+`true` 도 대표 채택이 아니다 — 집계본 최상위 `public_status` 가 "CI 산출 완료, 코드·출처 최종 검수
+및 대표 채택 대기" 로 그 상태를 적는다.
+
+**결속 검사(외부 검토 codex_reply §18, 37번 §8).** 집계기는 CI 산출물을 이름만 보고 쓰지 않는다.
+아래 셋을 **모두** 돌리고, 하나라도 어긋나면 CI 를 쓰지 않는다(`null`).
+
+1. 입력 결속 — CI 의 `binding`(시드 목록, 시드별 산출물 원시 바이트 sha256, 채점기 지문과 규칙 표기)이
+   집계기가 지금 읽은 파일로 만든 블록과 같은가. 생성기와 집계기는 같은 함수(`read_artifact`·`make_binding`)를 쓴다.
+2. T1 항등 — 시드 × 칸 전부의 기록이 있고, 모두 통과했고, 차가 0 이며, 기준값이 지금 파일의 값과 같은가.
+3. 점추정 — R̄, 시드별 R·D, 칸별 map_50 이 지금 파일로 다시 계산한 값과 `POINT_TOLERANCE`(1e-12) 안에서 같은가.
+
+기록된 `ci_pass` 는 쓰지 않는다. 집계기가 구간·반폭·미정의 수에서 ②③④를 다시 판정한다
+(`evaluation/recovery_ci.py` `rejudge_ci_rules`).
 
 **CI 산출:** `scripts/probe/recovery_bootstrap.py --artifact score_cells_v2.json`. pycocotools
 매칭을 (칸, 시드)마다 한 번만 하고 재표집마다 집계만 다시 한다(`evaluation/recovery_ci.py`).
@@ -184,7 +197,7 @@
 | `sweep/` · `sweep_detection_conf_v1.json` | conf 스윕 |
 | `content_free_baselines_v1.json` | 무내용 대조선 3종 + `__shortcut__` AP + 위치 축 + 등록 상수 자기 검사 |
 | `discrimination_sweep_v1.json` | 판별력 Δ 의 임계 곡선(격자 전 점) + 임계 독립 `Δ_AUC` + 칸 대비(같은 재표집 짝지음) |
-| `seed3set/recovery_ci_v1.json` | 회복률 부트스트랩 CI — 항등 검사·`R̄`/`R_s`/`D_s`/칸별 mAP CI·규칙 ②③④ 판정·지문·입력 해시 |
+| `seed3set/recovery_ci_v1.json` | 회복률 부트스트랩 CI — 항등 검사·`R̄`/`R_s`/`D_s`/칸별 mAP CI·규칙 ②③④ 판정·지문·입력 해시·입력 결속 `binding`(37번 §8 이후 산출분만 — 기존 v2 CI 에는 없다) |
 | `coco_evalimgs_{tag}_s{seed}.npz` | pycocotools 매칭 캐시 — **중간물**, 봉인하지 않는다 |
 | `score_cells_v2.json` | 한 코드 상태 재채점(v1 보존). `scorer_code.stable`·`input_records` 포함 |
 
