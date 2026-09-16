@@ -690,6 +690,11 @@ def apply_recovery_ci(rec: dict, ci_payload: dict | None, observed: dict | None 
     seeds = observed["seeds"]
     # 세 검사는 **서로를 대신하지 않는다** — 전부 돌리고 사유를 모은다.
     bind_reasons = check_binding(ci_payload, observed)         # 시드·해시·지문·레코드
+    # CI 가 자기 파일명(판)을 적었으면 지금 읽은 파일 이름과 맞댄다(A 54번 m-1). 필드가 없는 판(v3 까지)은
+    # 건너뛴다 — 이름을 바꾼 CI 도 입력 결속이 이미 막지만, 이름이 가리키는 판과 본문이 다르다는 사실을 남긴다.
+    declared = ci_payload.get("artifact_version")
+    if declared is not None and declared != ci_source:
+        bind_reasons.append(f"CI 파일명 {ci_source} 이 본문에 적힌 판 {declared!r} 과 다르다 — 이름을 바꾼 CI 다")
     check_reasons: list[str] = []
     if points is None:
         check_reasons.append("집계기 점추정이 주어지지 않아 CI 기록과 맞댈 수 없다")
@@ -977,6 +982,8 @@ def main() -> int:
     scored_combined = sorted({str(e.get("scorer_code_combined")) for e in entries.values()})
     tree_matches = scored_combined == [tree_combined]
     payload = {
+        # 자기 파일명(판) — 채점 산출물과 같은 필드(A 54번 m-1). 이름만 바꾼 집계본을 소비자가 가릴 수 있다
+        "artifact_version": out.name,
         "seeds": seeds, "seed_values": seed_values,
         "artifact": args.artifact,
         "input_binding": observed,

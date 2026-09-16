@@ -122,18 +122,30 @@ MAIN_OUTPUT_PARTS: tuple[str, str] = ("outputs", "main_d")
 """본실험 채점 산출 루트의 경로 성분(총괄 판정 09-16 23:25, C 42번 §9-6 n-1)."""
 
 
+def _has_main_parts(path: Path) -> bool:
+    parts = [p.casefold() for p in path.parts]
+    want = [p.casefold() for p in MAIN_OUTPUT_PARTS]
+    return any(parts[i:i + 2] == want for i in range(len(parts) - 1))
+
+
 def is_main_output(out: Path) -> bool:
     """`out` 이 본실험 채점 루트(`…/outputs/main_d/…`) 아래인가.
 
     **경로 성분**으로 판정한다 — 절대화한 경로에 `outputs`·`main_d` 두 성분이 **연달아** 있으면 본실험이다.
-    대소문자는 가리지 않는다(윈도우). `os.path.abspath` 로 절대화해 정션을 따라가지 않는다 — `outputs/` 는
-    본체로 가는 정션이지만, 따라가든 안 가든 성분은 같다. 다른 워크트리의 절대경로·임시 폴더 아래
-    `outputs/main_d` 도 같은 규칙으로 잡힌다. `outputs/main_dx`·`main_d` 단독은 본실험이 아니다.
-    프로파일로 가르지 않는 이유: 보호 대상은 **자리**(v1 산출물이 있는 곳)이지 채점 설정이 아니다.
+    대소문자는 가리지 않는다(윈도우). 다른 워크트리의 절대경로·임시 폴더 아래 `outputs/main_d` 도 같은
+    규칙으로 잡힌다. `outputs/main_dx`·`main_d` 단독은 본실험이 아니다. 프로파일로 가르지 않는 이유:
+    보호 대상은 **자리**(v1 산출물이 있는 곳)이지 채점 설정이 아니다.
+
+    **절대화는 두 형태를 모두 본다**(A 54번 m-2). 정션을 따라가지 않는 `os.path.abspath` 와, 있는 경로라면
+    이름 정규화(윈도우 짧은 이름·정션 대상)까지 확정하는 `Path.resolve()` 다. **어느 한쪽이라도 본실험이면
+    본실험이다** — 보호는 넓은 쪽을 택한다. `resolve()` 가 실패하면 `abspath` 형태만 본다.
     """
-    parts = [p.casefold() for p in Path(os.path.abspath(str(out))).parts]
-    want = [p.casefold() for p in MAIN_OUTPUT_PARTS]
-    return any(parts[i:i + 2] == want for i in range(len(parts) - 1))
+    forms = [Path(os.path.abspath(str(out)))]
+    try:
+        forms.append(Path(out).resolve())
+    except (OSError, RuntimeError):
+        pass
+    return any(_has_main_parts(f) for f in forms)
 
 
 def artifact_dest(out: Path, version: str) -> Path:
