@@ -22,7 +22,8 @@ except ModuleNotFoundError as exc:  # pragma: no cover
     ) from exc
 
 from detection.budget_audit import AccountingCell, AccountingMatrix
-from fl.atomic_log import AtomicLog, RoundTimer, new_run_id
+from fl.atomic_log import (AtomicLog, RoundTimer, assert_ledger_compatible, new_run_id,
+                           policy_stamp)
 from fl.round_wiring import (ALL_CELLS, CANONICAL_KEYS_KEY, FED_CELLS,
                              SERVER_ROUND_KEY, SMOKE_CELL, WEIGHT_KEY,
                              finalize_accounting, make_round_recorder)
@@ -111,6 +112,22 @@ def main(grid: "Grid", context: "Context") -> None:
         (out_dir / "DO_NOT_CITE.md").write_text(
             "# 인용 금지\n\n배선 스모크(`SMOKE_CELL`) 산출물이다. 더미 2텐서로 돌았고 "
             "학습이 일어나지 않았다. 실험 결과가 아니다.\n", encoding="utf-8")
+    # 34번 §3-1 8-4 — 난수 정책(F01 opt-in)은 run_id 의 stamp 에 접미(`_rs1`)로 새기고, 같은
+    # out_dir 에 **다른 실행**의 원장이 있으면 초기 가중치를 읽기 전에 거부한다. 정책이 꺼진
+    # 실행(세 시드 본실험)의 run_id 는 한 글자도 바뀌지 않는다(뒤호환, 게이트 조건).
+    policy = _loader_policy(cell, cfg)
+    base_seed = int(cfg.get("base-seed", 0))
+    split_hash = str(cfg.get("split-hash", ""))
+    # stamp 는 **한 번만** 만든다. 구판은 원장 쪽 기본값이 "000000", 클라이언트 쪽이 "" 로 갈려
+    # run-stamp 가 빠진 실행에서 원장 run_id 와 재개 신원이 어긋날 수 있었다.
+    stamp = policy_stamp(str(cfg.get("run-stamp", "000000")), policy)
+    run_id = new_run_id(cell, base_seed, stamp)
+    # `LedgerIdentityMismatch`(ValueError)를 **그대로** 올린다. `SystemExit` 로 감싸면 flwr 의
+    # 두 서버 런타임(`except Exception`)이 받지 못해 SuperLink 는 run 을 FAILED 로 못 적고
+    # 인프로세스 시뮬레이션은 성공으로 끝난다(예외 docstring 에 근거).
+    assert_ledger_compatible(out_dir / "atomic_log.csv", run_id=run_id, seed=base_seed,
+                             cell=cell, split_hash=split_hash)
+
     accounting = build_accounting(
         num_rounds=num_rounds,
         client_ids=client_ids,
@@ -123,10 +140,10 @@ def main(grid: "Grid", context: "Context") -> None:
 
     atomic = AtomicLog(
         out_dir / "atomic_log.csv",
-        run_id=new_run_id(cell, int(cfg.get("base-seed", 0)), str(cfg.get("run-stamp", "000000"))),
-        seed=int(cfg.get("base-seed", 0)),
+        run_id=run_id,
+        seed=base_seed,
         cell=cell,
-        split_hash=str(cfg.get("split-hash", "")),
+        split_hash=split_hash,
     )
     # 라운드 종료 기록은 `fl/round_wiring` 하나가 만든다. 두 배선이 각자 구현하던 것이
     # 한쪽에만 있는 버그를 낳았다(80번 F1·F9 / G10-2).
@@ -152,7 +169,8 @@ def main(grid: "Grid", context: "Context") -> None:
         "local-epochs": local_epochs,
         "num-rounds": num_rounds,
         "base-seed": int(cfg.get("base-seed", 0)),
-        "run-stamp": str(cfg.get("run-stamp", "")),
+        # 클라이언트의 재개 신원(`ResumeIdentity.run_id`)도 같은 접미를 받는다 — 원장과 한 규약.
+        "run-stamp": stamp,
         "resume-root": str(cfg.get("resume-root", "")),
         **_cell_train_config(cell, cfg, out_dir),
     })
@@ -170,6 +188,19 @@ def main(grid: "Grid", context: "Context") -> None:
             accounting=accounting, atomic=atomic, out_dir=out_dir,
             num_rounds=num_rounds, client_ids=list(client_ids),
         )
+
+
+def _loader_policy(cell: str, cfg: Any) -> bool:
+    """loader 재시드 정책(F01 opt-in). **학습에 실제로 전달되는 칸**(sep_fed)에서만 읽는다.
+
+    다른 칸은 정책을 소비하지 않으므로 run_id 에 새기지 않는다. bool 이 아니면
+    `validate_loader_policy` 가 거부한다(문자열 "true" 같은 값이 조용히 참이 되는 경로 차단).
+    """
+    if cell != "sep_fed":
+        return False
+    from detection.round_runner import validate_loader_policy
+
+    return validate_loader_policy(cfg.get("loader-reseed-per-epoch", False))
 
 
 def _cell_train_config(cell: str, cfg: Any, out_dir: Path) -> dict[str, Any]:

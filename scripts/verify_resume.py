@@ -79,7 +79,7 @@ def _train(tag: str, resume_dir: Path | None, die_after: int | None,
         extra_overrides={"fraction": FRACTION},
         callbacks=callbacks or None,
         resume_dir=resume_dir, run_id="verify",
-        clear_resume_on_success=False,   # 대조를 위해 남긴다. 본실험 기본값은 True 다
+        clear_resume_on_success=False,   # 대조를 위해 남긴다. 09-16(8-2)부터 기본값도 False — 정리는 호출자 몫
         loader_reseed_per_epoch=reseed,
     )
     np.savez(out_npz, *res.ndarrays)

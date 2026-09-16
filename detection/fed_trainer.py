@@ -43,7 +43,48 @@ except ModuleNotFoundError as exc:  # pragma: no cover - 설치 환경에서는 
 
 from detection import serialize
 
-__all__ = ["FedDetectionTrainer", "LoaderReseed", "NoEarlyStopping", "RoundBudget"]
+__all__ = ["AppliedStepCounter", "FedDetectionTrainer", "LoaderReseed", "NoEarlyStopping",
+           "RoundBudget", "attach_applied_counter"]
+
+
+class AppliedStepCounter:
+    """`optimizer.step()` 이 **실제로 호출된** 횟수. 트레이너를 참조하지 않는 작은 상자다.
+
+    트레이너를 직접 참조하면 optimizer → 훅 → 트레이너 → optimizer 순환이 생겨 라운드마다
+    트레이너를 새로 만드는 ④ 에서 가중치 한 벌이 gc 패스까지 더 상주한다(정적 검토 Minor).
+    """
+
+    __slots__ = ("n",)
+
+    def __init__(self) -> None:
+        self.n = 0
+
+
+def attach_applied_counter(optimizer: Any, counter: AppliedStepCounter) -> bool:
+    """`optimizer.step` 뒤에 불리는 **공개 훅**을 걸어 실제 적용 수를 센다(34번 §3-1 8-3).
+
+    AMP 의 `torch.amp.GradScaler.step` 은 inf/NaN 기울기를 찾으면 `optimizer.step()` 을 아예
+    부르지 않는다(torch 규약). 그래서 트레이너의 `optimizer_step` 호출 수는 **시도 수**이고,
+    적용 수는 `step` 이 실제로 불린 횟수다.
+
+    `optimizer.step` 을 감싸지 않는 이유: torch 의 `LRScheduler.__init__` 이 같은 자리를
+    `step_fn.__func__` 로 감싸므로, 우리가 먼저 감싸면 그 뒤 스케줄러 생성이 AttributeError 로
+    죽는다(실측). 공개 훅은 순서와 무관하고 `optimizer.step` 을 건드리지 않으므로 학습 산술과도
+    무관하다 — 바이트 동일은 `tests/test_update_counters.py` 가 고정한다.
+
+    같은 카운터가 이미 걸린 옵티마이저면 아무것도 하지 않고 False. **옵티마이저가 새로
+    만들어지면**(상류 OOM 자동 축소가 `_build_train_pipeline` 에서 그렇게 한다) 다음 호출에서
+    다시 걸리고, 카운터는 그대로라 계수가 이어진다.
+    """
+    if getattr(optimizer, "_fed_applied_counter", None) is counter:
+        return False
+
+    def _post(_opt: Any, _args: Any, _kwargs: Any) -> None:
+        counter.n += 1
+
+    optimizer.register_step_post_hook(_post)
+    optimizer._fed_applied_counter = counter
+    return True
 
 
 class NoEarlyStopping:
@@ -165,7 +206,7 @@ class FedDetectionTrainer(DetectionTrainer):
       2. `validate`      — no-op
       3. `final_eval`    — no-op (stock은 best.pt를 로드한다)
       4. `save_model`    — no-op (stock은 EMA 가중치를 저장한다)
-      5. `optimizer_step` — 실제 갱신 횟수 계측 (학습 동작 무변경)
+      5. `optimizer_step` — 갱신 **시도** 수 계측(적용 수는 optimizer.step 공개 훅, 학습 동작 무변경)
       6. `get_dataloader` — 검증 로더만 `workers=0` (소비되지 않는 로더의 워커 12개 제거, 14번 §B-3)
     """
 
@@ -194,8 +235,14 @@ class FedDetectionTrainer(DetectionTrainer):
         self.injection_digest: list[float] = []
         self.budget: RoundBudget | None = None
         self.loader_reseed: LoaderReseed | None = None
-        #: 실제 `optimizer.step()` 횟수. 배치 수와 다르다 — `optimizer_step` 주석 참조.
+        #: `optimizer_step` 호출(= 갱신 **시도**) 횟수. 배치 수와 다르다 — `optimizer_step` 주석 참조.
+        #: 8-3(34번 §3-1): 이름은 재개 payload 키·세 시드 meta·원자 로그 지표와의 뒤호환을 위해
+        #: 그대로 두고 의미는 **시도 수**다. 실제 적용 수는 `n_optimizer_updates_applied`.
         self.n_optimizer_updates: int = 0
+        #: 실제 적용 수의 재개분 baseline(이전 프로세스 몫). `round_runner` 가 넣는다.
+        self.applied_base: int = 0
+        #: 이번 프로세스에서 실제로 적용된 횟수를 세는 상자(훅이 올린다).
+        self._applied = AppliedStepCounter()
         #: 검증 DataLoader 의 실효 워커 수 증빙. None = 아직 안 만듦(또는 미계측), 0 = 접촉점 6 적용.
         #: "설정이 아니라 실제로 돈 값"을 남긴다 — `RoundResult.val_loader_workers` 로 나간다.
         self.val_loader_workers: int | None = None
@@ -310,6 +357,14 @@ class FedDetectionTrainer(DetectionTrainer):
         """no-op. stock은 `best.pt`를 로드해 검증한다 — best 선택 경로 자체를 제거한다."""
         return None
 
+    @property
+    def n_optimizer_updates_applied(self) -> int:
+        """실제로 `optimizer.step()` 이 호출된 총 횟수(재개분 + 이번 프로세스분).
+
+        GradScaler 가 inf/NaN 에서 건너뛴 시도는 빠진다. 시도 수는 `n_optimizer_updates`.
+        """
+        return int(self.applied_base) + int(self._applied.n)
+
     # -- 접촉점 5 -------------------------------------------------------------
     def optimizer_step(self) -> None:
         """실제 갱신 횟수를 센다. 학습 동작은 그대로 둔다.
@@ -325,7 +380,15 @@ class FedDetectionTrainer(DetectionTrainer):
         남은 누적분은 갱신 없이 버려진다. 중앙집중 칸에는 그 경계가 없다. 크기는
         `누적수 − 1` 배치/라운드 이하이지만, **선언에 없는 칸 간 비대칭이므로 수치로
         남긴다.**
+
+        8-3(34번 §3-1): 여기서 세는 값은 갱신 **시도 수**다. 상류는 `scaler.step(optimizer)` 를
+        부르고 GradScaler 는 inf/NaN 기울기에서 `optimizer.step()` 을 건너뛰므로, 호출 수와
+        적용 수가 다르다. 적용 수는 공개 훅(`attach_applied_counter`)이 센다 — 매 호출에서
+        멱등하게 다시 걸어, 상류가 옵티마이저를 새로 만들어도 계수가 끊기지 않는다.
+        **논문의 "총 갱신 횟수" 는 적용 수(`optimizer_updates_applied`)를 쓰고, 그 값이 없는
+        실행(세 시드 본실험·④)은 시도 수임을 각주로 밝힌다.**
         """
+        attach_applied_counter(self.optimizer, self._applied)
         super().optimizer_step()
         self.n_optimizer_updates += 1
 

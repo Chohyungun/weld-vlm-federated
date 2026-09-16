@@ -168,6 +168,12 @@ def cmd_train() -> None:
     npz = save_cell_weights(OUT / "weights", "last", res)
     print(f"가중치 저장 → {npz}", flush=True)
 
+    # 8-2(34번 §3-1): `train_round` 는 더 이상 재개 파일을 지우지 않는다. 저장이 끝난
+    # **지금** 지운다 — 남기면 다음 실행이 "예산 완료 체크포인트" 로 거부된다.
+    from detection.resume import clear_resume
+
+    clear_resume(OUT / "_resume")
+
     from detection.budget_audit import AccountingCell, AccountingMatrix
 
     acc = AccountingMatrix(num_rounds=1, client_ids=[0], local_epochs=EPOCHS,
@@ -507,7 +513,20 @@ def cmd_status() -> None:
     for name in ("view_meta.json", "train_result.json", "verdict.json"):
         p = OUT / name
         print(f"{'O' if p.exists() else 'X'} {p}")
-    csv = OUT / "run" / "r000_c0" / "results.csv"
+    # 조기 종료 부재의 실질 증거는 `results.csv` 행 수다. 재개한 런은 행이 조각으로 갈리므로
+    # **보존 조각을 합친 뒤** 세야 한다(8-1). 병합은 읽기 전용이다.
+    run_dir = OUT / "run" / "r000_c0"
+    csv = run_dir / "results.csv"
+    frags = []
+    if run_dir.is_dir():
+        from detection.results_merge import MergeReport, before_resume_files, merge_results
+
+        rep = MergeReport()
+        frags = before_resume_files(run_dir, report=rep)
+        if len(frags) > 1:
+            rows = merge_results(frags, rep)
+            print(f"  보존 조각 {len(frags) - 1}개 합산 → {len(rows)} epoch 기록 "
+                  f"/ 목표 {EPOCHS} ({rep.summary()})")
     if csv.exists():
         lines = csv.read_text(encoding="utf-8").splitlines()
         print(f"  results.csv {len(lines)-1} epoch 기록 / 목표 {EPOCHS}")
