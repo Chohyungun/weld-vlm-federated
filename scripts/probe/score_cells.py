@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -62,7 +63,7 @@ from evaluation.params import (
 )
 from evaluation.probes.metadata_probe import MetaSample, trivial_bound
 from evaluation.probes.p9_runner import contexts_from_snapshot, p9_all_cells
-from evaluation.provenance import scorer_code_digest
+from evaluation.provenance import hash_files, scorer_code_digest, stable_digest
 from evaluation.schema import PredictionRecord
 from evaluation.score import coord_health, failure_breakdown
 from evaluation.strata import (
@@ -108,6 +109,52 @@ HEADLINE_POLICY = {
 
 이 딕셔너리를 고치는 것은 채점 기준을 고치는 것과 같다 — 총괄 판정 없이 바꾸지 마라.
 """
+
+ARTIFACT_VERSIONS = {"v1": "score_cells_v1.json", "v2": "score_cells_v2.json",
+                     "v3": "score_cells_v3.json"}
+"""산출물 파일명. **v2 부터는 새 경로다** — 세 시드를 한 코드 상태(하나의 커밋)로 다시 채점할 때
+옛 판을 덮어쓰지 않고 옆에 둔다(총괄 판정 09-16, C 34번 Important 1). v1 은 역사 기록으로 남는다.
+v3 = 머지된 main 커밋에서 줄끝 정규화 지문으로 다시 채점(37번 §3-4-3, C 42번 I-2).
+"""
+
+
+MAIN_OUTPUT_PARTS: tuple[str, str] = ("outputs", "main_d")
+"""본실험 채점 산출 루트의 경로 성분(총괄 판정 09-16 23:25, C 42번 §9-6 n-1)."""
+
+
+def is_main_output(out: Path) -> bool:
+    """`out` 이 본실험 채점 루트(`…/outputs/main_d/…`) 아래인가.
+
+    **경로 성분**으로 판정한다 — 절대화한 경로에 `outputs`·`main_d` 두 성분이 **연달아** 있으면 본실험이다.
+    대소문자는 가리지 않는다(윈도우). `os.path.abspath` 로 절대화해 정션을 따라가지 않는다 — `outputs/` 는
+    본체로 가는 정션이지만, 따라가든 안 가든 성분은 같다. 다른 워크트리의 절대경로·임시 폴더 아래
+    `outputs/main_d` 도 같은 규칙으로 잡힌다. `outputs/main_dx`·`main_d` 단독은 본실험이 아니다.
+    프로파일로 가르지 않는 이유: 보호 대상은 **자리**(v1 산출물이 있는 곳)이지 채점 설정이 아니다.
+    """
+    parts = [p.casefold() for p in Path(os.path.abspath(str(out))).parts]
+    want = [p.casefold() for p in MAIN_OUTPUT_PARTS]
+    return any(parts[i:i + 2] == want for i in range(len(parts) - 1))
+
+
+def artifact_dest(out: Path, version: str) -> Path:
+    """본채점 산출물 경로. 대상이 이미 있으면 **계산 전에 멈추는** 경우:
+
+    - v2 부터는 어디서든 — 재채점은 새 판 경로에 쓰고 옛 판을 보존한다(C 42번 I-2).
+    - **v1 도 본실험 루트(`is_main_output`)에서는** — 기본값 v1 로 부르면 본실험 v1 을 같은 경로에
+      다시 쓰게 된다(n-1, 총괄 판정 09-16 23:25).
+
+    파일럿 루트의 v1·`gate` 부명령(`gate_recheck_*` 에 쓴다)·기존 시험이 기대는 v1 다시 쓰기는 그대로 둔다.
+    """
+    dest = Path(out) / ARTIFACT_VERSIONS[version]
+    if dest.exists() and artifact_is_protected(out, version):
+        where = "새 판 경로" if version != "v1" else "본실험 루트(outputs/main_d)의 v1"
+        raise SystemExit(f"{dest} 이 이미 있다 — 덮지 않는다({where}). 새 판 번호로 채점하라")
+    return dest
+
+
+def artifact_is_protected(out: Path, version: str) -> bool:
+    """이 자리·이 판의 산출물은 덮지 않는가 — 쓸 때 배타 생성(`"x"`)을 쓸지도 이것으로 정한다."""
+    return version != "v1" or is_main_output(out)
 
 EXIT_OK = 0
 EXIT_REGRESSION = 1
@@ -519,6 +566,8 @@ def decomposition_block(params: ScoringParams, pop: Population, det_tags) -> dic
         "computed_at": f"conf >= {params.conf_floor} (하한 — 임계 독립 축)",
         "client_mapping": {"AL": "C3 (알루미늄 단독 클라이언트)",
                            "ST": "C1 ∪ C2 (강재 두 클라이언트, 평가셋에서 분리 불가)"},
+        # 산문이 아니라 **구조**로 — 집계기가 정규식으로 산문을 되읽지 않게(C 34번 Minor 10).
+        "clients_of_material": {"AL": ["C3"], "ST": ["C1", "C2"]},
         "limitation": (
             "평가셋은 회사별 분할보다 먼저 뗐으므로 `client` 열이 비어 있다(실측 12,461행 전부). "
             "3분할 클라이언트 분해는 원리적으로 불가능하고 재질이 유일한 귀속 축이다"
@@ -734,7 +783,12 @@ def check_regressions(params: ScoringParams, metrics: dict) -> dict:
 
 
 def cmd_score(args) -> int:
+    # 지문은 **시작과 끝**에 두 번 — 긴 채점 중 트리가 바뀌면 끝 지문이 시작 코드를 대표하지
+    # 않는다(C 34번 Minor 15). 둘이 다르면 산출물이 `stable=False` 로 말한다.
+    code_start = scorer_code_digest()
     params = params_from_args(args)
+    version = getattr(args, "artifact_version", "v1")
+    dest = artifact_dest(params.out, version)          # 긴 채점 **전에** 확인한다
     params.out.mkdir(parents=True, exist_ok=True)
     pop = load_population(params)
     det_tags, uni_tags = selected_tags(args)
@@ -824,9 +878,15 @@ def cmd_score(args) -> int:
         "cells_scored": list(tags),
         "cells_selection": getattr(args, "cells", "all"),
         "scorer": "evaluation.score.score_records (단일)",
+        "artifact_version": ARTIFACT_VERSIONS[version],
         # **채점기 자신의 코드 지문.** 여러 시드가 같은 코드로 채점됐는지 확인할 유일한
         # 수단이다 — 파라미터가 같아도 코드가 다르면 같은 기준이 아니다(27번 §1-0·§12-1).
-        "scorer_code": scorer_code_digest(),
+        # 시작·끝 두 번 계산해 채점 중 트리 변경을 잡는다.
+        "scorer_code": stable_digest(code_start, scorer_code_digest()),
+        # **입력 레코드의 해시.** 채점이 읽은 레코드가 무엇이었는지 — 코드 지문만으로는
+        # 같은 입력을 봤다는 것이 확인되지 않는다(C 34번 Important 3).
+        "input_records": hash_files(
+            [record_path(params, t) for t in tags] + [raw_record_path(params, t) for t in det_tags]),
         "metrics": metrics,
         "metrics_role": (
             f"운용점 예시 conf={params.conf.value} — **확증적 기준 아님**(총괄 판정 1, "
@@ -852,11 +912,14 @@ def cmd_score(args) -> int:
         "exit_reason": why,
         **diag,
     }
-    dest = params.out / "score_cells_v1.json"
-    with dest.open("w", encoding="utf-8", newline="\n") as fh:
+    # 보호 대상(v2 부터 · 본실험 루트의 v1)은 배타 생성 — 확인과 쓰기 사이에 파일이 생겨도 덮지 않는다
+    with dest.open("x" if artifact_is_protected(params.out, version) else "w",
+                   encoding="utf-8", newline="\n") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
     print(f"저장: {dest}")
+    if not payload["scorer_code"]["stable"]:
+        print("  ! 채점 중 채점기 트리가 바뀌었다 — 이 산출물은 한 코드 상태로 나온 것이 아니다")
 
     print(f"게이트 {gates['n_evaluated']}/{gates['n_registered']} 평가 · "
           f"차단 실패 {gates['blocking_failures'] or '없음'} · "
@@ -957,6 +1020,10 @@ def cmd_predict(args) -> int:
     from tracking.mlflow_local import reject_best_checkpoint
 
     params = params_from_args(args)
+    try:        # 체크포인트 표가 프로파일과 맞는지 **모집단 적재 전에** 본다(49번 §7-4)
+        ckpts = checkpoint_paths(params.pilot, profile=params.profile)
+    except ValueError as e:
+        raise SystemExit(str(e)) from None
     pop = load_population(params)
     conf = params.conf.value if args.at_conf else params.conf_floor
     sub = params.out if args.at_conf else params.out / "sweep"
@@ -966,7 +1033,7 @@ def cmd_predict(args) -> int:
           f"프로파일 {params.profile} ({params.model_cfg} · imgsz {params.imgsz} · "
           f"청크 {params.predict_chunk})")
 
-    for (cell, client), ckpt in checkpoint_paths(params.pilot).items():
+    for (cell, client), ckpt in ckpts.items():
         reject_best_checkpoint(ckpt)
         if not ckpt.exists():
             print(f"체크포인트 없음: {ckpt}")
@@ -1002,6 +1069,8 @@ def main() -> int:
                      ("predict", cmd_predict), ("sweep", cmd_sweep)):
         p = sub.add_parser(name)
         add_common_args(p)
+        p.add_argument("--artifact-version", choices=sorted(ARTIFACT_VERSIONS), default="v1",
+                       help="산출물 파일명 판. v2·v3 = 새 경로 재채점(옛 판 보존, 있으면 멈춤)")
         p.add_argument("--root", default=".")
         p.add_argument("--at-conf", action="store_true",
                        help="predict: 하한이 아니라 운용 임계로 추론한다(65번 레코드 생성)")

@@ -9,7 +9,9 @@
 
 ## 무엇을 해싱하나 — 그리고 왜 그 방식인가
 
-**디렉터리 규칙으로 고정한다.** `evaluation/**/*.py` 전부 + 진입점 `scripts/probe/score_cells.py`.
+**디렉터리 + 명시 목록 규칙으로 고정한다.** `evaluation/**/*.py` 전부 + 채점 값을 결정하는
+트리 밖 모듈(`SCORER_FILES`: 진입점·레코드 생성기·대조선 생성기·클래스 사상·층화 절단점·
+매니페스트 읽기·직렬화).
 
 임포트된 모듈(`sys.modules`)을 훑는 방식을 **쓰지 않는다.** 이 채점기는 함수 안에서 지연
 임포트를 하므로(`--cells det` 인지, 통합형이 있는지, P9 맥락이 있는지에 따라 다르다) 모듈
@@ -22,7 +24,9 @@
 
 ## 해시의 성질
 
-- **내용 기반.** 파일 바이트를 읽는다. 경로·수정 시각·git 상태가 아니다.
+- **내용 기반.** 파일 내용을 읽는다. 경로·수정 시각·git 상태가 아니다.
+- **줄끝 정규화.** `\r\n` → `\n` 로 맞춘 뒤 해싱한다. `core.autocrlf` 설정이 다른 체크아웃에서
+  같은 커밋이 다른 지문을 내면 지문이 커밋을 가리키지 못한다(외부 검토 09-16).
 - **결정론적.** 저장소 상대 경로를 정렬하고 `경로\\0파일해시\\n` 를 이어 붙여 다시 해싱한다.
   같은 파일 집합이면 언제 어디서 돌려도 같은 값이 나온다.
 - **git 정보는 참고다.** 커밋 해시는 작업 트리가 더러우면 거짓말을 한다. `dirty` 를 함께
@@ -38,6 +42,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import subprocess
 from collections.abc import Iterable
 from pathlib import Path
@@ -47,13 +52,31 @@ REPO = Path(__file__).resolve().parents[1]
 SCORER_TREES: tuple[str, ...] = ("evaluation",)
 """통째로 해싱하는 디렉터리. 하위 전부의 `.py` 를 넣는다."""
 
-SCORER_FILES: tuple[str, ...] = ("scripts/probe/score_cells.py",)
-"""트리 밖의 진입점. 여기 없는 파일은 해시에 안 들어간다 — 그 사실을 `rule` 이 밝힌다."""
+SCORER_FILES: tuple[str, ...] = (
+    "scripts/probe/score_cells.py",             # 진입점
+    "scripts/probe/adapt_main_detections.py",   # 채점 레코드 생성 — 레코드 자체의 해시는 산출물 `input_records` 에
+    "scripts/probe/content_free_baselines.py",  # 무내용 대조선 생성 — 집계기 "동결본 불변" 판정의 근거
+    "data/label_map.py",                        # 클래스 사상 (원본 라벨 ↔ ISO 6520-1)
+    "data/id_strata.py",                        # id 구간 층화 절단점
+    "data/manifest_io.py",                      # 매니페스트 읽기
+    "detection/serialize.py",                   # 레코드 직렬화
+    "scripts/probe/recovery_bootstrap.py",      # 회복률 CI 생성기 — CI 가 채점과 같은 코드로 났는지 대조한다
+)
+"""`evaluation/` 밖에 있지만 채점 값을 결정하는 모듈. C 34번 Important 3 이 짚은 구멍이다 —
+"같은 코드로 채점됐는가" 를 물으면서 클래스 사상·층화 절단점·레코드 생성기를 지문 밖에
+두면 그 모듈이 바뀌어도 지문이 같다. 여기 없는 파일은 해시에 안 들어간다 — `rule` 이 밝힌다.
+존재하지 않는 항목은 건너뛰고 `n_files` 가 줄어든다(같은 트리면 같은 수).
+
+**데이터 파일은 넣지 않는다.** 스냅샷은 `verify_snapshot` 을 지나야 열리고 그 digest 가 게이트
+결과에 실리며, 사상표가 바뀌면 무내용 대조선 값이 함께 움직여 집계기가 멈춘다(C 34번 Minor 5).
+"""
 
 RULE = (
-    "evaluation/**/*.py 전부 + scripts/probe/score_cells.py. "
-    "sys.modules 가 아니라 디렉터리 규칙으로 고정한다 — 지연 임포트 때문에 실행 경로마다 "
-    "모듈 목록이 달라지면 같은 코드에서 다른 해시가 나온다"
+    "evaluation/**/*.py 전부 + 채점 경로의 트리 밖 모듈 " + ", ".join(SCORER_FILES) + ". "
+    "sys.modules 가 아니라 디렉터리·명시 목록 규칙으로 고정한다 — 지연 임포트 때문에 실행 "
+    "경로마다 모듈 목록이 달라지면 같은 코드에서 다른 해시가 나온다. "
+    "**줄끝은 LF 로 정규화한 뒤 해싱한다** — core.autocrlf 가 다른 체크아웃에서 같은 커밋이 "
+    "다른 지문을 내지 않게"
 )
 
 
@@ -74,10 +97,19 @@ def scorer_source_files(repo: Path | None = None) -> list[Path]:
 
 
 def _file_sha256(path: Path) -> str:
+    """파일 내용의 sha256. **줄끝을 LF 로 정규화한 뒤** 해싱한다.
+
+    `core.autocrlf=true` 인 체크아웃에서 작업 트리는 CRLF, git blob 은 LF 다. 바이트를 그대로
+    해싱하면 **같은 커밋을 다른 기계·다른 설정으로 체크아웃한 것만으로 지문이 갈린다** —
+    지문이 커밋이 아니라 체크아웃을 가리키게 되고, "같은 코드로 채점됐는가" 에 답하지 못한다
+    (외부 검토 09-16, 37번 §3-4 에서 실측: 39파일 중 7개가 줄끝만으로 달랐다).
+
+    정규화는 `\r\n` → `\n` 뿐이다. 공백·주석·인코딩은 그대로 두므로 실제 코드 변경은 전부
+    잡힌다. 파이썬은 두 줄끝을 같게 해석하므로 정규화가 의미를 지우지도 않는다.
+    """
     h = hashlib.sha256()
     with path.open("rb") as fh:
-        for block in iter(lambda: fh.read(1 << 20), b""):
-            h.update(block)
+        h.update(fh.read().replace(b"\r\n", b"\n"))
     return h.hexdigest()
 
 
@@ -123,7 +155,8 @@ def scorer_code_digest(repo: Path | None = None, *, include_files: bool = True) 
     """산출물에 실을 채점기 코드 지문.
 
     Args:
-        include_files: 파일별 해시를 함께 실을지. 끄면 합산 해시만 남는다(29개 × 64자).
+        include_files: 파일별 해시를 함께 실을지. 끄면 합산 해시만 남는다 — 파일 수는
+            `n_files` 가 말한다(고정 상수가 아니다).
 
     Returns:
         `combined` 이 판정 근거다. 두 산출물의 `combined` 이 같으면 같은 채점기 소스이고,
@@ -136,7 +169,9 @@ def scorer_code_digest(repo: Path | None = None, *, include_files: bool = True) 
         "combined": combined,
         "n_files": len(files),
         "rule": RULE,
-        "algorithm": "sha256(경로 + '\\0' + sha256(파일 바이트) + '\\n' 를 정렬 순서로 이어 붙임)",
+        "algorithm": ("sha256(경로 + '\\0' + sha256(줄끝 LF 정규화한 파일 내용) + '\\n' 를 "
+                      "정렬 순서로 이어 붙임)"),
+        "newline_normalized": True,
         "git": _git_state(root),
         "note": (
             "이 필드가 없는 산출물은 이 규칙이 생기기 전에 나온 것이다. **소급 계산해 "
@@ -146,3 +181,80 @@ def scorer_code_digest(repo: Path | None = None, *, include_files: bool = True) 
     if include_files:
         out["files"] = per_file
     return out
+
+
+def relpath(path: str | Path, repo: Path | None = None) -> str:
+    """산출물에 싣는 경로는 **저장소 상대**로 — CLI 에 절대경로를 줘도 산출물에 들어가지 않게
+    (규약 2-6, C 34번 Minor 15). 저장소 밖이면 이름만 남긴다."""
+    import os
+
+    root = Path(repo or REPO).resolve()
+    # `resolve()` 는 정션을 따라간다 — `outputs/` 는 본체로 가는 정션이라 저장소 밖으로
+    # 튀어 이름만 남는다. 정션을 따라가지 않는 절대화로 상대경로를 낸다.
+    p = Path(os.path.abspath(str(path)))
+    try:
+        return p.relative_to(root).as_posix()
+    except ValueError:
+        return p.name
+
+
+def hash_files(paths: Iterable[str | Path], repo: Path | None = None) -> dict[str, str | None]:
+    """입력 파일(채점 레코드 등)의 sha256. 없는 파일은 None — 있는 척 적지 않는다."""
+    root = Path(repo or REPO)
+    out: dict[str, str | None] = {}
+    for p in paths:
+        q = Path(p)
+        out[relpath(q, root)] = _file_sha256(q) if q.exists() else None
+    return out
+
+
+_VERSION_RE = re.compile(r"_v(\d+)\.json$")
+
+
+def artifact_version(name: str | Path) -> int:
+    """산출물 파일명의 판 번호 — `score_cells_v3.json` → 3.
+
+    집계본·CI 의 이름을 입력 산출물의 판에서 뽑는다(C 42번 I-2). 이름 안에 "v2" 가 들어 있는지로
+    가르면 v3 입력이 `aggregate_v1.json` 에 쓰인다 — 실제로 그랬다. 판을 읽을 수 없으면 멈춘다.
+    """
+    m = _VERSION_RE.search(Path(name).name)
+    if m is None:
+        raise ValueError(f"산출물 파일명에서 판 번호를 읽을 수 없다: {Path(name).name} "
+                         "— '<이름>_v<번호>.json' 이어야 한다")
+    return int(m.group(1))
+
+
+def versioned_output(dest: str | Path, stem: str, artifact_name: str | Path) -> Path:
+    """`<dest>/<stem>_v<n>.json` — n 은 입력 산출물의 판. **이미 있으면 `FileExistsError`.**
+
+    옛 판(v1·v2)은 진단 이력으로 보존한다(37번 §8-6). 긴 계산 **전에** 불러 멈추게 하고, 쓸 때는
+    `write_new_text` 로 한 번 더 막는다.
+    """
+    path = Path(dest) / f"{stem}_v{artifact_version(artifact_name)}.json"
+    if path.exists():
+        raise FileExistsError(f"{path.name} 이 이미 있다 — 덮지 않는다. 옛 판은 보존한다")
+    return path
+
+
+def write_new_text(path: str | Path, text: str) -> None:
+    """**배타 생성**(`"x"`)으로 쓴다 — 확인과 쓰기 사이에 파일이 생겨도 덮지 않는다. 줄끝은 LF."""
+    with Path(path).open("x", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+
+
+def stable_digest(start: dict, end: dict) -> dict:
+    """긴 채점의 **시작과 끝**에 두 번 계산한 지문을 맞댄다(C 34번 Minor 15).
+
+    채점 중에 트리가 바뀌면 끝 시점 지문은 시작 시점 코드를 대표하지 않는다. 둘이 다르면
+    `stable=False` 로 남기고 어느 파일이 갈렸는지 적는다 — 그 산출물은 한 코드 상태로 나온
+    것이 아니다.
+    """
+    same = start["combined"] == end["combined"]
+    changed = sorted(
+        k for k in set(start.get("files", {})) | set(end.get("files", {}))
+        if start.get("files", {}).get(k) != end.get("files", {}).get(k)
+    )
+    return {**end, "combined_at_start": start["combined"], "stable": same,
+            "files_changed_during_run": changed,
+            "stability_note": ("시작·끝 지문 일치 — 한 코드 상태로 채점됐다" if same else
+                               "**시작·끝 지문 불일치** — 채점 중 트리가 바뀌었다. 한 코드 상태가 아니다")}

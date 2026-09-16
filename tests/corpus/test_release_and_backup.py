@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -52,8 +53,54 @@ def test_aihub_식별자를_잡는다():
 
 
 def test_로컬_절대경로를_잡는다():
-    hits = S.screen_text(r"E:\Fedvlm_for_welding\corpus 에서 읽었다", set())
+    """입력은 **존재하지 않는 가짜 경로**다 — 드라이브(Q:)도 폴더 이름도 이 저장소·사용자와 무관하다.
+
+    실제 위치 형태를 픽스처로 박으면 탐지기를 시험하려다 규약 2-6 을 스스로 어긴다(F 46번 §4).
+    옛 규칙(첫 폴더 이름 목록)에서도 잡히던 `Users` 형태다. 규칙을 넓힌 뒤 새로 잡는 형태는
+    아래 시험이 따로 건다(50번 §6).
+    """
+    hits = S.screen_text(r"Q:\Users\example_user\sample_project\corpus 에서 읽었다", set())
     assert "local_path" in [h[0] for h in hits]
+
+
+# 아래 입력도 전부 존재하지 않는 가짜 경로다(Q: 드라이브·example 이름).
+@pytest.mark.parametrize("text", [
+    # 문자열 안에 JSON 이 한 번 더 들어 있으면 json.loads 뒤에도 역슬래시가 2개로 남는다
+    r"raw 출력의 경로 Q:\\sample_project\\notes.md",
+    # 위 입력은 UNC 갈래(\\sample_project\\notes.md)로도 읽혀서, 드라이브 갈래의 구분자 {1,2} 를
+    # {1} 로 줄여도 통과한다(F 51번 m-3). 뒤에 구분자가 더 없어 UNC 로 못 읽는 입력을 따로 둔다.
+    r"설정값 Q:\\sample_project 를 읽었다",
+    r"출처는 Q:\sample_project\notes.md 이다",           # 첫 폴더가 옛 목록(Users 등) 밖
+    r"적재 위치 Q:\공유 드라이브\sample 확인",              # 공유 드라이브 이름
+    r"원본은 \\example-host\sample_share\x 에 있다",       # UNC
+], ids=["JSON_이스케이프", "JSON_이스케이프_드라이브만", "목록_밖_첫_폴더", "공유_드라이브", "UNC"])
+def test_폴더_이름_목록과_무관하게_로컬_경로를_잡는다(text):
+    """옛 규칙은 첫 폴더가 `Users`·`Program Files`·저장소 이름일 때만 잡았다 (50번 추기)."""
+    assert "local_path" in [h[0] for h in S.screen_text(text, set())]
+
+
+@pytest.mark.parametrize("text", [
+    "자료는 https://example.com/docs/page 에 있다",
+    "회의는 12:30 에 시작했다 (2026-09-16T12:30:00)",
+    "ISO 5817:2014 의 등급 표기",
+    r"documents:\n  - doc_id: X",                          # YAML 문자열의 줄바꿈 이스케이프
+    r"패턴은 \\d+\\s* 이다",                                # 이스케이프된 정규식 조각
+], ids=["URL", "시각", "규격_표기", "YAML_줄바꿈", "정규식_조각"])
+def test_경로가_아닌_콜론_표기는_잡지_않는다(text):
+    """넓힌 만큼 오탐이 늘면 적발 목록이 소음이 된다. 다른 사유(유료 표준 등)는 여기서 보지 않는다."""
+    assert "local_path" not in [h[0] for h in S.screen_text(text, set())]
+
+
+def test_경로_규칙은_폴더_이름_목록을_들고_있지_않다():
+    """목록에 기대면 목록 밖 경로가 빠진다 — 드라이브 뒤에 폴더 이름 대안 묶음이 없어야 한다.
+
+    옛 규칙은 드라이브 구분자 바로 뒤에 `(?:Users|…)` 대안을 두었다(저장소 이름 포함).
+    POSIX 갈래의 `(?:home|Users)` 는 지시대로 남긴 것이라 여기서 보지 않는다.
+    """
+    p = S.LOCAL_PATH.pattern
+    assert "(?:Users|" not in p
+    assert "Program Files" not in p
+    assert re.search(r"\](?:\{1,2\})?\(\?:", p) is None, "드라이브 구분자 뒤에 대안 묶음이 있다"
 
 
 def test_원문_연속_일치를_잡는다():
@@ -171,15 +218,78 @@ def test_실물_백업_목록이_계약과_맞는다():
     """총괄이 옮길 실물. 목록이 계약과 어긋나면 사람이 잘못된 것을 복사한다.
 
     09-08 판정으로 cycle_pilot·cycle_pilot_v2 가 한 벌에 들어왔다(추적 전환 기각).
+    09-15 부터 목록은 봉인처 명부에서 파생한다 — 소실 기록(v2)은 빠지고, 봉인 아닌
+    `judge_labels/` 가 들어온다. 그래서 파일 수를 상수로 박지 않고 구성으로 센다.
     """
     plan = B.build_plan(B.DEFAULT_DIRS)
     if plan["problems"]:
         pytest.skip(f"이 트리에서 대상이 온전하지 않다: {plan['problems']}")
     assert {Path(d).name for d in B.DEFAULT_DIRS} == set(plan["dirs"])
-    assert plan["n_files"] == 25, plan["n_files"]
+    expected = 0
+    for d in B.SEALED_DIRS:
+        names, _ = B.snapshot_summary(d)
+        expected += len(names) + 1                      # 구성원 + 계약서
+    for d in B.UNSEALED_DIRS:
+        expected += sum(1 for p in d.iterdir() if p.is_file())
+    assert plan["n_files"] == expected, (plan["n_files"], expected)
     for it in plan["items"]:
         if it["contract_sha256"] is not None:
             assert it["sha256"] == it["contract_sha256"], it["rel"]
+
+
+def test_백업_목록은_봉인처_명부에서_파생된다():
+    """두 목록이 따로 살면 한쪽만 고쳐진다 — 09-13 에 이 목록이 소실된 v2 를 계속 들고 있었다."""
+    from corpus.generate.frozen_out import EXPECTED_SEALED
+
+    expected = {B.REPO / rel for rel, e in EXPECTED_SEALED.items()
+                if e["status"] in B.BACKED_UP_STATUSES}
+    lost = {B.REPO / rel for rel, e in EXPECTED_SEALED.items() if e["status"] == "lost"}
+    assert set(B.SEALED_DIRS) == expected
+    assert not (set(B.DEFAULT_DIRS) & lost), "소실 기록된 곳은 옮길 실물이 없다"
+    assert B.REPO / "corpus/validate/judge_labels" in B.DEFAULT_DIRS
+    # 대조기와 같은 집합이어야 "있어야 한다" 와 "옮긴다" 가 갈리지 않는다.
+    from corpus.generate.frozen_out import PRESENT_STATUSES
+    assert B.BACKED_UP_STATUSES is PRESENT_STATUSES
+    # 09-16 총괄 수용 — 본실험 매니페스트 계약도 한 벌에 든다(F 39번 I-1 · A 62f660b).
+    assert B.REPO / "data/interim/manifest_v1" in B.SEALED_DIRS
+
+
+def test_복원된_봉인처도_백업_목록에_든다():
+    """`restored` 는 소실 뒤 동일 바이트로 돌아온 자리다 — git 밖 단일 사본이 다시 생긴
+    것이라 백업이 급하다. 상태 어휘를 늘린 쪽(A)과 목록을 파생하는 쪽(B)이 따로 살면
+    목록이 조용히 줄어든다 — 09-13 에 반대 방향으로 같은 일이 있었다 (41번 I-1)."""
+    reg = {"a/expected": {"status": "expected", "owner": "B"},
+           "b/restored": {"status": "restored", "owner": "A", "record": "복원", "evidence": "64자 일치"},
+           "c/lost": {"status": "lost", "owner": "B", "record": "소실"}}
+    got = {p.as_posix().rsplit("/", 2)[-2] + "/" + p.name for p in B.sealed_dirs(reg, Path("/r"))}
+    assert got == {"a/expected", "b/restored"}
+
+
+def test_사람_라벨_폴더가_백업_목록에_있고_미추적분이_위험분으로_잡힌다(tmp_path, monkeypatch):
+    """labels_*.jsonl 은 미추적이다. 백업 목록에 없으면 09-11 과 같은 단일 사본 구조다."""
+    d = tmp_path / "judge_labels"
+    d.mkdir()
+    (d / "sheet_v1.jsonl").write_text("{}\n", encoding="utf-8", newline="")
+    (d / "labels_v1.jsonl").write_text('{"labeler": "x"}\n', encoding="utf-8", newline="")
+    monkeypatch.setattr(B, "UNSEALED_DIRS", (d,))
+    monkeypatch.setattr(B, "tracked_names", lambda _d: frozenset({"sheet_v1.jsonl"}))
+    plan = B.build_plan([d])
+    assert not plan["problems"]
+    by = {it["name"]: it for it in plan["items"]}
+    assert by["labels_v1.jsonl"]["tracked"] is False and by["labels_v1.jsonl"]["sealed"] is False
+    assert by["sheet_v1.jsonl"]["tracked"] is True
+    assert plan["n_at_risk"] == 1
+    # 봉인 아닌 항목은 계약 대조가 없다 — 그 사실이 항목에 남아야 verify 가 속지 않는다
+    assert all(it["contract_sha256"] is None for it in plan["items"])
+
+
+def test_봉인도_아니고_목록에도_없는_디렉터리는_여전히_문제로_적는다(tmp_path):
+    """아무 디렉터리나 넘기면 전부 담아 주는 것이 아니다 — 명시된 곳만."""
+    d = tmp_path / "아무거나"
+    d.mkdir()
+    (d / "x.txt").write_text("x", encoding="utf-8")
+    plan = B.build_plan([d])
+    assert plan["problems"] and "봉인본이 아니다" in plan["problems"][0]
 
 
 def test_위험분과_안전분을_목록이_가른다():

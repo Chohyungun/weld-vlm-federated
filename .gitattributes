@@ -17,3 +17,11 @@
 *.pt    binary
 *.parquet binary
 *.faiss binary
+
+# 봉인 산출물 — 계약(SNAPSHOT.sha256)이 봉인 당시 바이트(CRLF)로 잡혀 있다 (2026-09-16, 32번 과제 5).
+# 위의 *.json 규칙이 이 넷을 LF 로 정규화해 추적 blob 의 해시가 계약과 어긋났다. 정규화를 끈다.
+# 이 줄들이 위 규칙보다 뒤에 있어야 이긴다. 다른 봉인 파일은 손대지 않는다.
+corpus/generate/cycle_pilot/_phi_report.json          -text
+corpus/generate/cycle_pilot/cycle_corpus_report.json  -text
+corpus/generate/cycle_pilot/judge_agreement.json      -text
+corpus/generate/cycle_pilot_v2/cycle_corpus_report.json -text

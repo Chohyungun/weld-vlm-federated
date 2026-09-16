@@ -56,15 +56,35 @@ CHECKPOINTS: tuple[tuple[str, str | None, str], ...] = (
     ("sep_local", "C3", "sep_local/sep_local_c2.npz"),
     ("sep_fed", None, "sep_fed/global_r003.npz"),
 )
-"""칸 → last 체크포인트. **best 는 없다**(불변조건 3-2). 경로는 C 의 산출 규약이다."""
+"""칸 → last 체크포인트. **best 는 없다**(불변조건 3-2). 경로는 C 의 **파일럿** 산출 규약이다."""
+
+CHECKPOINT_LAYOUT_PROFILES: frozenset[str] = frozenset({"pilot"})
+"""`CHECKPOINTS` 표가 맞는 채점 프로파일(49번 §7-4).
+
+표는 파일럿 배치(`outputs/pilot_c`)다. 본실험(`main`)은 연합 칸이 `fl/sep_fed/global_r050.npz` 에
+있어서, 이 표로 찾으면 파일럿 경로(`sep_fed/global_r003.npz`)를 쓴다 — 그런 파일이 있으면 조용히
+다른 가중치로 추론하게 된다. **본실험 경로로 맞추지 않고 멈추는 이유:**
+
+1. 본실험 레코드는 C 의 export 를 `adapt_main_detections.py` 로 옮긴 것이고, 그 체크포인트 경로·
+   sha256 이 adapt 기록(`export_meta`)에 있다. D 가 다시 추론하면 같은 칸의 레코드 출처가 둘이 된다.
+2. 본실험 `predict` 는 `outputs/main_d/seed<n>/` 의 레코드 자리에 쓴다. 그 레코드는 v1~v3 산출물의
+   `input_records` 가 해시로 묶은 입력이다.
+3. 연합 마지막 라운드 번호(50)를 여기 베끼면 `configs` 와 C 의 산출 배치에 두 번째 사본이 생긴다.
+"""
 
 
 def cell_tag(cell: str, client: str | None) -> str:
     return cell if client is None else f"{cell}_{client}"
 
 
-def checkpoint_paths(pilot: Path) -> dict[tuple[str, str | None], Path]:
-    return {(cell, client): pilot / rel for cell, client, rel in CHECKPOINTS}
+def checkpoint_paths(pilot: Path, *, profile: str) -> dict[tuple[str, str | None], Path]:
+    """칸 → 체크포인트 경로. 표가 맞지 않는 프로파일이면 **멈춘다**(`CHECKPOINT_LAYOUT_PROFILES`)."""
+    if profile not in CHECKPOINT_LAYOUT_PROFILES:
+        raise ValueError(
+            f"프로파일 {profile!r} 은 체크포인트 표(파일럿 배치)와 맞지 않는다 — 본실험 레코드는 C 의 export 를 "
+            "adapt_main_detections.py 로 옮겨 만든다(체크포인트 경로·해시는 adapt 기록에 있다). "
+            "D 의 predict 로 본실험 체크포인트를 추론하지 않는다")
+    return {(cell, client): Path(pilot) / rel for cell, client, rel in CHECKPOINTS}
 
 
 def load_yolo_from_npz(

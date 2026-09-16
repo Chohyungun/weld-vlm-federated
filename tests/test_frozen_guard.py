@@ -18,6 +18,8 @@ import pytest
 from data.frozen_guard import (
     ATTIC_NAME,
     CONTRACT_NAME,
+    EXPECTED_SEALED,
+    SEALED_STATUSES,
     FrozenDirectoryError,
     assert_writable,
     is_frozen,
@@ -26,6 +28,12 @@ from data.frozen_guard import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 V1 = REPO_ROOT / "data/interim/manifest_v1"
+
+PILOT3000_KEYS = (
+    "data/processed/aihub71761_rt_v1_pilot3000",
+    "data/processed/aihub71761_rt_v1_pilot3000_crop_only",
+    "data/processed/aihub71761_rt_v1_pilot3000_scale_control",
+)
 
 #: 격리 대상. `scripts/audit_frozen_dir.py` 의 목록과 같아야 한다.
 QUARANTINE = (
@@ -88,6 +96,77 @@ def test_legacy_path_는_없으면_사유를_담아_실패한다(tmp_path: Path)
     with pytest.raises(FileNotFoundError) as e:
         legacy_path("없는파일.csv", root=tmp_path)
     assert "attic/README.md" in str(e.value)
+
+
+# ---------------------------------------------------------------------------------
+# 봉인처 명부 (32번 과제 6) — 형식·어휘·필수 항목·B 명부와의 정합
+# ---------------------------------------------------------------------------------
+
+
+def test_명부_키는_저장소_상대_POSIX_경로다():
+    """드라이브 문자·역슬래시·선행 슬래시가 들어오면 규약 2-6 위반이고 대조기의
+    `base / rel` 결합이 깨진다."""
+    for rel in EXPECTED_SEALED:
+        assert ":" not in rel and "\\" not in rel, rel
+        assert not rel.startswith("/") and not rel.endswith("/"), rel
+        assert ".." not in rel.split("/"), rel
+
+
+def test_명부_항목은_어휘_안의_상태와_필수_필드를_가진다():
+    assert SEALED_STATUSES == ("expected", "lost", "restored")
+    for rel, e in EXPECTED_SEALED.items():
+        assert e["status"] in SEALED_STATUSES, f"{rel}: {e['status']!r}"
+        assert e["owner"] in {"A", "B", "C", "D", "E", "F"}, f"{rel}: owner {e.get('owner')!r}"
+        if e["status"] in ("lost", "restored"):
+            assert e.get("record"), f"{rel}: {e['status']} 인데 record 가 없다"
+        if e["status"] == "restored":
+            assert e.get("evidence"), f"{rel}: restored 인데 근거 등급(evidence)이 없다"
+
+
+def test_본실험_매니페스트_계약이_명부에_있다():
+    """F 39번 Important 1 — 단일 진실인데 명부·백업 목록이 몰랐다."""
+    e = EXPECTED_SEALED["data/interim/manifest_v1"]
+    assert e["status"] == "expected" and e["owner"] == "A"
+
+
+def test_pilot3000_계열_3개는_A_소유_restored_로_등록돼_있다():
+    """09-16 복원 판정 → 00:58 원 경로 복사·해시 4/4×3 확인 뒤 `restored`(32번 §1-4 추기).
+    근거 등급이 다르다 — pilot3000 은 64자 digest 전체, 두 팔은 8자 접두 + 구성 일치.
+    실물이 없는데 이 상태면 대조기가 missing_contract 로 실패하는 것이 맞다."""
+    for k in PILOT3000_KEYS:
+        e = EXPECTED_SEALED[k]
+        assert e["owner"] == "A" and e["status"] == "restored", k
+        assert "32번" in e["record"], k
+    assert "64자" in EXPECTED_SEALED[PILOT3000_KEYS[0]]["evidence"]
+    for k in PILOT3000_KEYS[1:]:
+        assert "8자 접두" in EXPECTED_SEALED[k]["evidence"], k
+
+
+@pytest.mark.skipif(
+    not (REPO_ROOT / "data/processed").is_dir(), reason="저장 뿌리 data/processed 가 이 트리에 없다"
+)
+def test_restored_자리에_실물과_계약서가_있다():
+    """`restored` 는 실물이 돌아온 뒤에만 붙인다는 규칙의 실물 확인.
+
+    skip 은 **저장 뿌리**(정션) 유무로만 가른다 — 세 자리 중 하나가 사라진 것을 skip 으로
+    넘기면 09-11 과 같은 모양이 된다(45번 I-1). 뿌리가 있는데 자리가 비면 실패다."""
+    for k in PILOT3000_KEYS:
+        assert (REPO_ROOT / k).is_dir(), f"{k}: 저장 뿌리는 있는데 복원 자리가 없다"
+        assert is_frozen(REPO_ROOT / k), f"{k}: 계약서가 없다"
+
+
+def test_expected_항목은_실물이_있으면_계약서를_가진다():
+    """명부가 "있어야 한다"고 한 자리에 디렉터리는 있는데 계약서가 없으면 봉인이 풀린 것이다.
+    디렉터리 자체가 없는 경우(정션 없는 트리)는 여기서 판단하지 않는다 — 대조기의 몫."""
+    for rel, e in EXPECTED_SEALED.items():
+        d = REPO_ROOT / rel
+        if e["status"] in ("expected", "restored") and d.is_dir():
+            assert is_frozen(d), f"{rel}: 디렉터리는 있는데 {CONTRACT_NAME} 가 없다"
+
+
+# (`test_B_명부와_어긋나지_않는다` 는 전환기 전용이었다. B 가 598cd47 로 이 명부를 같은 객체로
+#  import 하면서 B 쪽 `test_명부는_data_frozen_guard_의_단일_명부다` 가 동일성·재정의 없음을
+#  단언한다 — 45번 m-2·41번 m-1 에 따라 지웠다.)
 
 
 # ---------------------------------------------------------------------------------

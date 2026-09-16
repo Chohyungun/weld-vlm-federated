@@ -11,6 +11,11 @@
 그래서 **파일 속성이 아니라 계약의 존재로** 막는다. `SNAPSHOT.sha256` 이 있는 디렉터리는
 완결된 스냅샷이고, 재파생은 항상 새 경로에 한다(개발규약 1-1·1-6).
 
+## 봉인처 명부
+
+`EXPECTED_SEALED` — 있어야 할 봉인 디렉터리의 단일 명부(2026-09-16, 32번 과제 6). 대조기와
+백업 목록이 여기서 읽는다. 상태 어휘와 갱신 규칙은 명부 위 주석.
+
 ## 쓰는 법
 
     from data.frozen_guard import assert_writable, legacy_path
@@ -26,6 +31,8 @@ from pathlib import Path
 __all__ = [
     "ATTIC_NAME",
     "CONTRACT_NAME",
+    "EXPECTED_SEALED",
+    "SEALED_STATUSES",
     "FrozenDirectoryError",
     "assert_writable",
     "is_frozen",
@@ -39,6 +46,73 @@ CONTRACT_NAME = "SNAPSHOT.sha256"
 ATTIC_NAME = "attic"
 
 _V1 = Path(__file__).resolve().parents[1] / "data/interim/manifest_v1"
+
+# ======================================================================================
+# 봉인처 명부 — 저장소 전체의 **단일 명부** (2026-09-16, 32번 과제 6)
+#
+# B 의 `corpus/generate/frozen_out.EXPECTED_SEALED` 에서 옮겨 왔다. 계약서가 있는 디렉터리만
+# 찾으면 디렉터리째 사라진 봉인본은 목록에서 같이 사라진다 — 09-11 에 data/processed 가 비었을 때
+# 대조기가 "깨짐 0" 을 냈다(30번 §8-4 나). 그래서 "무엇이 있어야 하는지"를 따로 들고 대조한다.
+# 두 곳에 살면 한쪽만 고쳐진다 — 09-13 에 백업 목록이 소실된 v2 를 계속 들고 있었다. 대조기
+# (`frozen_out.check_registry`)·백업 목록(`verify_backup.SEALED_DIRS`)은 여기서 import 한다.
+#
+# 키: 저장소 루트 기준 **POSIX 상대경로**. 드라이브 문자·역슬래시·선행 슬래시 금지(규약 2-6).
+# 항목: `status`(아래 어휘) · `owner`(트랙 문자) · `record`(lost·restored 는 필수 — 언제 왜 그런지)
+#       · `evidence`(restored 만 — 근거 등급).
+#
+# 상태 어휘 (`SEALED_STATUSES`):
+#   expected — 있어야 한다. 대조기: 없으면 missing_contract(실패) 또는 absent_tree(알림 — 저장 뿌리
+#              자체가 이 트리에 없을 때, 정션을 안 붙인 새 clone 등).
+#   lost     — 소실이 기록됐다. 없으면 lost_recorded(알림, 실패 아님). 다시 나타나면
+#              lost_but_present(실패 — 같은 이름 재생성은 규약 1-6 위반).
+#   restored — 소실 뒤 **동일 바이트**로 복원됐다(재생성이 아니다). 검사는 expected 와 같고
+#              `evidence` 에 근거 등급을 적는다("64자 digest 전체 일치" / "8자 접두 + 구성 일치" 등).
+#              원 경로에 실물이 돌아온 **뒤에만** 붙인다 — 그 전에 붙이면 대조기가 missing_contract
+#              로 실패한다. 대조기의 restored 분기는 B 소관(import 전환 때 expected 와 같게).
+#
+# 상태 갱신은 총괄 판정을 따른다. pilot3000 계열 3개는 09-16 복원 판정(의사결정로그 17ca38b) →
+# 09-16 00:58 원 경로 복사·파일별 해시 4/4×3·계약서 3장 동일 확인(32번 §1-4 추기) → `restored`.
+# 이 세 자리는 git 밖 단일 사본으로 돌아온 것이라 백업 목록(B `verify_backup`)에 들어야 한다.
+# ======================================================================================
+SEALED_STATUSES: tuple[str, ...] = ("expected", "lost", "restored")
+
+EXPECTED_SEALED: dict[str, dict[str, str]] = {
+    # --- 본실험 매니페스트 계약 (A). 본실험 데이터의 단일 진실. git 밖(.gitignore data/interim/).
+    #     F 39번 Important 1: 명부와 백업 목록이 이것을 몰랐다.
+    "data/interim/manifest_v1": {
+        "status": "expected", "owner": "A",
+        "record": "본실험 매니페스트 계약 4/4(manifest·annotations·data_capabilities·tiles) · "
+                  "digest 1f80e98b… · 동결 08-31(58번) · 위생 정리 09-02(80번 G11-1)"},
+    # --- 코퍼스 봉인 (B)
+    "corpus/generate/cycle_pilot": {"status": "expected", "owner": "B"},
+    "corpus/generate/cycle_pilot_v2": {"status": "expected", "owner": "B"},
+    "data/processed/pairs_pilot_v1": {
+        "status": "expected", "owner": "B",
+        "record": "09-11 소실 → 09-13 해시 일치 복원 (30번 부록 A)"},
+    "data/processed/pairs_pilot_v2": {
+        "status": "lost", "owner": "B",
+        "record": "09-11 소실 확정 · 사본 없음 · 입력 부재로 재생성 불가 (30번 부록 A-3)"},
+    # --- 파일럿 표본과 어블레이션 두 팔 (A). 새 경로 재생성 digest 가 기록값과 일치해 복원(32번 §1).
+    #     `evidence` 는 근거 등급 — 기록이 64자 전체인지 8자 접두뿐인지가 다르다. 재생성이 아니라
+    #     동일 바이트 복원이므로 60·61·76번과 채점 산출물이 인용하는 digest 가 그대로 유효하다.
+    "data/processed/aihub71761_rt_v1_pilot3000": {
+        "status": "restored", "owner": "A",
+        "evidence": "60번 64자 digest 전체 일치 · 같은 생성기(ed8977f)·입력(manifest_v1 4/4) 2회 실행 동일",
+        "record": "09-11 소실 · 09-16 복원 판정(17ca38b) · 09-16 00:58 원 경로 복사, "
+                  "파일별 해시 4/4·계약서 동일·load_snapshot 통과 (32번 §1-4 추기)"},
+    "data/processed/aihub71761_rt_v1_pilot3000_crop_only": {
+        "status": "restored", "owner": "A",
+        "evidence": "76번 8자 접두 일치 + 구성 수치 전량 일치(2,319장·학습 풀 1,666 = N-crop 1,666·"
+                    "정상 10.2%·공유 eval 653)",
+        "record": "09-11 소실 · 09-16 복원 판정(17ca38b) · 09-16 00:58 원 경로 복사, "
+                  "파일별 해시 4/4·계약서 동일·load_snapshot 통과 (32번 §1-4 추기)"},
+    "data/processed/aihub71761_rt_v1_pilot3000_scale_control": {
+        "status": "restored", "owner": "A",
+        "evidence": "76번 8자 접두 일치 + 구성 수치 전량 일치(2,319장·학습 풀 1,666 = N-crop 1,057·"
+                    "N-tile 606·N-band 3·정상 43.0%·공유 eval 653)",
+        "record": "09-11 소실 · 09-16 복원 판정(17ca38b) · 09-16 00:58 원 경로 복사, "
+                  "파일별 해시 4/4·계약서 동일·load_snapshot 통과 (32번 §1-4 추기)"},
+}
 
 
 class FrozenDirectoryError(RuntimeError):

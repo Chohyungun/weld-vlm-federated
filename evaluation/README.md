@@ -145,6 +145,56 @@
 지문이 아니다. git 커밋 해시도 함께 남기지만 **판정 근거가 아니다** — 더러운 트리에서는
 코드를 대표하지 않는다.
 
+## 3-5. 회복률의 부트스트랩 CI 와 `recovery_reportable` 의 세 값 (36번·총괄 게이트 09-16)
+
+대표 숫자(3세트 평균 회복률 `R̄`)를 실어도 되는지는 **세 줄**로 판정한다 — 트립와이어 ①,
+회복률 CI ②③④, 대표 채택(총괄). 집계 산출물 `aggregate_v{1,2}.json` 의
+`recovery.map_50.denominator_gate` 가 그 세 줄을 담는다.
+
+**`recovery_reportable` 은 세 값이다. 소비자(E 의 표 생성 등)는 셋을 구분해야 한다.**
+
+| 값 | 뜻 | 언제 |
+|---|---|---|
+| `null` | **미판정.** CI 가 없거나, 있어도 이 집계의 입력과 결속되지 않는다 | `recovery_ci_v1.json` 이 없을 때 · 아래 결속 검사 중 하나라도 어긋날 때(사유는 `recovery_ci_rejected.reasons`) |
+| `true` | 게재 가능 — ①과 ②③④ 전부 충족 | CI 가 결속되고 집계기 재판정으로 통과한 뒤 |
+| `false` | 게재 불가 — ①~④ 중 미달 | CI 가 결속됐고 하나라도 미달 |
+
+`null` 을 "게재 불가" 로 읽으면 안 되고, `tripwire_only_reportable: true` 를 게재 가능으로
+읽어도 안 된다(C 34번 M17). 두 필드는 `recovery_reportable_policy` 가 산출물 안에서 설명한다.
+`true` 도 대표 채택이 아니다 — 집계본 최상위 `public_status` 가 "CI 산출 완료, 코드·출처 최종 검수
+및 대표 채택 대기" 로 그 상태를 적는다.
+
+**결속 검사(외부 검토 codex_reply §18, 37번 §8).** 집계기는 CI 산출물을 이름만 보고 쓰지 않는다.
+아래 셋을 **모두** 돌리고, 하나라도 어긋나면 CI 를 쓰지 않는다(`null`).
+
+1. 입력 결속 — CI 의 `binding`(시드 목록, 시드별 산출물 원시 바이트 sha256, 채점기 지문과 규칙 표기)이
+   집계기가 지금 읽은 파일로 만든 블록과 같은가. 생성기와 집계기는 같은 함수(`read_artifact`·`make_binding`)를 쓴다.
+2. T1 항등 — 시드 × 칸 전부의 기록이 있고, 모두 통과했고, 차가 0 이며, 기준값이 지금 파일의 값과 같은가.
+3. 점추정 — R̄, 시드별 R·D, 칸별 map_50 이 지금 파일로 다시 계산한 값과 `POINT_TOLERANCE`(1e-12) 안에서 같은가.
+
+기록된 `ci_pass` 는 쓰지 않는다. 집계기가 구간·반폭·미정의 수에서 ②③④를 다시 판정한다
+(`evaluation/recovery_ci.py` `rejudge_ci_rules`). 재표집 횟수·난수 시드·**신뢰수준(0.05)·구간 방식
+(백분위)** 도 등록 조건이라, 기록이 `evaluation/prereg.py` 의 값과 다르면 쓰지 않는다(C 42번 I-1).
+원시 레코드 해시(CI 가 캐시를 만들며 잰 값)도 채점 산출물의 `input_records` 와 맞댄다(m-2).
+
+공개 상태(`public_status`)는 다섯으로 가른다 — 통과 "CI 산출 완료, 코드·출처 최종 검수 및 대표 채택 대기",
+규칙 미달, 결속 실패(`ci_unbound`), 기록 검사 실패(`ci_invalid` — 항등·점추정·등록 조건·자기모순), 미산출.
+
+**판 번호와 보존(C 42번 I-2).** 집계본·CI 이름은 입력 산출물 파일명의 판(`_v<n>.json`)에서 뽑는다 —
+`score_cells_v3.json` → `aggregate_v3.json`·`recovery_ci_v3.json`. **대상 파일이 이미 있으면 계산 전에
+멈추고**, 쓸 때도 배타 생성이라 덮지 않는다. 채점기도 v2 부터 같다. 기존 `seed3set/recovery_ci_v1.json`
+은 이 규칙 이전에 **v2 산출물로** 만든 CI 다 — 이름은 그대로 보존하고, 기본 경로로는 읽히지 않는다.
+
+**CI 산출:** `scripts/probe/recovery_bootstrap.py --artifact score_cells_v2.json`. pycocotools
+매칭을 (칸, 시드)마다 한 번만 하고 재표집마다 집계만 다시 한다(`evaluation/recovery_ci.py`).
+중복도 전부 1 의 집계가 채점기 `map_50` 과 **비트 단위로** 같아야 하고(항등 검사), 다르면 CI 를
+내지 않고 멈춘다. 규칙 ②③④와 그 등록 경위는 `evaluation/prereg.py` `RECOVERY_CI_*` 에 있다 —
+값을 보기 전 제안, 3세트 채점 뒤 등록, 공식 사전등록 아님.
+
+**v2 산출 경로:** `score_cells.py score --artifact-version v2` 는 `score_cells_v2.json` 에 쓴다.
+세 시드를 한 코드 상태로 다시 채점할 때 v1 을 덮어쓰지 않기 위한 경로다. v2 산출물은
+`scorer_code`(시작·끝 지문, `stable`)와 `input_records`(레코드 sha256)를 싣는다.
+
 ## 4. 산출물 (`<채점 dir>/`)
 
 | 파일 | 무엇 |
@@ -157,6 +207,11 @@
 | `sweep/` · `sweep_detection_conf_v1.json` | conf 스윕 |
 | `content_free_baselines_v1.json` | 무내용 대조선 3종 + `__shortcut__` AP + 위치 축 + 등록 상수 자기 검사 |
 | `discrimination_sweep_v1.json` | 판별력 Δ 의 임계 곡선(격자 전 점) + 임계 독립 `Δ_AUC` + 칸 대비(같은 재표집 짝지음) |
+| `seed3set/recovery_ci_v1.json` | 회복률 부트스트랩 CI — 항등 검사·`R̄`/`R_s`/`D_s`/칸별 mAP CI·규칙 ②③④ 판정·지문·입력 해시·입력 결속 `binding`(37번 §8 이후 산출분만 — 기존 v2 CI 에는 없다) |
+| `coco_evalimgs_{tag}_s{seed}.npz` | pycocotools 매칭 캐시 — **중간물**, 봉인하지 않는다 |
+| `score_cells_v2.json` | 한 코드 상태 재채점(v1 보존). `scorer_code.stable`·`input_records` 포함 |
+| `score_cells_v3.json` | 머지된 main 커밋에서 줄끝 정규화 지문으로 재채점(v1·v2 보존). 이미 있으면 채점하지 않는다 |
+| `seed3set/aggregate_v<n>.json` · `seed3set/recovery_ci_v<n>.json` | n = 입력 산출물의 판. 이미 있으면 멈춘다(`recovery_ci_v1.json` 만 예외적으로 v2 입력 — 이름 규칙 이전 산출) |
 
 ## 5. 첫 산출물 감사 (시드 1)
 

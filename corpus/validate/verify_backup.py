@@ -1,10 +1,14 @@
 """봉인 자산 드라이브 백업 — 목록 산출과 적재 후 대조. 09-08 총괄 판정 (24번 A-4 ②).
 
-`data/processed/pairs_pilot_v1|v2` 는 AI허브 71761 파생 좌표를 담아 **git 으로 보낼 수
-없다** — `origin` 이 공개 GitHub 이고 해외 호스팅이라 레드라인 1(국외 반출 금지) 위반이다.
-그런데 `data/processed` 는 정션이라 물리 사본이 `E:\\Fedvlm_for_welding\\data\\processed`
-한 곳뿐이고, 그 디스크가 죽으면 논문에 실을 해시의 실물이 사라진다. 그래서 **국내 공유
-드라이브 2사본**으로 간다.
+대상은 봉인처 명부(`data.frozen_guard.EXPECTED_SEALED`)에서 실물이 있어야 하는 자리
+(`expected`·`restored`)를 파생한다 — 지금은 `data/interim/manifest_v1`(본실험 매니페스트 계약)·
+`data/processed/pairs_pilot_v1`(둘 다 AI허브 71761 파생 → 레드라인 1, git 금지)과
+`cycle_pilot`·`cycle_pilot_v2` 의 미추적 구성원(유료 표준 스크린에 걸려 추적 전환 보류 —
+24번 부록 A-4·09-08 총괄 판정)이다. `pairs_pilot_v2` 는 09-11 소실·사본 없음이라 명부가
+`lost` 로 들고 목록에서는 뺀다(30번 부록 A-3). `origin` 이 공개 GitHub 이고 해외 호스팅이라
+어느 쪽도 **git 으로 보낼 수 없고**, `data/interim`·`data/processed` 는 정션이라 물리 사본이
+`<본체 저장소>` 한 곳뿐이다 — 그 디스크가 죽으면 논문에 실을 해시의 실물이
+사라진다. 그래서 **국내 공유 드라이브 2사본**으로 간다.
 
 **드라이브 접근은 사람이 한다.** 이 스크립트는 복사하지 않는다 — 무엇을 옮길지 목록을
 내고, 옮긴 뒤 제대로 갔는지 대조만 한다. 자동 업로드를 넣지 않은 이유는 하나다. 목적지가
@@ -34,19 +38,50 @@ import json
 import sys
 from pathlib import Path
 
-from corpus.generate.frozen_out import CONTRACT_NAME, snapshot_summary, tracked_names
+from corpus.generate.frozen_out import (
+    CONTRACT_NAME,
+    PRESENT_STATUSES,
+    snapshot_summary,
+    tracked_names,
+)
+from data.frozen_guard import EXPECTED_SEALED
 
 REPO = Path(__file__).resolve().parents[2]
 
 #: 총괄이 드라이브 보관으로 판정한 봉인 자산 전부 (09-08, 의사결정로그 abdafe8).
 #: pairs 는 AI허브 파생이라 애초에 git 이 불가였고, cycle_pilot* 는 공개 검수에서
 #: 재배포 478건이 걸려 추적 전환이 기각됐다. 그래서 **한 벌로 묶어** 같이 옮긴다.
-DEFAULT_DIRS = (
-    REPO / "corpus/generate/cycle_pilot",
-    REPO / "corpus/generate/cycle_pilot_v2",
-    REPO / "data/processed/pairs_pilot_v1",
-    REPO / "data/processed/pairs_pilot_v2",
-)
+#: 09-16 부터 본실험 매니페스트 계약 `data/interim/manifest_v1`(A)도 명부에 들어와 함께
+#: 옮긴다 — 계약 구성원 4 + 계약서로 약 47 MB 가 늘었고 총괄이 수용했다.
+#:
+#: 목록을 여기 다시 적지 않는다 — 봉인처 명부(`data.frozen_guard.EXPECTED_SEALED`, A 소관)에서
+#: **있어야 하는 것**만 파생한다. 소실이 기록된 곳은 옮길 실물이 없으니 빠지고, 그 사실은 명부
+#: 대조기(`python -m corpus.generate.frozen_out`)가 매번 알린다. 두 목록이 따로 살면
+#: 한쪽만 고쳐진다 — 09-13 에 그 차이로 이 목록이 소실된 v2 를 계속 들고 있었다.
+
+#: 실물이 있어야 하는 상태 — 대조기와 **같은 집합**을 쓴다. `restored`(소실 뒤 동일 바이트
+#: 복원)는 검사도 백업도 `expected` 와 같다. 복원된 봉인본은 git 밖 단일 사본으로 돌아온
+#: 것이라 오히려 백업이 급하다. 여기서 빠뜨리면 목록이 조용히 줄어든다(41번 I-1).
+BACKED_UP_STATUSES = PRESENT_STATUSES
+
+
+def sealed_dirs(registry: dict[str, dict[str, str]] | None = None,
+                root: Path | None = None) -> tuple[Path, ...]:
+    """명부에서 백업 대상 봉인처를 고른다. 명부·뿌리를 **부를 때** 읽어 시험이 갈아 끼울 수 있다."""
+    reg = EXPECTED_SEALED if registry is None else registry
+    base = REPO if root is None else Path(root)
+    return tuple(base / rel for rel, e in reg.items()
+                 if e.get("status") in BACKED_UP_STATUSES)
+
+
+SEALED_DIRS = sealed_dirs()
+
+#: 봉인본은 아니지만 **git 밖 단일 사본**이 생기는 곳 (09-15 총괄 과제 4).
+#: 사람 gold 라벨 `labels_*.jsonl` 과 항목별 층 `*.strata.json` 은 `.gitignore` 로 추적하지
+#: 않는다(라벨러 이름·항목별 후보 판정). 백업 목록에 없으면 09-11 과 같은 단일 사본 구조다.
+UNSEALED_DIRS = (REPO / "corpus/validate/judge_labels",)
+
+DEFAULT_DIRS = SEALED_DIRS + UNSEALED_DIRS
 
 
 def sha256_file(path: Path) -> str:
@@ -75,11 +110,19 @@ def build_plan(dirs) -> dict:
             problems.append(f"{d}: 디렉터리가 없다")
             continue
         names, _digest = snapshot_summary(d)
-        if not names:
+        sealed = bool(names)
+        if sealed:
+            wanted = [*names, CONTRACT_NAME]
+        elif d in UNSEALED_DIRS:
+            # 봉인본이 아닌 백업 대상 — 계약이 없으니 **있는 파일 전부**가 목록이다.
+            # 대조는 원본↔사본만 된다(계약서↔사본은 없다). 그 사실을 항목에 남긴다.
+            wanted = sorted(p.name for p in d.iterdir() if p.is_file())
+        else:
             problems.append(f"{d}: {CONTRACT_NAME} 가 없다 — 봉인본이 아니다")
             continue
         tracked = tracked_names(d) or frozenset()
-        for name in [*names, CONTRACT_NAME]:
+        entries = _contract_entries(d) if sealed else []
+        for name in wanted:
             p = d / name
             if not p.is_file():
                 problems.append(f"{d.name}/{name}: 계약에 있는데 실물이 없다")
@@ -93,9 +136,9 @@ def build_plan(dirs) -> dict:
                 "sha256": sha256_file(p),
                 # git 이 들고 있으면 이 사본이 유일본은 아니다. 실제 위험분은 False 쪽.
                 "tracked": name in tracked,
-                # 계약서 자체는 자기 해시를 담을 수 없다 (파생물이다).
-                "contract_sha256": next(
-                    (h for h, n in _contract_entries(d) if n == name), None),
+                "sealed": sealed,
+                # 계약서 자체는 자기 해시를 담을 수 없다 (파생물이다). 봉인 아닌 곳은 None.
+                "contract_sha256": next((h for h, n in entries if n == name), None),
             })
     total = sum(i["bytes"] for i in items)
     at_risk = [i for i in items if not i["tracked"]]
@@ -165,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="봉인 자산 드라이브 백업 목록·대조")
     ap.add_argument("cmd", choices=["plan", "verify"])
     ap.add_argument("--dirs", nargs="*", default=None,
-                    help="대상 봉인 디렉터리. 미지정 시 pairs_pilot_v1·v2")
+                    help="대상 디렉터리. 미지정 시 봉인처 명부의 expected 전부 + judge_labels")
     ap.add_argument("--dest", default=None, help="verify: 적재한 드라이브 경로")
     ap.add_argument("--out", default=None, help="plan: 매니페스트를 쓸 파일")
     ap.add_argument("--manifest", default=None,
@@ -177,12 +220,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "plan":
         plan = build_plan(dirs)
         for it in plan["items"]:
-            print(f"  {'ㆍ' if it['tracked'] else '★'} {it['rel']:42s}"
+            tag = ("ㆍ" if it["tracked"] else "★") + ("" if it.get("sealed", True) else "○")
+            print(f"  {tag:2s} {it['rel']:42s}"
                   f" {it['bytes']:>10,} B  {it['sha256'][:16]}…")
         print(f"\n파일 {plan['n_files']}개 / {plan['total_mb']} MB")
         print(f"  ★ git 밖 — 이 사본이 유일본이 된다: {plan['n_at_risk']}개 /"
               f" {plan['at_risk_bytes']:,} B")
         print("  ㆍgit·origin 에도 있음. 사본이 자기 계약서로 자립하도록 함께 담는다")
+        print("  ○ 봉인본이 아니다(계약서 없음) — 원본↔사본만 대조된다")
+        lost = [rel for rel, e in EXPECTED_SEALED.items() if e.get("status") == "lost"]
+        if lost:
+            print(f"  소실 기록 {len(lost)}곳은 옮길 실물이 없어 목록에서 뺐다 — 명부 대조기가 알린다")
         print(f"!! {plan['redline']}")
         if plan["problems"]:
             print("\n문제:", *plan["problems"], sep="\n  ", file=sys.stderr)

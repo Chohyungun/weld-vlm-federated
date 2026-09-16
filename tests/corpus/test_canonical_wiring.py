@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import ast
 import itertools
+import json
 import re
 from pathlib import Path
 
@@ -353,3 +354,140 @@ def test_정밀도_재현율이_사람_라벨_기준으로_계산된다():
     got = J.score(recs, labels, cfg)["candidates"]["deepseek"]
     assert (got["tp"], got["fp"], got["fn"]) == (1, 1, 1)
     assert got["precision"] == 0.5 and got["recall"] == 0.5
+
+
+# --------------------------------------------------------------- 층 가중 (35번 D 제안 1)
+
+def _weighted_fixture():
+    """두 층: pass 층은 모집단 40 중 20 을 뽑았고(w=2), fail 층은 10 중 10(w=1).
+
+    무가중은 표본 30건의 값이고, 가중은 모집단 50건의 추정치다. 둘이 달라야 가중이
+    실제로 걸린 것이다.
+    """
+    recs, labels = [], []
+    # pass 층 20건: 정답 OK 16 · NG 4  → 정밀도(무가중) 16/20
+    # phi(층화 판정기가 아닌 후보): TP 8(0..7) · FP 2(18,19) · FN 8(8..15) · TN 2
+    for i in range(20):
+        recs.append({"sample_id": f"p{i}", "axis": "조항검색_기준서술",
+                     "judge_deepseek_pass": True, "judge_phi_pass": i < 8 or i >= 18})
+        labels.append({"sample_id": f"p{i}", "human_ok": i < 16, "labeler": "L1"})
+    # fail 층 10건: 정답 OK 5 · NG 5  → 재현율에 영향
+    # phi: TP 5(0..4) · FP 2(8,9) · TN 3
+    for i in range(10):
+        recs.append({"sample_id": f"f{i}", "axis": "조항검색_기준서술",
+                     "judge_deepseek_pass": False, "judge_phi_pass": i < 5 or i >= 8})
+        labels.append({"sample_id": f"f{i}", "human_ok": i < 5, "labeler": "L1"})
+    meta = {"stratified_by_judge": "deepseek",
+            "cells": {"조항검색_기준서술|judge_pass": {"N_population": 40, "k_drawn": 20},
+                      "조항검색_기준서술|judge_fail": {"N_population": 10, "k_drawn": 10}}}
+    return recs, labels, meta
+
+
+def test_층_가중이_실제로_걸린다():
+    """모집단 추정치가 표본 값과 다르게 나와야 한다 — 같으면 가중이 장식이다."""
+    from corpus.validate import judge_labels as J
+
+    cfg = J.load_cfg()
+    recs, labels, meta = _weighted_fixture()
+    out = J.score(recs, labels, cfg, meta)
+    assert out["weighting"] == "stratum_weighted"
+    assert out["weights_by_stratum"] == {"조항검색_기준서술|judge_pass": 2.0,
+                                         "조항검색_기준서술|judge_fail": 1.0}
+    d = out["candidates"]["deepseek"]
+    # 무가중: TP 16 FP 4 FN 5 → P 0.8, R 16/21
+    assert (d["tp"], d["fp"], d["fn"]) == (16, 4, 5)
+    assert d["recall"] == round(16 / 21, 4)
+    # 가중: pass 층 ×2 → TP 32 FP 8, fail 층 ×1 → FN 5 → P 0.8, R 32/37
+    w = d["weighted"]
+    assert (w["tp"], w["fp"], w["fn"], w["population"]) == (32, 8, 5, 50)
+    assert w["precision"] == 0.8 and w["recall"] == round(32 / 37, 4)
+    assert w["recall"] != d["recall"], "가중이 걸리지 않았다"
+    # 무가중 키는 그대로다 — 기존 소비자가 깨지지 않는다
+    assert {"precision", "recall", "f1", "n"} <= set(d)
+
+
+def test_층화_판정기가_아닌_후보는_정밀도도_가중에_갈린다():
+    """층화 판정기(deepseek) 자신은 예측 양성이 전부 pass 층이라 정밀도가 구조적으로
+    가중 == 무가중이다. 다른 후보(phi)는 두 층에 FP 가 다른 비율로 있어 정밀도·재현율이
+    둘 다 갈려야 한다 — 이 시험이 없으면 "정밀도에는 가중이 안 걸린다" 를 못 가른다
+    (F 39번 m-5)."""
+    from corpus.validate import judge_labels as J
+
+    cfg = J.load_cfg()
+    recs, labels, meta = _weighted_fixture()
+    p = J.score(recs, labels, cfg, meta)["candidates"]["phi"]
+    # 무가중: TP 13 FP 4 FN 8 → P 13/17, R 13/21
+    assert (p["tp"], p["fp"], p["fn"]) == (13, 4, 8)
+    assert p["precision"] == round(13 / 17, 4) and p["recall"] == round(13 / 21, 4)
+    # 가중: pass 층 ×2 → TP 16 FP 4 FN 16, fail 층 ×1 → TP 5 FP 2 → P 21/27, R 21/37
+    w = p["weighted"]
+    assert (w["tp"], w["fp"], w["fn"], w["population"]) == (21, 6, 16, 50)
+    assert w["precision"] == round(21 / 27, 4) and w["recall"] == round(21 / 37, 4)
+    assert w["precision"] != p["precision"] and w["recall"] != p["recall"]
+
+
+def test_f1_은_정밀도나_재현율이_0_이면_0_이고_정의가_안_되면_None_이다():
+    """`if prec and rec` 는 0.0 을 None 으로 떨어뜨려 "전부 틀림" 과 "예측 양성 없음" 을
+    섞었다 (F 39번 m-6). 무가중·가중 둘 다 같은 규칙이어야 실물(p=1.0) 대조가 선다."""
+    from corpus.validate import judge_labels as J
+
+    # 예측 1건이 틀렸고 정답 1건을 놓쳤다 → P 0.0, R 0.0 → F1 0.0
+    assert J._counts([True, False], [False, True])["f1"] == 0.0
+    assert J._weighted_counts([True, False], [False, True], [1.0, 1.0])["f1"] == 0.0
+    # 예측 양성이 없다 → 정밀도 정의 안 됨 → F1 None
+    assert J._counts([False, False], [True, False])["f1"] is None
+    assert J._weighted_counts([False, False], [True, False], [1.0, 1.0])["f1"] is None
+
+
+def test_메타가_없으면_무가중만_내고_그렇다고_말한다():
+    from corpus.validate import judge_labels as J
+
+    cfg = J.load_cfg()
+    recs, labels, _ = _weighted_fixture()
+    out = J.score(recs, labels, cfg, None)
+    assert out["weighting"] == "unweighted_only" and "weighting_note" in out
+    assert "weighted" not in out["candidates"]["deepseek"]
+
+
+def test_층을_못_찾은_항목은_빼지_않고_기록한다():
+    """조용히 빼면 표본 수가 줄어든 것을 아무도 모른다."""
+    from corpus.validate import judge_labels as J
+
+    cfg = J.load_cfg()
+    recs, labels, meta = _weighted_fixture()
+    recs.append({"sample_id": "x0", "axis": "조치서술",           # 메타 셀에 없는 층
+                 "judge_deepseek_pass": True, "judge_phi_pass": True})
+    labels.append({"sample_id": "x0", "human_ok": True, "labeler": "L1"})
+    w = J.score(recs, labels, cfg, meta)["candidates"]["deepseek"]["weighted"]
+    assert w["rows_without_stratum"] == ["x0"]
+    assert w["n"] == 31
+
+
+def test_현재_실물_표본은_전수라_가중이_무가중과_같다():
+    """지금 meta 는 두 유효 층 p=1.0 이다. 가중을 걸어도 값이 안 바뀌어야 한다 —
+    바뀐다면 가중 계산이 틀린 것이다. 모집단이 커지면 이 시험은 갈라져야 한다."""
+    from corpus.validate import judge_labels as J
+
+    meta_path = REPO / "corpus/validate/judge_labels/sheet_v1.meta.json"
+    if not meta_path.is_file():
+        pytest.skip("실물 표집 메타가 없다")
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    weights = J.stratum_weights(meta)
+    assert weights and all(w == 1.0 for w in weights.values()), weights
+
+
+def test_라벨러_안내문이_저장소를_열지_말라고_말한다(tmp_path, monkeypatch):
+    """35번 D 제안 2 — 추적되는 meta.json 의 층별 k_drawn 은 사전 확률이다. 안내문 없이는
+    설계가 닫히지 않는다. 안내문은 시트를 만들 때 **같이** 생겨야 한다."""
+    from corpus.validate import judge_labels as J
+
+    assert "저장소를 열지 않는다" in J.LABELER_README
+    assert "meta.json" in J.LABELER_README and "EVIDENCE.jsonl" in J.LABELER_README
+    # 안내문에 판정·층 이름이 새면 안내문 자체가 누설 경로다
+    assert "judge_pass" not in J.LABELER_README and "judge_fail" not in J.LABELER_README
+    # 시트 생성 경로가 안내문을 실제로 쓰는지 (AST 가 아니라 배선 문자열로 본다 — 80번 G1-2)
+    src = (REPO / "corpus/validate/judge_labels.py").read_text(encoding="utf-8")
+    assert 'with_name("README_라벨러.md")' in src, "sheet 분기가 안내문을 쓰지 않는다"
+    assert "LABELER_README.format(" in src
+    rendered = J.LABELER_README.format(sheet="s.jsonl", labels="l.jsonl", field="human_ok")
+    assert "{" not in rendered and "s.jsonl" in rendered and "human_ok: true" in rendered
