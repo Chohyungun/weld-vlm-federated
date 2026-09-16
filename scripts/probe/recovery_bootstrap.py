@@ -46,6 +46,7 @@ from evaluation.provenance import (
     write_new_text,
 )
 from evaluation.recovery_ci import (
+    ArtifactNameMismatch,
     EvalCache,
     build_cache,
     identity_check,
@@ -69,7 +70,10 @@ def _percentile_ci(draws: np.ndarray) -> dict:
 
 def _load_seed(root: Path, n: int, artifact: str) -> tuple[dict, ScoringParams, dict]:
     """산출물을 **한 번만** 읽는다 — 결속 해시와 파싱이 같은 바이트에서 나온다."""
-    art, entry = read_artifact(root / f"seed{n}" / artifact)
+    try:
+        art, entry = read_artifact(root / f"seed{n}" / artifact)
+    except ArtifactNameMismatch as e:        # C 42번 §9-6 n-5 — 계산 전에 멈춘다
+        raise SystemExit(f"시드 {n}: {e}") from None
     p = art["params"]
     params = ScoringParams(
         snapshot=Path(p["snapshot"]), pilot=Path(p["pilot"]), out=root / f"seed{n}",

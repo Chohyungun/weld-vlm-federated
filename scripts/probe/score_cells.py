@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -117,14 +118,43 @@ v3 = 머지된 main 커밋에서 줄끝 정규화 지문으로 다시 채점(37�
 """
 
 
+MAIN_OUTPUT_PARTS: tuple[str, str] = ("outputs", "main_d")
+"""본실험 채점 산출 루트의 경로 성분(총괄 판정 09-16 23:25, C 42번 §9-6 n-1)."""
+
+
+def is_main_output(out: Path) -> bool:
+    """`out` 이 본실험 채점 루트(`…/outputs/main_d/…`) 아래인가.
+
+    **경로 성분**으로 판정한다 — 절대화한 경로에 `outputs`·`main_d` 두 성분이 **연달아** 있으면 본실험이다.
+    대소문자는 가리지 않는다(윈도우). `os.path.abspath` 로 절대화해 정션을 따라가지 않는다 — `outputs/` 는
+    본체로 가는 정션이지만, 따라가든 안 가든 성분은 같다. 다른 워크트리의 절대경로·임시 폴더 아래
+    `outputs/main_d` 도 같은 규칙으로 잡힌다. `outputs/main_dx`·`main_d` 단독은 본실험이 아니다.
+    프로파일로 가르지 않는 이유: 보호 대상은 **자리**(v1 산출물이 있는 곳)이지 채점 설정이 아니다.
+    """
+    parts = [p.casefold() for p in Path(os.path.abspath(str(out))).parts]
+    want = [p.casefold() for p in MAIN_OUTPUT_PARTS]
+    return any(parts[i:i + 2] == want for i in range(len(parts) - 1))
+
+
 def artifact_dest(out: Path, version: str) -> Path:
-    """본채점 산출물 경로. **v2 부터는 이미 있으면 멈춘다** — 재채점은 새 판 경로에 쓰고 옛 판을
-    보존한다(C 42번 I-2). v1 은 기존 동작(같은 경로에 다시 씀)을 바꾸지 않는다 — 파일럿·시험 경로가
-    그 동작에 기대고, 본실험 v1 은 이미 역사 기록이다."""
+    """본채점 산출물 경로. 대상이 이미 있으면 **계산 전에 멈추는** 경우:
+
+    - v2 부터는 어디서든 — 재채점은 새 판 경로에 쓰고 옛 판을 보존한다(C 42번 I-2).
+    - **v1 도 본실험 루트(`is_main_output`)에서는** — 기본값 v1 로 부르면 본실험 v1 을 같은 경로에
+      다시 쓰게 된다(n-1, 총괄 판정 09-16 23:25).
+
+    파일럿 루트의 v1·`gate` 부명령(`gate_recheck_*` 에 쓴다)·기존 시험이 기대는 v1 다시 쓰기는 그대로 둔다.
+    """
     dest = Path(out) / ARTIFACT_VERSIONS[version]
-    if version != "v1" and dest.exists():
-        raise SystemExit(f"{dest} 이 이미 있다 — 덮지 않는다. 새 판 번호로 채점하라")
+    if dest.exists() and artifact_is_protected(out, version):
+        where = "새 판 경로" if version != "v1" else "본실험 루트(outputs/main_d)의 v1"
+        raise SystemExit(f"{dest} 이 이미 있다 — 덮지 않는다({where}). 새 판 번호로 채점하라")
     return dest
+
+
+def artifact_is_protected(out: Path, version: str) -> bool:
+    """이 자리·이 판의 산출물은 덮지 않는가 — 쓸 때 배타 생성(`"x"`)을 쓸지도 이것으로 정한다."""
+    return version != "v1" or is_main_output(out)
 
 EXIT_OK = 0
 EXIT_REGRESSION = 1
@@ -882,8 +912,9 @@ def cmd_score(args) -> int:
         "exit_reason": why,
         **diag,
     }
-    # v2 부터는 배타 생성 — 확인과 쓰기 사이에 파일이 생겨도 덮지 않는다
-    with dest.open("w" if version == "v1" else "x", encoding="utf-8", newline="\n") as fh:
+    # 보호 대상(v2 부터 · 본실험 루트의 v1)은 배타 생성 — 확인과 쓰기 사이에 파일이 생겨도 덮지 않는다
+    with dest.open("x" if artifact_is_protected(params.out, version) else "w",
+                   encoding="utf-8", newline="\n") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
     print(f"저장: {dest}")
@@ -989,6 +1020,10 @@ def cmd_predict(args) -> int:
     from tracking.mlflow_local import reject_best_checkpoint
 
     params = params_from_args(args)
+    try:        # 체크포인트 표가 프로파일과 맞는지 **모집단 적재 전에** 본다(49번 §7-4)
+        ckpts = checkpoint_paths(params.pilot, profile=params.profile)
+    except ValueError as e:
+        raise SystemExit(str(e)) from None
     pop = load_population(params)
     conf = params.conf.value if args.at_conf else params.conf_floor
     sub = params.out if args.at_conf else params.out / "sweep"
@@ -998,7 +1033,7 @@ def cmd_predict(args) -> int:
           f"프로파일 {params.profile} ({params.model_cfg} · imgsz {params.imgsz} · "
           f"청크 {params.predict_chunk})")
 
-    for (cell, client), ckpt in checkpoint_paths(params.pilot).items():
+    for (cell, client), ckpt in ckpts.items():
         reject_best_checkpoint(ckpt)
         if not ckpt.exists():
             print(f"체크포인트 없음: {ckpt}")
