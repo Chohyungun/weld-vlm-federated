@@ -169,6 +169,15 @@ def _basis_of(rec: dict) -> str:
     return render_basis(rec)
 
 
+def _f1(prec: float | None, rec: float | None) -> float | None:
+    """정밀도·재현율이 **정의되지 않으면**(예측 양성 0 / 정답 양성 0) None, 정의됐는데 둘 다 0 이면
+    0.0. `if prec and rec` 는 0.0 을 None 으로 떨어뜨려 "정의 안 됨" 과 "전부 틀림" 을 섞었다
+    (F 39번 m-6)."""
+    if prec is None or rec is None:
+        return None
+    return 2 * prec * rec / (prec + rec) if prec + rec else 0.0
+
+
 def _counts(pred: Sequence[bool], gold: Sequence[bool]) -> dict:
     tp = sum(1 for p, g in zip(pred, gold) if p and g)
     fp = sum(1 for p, g in zip(pred, gold) if p and not g)
@@ -176,7 +185,7 @@ def _counts(pred: Sequence[bool], gold: Sequence[bool]) -> dict:
     tn = sum(1 for p, g in zip(pred, gold) if not p and not g)
     prec = tp / (tp + fp) if tp + fp else None
     rec = tp / (tp + fn) if tp + fn else None
-    f1 = (2 * prec * rec / (prec + rec)) if prec and rec else None
+    f1 = _f1(prec, rec)
     return {"tp": tp, "fp": fp, "fn": fn, "tn": tn,
             "precision": round(prec, 4) if prec is not None else None,
             "recall": round(rec, 4) if rec is not None else None,
@@ -193,7 +202,7 @@ def _weighted_counts(pred: Sequence[bool], gold: Sequence[bool],
     tn = sum(w for p, g, w in zip(pred, gold, weights) if not p and not g)
     prec = tp / (tp + fp) if tp + fp else None
     rec = tp / (tp + fn) if tp + fn else None
-    f1 = (2 * prec * rec / (prec + rec)) if prec and rec else None
+    f1 = _f1(prec, rec)
     return {"tp": round(tp, 4), "fp": round(fp, 4), "fn": round(fn, 4), "tn": round(tn, 4),
             "precision": round(prec, 4) if prec is not None else None,
             "recall": round(rec, 4) if rec is not None else None,

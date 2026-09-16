@@ -194,11 +194,23 @@ def test_백업_목록은_봉인처_명부에서_파생된다():
     """두 목록이 따로 살면 한쪽만 고쳐진다 — 09-13 에 이 목록이 소실된 v2 를 계속 들고 있었다."""
     from corpus.generate.frozen_out import EXPECTED_SEALED
 
-    expected = {B.REPO / rel for rel, e in EXPECTED_SEALED.items() if e["status"] == "expected"}
+    expected = {B.REPO / rel for rel, e in EXPECTED_SEALED.items()
+                if e["status"] in B.BACKED_UP_STATUSES}
     lost = {B.REPO / rel for rel, e in EXPECTED_SEALED.items() if e["status"] == "lost"}
     assert set(B.SEALED_DIRS) == expected
     assert not (set(B.DEFAULT_DIRS) & lost), "소실 기록된 곳은 옮길 실물이 없다"
     assert B.REPO / "corpus/validate/judge_labels" in B.DEFAULT_DIRS
+
+
+def test_복원된_봉인처도_백업_목록에_든다():
+    """`restored` 는 소실 뒤 동일 바이트로 돌아온 자리다 — git 밖 단일 사본이 다시 생긴
+    것이라 백업이 급하다. 상태 어휘를 늘린 쪽(A)과 목록을 파생하는 쪽(B)이 따로 살면
+    목록이 조용히 줄어든다 — 09-13 에 반대 방향으로 같은 일이 있었다 (41번 I-1)."""
+    reg = {"a/expected": {"status": "expected", "owner": "B"},
+           "b/restored": {"status": "restored", "owner": "A", "record": "복원", "evidence": "64자 일치"},
+           "c/lost": {"status": "lost", "owner": "B", "record": "소실"}}
+    got = {p.as_posix().rsplit("/", 2)[-2] + "/" + p.name for p in B.sealed_dirs(reg, Path("/r"))}
+    assert got == {"a/expected", "b/restored"}
 
 
 def test_사람_라벨_폴더가_백업_목록에_있고_미추적분이_위험분으로_잡힌다(tmp_path, monkeypatch):
