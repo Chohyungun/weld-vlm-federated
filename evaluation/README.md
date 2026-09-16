@@ -173,7 +173,17 @@
 3. 점추정 — R̄, 시드별 R·D, 칸별 map_50 이 지금 파일로 다시 계산한 값과 `POINT_TOLERANCE`(1e-12) 안에서 같은가.
 
 기록된 `ci_pass` 는 쓰지 않는다. 집계기가 구간·반폭·미정의 수에서 ②③④를 다시 판정한다
-(`evaluation/recovery_ci.py` `rejudge_ci_rules`).
+(`evaluation/recovery_ci.py` `rejudge_ci_rules`). 재표집 횟수·난수 시드·**신뢰수준(0.05)·구간 방식
+(백분위)** 도 등록 조건이라, 기록이 `evaluation/prereg.py` 의 값과 다르면 쓰지 않는다(C 42번 I-1).
+원시 레코드 해시(CI 가 캐시를 만들며 잰 값)도 채점 산출물의 `input_records` 와 맞댄다(m-2).
+
+공개 상태(`public_status`)는 다섯으로 가른다 — 통과 "CI 산출 완료, 코드·출처 최종 검수 및 대표 채택 대기",
+규칙 미달, 결속 실패(`ci_unbound`), 기록 검사 실패(`ci_invalid` — 항등·점추정·등록 조건·자기모순), 미산출.
+
+**판 번호와 보존(C 42번 I-2).** 집계본·CI 이름은 입력 산출물 파일명의 판(`_v<n>.json`)에서 뽑는다 —
+`score_cells_v3.json` → `aggregate_v3.json`·`recovery_ci_v3.json`. **대상 파일이 이미 있으면 계산 전에
+멈추고**, 쓸 때도 배타 생성이라 덮지 않는다. 채점기도 v2 부터 같다. 기존 `seed3set/recovery_ci_v1.json`
+은 이 규칙 이전에 **v2 산출물로** 만든 CI 다 — 이름은 그대로 보존하고, 기본 경로로는 읽히지 않는다.
 
 **CI 산출:** `scripts/probe/recovery_bootstrap.py --artifact score_cells_v2.json`. pycocotools
 매칭을 (칸, 시드)마다 한 번만 하고 재표집마다 집계만 다시 한다(`evaluation/recovery_ci.py`).
@@ -200,6 +210,8 @@
 | `seed3set/recovery_ci_v1.json` | 회복률 부트스트랩 CI — 항등 검사·`R̄`/`R_s`/`D_s`/칸별 mAP CI·규칙 ②③④ 판정·지문·입력 해시·입력 결속 `binding`(37번 §8 이후 산출분만 — 기존 v2 CI 에는 없다) |
 | `coco_evalimgs_{tag}_s{seed}.npz` | pycocotools 매칭 캐시 — **중간물**, 봉인하지 않는다 |
 | `score_cells_v2.json` | 한 코드 상태 재채점(v1 보존). `scorer_code.stable`·`input_records` 포함 |
+| `score_cells_v3.json` | 머지된 main 커밋에서 줄끝 정규화 지문으로 재채점(v1·v2 보존). 이미 있으면 채점하지 않는다 |
+| `seed3set/aggregate_v<n>.json` · `seed3set/recovery_ci_v<n>.json` | n = 입력 산출물의 판. 이미 있으면 멈춘다(`recovery_ci_v1.json` 만 예외적으로 v2 입력 — 이름 규칙 이전 산출) |
 
 ## 5. 첫 산출물 감사 (시드 1)
 

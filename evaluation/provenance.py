@@ -42,6 +42,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import subprocess
 from collections.abc import Iterable
 from pathlib import Path
@@ -205,6 +206,40 @@ def hash_files(paths: Iterable[str | Path], repo: Path | None = None) -> dict[st
         q = Path(p)
         out[relpath(q, root)] = _file_sha256(q) if q.exists() else None
     return out
+
+
+_VERSION_RE = re.compile(r"_v(\d+)\.json$")
+
+
+def artifact_version(name: str | Path) -> int:
+    """산출물 파일명의 판 번호 — `score_cells_v3.json` → 3.
+
+    집계본·CI 의 이름을 입력 산출물의 판에서 뽑는다(C 42번 I-2). 이름 안에 "v2" 가 들어 있는지로
+    가르면 v3 입력이 `aggregate_v1.json` 에 쓰인다 — 실제로 그랬다. 판을 읽을 수 없으면 멈춘다.
+    """
+    m = _VERSION_RE.search(Path(name).name)
+    if m is None:
+        raise ValueError(f"산출물 파일명에서 판 번호를 읽을 수 없다: {Path(name).name} "
+                         "— '<이름>_v<번호>.json' 이어야 한다")
+    return int(m.group(1))
+
+
+def versioned_output(dest: str | Path, stem: str, artifact_name: str | Path) -> Path:
+    """`<dest>/<stem>_v<n>.json` — n 은 입력 산출물의 판. **이미 있으면 `FileExistsError`.**
+
+    옛 판(v1·v2)은 진단 이력으로 보존한다(37번 §8-6). 긴 계산 **전에** 불러 멈추게 하고, 쓸 때는
+    `write_new_text` 로 한 번 더 막는다.
+    """
+    path = Path(dest) / f"{stem}_v{artifact_version(artifact_name)}.json"
+    if path.exists():
+        raise FileExistsError(f"{path.name} 이 이미 있다 — 덮지 않는다. 옛 판은 보존한다")
+    return path
+
+
+def write_new_text(path: str | Path, text: str) -> None:
+    """**배타 생성**(`"x"`)으로 쓴다 — 확인과 쓰기 사이에 파일이 생겨도 덮지 않는다. 줄끝은 LF."""
+    with Path(path).open("x", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
 
 
 def stable_digest(start: dict, end: dict) -> dict:

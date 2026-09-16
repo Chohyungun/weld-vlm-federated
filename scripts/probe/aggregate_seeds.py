@@ -45,12 +45,19 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
 from evaluation.prereg import (
+    RECOVERY_CI_ALPHA,
     RECOVERY_CI_DENOMINATOR_MUST_EXCLUDE_ZERO,
     RECOVERY_CI_MAX_HALF_WIDTH,
     RECOVERY_CI_MAX_UNDEFINED_FRACTION,
     recovery_denominator_ok,
 )
-from evaluation.provenance import combined_digest, relpath, scorer_code_digest
+from evaluation.provenance import (
+    artifact_version,
+    combined_digest,
+    relpath,
+    scorer_code_digest,
+    write_new_text,
+)
 from evaluation.recovery_ci import (
     check_binding,
     check_identity,
@@ -76,6 +83,8 @@ PUBLIC_STATUS = {
     "ci_bound_passed": "CI 산출 완료, 코드·출처 최종 검수 및 대표 채택 대기",
     "ci_bound_failed": "CI 산출 완료 — 규칙 미달로 회복률을 헤드라인으로 싣지 않음. 코드·출처 최종 검수 대기",
     "ci_unbound": "CI 산출물이 이 집계의 입력과 결속되지 않음 — 회복률 게재 가부 미판정",
+    "ci_invalid": ("CI 산출물이 검사(T1 항등·점추정·등록 조건·기록 자기모순)를 통과하지 못함 "
+                   "— 회복률 게재 가부 미판정"),
     "ci_missing": "CI 미산출 — 회복률 게재 가부 미판정",
 }
 """공개 문구(총괄 09-16). `recovery_reportable=true` 여도 **코드·출처 최종 검수와 대표 채택은
@@ -614,7 +623,8 @@ def observed_points(rec: dict, payloads: dict[int, dict], axis: str = HEADLINE_A
 
 
 def apply_recovery_ci(rec: dict, ci_payload: dict | None, observed: dict | None = None,
-                      points: dict | None = None, axis: str = HEADLINE_AXIS) -> dict:
+                      points: dict | None = None, axis: str = HEADLINE_AXIS,
+                      ci_source: str = "recovery_ci") -> dict:
     """회복률 CI 를 대표 축의 판정에 배선한다 — **결속을 확인하고, 판정은 다시 한다.**
 
     정책(총괄 09-15·09-16, 외부 검토 codex_reply §18):
@@ -632,6 +642,9 @@ def apply_recovery_ci(rec: dict, ci_payload: dict | None, observed: dict | None 
     7. 대표 채택은 어느 경우에도 총괄 판정이다 — `public_status` 가 그것을 말한다.
 
     검사 2~4 는 서로를 대신하지 않는다. 해시가 같아도 항등·점추정을 따로 본다.
+    공개 상태는 사유의 종류로 가른다 — 결속(2) 실패는 `ci_unbound`, 항등·점추정·재판정 조건(3~5)
+    실패는 `ci_invalid`(C 42번 m-11). 기록된 `ci_pass` 가 재판정과 갈리면 결과는 재판정을 따르되
+    경고로 드러낸다(m-10).
     """
     r = rec[axis]
     g = r["denominator_gate"]
@@ -650,7 +663,7 @@ def apply_recovery_ci(rec: dict, ci_payload: dict | None, observed: dict | None 
 
     if not ci_payload:
         return _unjudged("ci_missing", [],
-                         "**미산출.** recovery_ci_v1.json 이 없다 — 41번 보조 판정 미적용. "
+                         f"**미산출.** {ci_source} 가 없다 — 41번 보조 판정 미적용. "
                          "통과가 아니라 판정 자체가 없다")
     if observed is None:
         return _unjudged("ci_unbound", ["집계 입력의 결속 정보가 주어지지 않았다"],
@@ -658,19 +671,24 @@ def apply_recovery_ci(rec: dict, ci_payload: dict | None, observed: dict | None 
 
     seeds = observed["seeds"]
     # 세 검사는 **서로를 대신하지 않는다** — 전부 돌리고 사유를 모은다.
-    reasons = check_binding(ci_payload, observed)              # 시드·해시·지문
+    bind_reasons = check_binding(ci_payload, observed)         # 시드·해시·지문·레코드
+    check_reasons: list[str] = []
     if points is None:
-        reasons.append("집계기 점추정이 주어지지 않아 CI 기록과 맞댈 수 없다")
+        check_reasons.append("집계기 점추정이 주어지지 않아 CI 기록과 맞댈 수 없다")
     else:
-        reasons += check_identity(ci_payload, seeds, DET_TAGS, points["identity_basis"])   # 요구 5
-        reasons += check_points(ci_payload, seeds, points)     # 요구 6
-    if reasons:
+        check_reasons += check_identity(ci_payload, seeds, DET_TAGS, points["identity_basis"])   # 요구 5
+        check_reasons += check_points(ci_payload, seeds, points)   # 요구 6
+    if bind_reasons:
+        reasons = bind_reasons + check_reasons
         return _unjudged("ci_unbound", reasons,
                          f"**사용 안 함.** CI 가 이 집계의 입력과 결속되지 않는다({len(reasons)}건)")
+    if check_reasons:
+        return _unjudged("ci_invalid", check_reasons,
+                         f"**사용 안 함.** CI 기록이 항등·점추정 검사를 통과하지 못한다({len(check_reasons)}건)")
 
     rj, rj_reasons = rejudge_ci_rules(ci_payload, seeds)
     if rj is None:
-        return _unjudged("ci_unbound", rj_reasons,
+        return _unjudged("ci_invalid", rj_reasons,
                          f"**사용 안 함.** CI 기록으로 규칙을 다시 판정할 수 없다({len(rj_reasons)}건)")
 
     ci = ci_payload["ci"]["R_bar"]
@@ -679,23 +697,32 @@ def apply_recovery_ci(rec: dict, ci_payload: dict | None, observed: dict | None 
                         int(ci_payload["statistic"]["n_groups"]), int(ci["n_undefined"]))
     tripwire_ok = v["1_tripwire_3sigma"] == "충족"
     reportable = bool(tripwire_ok and rj["ci_pass"])
+    warnings: list[str] = []
+    if not rj["recorded_agrees"]:
+        warnings.append(
+            f"생성기 기록 ci_pass={rj['recorded_ci_pass']!r} 와 집계기 재판정 {rj['ci_pass']} 이 갈렸다 — "
+            "두 규칙 구현이 다르다는 신호다. 판정은 재판정을 따른다. 생성기를 검수하라")
     v["2_recovery_ci"] = (
-        f"**{'통과' if rj['ci_pass'] else '불합격'}(집계기 재판정).** R̄ 95% CI "
+        f"**{'통과' if rj['ci_pass'] else '불합격'}(집계기 재판정).** "
+        f"R̄ {100 * (1 - RECOVERY_CI_ALPHA):.0f}% CI "
         f"[{ci['ci_lo'] * 100:+.1f}%, {ci['ci_hi'] * 100:+.1f}%] · 반폭 {rj['2_half_width']['value']:.3f} "
         f"(≤ {RECOVERY_CI_MAX_HALF_WIDTH}: {rj['2_half_width']['pass']}) · 분모 CI 0 배제 "
         f"{rj['3_denominator_ci_excludes_zero']['pass']} (요구 {RECOVERY_CI_DENOMINATOR_MUST_EXCLUDE_ZERO}) · "
         f"미정의 {rj['4_undefined_fraction']['value']:.3f} "
-        f"(≤ {RECOVERY_CI_MAX_UNDEFINED_FRACTION}: {rj['4_undefined_fraction']['pass']})")
+        f"(≤ {RECOVERY_CI_MAX_UNDEFINED_FRACTION}: {rj['4_undefined_fraction']['pass']})"
+        + "".join(f" · **경고: {w}**" for w in warnings))
     v["combined"] = ("트립와이어 ①과 CI 규칙 ②③④(집계기 재판정) 전부 충족 → 회복률 게재 가능"
                      "(recovery_reportable=true). ③ 대표 채택은 총괄 판정" if reportable else
                      "①~④ 중 미달이 있다 → 회복률을 헤드라인으로 싣지 않는다(recovery_reportable=false)")
     g["recovery_reportable"] = reportable
     g["recovery_ci_rejected"] = None
     g["public_status"] = PUBLIC_STATUS["ci_bound_passed" if reportable else "ci_bound_failed"]
+    g["recovery_ci_warnings"] = warnings
     g["recovery_ci"] = {
-        "source": "recovery_ci_v1.json",
-        "binding": ("성립 — 산출물 이름·시드 집합·시드별 sha256·채점기 지문·규칙 표기 일치, "
-                    "T1 항등 칸 × 시드 전부 통과·차 0, 점추정 일치(허용 1e-12)"),
+        "source": ci_source,
+        "binding": ("성립 — 산출물 이름·시드 집합·시드별 sha256·채점기 지문·규칙 표기·원시 레코드 해시 일치, "
+                    "T1 항등 칸 × 시드 전부 통과·차 0, 점추정 일치(허용 1e-12), "
+                    "재표집 조건(횟수·난수 시드·신뢰수준·구간 방식) 등록값"),
         "interval": interval.as_dict(),
         "rules_rejudged": rj,
         "registration": ci_payload.get("registration"),
@@ -843,10 +870,22 @@ def main() -> int:
     ap.add_argument("--artifact", default="score_cells_v1.json",
                     help="시드별 채점 산출물 파일명(v1/v2). 집계본 이름은 여기서 파생한다")
     ap.add_argument("--recovery-ci", default=None,
-                    help="recovery_bootstrap.py 산출물. 미지정이면 <dest>/recovery_ci_v1.json 이 있을 때 읽는다")
+                    help="recovery_bootstrap.py 산출물. 미지정이면 <dest>/recovery_ci_v<n>.json "
+                         "(n = --artifact 의 판)이 있을 때 읽는다")
     ap.add_argument("--allow-code-drift", action="store_true",
                     help="채점기 코드 해시가 시드마다 달라도 진행한다(불일치를 산출물에 기록)")
     args = ap.parse_args()
+
+    # **옛 판을 덮지 않는다**(C 42번 I-2). 집계본 이름은 입력 산출물의 판에서 뽑는다 —
+    # 이름에 "v2" 가 있는지로 가르면 v3 입력이 aggregate_v1.json 에 쓰인다. 계산 전에 확인한다.
+    try:
+        version = artifact_version(args.artifact)
+    except ValueError as e:
+        raise SystemExit(str(e)) from None
+    dest = Path(args.dest)
+    out = dest / f"aggregate_v{version}.json"
+    if out.exists():
+        raise SystemExit(f"{out} 이 이미 있다 — 덮지 않는다(옛 판 보존). 다른 --dest 를 주라")
 
     root = Path(args.root)
     seeds = [int(s) for s in args.seeds.split(",")]
@@ -896,10 +935,12 @@ def main() -> int:
 
     table = axis_table(payloads)
     rec = recovery_table(payloads, table)
-    ci_path = Path(args.recovery_ci) if args.recovery_ci else Path(args.dest) / "recovery_ci_v1.json"
+    ci_path = (Path(args.recovery_ci) if args.recovery_ci
+               else dest / f"recovery_ci_v{version}.json")
     ci_payload = json.loads(ci_path.read_text(encoding="utf-8")) if ci_path.exists() else None
     # 이름만 보고 멈추거나 통과시키지 않는다 — 결속 전체를 대조하고, 어긋나면 CI 를 쓰지 않는다
-    rec = apply_recovery_ci(rec, ci_payload, observed, observed_points(rec, payloads))
+    rec = apply_recovery_ci(rec, ci_payload, observed, observed_points(rec, payloads),
+                            ci_source=ci_path.name)
     disc = discrimination_tables(payloads, ladder, ladder_files)
     disc["delta_auc"]["metadata_baseline"]["population_check"] = _ladder_population_check(
         payloads, args.metadata_ladder)
@@ -912,6 +953,11 @@ def main() -> int:
     def _pct(x):
         return "미정의" if x is None else f"{x:+.1f}%"
 
+    # 집계하는 트리의 채점기 지문이 채점 지문과 같은가(C 42번 m-12). 같지 않아도 멈추지 않는다 —
+    # 옛 판을 새 코드로 다시 집계하는 것은 정당하다. 다만 "같은 코드" 라고 읽지 않게 사실을 싣는다.
+    tree_combined = scorer_code_digest(include_files=False)["combined"]
+    scored_combined = sorted({str(e.get("scorer_code_combined")) for e in entries.values()})
+    tree_matches = scored_combined == [tree_combined]
     payload = {
         "seeds": seeds, "seed_values": seed_values,
         "artifact": args.artifact,
@@ -919,7 +965,9 @@ def main() -> int:
         "public_status": rec[HEADLINE_AXIS]["denominator_gate"]["public_status"],
         # 집계기 자신의 코드도 남긴다 — 판정 로직이 여기 있다
         "aggregator_code": {
-            "scorer_tree_combined": scorer_code_digest(include_files=False)["combined"],
+            "scorer_tree_combined": tree_combined,
+            "tree_matches_scoring": tree_matches,
+            "scoring_combined": scored_combined,
             # 채점기 지문과 같은 규칙(줄끝 LF 정규화) — 체크아웃의 CRLF 가 값을 바꾸지 않게
             "aggregate_seeds_sha256": combined_digest([Path(__file__).resolve()])[1].popitem()[1],
             "newline_normalized": True,
@@ -944,11 +992,14 @@ def main() -> int:
                           for s, p in payloads.items()},
     }
     # **JSON 을 먼저 쓴다** — 출력 포맷이 죽어도 집계본은 남는다(C 34번 Minor 6).
-    dest = Path(args.dest)
     dest.mkdir(parents=True, exist_ok=True)
-    suffix = "v2" if "v2" in args.artifact else "v1"
-    out = dest / f"aggregate_{suffix}.json"
-    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    try:
+        write_new_text(out, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    except FileExistsError:
+        raise SystemExit(f"{out} 이 집계 도중 생겼다 — 덮지 않는다") from None
+    print(f"저장: {out}")
+    print(f"[출처] 집계 트리 지문 = 채점 지문: {tree_matches}"
+          + ("" if tree_matches else f" (트리 {tree_combined[:16]} · 채점 {[c[:16] for c in scored_combined]})"))
 
     head = rec[HEADLINE_AXIS]
     print(f"[{HEADLINE_AXIS}] 시드별 회복률 "

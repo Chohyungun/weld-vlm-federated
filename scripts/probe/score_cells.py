@@ -109,10 +109,22 @@ HEADLINE_POLICY = {
 이 딕셔너리를 고치는 것은 채점 기준을 고치는 것과 같다 — 총괄 판정 없이 바꾸지 마라.
 """
 
-ARTIFACT_VERSIONS = {"v1": "score_cells_v1.json", "v2": "score_cells_v2.json"}
-"""산출물 파일명. **v2 는 새 경로다** — 세 시드를 한 코드 상태(하나의 커밋)로 다시 채점할 때
-v1 을 덮어쓰지 않고 옆에 둔다(총괄 판정 09-16, C 34번 Important 1). v1 은 역사 기록으로 남는다.
+ARTIFACT_VERSIONS = {"v1": "score_cells_v1.json", "v2": "score_cells_v2.json",
+                     "v3": "score_cells_v3.json"}
+"""산출물 파일명. **v2 부터는 새 경로다** — 세 시드를 한 코드 상태(하나의 커밋)로 다시 채점할 때
+옛 판을 덮어쓰지 않고 옆에 둔다(총괄 판정 09-16, C 34번 Important 1). v1 은 역사 기록으로 남는다.
+v3 = 머지된 main 커밋에서 줄끝 정규화 지문으로 다시 채점(37번 §3-4-3, C 42번 I-2).
 """
+
+
+def artifact_dest(out: Path, version: str) -> Path:
+    """본채점 산출물 경로. **v2 부터는 이미 있으면 멈춘다** — 재채점은 새 판 경로에 쓰고 옛 판을
+    보존한다(C 42번 I-2). v1 은 기존 동작(같은 경로에 다시 씀)을 바꾸지 않는다 — 파일럿·시험 경로가
+    그 동작에 기대고, 본실험 v1 은 이미 역사 기록이다."""
+    dest = Path(out) / ARTIFACT_VERSIONS[version]
+    if version != "v1" and dest.exists():
+        raise SystemExit(f"{dest} 이 이미 있다 — 덮지 않는다. 새 판 번호로 채점하라")
+    return dest
 
 EXIT_OK = 0
 EXIT_REGRESSION = 1
@@ -745,6 +757,8 @@ def cmd_score(args) -> int:
     # 않는다(C 34번 Minor 15). 둘이 다르면 산출물이 `stable=False` 로 말한다.
     code_start = scorer_code_digest()
     params = params_from_args(args)
+    version = getattr(args, "artifact_version", "v1")
+    dest = artifact_dest(params.out, version)          # 긴 채점 **전에** 확인한다
     params.out.mkdir(parents=True, exist_ok=True)
     pop = load_population(params)
     det_tags, uni_tags = selected_tags(args)
@@ -834,7 +848,7 @@ def cmd_score(args) -> int:
         "cells_scored": list(tags),
         "cells_selection": getattr(args, "cells", "all"),
         "scorer": "evaluation.score.score_records (단일)",
-        "artifact_version": ARTIFACT_VERSIONS[getattr(args, "artifact_version", "v1")],
+        "artifact_version": ARTIFACT_VERSIONS[version],
         # **채점기 자신의 코드 지문.** 여러 시드가 같은 코드로 채점됐는지 확인할 유일한
         # 수단이다 — 파라미터가 같아도 코드가 다르면 같은 기준이 아니다(27번 §1-0·§12-1).
         # 시작·끝 두 번 계산해 채점 중 트리 변경을 잡는다.
@@ -868,8 +882,8 @@ def cmd_score(args) -> int:
         "exit_reason": why,
         **diag,
     }
-    dest = params.out / ARTIFACT_VERSIONS[getattr(args, "artifact_version", "v1")]
-    with dest.open("w", encoding="utf-8", newline="\n") as fh:
+    # v2 부터는 배타 생성 — 확인과 쓰기 사이에 파일이 생겨도 덮지 않는다
+    with dest.open("w" if version == "v1" else "x", encoding="utf-8", newline="\n") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
     print(f"저장: {dest}")
@@ -1021,7 +1035,7 @@ def main() -> int:
         p = sub.add_parser(name)
         add_common_args(p)
         p.add_argument("--artifact-version", choices=sorted(ARTIFACT_VERSIONS), default="v1",
-                       help="산출물 파일명 판. v2 = 새 경로 재채점(v1 보존)")
+                       help="산출물 파일명 판. v2·v3 = 새 경로 재채점(옛 판 보존, 있으면 멈춤)")
         p.add_argument("--root", default=".")
         p.add_argument("--at-conf", action="store_true",
                        help="predict: 하한이 아니라 운용 임계로 추론한다(65번 레코드 생성)")

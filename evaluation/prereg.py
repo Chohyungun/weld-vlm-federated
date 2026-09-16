@@ -229,11 +229,27 @@ RECOVERY_CI_MAX_UNDEFINED_FRACTION = 0.10
 버린 재표집이 많을수록 백분위 구간은 살아남은 표본만의 구간이 된다. 36번 신설 제안, 총괄 채택.
 """
 
+RECOVERY_CI_ALPHA = 0.05
+"""신뢰수준 — 95 % 구간(양쪽 2.5 %). 36번 미니스펙 §2 의 값이다.
+
+규칙 ② 의 반폭 상한은 **95 % 구간**에 대해 정한 값이므로, 구간 폭을 좌우하는 신뢰수준도 등록
+조건이다. 90 % 구간은 더 좁아 ② 를 쉽게 통과한다(C 42번 I-1, 실물 재현). 생성기
+(`recovery_bootstrap.py`)가 이 값으로 구간을 내고, 집계기 재판정(`rejudge_ci_rules`)은 CI 기록의
+`statistic.alpha` 를 이 값과 맞댄다. 두 곳이 같은 상수를 읽는다.
+"""
+
+RECOVERY_CI_INTERVAL = "백분위"
+"""구간 방식 — 백분위(percentile) 구간. 36번 미니스펙 §2. CI 기록의 `statistic.interval` 이 이 값과
+다르면 집계기는 그 CI 를 쓰지 않는다. 다른 방식의 구간에 규칙 ② 를 대면 등록한 판정이 아니다."""
+
 RECOVERY_CI_REGISTRATION = {
     "rules": {"2_max_half_width": RECOVERY_CI_MAX_HALF_WIDTH,
               "3_denominator_ci_excludes_zero": RECOVERY_CI_DENOMINATOR_MUST_EXCLUDE_ZERO,
               "4_max_undefined_fraction": RECOVERY_CI_MAX_UNDEFINED_FRACTION},
     "statistic": "R̄ = 3세트 평균 회복률 (mAP@50, export 하한). R_s·D_s·칸별 mAP 는 병기",
+    "interval": {"alpha": RECOVERY_CI_ALPHA, "method": RECOVERY_CI_INTERVAL,
+                 "note": ("36번 §2 의 구간 조건. 규칙 ② 가 95 % 구간 기준이라 신뢰수준·방식도 등록 조건이다 "
+                          "(C 42번 I-1 로 상수화, 09-16)")},
     "proposed": "41번 (2026-08-24) · 36번 미니스펙 (2026-09-16)",
     "registered": "총괄 게이트 2026-09-16 00:35 — 3세트 채점 뒤, CI 산출 전",
     "status": "값을 보기 전 제안, 3세트 채점 뒤 등록. 공식 사전등록이 아니다",

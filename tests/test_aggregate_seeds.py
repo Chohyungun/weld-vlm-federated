@@ -14,21 +14,27 @@
    소급 계산해 끼워 넣지 않는다.
 7. **CI 를 입력에 묶는다(codex_reply §18)** — 시드 집합·시드별 산출물 sha256·채점기 지문이 하나라도
    다르면 CI 를 쓰지 않는다(null). 기록된 `ci_pass` 는 믿지 않고 집계기가 다시 판정한다.
+8. **C 42번 후속** — 신뢰수준·구간 방식도 등록 조건이다(I-1). 집계본·CI 이름은 입력 산출물의 판에서
+   뽑고 옛 판을 덮지 않는다(I-2). CI 픽스처의 점추정은 검사 대상 함수가 아니라 생성기와 같은 계산으로
+   만든다(m-4).
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
-from evaluation.recovery_ci import make_binding
+from evaluation.recovery_ci import make_binding, recovery_from
 from scripts.probe.aggregate_seeds import (
     DET_TAGS,
+    PUBLIC_STATUS,
     apply_recovery_ci,
     check_baselines_identical,
     client_improvement,
@@ -51,6 +57,19 @@ def _rec_pct(v: dict[str, float]) -> float | None:
     return None if d <= 0 else 100.0 * (v["sep_fed"] - lm) / d
 
 
+LOCAL_TAGS = ("sep_local_C1", "sep_local_C2", "sep_local_C3")
+
+
+def _records(seed: int) -> dict[str, str]:
+    """채점 산출물 `input_records` 모양 — 운용점 레코드 5개 + 원시(하한) 레코드 5개."""
+    out = {}
+    for t in DET_TAGS:
+        for kind, path in (("op", f"outputs/main_d/seed{seed}/{t}_s{seed}.jsonl"),
+                           ("raw", f"outputs/main_d/seed{seed}/sweep/{t}_raw_s{seed}.jsonl")):
+            out[path] = hashlib.sha256(f"{kind}{seed}{t}".encode()).hexdigest()
+    return out
+
+
 def _payload(seed: int, floor: dict[str, float], op: dict[str, float] | None = None,
              al: dict[str, float] | None = None) -> dict:
     op = op or {t: 0.5 for t in DET_TAGS}
@@ -59,6 +78,7 @@ def _payload(seed: int, floor: dict[str, float], op: dict[str, float] | None = N
     return {
         "params": {"seed": seed, "profile": "main", "conf_floor": 0.01},
         "scorer": "evaluation.score.score_records (단일)",
+        "input_records": _records(seed),
         "decomposition": {
             "axis": "material",
             "limitation": "픽스처 — 평가셋에 client 열이 없어 재질이 유일한 귀속 축",
@@ -440,48 +460,75 @@ def _entry(n: int, payload: dict, sha: str | None = None) -> dict:
             "seed_value": payload["params"]["seed"],
             "scorer_code_combined": sc.get("combined"), "scorer_code_rule": sc.get("rule"),
             "newline_normalized": bool(sc.get("newline_normalized", False)),
-            "scorer_code_stable": sc.get("stable")}
+            "scorer_code_stable": sc.get("stable"),
+            "input_records": payload.get("input_records")}
 
 
 def _observed(payloads: dict[int, dict], **sha_by_seed) -> dict:
     return make_binding(ART, {n: _entry(n, p, sha_by_seed.get(f"s{n}")) for n, p in payloads.items()})
 
 
-def _identity(pts) -> dict:
-    """집계 재구현의 항등 검사 결과 — 칸 × 시드 전부 통과·차 0, 기준값은 채점 파일 값."""
+def _generator_points(payloads) -> dict:
+    """**CI 생성기처럼** 채점 파일 값에서 바로 계산한 점추정(C 42번 m-4).
+
+    검사 대상인 `observed_points` 로 기대값을 만들면 그 함수의 결함이 CI 쪽에도 같이 실려 시험이
+    못 잡는다. 생성기와 같게 `recovery_from`(np.mean) 을 쓰고, 미정의 시드는 nan, R̄ 는 nan 이
+    하나라도 섞이면 nan 이다.
+    """
+    tpi = {n: p["threshold_independent"]["per_tag"] for n, p in payloads.items()}
+    out: dict = {"map": {}, "basis": {}, "R": {}, "D": {}}
+    for n in sorted(payloads):
+        m = {t: tpi[n][t]["map_50"] for t in DET_TAGS}
+        out["map"][n] = m
+        out["basis"][n] = {t: (tpi[n][t]["map_50"], tpi[n][t]["map_50_95"]) for t in DET_TAGS}
+        out["R"][n], out["D"][n] = recovery_from(m["sep_central"], m["sep_fed"], [m[t] for t in LOCAL_TAGS])
+    rs = [out["R"][n] for n in sorted(payloads)]
+    out["R_bar"] = float(np.mean(rs)) if all(np.isfinite(rs)) else float("nan")
+    return out
+
+
+def _identity(gp) -> dict:
+    """항등 검사 기록 — 칸 × 시드 전부 통과·차 0, 기준값은 채점 파일 값."""
     return {str(s): {t: {"passed": True, "abs_diff_map_50": 0.0, "abs_diff_map_50_95": 0.0,
-                         "map_50": v["map_50"], "expected_map_50": v["map_50"],
-                         "map_50_95": v["map_50_95"], "expected_map_50_95": v["map_50_95"]}
-                     for t, v in per.items()}
-            for s, per in pts["identity_basis"].items()}
+                         "map_50": m50, "expected_map_50": m50,
+                         "map_50_95": m5095, "expected_map_50_95": m5095}
+                     for t, (m50, m5095) in per.items()}
+            for s, per in gp["basis"].items()}
+
+
+def _raw_records(payload) -> dict:
+    """생성기가 캐시를 만들며 읽는 원시(하한) 레코드의 해시 — 산출물 기록의 부분집합."""
+    return {k: v for k, v in (payload.get("input_records") or {}).items() if "_raw_" in k}
 
 
 def _bound_ci(payloads, observed, *, half_width=0.10, d_lo=0.2, undefined=0, n_res=2000,
-              rng=20260825, ci_pass=None, half_width_field=None, code=CODE) -> dict:
+              rng=20260825, ci_pass=None, half_width_field=None, code=CODE,
+              alpha=0.05, interval="백분위", n_defined=None) -> dict:
     """결속·항등·점추정이 **일관된** CI 산출물. 시험이 한 군데씩 어긋나게 만든다."""
-    rec = recovery_table(payloads, {})
-    pts = observed_points(rec, payloads)
-    nan = float("nan")
-    rbar = pts["R_bar"]                                  # 미정의 시드가 있으면 None — 생성기는 nan 을 적는다
-    center = 0.2 if rbar is None else rbar
+    gp = _generator_points(payloads)
+    rbar = gp["R_bar"]
+    center = rbar if math.isfinite(rbar) else 0.2
     lo, hi = center - half_width, center + half_width
     real_pass = half_width <= 0.25 and d_lo > 0 and undefined / n_res <= 0.10
     return {
         "binding": json.loads(json.dumps(observed)),
         "scorer_code": dict(code),
-        "identity_check": _identity(pts),
-        "point": {"R_bar": nan if rbar is None else rbar,
-                  "R_by_seed": {str(s): (nan if v is None else v) for s, v in pts["R"].items()},
-                  "D_by_seed": {str(s): v for s, v in pts["D"].items()},
-                  "map_50_by_seed": {str(s): dict(v) for s, v in pts["map_50"].items()}},
-        "statistic": {"n_resamples": n_res, "n_groups": 1245, "rng_seed": rng},
+        "identity_check": _identity(gp),
+        "point": {"R_bar": rbar,
+                  "R_by_seed": {str(s): v for s, v in gp["R"].items()},
+                  "D_by_seed": {str(s): v for s, v in gp["D"].items()},
+                  "map_50_by_seed": {str(s): dict(v) for s, v in gp["map"].items()}},
+        "statistic": {"n_resamples": n_res, "n_groups": 1245, "rng_seed": rng,
+                      "alpha": alpha, "interval": interval},
         "ci": {"R_bar": {"ci_lo": lo, "ci_hi": hi,
                          "half_width": half_width if half_width_field is None else half_width_field,
+                         "n_defined": n_res - undefined if n_defined is None else n_defined,
                          "n_undefined": undefined},
                "D_by_seed": {str(s): {"ci_lo": d_lo} for s in observed["seeds"]}},
         "verdict": {"ci_pass": real_pass if ci_pass is None else ci_pass},
         "registration": {"status": "픽스처"}, "seed_caveat": "픽스처",
-        "inputs": {"artifact_name": ART},
+        "inputs": {"artifact_name": observed["artifact_name"],
+                   "records_by_seed": {str(n): _raw_records(p) for n, p in payloads.items()}},
     }
 
 
@@ -713,6 +760,7 @@ def test_요구5_항등_검사_결과가_없거나_실패면_null(breakage):
     g = _judge(p, ci, obs)
     assert g["recovery_reportable"] is None, breakage
     assert any("항등" in r for r in g["recovery_ci_rejected"]["reasons"]), breakage
+    assert g["public_status"] == PUBLIC_STATUS["ci_invalid"], breakage      # m-11
 
 
 def test_정상_조합은_항등_점추정_결속을_모두_지나_true():
@@ -722,6 +770,7 @@ def test_정상_조합은_항등_점추정_결속을_모두_지나_true():
     g = _judge(p, _bound_ci(p, obs), obs)
     assert g["recovery_reportable"] is True
     assert g["recovery_ci_rejected"] is None
+    assert g["recovery_ci_warnings"] == []
     assert "T1 항등" in g["recovery_ci"]["binding"]
 
 
@@ -732,6 +781,121 @@ def test_지문_없는_산출물은_결속할_수_없다():
     g = _judge(p, _bound_ci(p, obs), obs)
     assert g["recovery_reportable"] is None
     assert any("지문이 없다" in r for r in g["recovery_ci_rejected"]["reasons"])
+
+
+# ======================================================================================
+# C 42번 후속 — I-1 신뢰수준·구간 방식 · m-1 · m-2 · m-3 · m-10 · m-11
+# ======================================================================================
+
+@pytest.mark.parametrize("kw,label", [
+    ({"alpha": 0.10}, "신뢰수준"),                 # 90 % 구간 — 더 좁아 ② 를 쉽게 통과한다(§4-2 F)
+    ({"alpha": 0.10, "half_width": 0.20}, "신뢰수준"),
+    ({"alpha": "0.05"}, "신뢰수준"),               # 문자열로 적힌 값
+    ({"alpha": None}, "신뢰수준"),                 # 기록 없음
+    ({"interval": "BCa"}, "구간 방식"),
+    ({"interval": None}, "구간 방식"),
+])
+def test_I1_신뢰수준이나_구간_방식이_등록값과_다르면_null(kw, label):
+    p = _coded(three_seeds())
+    obs = _observed(p)
+    g = _judge(p, _bound_ci(p, obs, **kw), obs)
+    assert g["recovery_reportable"] is None
+    assert any(label in r for r in g["recovery_ci_rejected"]["reasons"])
+    assert g["public_status"] == PUBLIC_STATUS["ci_invalid"]
+
+
+def test_I1_생성기와_재판정이_같은_등록_상수를_읽는다():
+    from evaluation import prereg
+    from scripts.probe import recovery_bootstrap as rb
+
+    draws = np.linspace(0.0, 1.0, 2001)
+    got = rb._percentile_ci(draws)
+    lo, hi = np.percentile(draws, [100 * prereg.RECOVERY_CI_ALPHA / 2,
+                                   100 * (1 - prereg.RECOVERY_CI_ALPHA / 2)])
+    assert (got["ci_lo"], got["ci_hi"]) == (float(lo), float(hi))
+    assert prereg.RECOVERY_CI_ALPHA == 0.05 and prereg.RECOVERY_CI_INTERVAL == "백분위"
+    assert prereg.RECOVERY_CI_REGISTRATION["interval"]["alpha"] == prereg.RECOVERY_CI_ALPHA
+    assert not hasattr(rb, "ALPHA")          # 생성기 안에 따로 둔 상수가 없다
+
+
+def test_m1_정의된_수와_미정의_수의_합이_재표집_수와_다르면_null():
+    p = _coded(three_seeds())
+    obs = _observed(p)
+    g = _judge(p, _bound_ci(p, obs, n_defined=10), obs)
+    assert g["recovery_reportable"] is None
+    assert any("정의된 수" in r for r in g["recovery_ci_rejected"]["reasons"])
+
+
+@pytest.mark.parametrize("breakage", [
+    "hash_changed", "ci_missing", "ci_empty", "key_not_in_artifact", "ci_unread", "artifact_missing",
+])
+def test_m2_CI_가_잰_원시_레코드_해시가_채점_기록과_다르면_null(breakage):
+    """sha256 결속은 산출물 파일만 묶는다 — 채점 뒤에 레코드가 바뀌면 산출물은 그대로여도 CI 는
+    다른 입력으로 계산된다. 결속·항등·점추정이 모두 맞는 상태에서 레코드 해시만 어긋나게 한다."""
+    p = _coded(three_seeds())
+    obs = _observed(p)
+    ci = _bound_ci(p, obs)
+    recs = ci["inputs"]["records_by_seed"]
+    k = min(recs["2"])
+    if breakage == "hash_changed":
+        recs["2"][k] = "0" * 64
+    elif breakage == "ci_missing":
+        del recs["2"]
+    elif breakage == "ci_empty":
+        recs["2"] = {}
+    elif breakage == "key_not_in_artifact":
+        recs["2"]["outputs/main_d/seed2/sweep/other_raw_s2.jsonl"] = "a" * 64
+    elif breakage == "ci_unread":
+        recs["2"][k] = None
+    elif breakage == "artifact_missing":             # 산출물에 input_records 가 없다(v1 형식)
+        obs["artifacts"]["2"]["input_records"] = None
+    g = _judge(p, ci, obs)
+    reasons = g["recovery_ci_rejected"]["reasons"]
+    assert g["recovery_reportable"] is None, breakage
+    assert any("시드 2" in r and "레코드" in r for r in reasons), (breakage, reasons)
+    assert g["public_status"] == PUBLIC_STATUS["ci_unbound"]
+
+
+def test_m3_결속_판_번호가_다르면_null():
+    p = _coded(three_seeds())
+    obs = _observed(p)
+    ci = _bound_ci(p, obs)
+    ci["binding"]["version"] = 2
+    g = _judge(p, ci, obs)
+    assert g["recovery_reportable"] is None
+    assert any("결속 판" in r for r in g["recovery_ci_rejected"]["reasons"])
+
+
+def test_m3_뒤집힌_구간은_null():
+    """하한 > 상한. 반폭 필드도 같이 음수로 적어 자기모순 검사는 지나가게 하고 뒤집힘만 남긴다."""
+    p = _coded(three_seeds())
+    obs = _observed(p)
+    g = _judge(p, _bound_ci(p, obs, half_width=-0.05), obs)
+    reasons = g["recovery_ci_rejected"]["reasons"]
+    assert g["recovery_reportable"] is None
+    assert any("뒤집혀" in r for r in reasons)
+    assert not any("자기모순" in r for r in reasons)
+
+
+def test_m10_기록_ci_pass_가_재판정과_갈리면_판정은_재판정_경고는_남긴다():
+    p = _coded(three_seeds())
+    obs = _observed(p)
+    g = _judge(p, _bound_ci(p, obs, ci_pass=False), obs)       # 규칙은 실제로 통과
+    assert g["recovery_reportable"] is True
+    assert len(g["recovery_ci_warnings"]) == 1 and "갈렸다" in g["recovery_ci_warnings"][0]
+    assert "경고" in g["verdict"]["2_recovery_ci"]
+    assert g["recovery_ci"]["rules_rejudged"]["recorded_agrees"] is False
+
+
+def test_m11_공개_상태는_결속_실패와_기록_검사_실패를_가른다():
+    p = _coded(three_seeds())
+    obs = _observed(p)
+    bad_bind = _bound_ci(p, obs)
+    bad_bind["binding"]["seeds"] = [1, 2]
+    contradiction = _bound_ci(p, obs, half_width=0.30, half_width_field=0.05)
+    assert _judge(p, bad_bind, obs)["public_status"] == PUBLIC_STATUS["ci_unbound"]
+    assert _judge(p, contradiction, obs)["public_status"] == PUBLIC_STATUS["ci_invalid"]
+    assert PUBLIC_STATUS["ci_unbound"] != PUBLIC_STATUS["ci_invalid"]
 
 
 # ======================================================================================
@@ -797,13 +961,13 @@ def test_main_이_실제로_돌고_집계본이_먼저_써진다(tmp_path, degen
     assert agg["local_mean_definition"].startswith("로컬 평균")
 
 
-def _real_ci(root, seeds, ci_path):
+def _real_ci(root, seeds, ci_path, artifact=ART):
     """**실제 파일**을 `read_artifact` 로 읽어 결속한 CI — 생성기와 같은 함수로 만든다."""
     from scripts.probe.aggregate_seeds import load_seed_entry
 
-    loaded = {n: load_seed_entry(root, n, ART) for n in seeds}
+    loaded = {n: load_seed_entry(root, n, artifact) for n in seeds}
     payloads = {n: v[0] for n, v in loaded.items()}
-    observed = make_binding(ART, {n: v[1] for n, v in loaded.items()})
+    observed = make_binding(artifact, {n: v[1] for n, v in loaded.items()})
     ci = _bound_ci(payloads, observed)
     ci_path.write_bytes(json.dumps(ci, ensure_ascii=False).encode("utf-8"))
 
@@ -815,10 +979,13 @@ def test_main_실제_파일에서_결속_성립_한_바이트_변경_시드_부�
     ci_path = tmp_path / "recovery_ci_v1.json"
     _real_ci(root, (1, 2, 3), ci_path)
 
+    runs = iter(range(10))
+
     def reportable(*extra):
-        proc = _run_main(root, dest, "--artifact", ART, "--recovery-ci", str(ci_path), *extra)
+        d = dest / f"run{next(runs)}"            # 집계본은 덮지 않는다 — 호출마다 새 dest
+        proc = _run_main(root, d, "--artifact", ART, "--recovery-ci", str(ci_path), *extra)
         assert proc.returncode == 0, proc.stderr[-800:]
-        agg = json.loads((dest / "aggregate_v2.json").read_text(encoding="utf-8"))
+        agg = json.loads((d / "aggregate_v2.json").read_text(encoding="utf-8"))
         return agg["recovery"]["map_50"]["denominator_gate"], agg
 
     # 1) 결속 성립 → true, 공개 문구, 입력 결속이 집계본에 실린다
@@ -841,3 +1008,90 @@ def test_main_실제_파일에서_결속_성립_한_바이트_변경_시드_부�
     g, _ = reportable("--seeds", "1,2,3")
     assert g["recovery_reportable"] is None
     assert any("시드 2 의 sha256" in r for r in g["recovery_ci_rejected"]["reasons"])
+
+
+# ======================================================================================
+# C 42번 I-2 — 판 번호로 이름을 짓고, 옛 판을 덮지 않는다
+# ======================================================================================
+
+ART3 = "score_cells_v3.json"
+
+
+def test_I2_v3_입력은_v3_이름으로_쓰고_옛_판은_건드리지_않는다(tmp_path):
+    """C 42번 §6 I-2 의 실증 경로 — v3 입력이 `aggregate_v1.json` 에 쓰였다. 이제 v3 이름으로 쓰고,
+    기본 CI 경로도 `recovery_ci_v3.json` 이다(v2 로 만든 옛 `recovery_ci_v1.json` 을 읽지 않는다)."""
+    root, dest = tmp_path / "main_d", tmp_path / "seed3set"
+    for n, scale in ((1, 1.0), (2, 0.98), (3, 1.01)):
+        _write_seed_dir(root, n, {t: v * scale for t, v in S1.items()}, artifact=ART3, code=CODE)
+    dest.mkdir()
+    old = {name: f"옛 판 {name}\n".encode() for name in
+           ("aggregate_v1.json", "aggregate_v2.json", "recovery_ci_v1.json")}
+    for name, raw in old.items():
+        (dest / name).write_bytes(raw)
+    _real_ci(root, (1, 2, 3), dest / "recovery_ci_v3.json", artifact=ART3)
+
+    proc = _run_main(root, dest, "--artifact", ART3, "--seeds", "1,2,3")
+    assert proc.returncode == 0, proc.stderr[-800:]
+    agg = json.loads((dest / "aggregate_v3.json").read_text(encoding="utf-8"))
+    g = agg["recovery"]["map_50"]["denominator_gate"]
+    assert agg["artifact"] == ART3
+    assert g["recovery_reportable"] is True, g.get("recovery_ci_rejected")
+    assert g["recovery_ci"]["source"] == "recovery_ci_v3.json"
+    assert agg["aggregator_code"]["tree_matches_scoring"] is False      # 픽스처 지문은 트리와 다르다
+    for name, raw in old.items():
+        assert (dest / name).read_bytes() == raw, name
+
+
+@pytest.mark.parametrize("artifact,existing", [
+    ("score_cells_v1.json", "aggregate_v1.json"),
+    ("score_cells_v2.json", "aggregate_v2.json"),
+    (ART3, "aggregate_v3.json"),
+])
+def test_I2_집계본이_이미_있으면_계산_전에_멈추고_덮지_않는다(tmp_path, artifact, existing):
+    """**계산 전에** 멈춘다 — 시드 산출물이 아예 없는 루트를 준다. 확인이 적재보다 늦으면 파일 없음
+    오류로 죽고, 쓰기 시점에만 막으면 "집계 도중 생겼다" 로 멈춘다. 둘 다 이 시험에서 떨어진다."""
+    root, dest = tmp_path / "empty_root", tmp_path / "seed3set"
+    dest.mkdir()
+    (dest / existing).write_bytes(b"old\n")
+    proc = _run_main(root, dest, "--artifact", artifact)
+    assert proc.returncode != 0
+    assert f"{existing} 이 이미 있다" in proc.stderr, proc.stderr[-600:]
+    assert "Traceback" not in proc.stderr
+    assert (dest / existing).read_bytes() == b"old\n"
+    assert not root.exists()
+
+
+@pytest.mark.parametrize("artifact", ["score_cells.json", "score_cells_latest.json", "score_cells_v2.jsonl"])
+def test_I2_판_번호를_읽을_수_없는_이름은_거부(tmp_path, artifact):
+    proc = _run_main(tmp_path, tmp_path / "d", "--artifact", artifact)
+    assert proc.returncode != 0
+    assert "판 번호" in proc.stderr
+    assert not (tmp_path / "d").exists()
+
+
+def _run_bootstrap(root, dest, *extra):
+    import os
+
+    env = {**os.environ, "PYTHONPATH": str(REPO), "PYTHONIOENCODING": "utf-8"}
+    return subprocess.run(
+        [sys.executable, str(REPO / "scripts/probe/recovery_bootstrap.py"), "--root", str(root),
+         "--dest", str(dest), *extra],
+        capture_output=True, text=True, encoding="utf-8", env=env, cwd=REPO, check=False,
+    )
+
+
+@pytest.mark.parametrize("artifact,existing,stops_for_overwrite", [
+    (ART3, "recovery_ci_v3.json", True),
+    ("score_cells_v2.json", "recovery_ci_v2.json", True),
+    (ART3, "recovery_ci_v1.json", False),        # 옛 이름(v2 로 만든 CI)과는 겹치지 않는다
+])
+def test_I2_CI_생성기는_같은_판_CI_가_있으면_계산_전에_멈춘다(tmp_path, artifact, existing,
+                                                   stops_for_overwrite):
+    dest = tmp_path / "seed3set"
+    dest.mkdir()
+    (dest / existing).write_bytes(b"old\n")
+    proc = _run_bootstrap(tmp_path / "no_root", dest, "--artifact", artifact)
+    assert proc.returncode != 0                      # 루트가 없으니 어느 쪽이든 끝까지 못 간다
+    assert ("덮지 않는다" in proc.stderr) is stops_for_overwrite, proc.stderr[-600:]
+    assert (dest / existing).read_bytes() == b"old\n"
+    assert sorted(x.name for x in dest.iterdir()) == [existing]
