@@ -168,6 +168,12 @@ def cmd_train() -> None:
     npz = save_cell_weights(OUT / "weights", "last", res)
     print(f"가중치 저장 → {npz}", flush=True)
 
+    # 8-2(34번 §3-1): `train_round` 는 더 이상 재개 파일을 지우지 않는다. 저장이 끝난
+    # **지금** 지운다 — 남기면 다음 실행이 "예산 완료 체크포인트" 로 거부된다.
+    from detection.resume import clear_resume
+
+    clear_resume(OUT / "_resume")
+
     from detection.budget_audit import AccountingCell, AccountingMatrix
 
     acc = AccountingMatrix(num_rounds=1, client_ids=[0], local_epochs=EPOCHS,

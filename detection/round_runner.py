@@ -195,7 +195,7 @@ def train_round(
     callbacks: dict[str, Any] | None = None,
     resume_dir: str | Path | None = None,
     run_id: str = "",
-    clear_resume_on_success: bool = True,
+    clear_resume_on_success: bool = False,
     loader_reseed_per_epoch: bool = False,
 ) -> RoundResult:
     """라운드 하나를 실행하고 raw 가중치를 돌려준다.
@@ -220,8 +220,12 @@ def train_round(
             재개 가중치를 두지 않는다.
         run_id: 재개 신원의 일부. 같은 라운드·클라이언트라도 다른 실행이면 이어 가지
             않게 하려면 여기에 실행 식별자를 준다.
-        clear_resume_on_success: 정상 완주 시 재개 파일을 지운다. 끄면 다음 실행이 이미
-            끝난 라운드를 재개 상태로 오인할 수 있다.
+        clear_resume_on_success: 정상 완주 시 재개 파일을 지운다. **기본 False**(34번 §3-1
+            8-2, 2026-09-16): 여기서 지우면 반환과 호출자의 최종 저장 사이에 죽었을 때 재개
+            파일도 최종 산출물도 없다. 정리는 호출자가 최종 산출물을 내구 저장·재로드 검증한
+            **뒤에** `detection.resume.clear_resume` 로 한다(②③ `train_cell`, ④ 클라이언트
+            응답 직전). 지우지 않은 완료 상태는 다음 실행에서 `validate_detection_resume` 가
+            "이미 완료된 체크포인트" 로 거부하므로 재개 상태로 오인되지 않는다.
         loader_reseed_per_epoch: epoch 진입마다 로더 셔플 생성기를 `f(seed, epoch)` 으로
             다시 시드한다. **다섯 칸 공통 고정 항목(데이터 순서·증강 난수열)을 바꾸므로
             켜려면 다섯 칸 전부에 켜고 첫 런 착수 전에 확정해야 한다.** 켜면 시드가 실제로
@@ -359,7 +363,7 @@ def train_round(
     )
     budget = trainer.budget
     if resume_dir is not None and clear_resume_on_success:
-        # 정상 완주. 재개 파일은 산출물이 아니므로 남기지 않는다.
+        # opt-in 경로만. 기본은 호출자가 최종 산출물을 인계한 뒤 지운다(8-2).
         clear_resume(resume_dir)
     return RoundResult(
         ndarrays=out,
@@ -406,7 +410,9 @@ def validate_detection_resume(state: Any) -> None:
     if consumed == ident.local_epochs:
         raise ValueError(
             "라운드 예산이 이미 완료된 체크포인트다. 추가 학습은 허용하지 않는다. "
-            "이 파일을 보존하고 최종 가중치 내보내기 상태를 확인하라."
+            "이 파일을 보존하고 최종 가중치 내보내기 상태를 확인하라. "
+            "최종 산출물(<tag>.npz)이 이미 있으면 이 재개 디렉터리를 지우고 다시 띄워라 — "
+            "저장과 정리 사이에서 죽은 실행의 잔해다(8-2)."
         )
     missing = {"optimizer_updates", "lr_trace"} - state.payload.keys()
     if missing:
