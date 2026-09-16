@@ -129,13 +129,26 @@ def test_본실험_매니페스트_계약이_명부에_있다():
     assert e["status"] == "expected" and e["owner"] == "A"
 
 
-def test_pilot3000_계열_3개는_A_소유로_등록돼_있다():
-    """복원 판정(09-16)은 났지만 원 경로 복사 전이라 `lost` 다. 복사·해시 4/4×3 확인 뒤
-    `restored` 로 바꾸며, 그때 이 시험도 함께 바꾼다 — 실물보다 먼저 상태를 올리면
-    대조기가 missing_contract 로 실패한다."""
+def test_pilot3000_계열_3개는_A_소유_restored_로_등록돼_있다():
+    """09-16 복원 판정 → 00:58 원 경로 복사·해시 4/4×3 확인 뒤 `restored`(32번 §1-4 추기).
+    근거 등급이 다르다 — pilot3000 은 64자 digest 전체, 두 팔은 8자 접두 + 구성 일치.
+    실물이 없는데 이 상태면 대조기가 missing_contract 로 실패하는 것이 맞다."""
     for k in PILOT3000_KEYS:
-        assert EXPECTED_SEALED[k]["owner"] == "A", k
-        assert EXPECTED_SEALED[k]["status"] == "lost", k
+        e = EXPECTED_SEALED[k]
+        assert e["owner"] == "A" and e["status"] == "restored", k
+        assert "32번" in e["record"], k
+    assert "64자" in EXPECTED_SEALED[PILOT3000_KEYS[0]]["evidence"]
+    for k in PILOT3000_KEYS[1:]:
+        assert "8자 접두" in EXPECTED_SEALED[k]["evidence"], k
+
+
+@pytest.mark.skipif(
+    not all((REPO_ROOT / k).is_dir() for k in PILOT3000_KEYS), reason="복원 실물이 이 트리에 없다"
+)
+def test_restored_자리에_실물과_계약서가_있다():
+    """`restored` 는 실물이 돌아온 뒤에만 붙인다는 규칙의 실물 확인."""
+    for k in PILOT3000_KEYS:
+        assert is_frozen(REPO_ROOT / k), k
 
 
 def test_expected_항목은_실물이_있으면_계약서를_가진다():
@@ -149,14 +162,18 @@ def test_expected_항목은_실물이_있으면_계약서를_가진다():
 
 def test_B_명부와_어긋나지_않는다():
     """B 가 import 로 전환하기 전까지 두 명부가 공존한다. B 쪽 항목은 전부 여기 있고
-    상태·소유가 같아야 한다(record 문구는 A 항목에서 갱신했으므로 비교하지 않는다).
-    전환 뒤에는 같은 객체라 자명하게 통과한다."""
+    소유가 같아야 하며, 상태는 같거나 **A 소유 항목의 `lost → restored`** 만 다를 수 있다
+    (복원은 A 가 자기 명부에서 올리고 B 판은 전환 때 사라진다). 전환 뒤에는 같은 객체라
+    자명하게 통과한다 — 그때 이 시험은 지워도 된다(41번 m-1)."""
     from corpus.generate.frozen_out import EXPECTED_SEALED as b_roster
 
     for rel, e in b_roster.items():
         assert rel in EXPECTED_SEALED, f"B 명부에만 있다: {rel}"
-        assert EXPECTED_SEALED[rel]["status"] == e["status"], rel
-        assert EXPECTED_SEALED[rel]["owner"] == e["owner"], rel
+        mine = EXPECTED_SEALED[rel]
+        assert mine["owner"] == e["owner"], rel
+        same = mine["status"] == e["status"]
+        restored_by_a = mine["owner"] == "A" and e["status"] == "lost" and mine["status"] == "restored"
+        assert same or restored_by_a, f"{rel}: B {e['status']} vs A {mine['status']}"
 
 
 # ---------------------------------------------------------------------------------
