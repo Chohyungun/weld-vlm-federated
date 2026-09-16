@@ -618,7 +618,7 @@ assert "local_path" in [h[0] for h in hits]
 
 **공개 검수기의 `local_path` 탐지를 거는 픽스처다.** 실제 적재 위치를 알리는 문장이 아니라
 "이런 모양이 잡히는가"를 보는 합성 문자열이다. 게다가 탐지기
-(`screen_public_release.LOCAL_PATH`)의 정규식 자체가 `Fedvlm` 을 대안 중 하나로 들고 있어야
+(`screen_public_release.LOCAL_PATH`)의 정규식 자체가 `<저장소 이름>` 을 대안 중 하나로 들고 있어야
 동작하므로, 이 토큰은 어차피 소스에 남는다. **바꾸지 않았다.**
 
 ## C-3. 확인
