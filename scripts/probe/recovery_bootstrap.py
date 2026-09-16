@@ -249,6 +249,8 @@ def main() -> int:
 
     code_end = scorer_code_digest()
     payload = {
+        # 자기 파일명(판) — 채점 산출물과 같은 필드(A 54번 m-1). 집계기가 읽은 파일 이름과 맞댄다
+        "artifact_version": out.name,
         "spec": "36번 미니스펙 · 총괄 게이트 2026-09-16 00:35 (조건부 통과)",
         "registration": RECOVERY_CI_REGISTRATION,
         "statistic": {

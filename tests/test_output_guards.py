@@ -38,6 +38,28 @@ def test_n1_본실험_루트는_경로_성분으로_가른다(tmp_path, rel, mai
     assert sc.is_main_output(Path(rel)) is main      # 상대경로도 같은 답(작업 디렉터리 아래로 절대화)
 
 
+def test_m2_resolve_로_정규화된_형태도_본다(tmp_path, monkeypatch):
+    """abspath 로는 본실험이 아닌데(짧은 이름·정션 별칭) resolve 가 본실험 경로로 확정하면 본실험이다(A 54번 m-2)."""
+    alias = tmp_path / "ALIAS~1" / "seed1"
+    real = tmp_path / "outputs" / "main_d" / "seed1"
+    orig = Path.resolve
+
+    def fake(self, strict=False):
+        return real if "ALIAS~1" in str(self) else orig(self, strict=strict)
+
+    assert sc.is_main_output(alias) is False
+    monkeypatch.setattr(Path, "resolve", fake)
+    assert sc.is_main_output(alias) is True
+    assert sc.is_main_output(tmp_path / "outputs" / "pilot_d") is False
+
+    def broken(self, strict=False):
+        raise OSError("resolve 실패")
+
+    monkeypatch.setattr(Path, "resolve", broken)          # 실패하면 abspath 형태만 본다
+    assert sc.is_main_output(real) is True
+    assert sc.is_main_output(alias) is False
+
+
 def test_n1_본실험_루트에서는_v1_도_덮지_않는다(tmp_path):
     out = tmp_path / "outputs" / "main_d" / "seed1"
     out.mkdir(parents=True)

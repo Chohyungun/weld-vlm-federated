@@ -914,6 +914,25 @@ def test_m10_기록_ci_pass_가_재판정과_갈리면_판정은_재판정_경�
     assert g["recovery_ci"]["rules_rejudged"]["recorded_agrees"] is False
 
 
+@pytest.mark.parametrize("declared,source,ok", [
+    (None, "recovery_ci_v3.json", True),                     # 필드 없는 판(v3 까지) — 건너뛴다
+    ("recovery_ci_v4.json", "recovery_ci_v4.json", True),
+    ("recovery_ci_v4.json", "recovery_ci_v5.json", False),   # 이름만 바꾼 CI
+])
+def test_m1_CI_본문의_판과_파일명을_맞댄다(declared, source, ok):
+    p = _coded(three_seeds())
+    obs = _observed(p)
+    ci = _bound_ci(p, obs)
+    if declared is not None:
+        ci["artifact_version"] = declared
+    rec = recovery_table(p, {})
+    g = apply_recovery_ci(rec, ci, obs, observed_points(rec, p), ci_source=source)["map_50"]["denominator_gate"]
+    assert (g["recovery_reportable"] is True) is ok, g.get("recovery_ci_rejected")
+    if not ok:
+        assert any("이름을 바꾼 CI" in r for r in g["recovery_ci_rejected"]["reasons"])
+        assert g["public_status"] == PUBLIC_STATUS["ci_unbound"]
+
+
 def test_m11_공개_상태는_결속_실패와_기록_검사_실패를_가른다():
     p = _coded(three_seeds())
     obs = _observed(p)
@@ -1065,6 +1084,7 @@ def test_I2_v3_입력은_v3_이름으로_쓰고_옛_판은_건드리지_않는�
     assert g["recovery_reportable"] is True, g.get("recovery_ci_rejected")
     assert g["recovery_ci"]["source"] == "recovery_ci_v3.json"
     assert agg["aggregator_code"]["tree_matches_scoring"] is False      # 픽스처 지문은 트리와 다르다
+    assert agg["artifact_version"] == "aggregate_v3.json"                # 자기 파일명(A 54번 m-1)
     for name, raw in old.items():
         assert (dest / name).read_bytes() == raw, name
 
