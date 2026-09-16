@@ -566,6 +566,15 @@ def aggregate_train(self, r, replies):  r += self.round_offset; …기존 본문
 - Ray object store 5.19 GB 의 커밋 계상 여부(§7-1) — 이 스펙과 무관하나 재개 preflight 문턱 60 GB 의 마진 근거로 남는다.
 - 적대 검증이 보고한 sha256 실측(r002·r003, initial.npz 세 사본, latest==r030)은 본 절에서 재실행하지 않았다 — 게이트 전 CPU 스크립트로 재확인 권고(진행 중 run 완주 후).
 
+### 10. 추기 (2026-09-16) — 착지 조건-R
+
+main `5512b1f` 에 26번 §8-4(원장 신원 대조·`run_id` 정책 접미 `_rs1`)가 들어갔다(38번 §1). R 을 착지할 때
+**`wt/C-bdr` 의 서버 `run_id` 산출(`fl/server_app.py`)과 런처 `LedgerExpect.run_id`(`scripts/main_det.py`)가
+`fl.atomic_log.policy_stamp` 를 거치게 한다.** 거치지 않으면 R 이 정책 on 실행(`loader-reseed-per-epoch=true`)의
+접미 `run_id` 원장을 "다른 신원의 원자 행" 으로 기각한다(38번 §1-3 D, F 43번 조건). 정책 off 실행의 `run_id`
+는 접미가 없어 영향이 없다. 같은 착지에서 8-5(`budget_audit.from_csv` 정책 4 필드 왕복)와 정책 on 재개
+시험 1 건을 함께 붙인다. **지금은 R 을 건드리지 않는다**(R 구현은 `wt/C-bdr` 에서만).
+
 ---
 
 ## 부록 A. 완결성 비판 (원문 — 조립자 요약 없이 표로만 정리)
