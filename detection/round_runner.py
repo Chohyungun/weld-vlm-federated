@@ -118,9 +118,15 @@ class RoundResult:
     stopper_true_count: int | None = None
     budget_fired_at: int | None = None
     peak_vram_gb: float = 0.0
-    #: 실제 `optimizer.step()` 횟수. `optimizer_steps`(배치 수)와 다르다 —
+    #: `optimizer_step` 호출 수 = 갱신 **시도** 수. `optimizer_steps`(배치 수)와 다르다 —
     #: Ultralytics 가 `nbs=64` 기준으로 누적하기 때문이다(숨은 기본값 #10).
+    #: 8-3(34번 §3-1): 이름은 세 시드 meta·원자 로그 지표·재개 payload 와의 뒤호환을 위해
+    #: 유지한다. 의미를 이름에 새긴 별칭은 `optimizer_step_attempts`(프로퍼티).
     optimizer_updates: int = 0
+    #: 실제로 `optimizer.step()` 이 호출된 횟수. AMP `GradScaler` 가 inf/NaN 기울기에서 건너뛴
+    #: 시도는 빠진다. **None = 미계측**(구판 재개 payload 에 이 값이 없어 이전 프로세스 몫을
+    #: 알 수 없음). 0 으로 접으면 "전 스텝 스킵" 이라는 강한 주장이 된다(74번 P9 규약).
+    optimizer_updates_applied: int | None = None
     #: 재개해서 이어 간 실행인가. 이어 간 런은 무중단 런과 다른 궤적을 그리므로
     #: 회계에 남겨야 한다(`detection/resume.py` 참조).
     resumed_from_epoch: int | None = None
@@ -141,6 +147,12 @@ class RoundResult:
     #: None = 옮긴 것이 없다 — 재개가 아니거나, `project` 를 주지 않았거나, 파일이 없었다.
     #: 병합은 학습 경로가 아니라 읽기 전용 유틸이 한다(`detection/results_merge.py`).
     results_csv_preserved: str | None = None
+
+
+    @property
+    def optimizer_step_attempts(self) -> int:
+        """`optimizer_updates` 의 의미를 이름에 새긴 별칭(같은 값, 저장 필드는 하나다)."""
+        return int(self.optimizer_updates)
 
 
 def derive_seed(base_seed: int, round_idx: int, client_idx: int) -> int:
@@ -370,6 +382,12 @@ def train_round(
     )
     previous = resume_state.payload if resume_state is not None else {}
     trainer.n_optimizer_updates = int(previous.get("optimizer_updates", 0))
+    # 8-3: 적용 수도 이전 프로세스 몫을 잇는다. 구판 payload 에 없으면 **미상**이고, 그
+    # 미상 표식을 다음 체크포인트까지 전파한다 — 전파하지 않으면 재개 한 번 뒤에 결손된
+    # 값이 확정값으로 보고되고 그 차이가 "AMP 스킵 증거" 로 읽힌다(정적 검토 Important).
+    applied_known = resume_state is None or previous.get("optimizer_updates_applied") is not None
+    trainer.applied_base = int(previous.get("optimizer_updates_applied") or 0)
+    trainer.applied_known = applied_known
     lr_trace = _LRTrace(previous.get("lr_trace", ()))
     trainer._resume_lr_trace = lr_trace
     steps = _StepCounter()
@@ -429,6 +447,10 @@ def train_round(
         budget_fired_at=budget.fired_at_epoch if budget else None,
         peak_vram_gb=peak_vram,
         optimizer_updates=int(getattr(trainer, "n_optimizer_updates", 0)),
+        # 속성이 없으면(계측하지 않는 트레이너) None 그대로 흘린다 — 0 으로 접지 않는다.
+        optimizer_updates_applied=(int(getattr(trainer, "n_optimizer_updates_applied", 0) or 0)
+                                   if applied_known and hasattr(trainer, "n_optimizer_updates_applied")
+                                   else None),
         resumed_from_epoch=(resume_state.next_epoch if resume_state is not None else None),
         gates_evaluated=gates["gates_evaluated"],
         gate_results=gates["gate_results"],
@@ -466,6 +488,12 @@ def validate_detection_resume(state: Any) -> None:
         )
     if not 0 <= int(state.payload["optimizer_updates"]) <= state.optimizer_steps:
         raise ValueError("재개 optimizer 갱신 횟수가 배치 수와 맞지 않는다.")
+    applied = state.payload.get("optimizer_updates_applied")
+    if applied is not None and not 0 <= int(applied) <= int(state.payload["optimizer_updates"]):
+        raise ValueError(
+            "재개 체크포인트의 적용 수가 시도 수 범위를 벗어난다"
+            f"(적용 {applied} / 시도 {state.payload['optimizer_updates']})."
+        )
     trace = state.payload["lr_trace"]
     expected_epochs = list(range(ident.round_idx * ident.local_epochs, state.next_epoch))
     if [int(ep) for ep, _ in trace] != expected_epochs:

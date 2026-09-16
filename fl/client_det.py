@@ -78,7 +78,8 @@ def run_client_round(
         "num-examples": float(result.num_examples),
         "epochs-ran": float(result.epochs_ran),
         "optimizer-steps": float(result.optimizer_steps),
-        # 배치 수와 실제 갱신 횟수는 다르다(숨은 기본값 #10). 논문의 "총 갱신 횟수"는 아래다.
+        # 배치 수와 갱신 횟수는 다르다(숨은 기본값 #10). 이 값은 갱신 **시도** 수다(8-3) —
+        # ④ 는 실제 적용 수를 산출물에 남기지 않는다(원자 로그 행 수 불변, D 계약 조율 별건).
         "optimizer-updates": float(getattr(result, "optimizer_updates", 0) or 0),
         "epochs-this-process": float(
             result.epochs_this_process if getattr(result, "epochs_this_process", None) is not None else -1
