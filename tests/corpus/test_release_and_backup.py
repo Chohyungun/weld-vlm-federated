@@ -200,6 +200,11 @@ def test_백업_목록은_봉인처_명부에서_파생된다():
     assert set(B.SEALED_DIRS) == expected
     assert not (set(B.DEFAULT_DIRS) & lost), "소실 기록된 곳은 옮길 실물이 없다"
     assert B.REPO / "corpus/validate/judge_labels" in B.DEFAULT_DIRS
+    # 대조기와 같은 집합이어야 "있어야 한다" 와 "옮긴다" 가 갈리지 않는다.
+    from corpus.generate.frozen_out import PRESENT_STATUSES
+    assert B.BACKED_UP_STATUSES is PRESENT_STATUSES
+    # 09-16 총괄 수용 — 본실험 매니페스트 계약도 한 벌에 든다(F 39번 I-1 · A 62f660b).
+    assert B.REPO / "data/interim/manifest_v1" in B.SEALED_DIRS
 
 
 def test_복원된_봉인처도_백업_목록에_든다():
