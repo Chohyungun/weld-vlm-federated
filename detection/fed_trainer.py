@@ -367,7 +367,7 @@ class FedDetectionTrainer(DetectionTrainer):
 
     # -- 접촉점 5 -------------------------------------------------------------
     def optimizer_step(self) -> None:
-        """실제 갱신 횟수를 센다. 학습 동작은 그대로 둔다.
+        """갱신 **시도** 횟수를 센다(실제 적용 수는 공개 훅이 따로 센다). 학습 동작은 그대로 둔다.
 
         `on_train_batch_end` 콜백이 세는 것은 **배치 수**이지 갱신 횟수가 아니다.
         Ultralytics 는 `nbs=64` 기준으로 `accumulate = round(nbs / batch)` 만큼 누적하므로
