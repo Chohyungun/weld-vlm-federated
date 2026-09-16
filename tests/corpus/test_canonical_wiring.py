@@ -366,14 +366,16 @@ def _weighted_fixture():
     """
     recs, labels = [], []
     # pass 층 20건: 정답 OK 16 · NG 4  → 정밀도(무가중) 16/20
+    # phi(층화 판정기가 아닌 후보): TP 8(0..7) · FP 2(18,19) · FN 8(8..15) · TN 2
     for i in range(20):
         recs.append({"sample_id": f"p{i}", "axis": "조항검색_기준서술",
-                     "judge_deepseek_pass": True, "judge_phi_pass": i < 10})
+                     "judge_deepseek_pass": True, "judge_phi_pass": i < 8 or i >= 18})
         labels.append({"sample_id": f"p{i}", "human_ok": i < 16, "labeler": "L1"})
     # fail 층 10건: 정답 OK 5 · NG 5  → 재현율에 영향
+    # phi: TP 5(0..4) · FP 2(8,9) · TN 3
     for i in range(10):
         recs.append({"sample_id": f"f{i}", "axis": "조항검색_기준서술",
-                     "judge_deepseek_pass": False, "judge_phi_pass": i < 5})
+                     "judge_deepseek_pass": False, "judge_phi_pass": i < 5 or i >= 8})
         labels.append({"sample_id": f"f{i}", "human_ok": i < 5, "labeler": "L1"})
     meta = {"stratified_by_judge": "deepseek",
             "cells": {"조항검색_기준서술|judge_pass": {"N_population": 40, "k_drawn": 20},
@@ -402,6 +404,39 @@ def test_층_가중이_실제로_걸린다():
     assert w["recall"] != d["recall"], "가중이 걸리지 않았다"
     # 무가중 키는 그대로다 — 기존 소비자가 깨지지 않는다
     assert {"precision", "recall", "f1", "n"} <= set(d)
+
+
+def test_층화_판정기가_아닌_후보는_정밀도도_가중에_갈린다():
+    """층화 판정기(deepseek) 자신은 예측 양성이 전부 pass 층이라 정밀도가 구조적으로
+    가중 == 무가중이다. 다른 후보(phi)는 두 층에 FP 가 다른 비율로 있어 정밀도·재현율이
+    둘 다 갈려야 한다 — 이 시험이 없으면 "정밀도에는 가중이 안 걸린다" 를 못 가른다
+    (F 39번 m-5)."""
+    from corpus.validate import judge_labels as J
+
+    cfg = J.load_cfg()
+    recs, labels, meta = _weighted_fixture()
+    p = J.score(recs, labels, cfg, meta)["candidates"]["phi"]
+    # 무가중: TP 13 FP 4 FN 8 → P 13/17, R 13/21
+    assert (p["tp"], p["fp"], p["fn"]) == (13, 4, 8)
+    assert p["precision"] == round(13 / 17, 4) and p["recall"] == round(13 / 21, 4)
+    # 가중: pass 층 ×2 → TP 16 FP 4 FN 16, fail 층 ×1 → TP 5 FP 2 → P 21/27, R 21/37
+    w = p["weighted"]
+    assert (w["tp"], w["fp"], w["fn"], w["population"]) == (21, 6, 16, 50)
+    assert w["precision"] == round(21 / 27, 4) and w["recall"] == round(21 / 37, 4)
+    assert w["precision"] != p["precision"] and w["recall"] != p["recall"]
+
+
+def test_f1_은_정밀도나_재현율이_0_이면_0_이고_정의가_안_되면_None_이다():
+    """`if prec and rec` 는 0.0 을 None 으로 떨어뜨려 "전부 틀림" 과 "예측 양성 없음" 을
+    섞었다 (F 39번 m-6). 무가중·가중 둘 다 같은 규칙이어야 실물(p=1.0) 대조가 선다."""
+    from corpus.validate import judge_labels as J
+
+    # 예측 1건이 틀렸고 정답 1건을 놓쳤다 → P 0.0, R 0.0 → F1 0.0
+    assert J._counts([True, False], [False, True])["f1"] == 0.0
+    assert J._weighted_counts([True, False], [False, True], [1.0, 1.0])["f1"] == 0.0
+    # 예측 양성이 없다 → 정밀도 정의 안 됨 → F1 None
+    assert J._counts([False, False], [True, False])["f1"] is None
+    assert J._weighted_counts([False, False], [True, False], [1.0, 1.0])["f1"] is None
 
 
 def test_메타가_없으면_무가중만_내고_그렇다고_말한다():
