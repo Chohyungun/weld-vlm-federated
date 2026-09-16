@@ -143,12 +143,16 @@ def test_pilot3000_계열_3개는_A_소유_restored_로_등록돼_있다():
 
 
 @pytest.mark.skipif(
-    not all((REPO_ROOT / k).is_dir() for k in PILOT3000_KEYS), reason="복원 실물이 이 트리에 없다"
+    not (REPO_ROOT / "data/processed").is_dir(), reason="저장 뿌리 data/processed 가 이 트리에 없다"
 )
 def test_restored_자리에_실물과_계약서가_있다():
-    """`restored` 는 실물이 돌아온 뒤에만 붙인다는 규칙의 실물 확인."""
+    """`restored` 는 실물이 돌아온 뒤에만 붙인다는 규칙의 실물 확인.
+
+    skip 은 **저장 뿌리**(정션) 유무로만 가른다 — 세 자리 중 하나가 사라진 것을 skip 으로
+    넘기면 09-11 과 같은 모양이 된다(45번 I-1). 뿌리가 있는데 자리가 비면 실패다."""
     for k in PILOT3000_KEYS:
-        assert is_frozen(REPO_ROOT / k), k
+        assert (REPO_ROOT / k).is_dir(), f"{k}: 저장 뿌리는 있는데 복원 자리가 없다"
+        assert is_frozen(REPO_ROOT / k), f"{k}: 계약서가 없다"
 
 
 def test_expected_항목은_실물이_있으면_계약서를_가진다():
@@ -160,20 +164,9 @@ def test_expected_항목은_실물이_있으면_계약서를_가진다():
             assert is_frozen(d), f"{rel}: 디렉터리는 있는데 {CONTRACT_NAME} 가 없다"
 
 
-def test_B_명부와_어긋나지_않는다():
-    """B 가 import 로 전환하기 전까지 두 명부가 공존한다. B 쪽 항목은 전부 여기 있고
-    소유가 같아야 하며, 상태는 같거나 **A 소유 항목의 `lost → restored`** 만 다를 수 있다
-    (복원은 A 가 자기 명부에서 올리고 B 판은 전환 때 사라진다). 전환 뒤에는 같은 객체라
-    자명하게 통과한다 — 그때 이 시험은 지워도 된다(41번 m-1)."""
-    from corpus.generate.frozen_out import EXPECTED_SEALED as b_roster
-
-    for rel, e in b_roster.items():
-        assert rel in EXPECTED_SEALED, f"B 명부에만 있다: {rel}"
-        mine = EXPECTED_SEALED[rel]
-        assert mine["owner"] == e["owner"], rel
-        same = mine["status"] == e["status"]
-        restored_by_a = mine["owner"] == "A" and e["status"] == "lost" and mine["status"] == "restored"
-        assert same or restored_by_a, f"{rel}: B {e['status']} vs A {mine['status']}"
+# (`test_B_명부와_어긋나지_않는다` 는 전환기 전용이었다. B 가 598cd47 로 이 명부를 같은 객체로
+#  import 하면서 B 쪽 `test_명부는_data_frozen_guard_의_단일_명부다` 가 동일성·재정의 없음을
+#  단언한다 — 45번 m-2·41번 m-1 에 따라 지웠다.)
 
 
 # ---------------------------------------------------------------------------------

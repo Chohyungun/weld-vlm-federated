@@ -102,12 +102,14 @@ EXPECTED_SEALED: dict[str, dict[str, str]] = {
                   "파일별 해시 4/4·계약서 동일·load_snapshot 통과 (32번 §1-4 추기)"},
     "data/processed/aihub71761_rt_v1_pilot3000_crop_only": {
         "status": "restored", "owner": "A",
-        "evidence": "76번 8자 접두 일치 + 구성 수치 전량 일치(2,319장·학습 풀 1,666·공유 eval 653·출처 분포)",
+        "evidence": "76번 8자 접두 일치 + 구성 수치 전량 일치(2,319장·학습 풀 1,666 = N-crop 1,666·"
+                    "정상 10.2%·공유 eval 653)",
         "record": "09-11 소실 · 09-16 복원 판정(17ca38b) · 09-16 00:58 원 경로 복사, "
                   "파일별 해시 4/4·계약서 동일·load_snapshot 통과 (32번 §1-4 추기)"},
     "data/processed/aihub71761_rt_v1_pilot3000_scale_control": {
         "status": "restored", "owner": "A",
-        "evidence": "76번 8자 접두 일치 + 구성 수치 전량 일치(2,319장·학습 풀 1,666·공유 eval 653·출처 분포)",
+        "evidence": "76번 8자 접두 일치 + 구성 수치 전량 일치(2,319장·학습 풀 1,666 = N-crop 1,057·"
+                    "N-tile 606·N-band 3·정상 43.0%·공유 eval 653)",
         "record": "09-11 소실 · 09-16 복원 판정(17ca38b) · 09-16 00:58 원 경로 복사, "
                   "파일별 해시 4/4·계약서 동일·load_snapshot 통과 (32번 §1-4 추기)"},
 }
