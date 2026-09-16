@@ -26,7 +26,7 @@ from flwr.common import ArrayRecord, ConfigRecord, Context
 from flwr.serverapp import Grid, ServerApp
 
 from detection.budget_audit import AccountingMatrix
-from fl.atomic_log import AtomicLog, RoundTimer, new_run_id
+from fl.atomic_log import AtomicLog, RoundTimer, new_run_id, policy_stamp
 from fl.round_wiring import (ALL_CELLS, CANONICAL_KEYS_KEY, FED_CELLS,
                              SMOKE_CELL, finalize_accounting,
                              make_round_recorder)
@@ -75,9 +75,12 @@ def _server_main(grid: Grid, context: Context) -> None:
         local_epochs=int(cfg["local_epochs"]),
         total_epochs=int(cfg["total_epochs"]),
     )
+    # 34번 §3-1 8-4 — server_app 과 같은 규약: 정책 접미(`_rs1`)를 stamp 에 새기고, 기존 원장과
+    # 신원이 다르면 `AtomicLog` 생성자가 거부한다(LedgerIdentityMismatch).
+    stamp = policy_stamp(str(cfg["run_stamp"]), _loader_policy(cell, cfg))
     atomic = AtomicLog(
         out_dir / "atomic_log.csv",
-        run_id=new_run_id(cell, int(cfg["base_seed"]), str(cfg["run_stamp"])),
+        run_id=new_run_id(cell, int(cfg["base_seed"]), stamp),
         seed=int(cfg["base_seed"]),
         cell=cell,
         split_hash=str(cfg["split_hash"]),
@@ -105,7 +108,7 @@ def _server_main(grid: Grid, context: Context) -> None:
         "total-epochs": int(cfg["total_epochs"]),
         "num-rounds": num_rounds,
         "base-seed": int(cfg["base_seed"]),
-        "run-stamp": str(cfg["run_stamp"]),
+        "run-stamp": stamp,
         "resume-root": str(cfg.get("resume_root", "")),
         **_cell_train_config(cell, cfg, out_dir),
     })
@@ -123,6 +126,15 @@ def _server_main(grid: Grid, context: Context) -> None:
             accounting=accounting, atomic=atomic, out_dir=out_dir,
             num_rounds=num_rounds, client_ids=client_ids,
         )
+
+
+def _loader_policy(cell: str, cfg: dict[str, Any]) -> bool:
+    """loader 재시드 정책 — 학습에 전달되는 칸(sep_fed)에서만 읽는다(`fl.server_app._loader_policy` 와 동형)."""
+    if cell != "sep_fed":
+        return False
+    from detection.round_runner import validate_loader_policy
+
+    return validate_loader_policy(cfg.get("loader_reseed_per_epoch", False))
 
 
 def _cell_train_config(cell: str, cfg: dict[str, Any], out_dir: Path) -> dict[str, Any]:

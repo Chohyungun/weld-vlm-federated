@@ -28,6 +28,9 @@ Flower `FedAvg`의 기본값 `accept_failures=True`는 클라이언트 하나가
 3. **대체 증거** — 조기 종료 부재의 실질 증거는 회계가 아니라 `results.csv` 행 수와
    `optimizer_steps` 다. 검사 (2)(3) 의 `epochs_ran == E`·`sum == N` 이 그 회계 쪽
    대응물이며, 이 둘이 실제로 값을 하는 검사다.
+   **재개한 런의 행 수는 한 파일이 아니다**(8-1, 2026-09-16): 재개 직전 파일은
+   `results.before_resume_*.csv` 로 보존되므로 `detection/results_merge.py` 로 합친 뒤 세야
+   전 epoch 이 나온다. 합치지 않고 세면 재개한 런이 조기 종료처럼 미달로 보인다.
 
 ## 실측값과 재구성값을 구분한다
 
@@ -83,8 +86,10 @@ _CSV_COLUMNS = [
     "stopper_calls",
     # 이 행의 값이 실측인가 재구성인가. 섞이면 산출물을 인용할 수 없다.
     "value_source",
-    # 배치 수(`optimizer_steps`)와 실제 갱신 횟수는 다르다 — Ultralytics 가 nbs=64 기준으로
-    # 누적한다(숨은 기본값 #10). 논문의 "총 갱신 횟수"는 아래 컬럼이다.
+    # 배치 수(`optimizer_steps`)와 갱신 횟수는 다르다 — Ultralytics 가 nbs=64 기준으로
+    # 누적한다(숨은 기본값 #10). 이 컬럼은 갱신 **시도** 수다(8-3, 2026-09-16): AMP
+    # GradScaler 가 inf/NaN 에서 건너뛴 시도도 센다. 실제 적용 수는 ②③ 의 meta.json
+    # (`optimizer_updates_applied`)에만 있고 회계 열은 늘리지 않았다 — D 계약 조율 뒤 별건.
     "optimizer_updates",
     # 재개해서 이어 간 칸인가. 이어 간 런은 무중단 런과 다른 궤적을 그린다.
     "resumed_from_epoch",
@@ -187,7 +192,8 @@ class AuditReport:
     failures: list[str] = field(default_factory=list)
     total_epochs_by_client: dict[int, int] = field(default_factory=dict)
     total_optimizer_steps: int = 0
-    #: 실제 갱신 횟수 합. 배치 수와 다르다(숨은 기본값 #10).
+    #: 갱신 **시도** 수 합(8-3). 배치 수와 다르고(숨은 기본값 #10) 실제 적용 수와도 다르다 —
+    #: AMP 가 건너뛴 시도가 포함된다. 세 시드 본실험 값(71,202)은 이 의미다.
     total_optimizer_updates: int = 0
     #: 재개해서 이어 간 셀 목록. **실패가 아니다** — 재개는 정당한 복구 수단이다.
     #: 다만 이어 간 런은 무중단 런과 다른 궤적을 그리므로 보고서에 드러나 있어야 한다.
@@ -297,7 +303,8 @@ class AccountingMatrix:
                 f"조기 종료 계측이 없는 셀 {len(uninstrumented)}개 {uninstrumented[:6]} — "
                 "이 셀들에 대해 검사 (4)는 통과가 아니라 **미적용**이다. 조기 종료 부재의 "
                 "증거는 results.csv 행 수와 optimizer_steps(및 검사 (2)(3)의 "
-                "epochs_ran==E · 합계==N)에 있다."
+                "epochs_ran==E · 합계==N)에 있다. 재개한 런은 보존 조각을 "
+                "detection/results_merge.py 로 합친 뒤 세라(8-1)."
             )
 
         # (4'') 가중 단위 일관성 — 같은 run 안에서 단위가 갈리면 집계가 두 목적함수를

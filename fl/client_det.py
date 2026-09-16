@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from detection import serialize
+from detection.resume import clear_resume
 from detection.round_runner import train_round
 from fl.strategy import WEIGHT_KEY
 
@@ -47,6 +48,8 @@ def run_client_round(
         수치와 문자열을 나눠 돌려주는 이유는 `MetricRecord` 가 `int | float | list` 만
         받기 때문이다(실측). 문자열은 `ConfigRecord` 로 나른다.
     """
+    rdir = (Path(cfg["resume_root"]).resolve() / f"r{round_idx:03d}_c{client_idx}"
+            if cfg.get("resume_root") else None)
     result = train_round(
         data_yaml=cfg["data_yaml"],
         model=cfg["model"],
@@ -63,8 +66,7 @@ def run_client_round(
         # 재개 전용 체크포인트. 라운드 안에서 죽으면 그 라운드를 0부터 다시 도는 대신
         # epoch 경계에서 이어 간다. 신원(라운드·클라이언트·시드)이 다르면 거부되므로
         # 옆 라운드의 상태를 잘못 물려받는 경로는 없다. 채점 대상이 아니다.
-        resume_dir=(Path(cfg["resume_root"]).resolve() / f"r{round_idx:03d}_c{client_idx}"
-                    if cfg.get("resume_root") else None),
+        resume_dir=rdir,
         run_id=str(cfg.get("run_id", "")),
         loader_reseed_per_epoch=cfg.get("loader_reseed_per_epoch", False),
     )
@@ -76,7 +78,8 @@ def run_client_round(
         "num-examples": float(result.num_examples),
         "epochs-ran": float(result.epochs_ran),
         "optimizer-steps": float(result.optimizer_steps),
-        # 배치 수와 실제 갱신 횟수는 다르다(숨은 기본값 #10). 논문의 "총 갱신 횟수"는 아래다.
+        # 배치 수와 갱신 횟수는 다르다(숨은 기본값 #10). 이 값은 갱신 **시도** 수다(8-3) —
+        # ④ 는 실제 적용 수를 산출물에 남기지 않는다(원자 로그 행 수 불변, D 계약 조율 별건).
         "optimizer-updates": float(getattr(result, "optimizer_updates", 0) or 0),
         "epochs-this-process": float(
             result.epochs_this_process if getattr(result, "epochs_this_process", None) is not None else -1
@@ -118,4 +121,10 @@ def run_client_round(
         "weight-unit": "num_examples",
         "profile": str(getattr(result, "profile", profile)),
     }
+    # 8-2: ④ 의 최종 저장은 서버(`_save_round`)가 한다 — 클라이언트는 **응답 반환이 곧 인계**다.
+    # 응답 직전에 지워, 응답 조립(메트릭·문자열)이 던지면 재개 파일이 살아남게 한다.
+    # **범위를 넘기지 마라**: 직렬화·전송·집계·서버 저장은 이 정리 뒤의 구간이고, 현재 트리에는
+    # 라운드 경계 재개가 없어(R 미착지) 그 구간에서 죽으면 라운드 1부터 재실행된다.
+    if rdir is not None:
+        clear_resume(rdir)
     return result.ndarrays, metrics, strings

@@ -233,6 +233,10 @@ class ResumeCheckpointer:
         # trainer에서 재개 이전 누적값을 복원한 뒤 계속 센다.
         if hasattr(trainer, "n_optimizer_updates"):
             payload["optimizer_updates"] = int(trainer.n_optimizer_updates)
+        # 8-3: 실제 적용 수. **미상이면 키를 쓰지 않는다** — 0 을 쓰면 다음 재개가 그것을
+        # 확정값으로 읽어 "전 스텝 스킵" 처럼 보인다(`round_runner` 의 applied_known).
+        if getattr(trainer, "applied_known", True) and hasattr(trainer, "n_optimizer_updates_applied"):
+            payload["optimizer_updates_applied"] = int(trainer.n_optimizer_updates_applied)
         if hasattr(trainer, "_resume_lr_trace"):
             payload["lr_trace"] = list(trainer._resume_lr_trace.trace)
         for k, v in self.extra.items():
