@@ -162,6 +162,8 @@ def judge_mode(v3: Mapping[int, Mapping[str, float]], mode: Mapping[int, Mapping
         for t in DET_TAGS:
             got = mode[n][t]
             d50 = _diff(got["map_50"], v3[n][t])
+            # v3 에는 카테고리 평균 판이 따로 없다. 각 카테고리가 101점씩이라 두 평균은 수학적으로 같으므로
+            # v3 의 평탄 평균 `map_50` 과 맞댄다(53번 #16 — 끝자리만 다를 수 있다. A 61번 Minor D m-2)
             dcm = _diff(got["map_50_class_mean"], v3[n][t])
             dap = 0.0
             if reference_ap is not None:
