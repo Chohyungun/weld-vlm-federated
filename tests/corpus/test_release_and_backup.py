@@ -52,7 +52,13 @@ def test_aihub_식별자를_잡는다():
 
 
 def test_로컬_절대경로를_잡는다():
-    hits = S.screen_text(r"E:\Fedvlm_for_welding\corpus 에서 읽었다", set())
+    """입력은 **존재하지 않는 가짜 경로**다 — 드라이브(Q:)도 폴더 이름도 이 저장소·사용자와 무관하다.
+
+    실제 위치 형태를 픽스처로 박으면 탐지기를 시험하려다 규약 2-6 을 스스로 어긴다(F 46번 §4).
+    규칙은 드라이브 다음 첫 폴더가 `Users`·`Program Files`·저장소 이름 접두일 때 잡으므로,
+    어느 저장소에나 있는 `Users` 갈래로 시험한다.
+    """
+    hits = S.screen_text(r"Q:\Users\example_user\sample_project\corpus 에서 읽었다", set())
     assert "local_path" in [h[0] for h in hits]
 
 
