@@ -62,6 +62,37 @@ def test_로컬_절대경로를_잡는다():
     assert "local_path" in [h[0] for h in hits]
 
 
+# 아래 입력도 전부 존재하지 않는 가짜 경로다(Q: 드라이브·example 이름).
+@pytest.mark.parametrize("text", [
+    # 문자열 안에 JSON 이 한 번 더 들어 있으면 json.loads 뒤에도 역슬래시가 2개로 남는다
+    r"raw 출력의 경로 Q:\\sample_project\\notes.md",
+    r"출처는 Q:\sample_project\notes.md 이다",           # 첫 폴더가 옛 목록(Users 등) 밖
+    r"적재 위치 Q:\공유 드라이브\sample 확인",              # 공유 드라이브 이름
+    r"원본은 \\example-host\sample_share\x 에 있다",       # UNC
+], ids=["JSON_이스케이프", "목록_밖_첫_폴더", "공유_드라이브", "UNC"])
+def test_폴더_이름_목록과_무관하게_로컬_경로를_잡는다(text):
+    """옛 규칙은 첫 폴더가 `Users`·`Program Files`·저장소 이름일 때만 잡았다 (50번 추기)."""
+    assert "local_path" in [h[0] for h in S.screen_text(text, set())]
+
+
+@pytest.mark.parametrize("text", [
+    "자료는 https://example.com/docs/page 에 있다",
+    "회의는 12:30 에 시작했다 (2026-09-16T12:30:00)",
+    "ISO 5817:2014 의 등급 표기",
+    r"documents:\n  - doc_id: X",                          # YAML 문자열의 줄바꿈 이스케이프
+    r"패턴은 \\d+\\s* 이다",                                # 이스케이프된 정규식 조각
+], ids=["URL", "시각", "규격_표기", "YAML_줄바꿈", "정규식_조각"])
+def test_경로가_아닌_콜론_표기는_잡지_않는다(text):
+    """넓힌 만큼 오탐이 늘면 적발 목록이 소음이 된다. 다른 사유(유료 표준 등)는 여기서 보지 않는다."""
+    assert "local_path" not in [h[0] for h in S.screen_text(text, set())]
+
+
+def test_경로_규칙은_폴더_이름_목록을_들고_있지_않다():
+    """목록에 기대면 목록 밖 경로가 빠진다 — 저장소 이름 갈래도 뺐다."""
+    assert "Program Files" not in S.LOCAL_PATH.pattern
+    assert "Fedvlm" not in S.LOCAL_PATH.pattern
+
+
 def test_원문_연속_일치를_잡는다():
     """규정 원문을 길게 그대로 실으면 재배포다 (.gitignore:54)."""
     src = "가" * 30 + "이 조항은 용접부의 표면 결함을 다루며 검사원이 확인한다" + "나" * 30
