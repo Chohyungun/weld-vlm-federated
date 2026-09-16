@@ -322,7 +322,7 @@ def _random_case(seed):
     n_img = rng.randint(3, 24)
     ids = set()
     while len(ids) < n_img:
-        ids.add(f"aihub71761:{rng.choice([rng.randint(1, 99), rng.randint(10**7, 10**8 - 1)])}")
+        ids.add(f"synth:{rng.choice([rng.randint(1, 99), rng.randint(10**7, 10**8 - 1)])}")
     absent = rng.choice([None, None, "401", "301"])
     gold, pred = {}, {}
     for img in sorted(ids):
