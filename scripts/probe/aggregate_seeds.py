@@ -756,7 +756,7 @@ def apply_recovery_ci(rec: dict, ci_payload: dict | None, observed: dict | None 
 
 def _ladder_population_check(payloads: dict[int, dict], ladder_path: str | None) -> dict:
     """촬영 ID 대조선의 모집단(결함·정상 수·스냅샷 digest)이 payload 의 값과 같은지 — 고정
-    문자열이 아니라 대조로(C 34번 Minor 9). 사다리 JSON 이 Codex 형식(리스트)일 때만 가능하다."""
+    문자열이 아니라 대조로(C 34번 Minor 9). 사다리 JSON 이 외부 감사 스크립트 형식(리스트)일 때만 가능하다."""
     if not ladder_path or not Path(ladder_path).exists():
         return {"checked": False, "reason": "사다리 파일 없음"}
     raw = json.loads(Path(ladder_path).read_text(encoding="utf-8"))
@@ -888,7 +888,7 @@ def main() -> int:
     ap.add_argument("--root", default="outputs/main_d")
     ap.add_argument("--seeds", default="1,2,3")
     ap.add_argument("--metadata-ladder", default=None,
-                    help="촬영 ID 빈도 규칙 Δ_AUC 사다리 JSON (Codex 스크립트 출력 형식 또는 {K: 값})")
+                    help="촬영 ID 빈도 규칙 Δ_AUC 사다리 JSON (외부 감사 스크립트 출력 형식 또는 {K: 값})")
     ap.add_argument("--dest", default="outputs/main_d/seed3set")
     ap.add_argument("--artifact", default="score_cells_v1.json",
                     help="시드별 채점 산출물 파일명(v1/v2). 집계본 이름은 여기서 파생한다")
@@ -951,7 +951,7 @@ def main() -> int:
         if check.exists():
             ladder_files["independent_check"] = {"path": str(check), "sha256": _sha256(check)}
         raw = json.loads(Path(args.metadata_ladder).read_text(encoding="utf-8"))
-        if isinstance(raw, list):          # Codex 스크립트 --ladder 출력 형식
+        if isinstance(raw, list):          # 외부 감사 스크립트 --ladder 출력 형식
             ladder = {r["name"].split("_")[0][3:]: r["delta_auc"] for r in raw}
         else:
             ladder = {str(k): v for k, v in raw.items()}

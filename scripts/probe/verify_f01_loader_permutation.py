@@ -1,6 +1,6 @@
 """F01 독립 재현 — 라운드마다 로더를 새로 만들면 같은 순열을 보는가.
 
-Codex 감사 F01 의 주장을 총괄이 독립 확인한다. Ultralytics 를 import 하지 않고
+외부 AI 검토 도구의 감사 F01 주장을 총괄이 독립 확인한다. Ultralytics 를 import 하지 않고
 그 코드가 하는 것과 같은 구성(상수 시드 generator + RandomSampler + _RepeatSampler)을
 직접 만들어 본다. GPU 를 쓰지 않는다.
 
