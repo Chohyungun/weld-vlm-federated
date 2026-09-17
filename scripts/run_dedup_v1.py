@@ -84,7 +84,7 @@ def paired_histograms(packed: np.ndarray, group_codes: np.ndarray,
     실측된 동일성이 아니다. 그 분포가 "ID 기반 묶음 안에서 pHash 거리가 얼마나 벌어지는가"의
     실측 기준선이 된다. 눈 확인 없이 골짜기를 찍으면 근거가 없어지므로, 이 기준선을 분포
     위에 겹쳐 놓고 고른다. 묶음 안팎이 갈리지 않으면 양수 임계를 채택하지 않는다(2026-09-15
-    표현 정정, Codex 11-1).
+    표현 정정, 외부 AI 검토 도구 회신 §11-1).
     """
     n = len(packed)
     same = np.zeros(HASH_BITS + 1, dtype=np.int64)
