@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # **skip 이 아니라 fail 이다** (85번 ⑨). `importorskip` 이면 `uv sync --extra` 사고로
 # flwr 가 걷혔을 때 이 파일의 이빨 시험 전체가 조용히 skip 되어 초록으로 보인다 —
-# CLAUDE.md 가 경고하는 바로 그 사고다. 의존성 부재는 환경 고장이므로 시끄럽게 죽인다.
+# 운영 규칙 파일(미추적)이 경고하는 바로 그 사고다. 의존성 부재는 환경 고장이므로 시끄럽게 죽인다.
 try:
     import flwr  # noqa: F401
 except ImportError as _exc:  # pragma: no cover

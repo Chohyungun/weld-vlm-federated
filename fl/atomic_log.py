@@ -131,7 +131,7 @@ def assert_ledger_compatible(
     """기존 원장이 있으면 신원을 대조하고, 하나라도 다르면 `LedgerIdentityMismatch`.
 
     같은 run_id 의 재기동(같은 seed·cell·split_hash)은 통과한다 — 원장은 그 실행의 것이다.
-    빈 원장(헤더만)·부재는 통과. 외부 검토자 권고(26번 §8-4): 경로 문자열 규칙이 아니라
+    빈 원장(헤더만)·부재는 통과. 외부 AI 검토 도구 권고(26번 §8-4): 경로 문자열 규칙이 아니라
     **기존 run manifest(원장 첫 행)와 대조**해 거부한다.
     """
     found = read_ledger_identity(path)
