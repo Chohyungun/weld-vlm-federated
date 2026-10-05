@@ -1,6 +1,6 @@
 """판정 골격 생성기 — 함정 구간 #6 (스펙 §4 전체).
 
-스펙: docs/dev_log/2026-08-17-kickoff/11_spec_B_코퍼스합성.md
+스펙: 코퍼스 합성 스펙
 §4-2 (함수 분해·결정론·fail-closed), §4-3 (조합 열거·수치 샘플링), §4-4 (verdict·margin·
 널러빌리티), §4-5 (골격 JSON), §4-6 (D4 경로·조립), §4-6-1 (정상 페어), §4-7 (verdict_mode),
 §4-9 (G2 사후 감사).
@@ -324,7 +324,7 @@ def enumerate_combos(
             raise SkeletonGenError(
                 f"[enumerate_combos] 조합키 충돌: {c.key!r} ← {seen[c.key]} / {c.row.rule_id} "
                 "— sample_id 유일성 붕괴 (조합키에 material·limit_type·inspection_method "
-                "미포함, CTO 결정 필요)"
+                "미포함, 결정 필요)"
             )
         seen[c.key] = c.row.rule_id
     return tuple(combos)
@@ -513,7 +513,7 @@ def thickness_floor_idx(row: LimitRow, config: GenConfig = _DEFAULT_CONFIG) -> i
     prop 계열은 L = factor × t 라 t 가 0 근방이면 L 이 0 이 되고 어떤 버킷 구간도
     정의되지 않는다. 두께 구간이 0 에서 시작하는 행(파일럿 CSV 의 표면 기공 0.25t)은
     경계 두께 배치가 t=0.00 을 강제로 넣으므로 시드와 무관하게 생성이 전량 중단됐다
-    (적대 검증 N2). 구간 하한을 실현 가능한 최소 그리드 값으로 올려 축 전체를 살린다.
+    (검토 N2). 구간 하한을 실현 가능한 최소 그리드 값으로 올려 축 전체를 살린다.
     올린 사실은 감사 보고서(audit_skeletons)의 경고로 남는다 — 조용한 보정이 아니다.
 
     const 계열은 t 와 무관하므로 하한을 올려도 실현 불가가 해소되지 않는다 (그 경우는
@@ -607,7 +607,7 @@ class SkeletonFlags:
     quality_source: str = SOURCE_SAMPLED
 
 
-# 직렬화 키 순서 (고정 — 변경은 CTO 승인, §4-5)
+# 직렬화 키 순서 (고정 — 변경은 승인 사항, §4-5)
 SKELETON_KEYS: tuple[str, ...] = (
     "sample_id", "source", "image_id", "defect_instance_id",
     "defect_code", "material", "inspection_method", "quality_scheme", "quality_level",
@@ -738,7 +738,7 @@ def build_skeleton(
     is_ratio = row.unit is Unit.PERCENT
     # 세 출처 중 하나라도 가정이면 조건부다. quality_source 를 빼면, 판정을 가른 허용치가
     # 가정 품질수준(configs d4_quality_level)에서 나온 D4 골격이 "확정"으로 표기된다 —
-    # 수준 가정이 바뀌면 verdict 도 바뀌므로 확정이 아니다 (적대 검증 N7).
+    # 수준 가정이 바뀌면 verdict 도 바뀌므로 확정이 아니다 (검토 N7).
     verdict_type = (
         VERDICT_TYPE_CONDITIONAL
         if SOURCE_ASSUMED in (
@@ -829,7 +829,7 @@ def generate_corpus_skeletons(
         buckets = [b for b in STRATA for _ in range(strata[b])]
         # 버킷 순서를 조합 rng 로 섞는다. STRATA 고정 순서로 두면 _sample_thicknesses 가
         # 앞쪽에 몰아넣은 경계 두께 표본이 항상 합격 버킷과 짝지어져, 구간 경계 두께에서
-        # 대소 비교가 갈리는 사례(=L·불합격)가 corpus 에 0건이 된다 (적대 검증 N8).
+        # 대소 비교가 갈리는 사례(=L·불합격)가 corpus 에 0건이 된다 (검토 N8).
         # 같은 (seed, 조합)이면 같은 순열이므로 결정론은 유지된다.
         if len(buckets) > 1:
             buckets = [buckets[i] for i in rng.permutation(len(buckets))]
@@ -942,7 +942,7 @@ def skeleton_from_label(
 
     # 외부 입력의 타입 이상은 코드 버그가 아니라 데이터 이상이다 (§4-2). float 이 섞이면
     # quantize 의 float 금지 가드보다 곱셈이 먼저 터져 원인 불명의 TypeError 로 배치 전체가
-    # 중단됐다 (적대 검증 N5). 진입부에서 걸러 사유 코드를 붙인 격리로 배출한다.
+    # 중단됐다 (검토 N5). 진입부에서 걸러 사유 코드를 붙인 격리로 배출한다.
     for name, value in (("size_px", label.size_px),
                         ("thickness_mm", label.thickness_mm),
                         ("scale", scale),
@@ -1412,7 +1412,7 @@ def audit_skeletons(
         if extra:
             failures.append(f"외삽(유령 조합): {sorted(extra)}")
 
-    # prop 계열 t 하한 보정 보고 (§4-3, 적대 검증 N2): 실현성 하한 때문에 구간 하한보다
+    # prop 계열 t 하한 보정 보고 (§4-3, 검토 N2): 실현성 하한 때문에 구간 하한보다
     # 위에서 샘플링한 조합을 감사 보고서에 남긴다. 조용한 보정으로 두면 "구간 [0, ∞) 를
     # 다 훑었다"는 잘못된 전제로 커버리지를 읽게 된다.
     for rid in sorted(combo_min_t):
@@ -1429,7 +1429,7 @@ def audit_skeletons(
     # 전체 버킷 비율 ±2%p (F4 조합 제외 — 의도가 전량 불합격).
     # 기대값은 상수 40/40/20 이 아니라 조합별 배분 n 의 이론 분해 합 sum(decompose_counts(n))
     # 이다. 소규모 배분에서는 §4-3 최소 보장(=L·상·하 각 1건)이 비율보다 우선하므로 상수와
-    # 비교하면 규칙대로 동작한 생성물이 감사에서 떨어진다 (적대 검증 N4). 이론값이 명목
+    # 비교하면 규칙대로 동작한 생성물이 감사에서 떨어진다 (검토 N4). 이론값이 명목
     # 비율에서 벗어나는 것 자체는 경고로 보고해 "조합당 배분이 작다"는 사실이 드러나게 한다.
     non_f4 = {
         s: sum(cb[s] for rid, cb in combo_buckets.items()

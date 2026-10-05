@@ -94,7 +94,7 @@ dedup:
   #
   # 따라서 **양수 임계를 채택하지 않았다** — 거리 0(해시 완전 일치)에서만 발동시킨다.
   # 실질 방어선은 E2 메타데이터 엣지다. 이 한계는 논문 한계 절에 싣는다.
-  # (2026-09-15 표현 정정, 외부 AI 검토 도구 회신 §11-1: "같은 묶음 = 같은 용접부" 를 "ID 기반 묶음" 으로
+  # (2026-09-15 표현 정정, 검토 §11-1: "같은 묶음 = 같은 용접부" 를 "ID 기반 묶음" 으로
   #  좁혔다. "pHash 가 같은 용접부를 가려내지 못함을 입증했다"는 주장이 아니다. 값·임계 불변.)
   threshold_final: 0
   pair_budget: 50000000
@@ -140,6 +140,74 @@ fixed_before_main_runs:
     local_epochs: &E 2     # E — 라운드당 클라이언트 로컬 epoch (파일럿 실증 구조와 동일)
     total_epochs: &N 100   # N = R × E — 로컬·중앙 칸은 이 값으로 연속 학습
     # `&R` `&E` `&N` 은 아래 `experiment` 블록이 같은 리터럴을 가리키는 앵커다.
+
+  # ====================================================================================
+  # 통합형 설정 키 — 통합형 학습·생성 코드가 읽는 자리다.
+  #
+  # 키 이름은 통합형 학습 명세 §2-3 을 따른다. 채팅 템플릿의 인자는 `uni_chat_template_kwargs`
+  # **한 곳**에 둔다 — 학습·생성·접두 지문의 모든 `apply_chat_template` 호출이 이 인자를 그대로
+  # 받는다. 템플릿 모드를 나타내는 문자열 키(`uni_template_mode` 같은)는 따로 두지 않는다.
+  #
+  # **`null` 은 아직 정하지 않은 값이다.** 짐작으로 채우지 않는다. 본실험에 필요한 키가 비면 본실험이 서지 않는다.
+  #   - `uni_train_budget`: 정해지지 않았다. 위 `train_budget` 의 앵커를 가리키지 않는다 —
+  #     가리키면 두 예산이 같다는 결정이 된다. 위 머리글의 "검출·통합형 공용" 은 그대로 두었다
+  #   - (채워졌다) `uni_model.revision` · `uni_pairs` — 총괄 결정 19 의 판과 봉인 페어 계약서. 값 옆에 출처를 적었다
+  #   - `uni_prompt_sha256`: 두지 않는다 — 등록 단계가 프롬프트 문자열의 UTF-8 해시로 낸다. 키는 비운 채로 둔다
+  #   - `uni_max_new_tokens`: 학습·검증 타깃 길이의 계측으로 정한다
+  #   빈 사전(`{}`)으로 두지 않는다 — 빈 사전은 "채워짐" 으로 읽힌다
+  #
+  # 값이 있는 키 — 모든 칸이 같은 값을 읽는다. 바꾸면 공통 고정이 바뀐다.
+  #   - `uni_prompt_path`: 학습 프롬프트 파일(저장소 루트 기준 POSIX 경로). 파일의 해시는 여기 두지 않는다 —
+  #     위 `uni_prompt_sha256` 처럼 등록 단계가 낸다
+  #   - `uni_coord_space`: 학습 타깃·생성의 좌표 규약. `vlm/coords.py` 의 `COORD_SPACES` 가운데 하나다.
+  #     현행 `ABS_ORIG` 는 2026-09-02 결정이다(의사결정로그)
+  #   - `uni_expected_supervised_tokens`: 참여자 이름 → epoch 당 감독 토큰 기대값(정수). 중앙 칸의 기대값은
+  #     세 참여자 값의 합이다. 봉인 페어와 토크나이저로 잰 값이고, 출처 파일 · 해시 · 모델 판의 단서는 값 옆에 적었다
+  #   - `uni_processor_kwargs`: 학습 코드가 프로세서를 여는 설정(사전). 채점 입구가 이 키를 등록의 생성 쪽 칸
+  #     (`processor_min_pixels` · `processor_max_pixels`)과 맞댄다. 까닭과 근거는 값 옆에 적었다
+  # ====================================================================================
+  uni_train_budget:
+    num_rounds: null
+    local_epochs: null
+    total_epochs: null
+  uni_model:
+    id: Qwen/Qwen3.5-4B
+    # 총괄 결정 19(본줄기 229da01 의 docs/dev_log/2026-09-30-리허설/19_총괄결정_리허설착수.md)가 승인한 캐시 판이다.
+    # 파일럿 · 프로세서 설정 확인 · 감독 토큰 계측이 모두 이 판으로 쟀다 — 다른 판으로 바꾸면 감독 토큰 기대값을 다시 잰다
+    revision: 851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a
+  uni_pairs:
+    # 봉인 페어(동결 명부 data/processed/pairs_main_v1). digest 는 계약서 SNAPSHOT.sha256 의 `# snapshot_digest` 줄에서
+    # 읽어 넣었다(손으로 옮기지 않았다 — 총괄 결정 19 의 계약서 지문과 같다). path 는 넣는 스크립트에 적은 리터럴이고,
+    # 그 파일 이름이 계약서의 구성원인지를 넣을 때 검사했다. path 가 폴더가 아니라 페어 파일인 것은 학습 쪽 판독기
+    # (vlm/uni_config.pairs_snapshot_problems)가 그 파일을 열고 부모 폴더의 계약서를 맞대기 때문이다
+    path: data/processed/pairs_main_v1/pairs.jsonl
+    digest: 456ea6151d502b3d44113f983f412d71a92c3db12383a93a5c4ce33ee3c0ff9d
+  uni_prompt_sha256: null      # 두지 않는다 — 등록 단계가 프롬프트 문자열의 UTF-8 해시로 낸다
+  uni_chat_template_kwargs:
+    enable_thinking: false
+  uni_max_new_tokens: null
+  uni_batch_size: 1
+  uni_processor_kwargs:
+    # 파일럿이 실제로 받은 해상도를 글자로 고정한다 — 모델 판이 바뀌어도 등록이 기본값을 조용히 따라가지 않게.
+    # 파일럿은 프로세서를 인자 없이 열었고(그때의 vlm/pilot_vlm.py 의 AutoProcessor.from_pretrained(mid)),
+    # 캐시 판 851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a 의 기본값이 size {shortest_edge: 65536, longest_edge: 16777216} 이다.
+    # 키 꼴은 min_pixels · max_pixels 다 — 이미지 처리기는 이 둘을 size 의 두 끝으로 받는다(transformers 5.15).
+    # size 꼴로 주면 영상 처리기 크기까지 덮어써 파일럿의 프로세서와 달라지고, 채점 입구는 size 키를 모르는 키로
+    # 거부한다. 이 꼴로 연 프로세서는 인자 없이 연 것과 이미지 · 영상 처리기 설정이 모두 같았다
+    # (전수 메타데이터 04번 보고 11-0, 근거 파일 proc_forms_a.json sha256 C450D68B5693D7FF…).
+    min_pixels: 65536
+    max_pixels: 16777216
+  uni_expected_supervised_tokens:
+    # 학습 쪽 계측 산출 파일에서 읽어 넣었다(손으로 옮기지 않았다) — outputs/B_seal_20261001/tokens/
+    # supervised_tokens.json sha256 10e62663b0297557832d290ea04f7a3c9a7d49156b9fe9ef7df2b11071f9c190.
+    # 봉인 페어 pairs_main_v1(pairs.jsonl f4e44131fee61a6f…)의 학습 행 합계다.
+    # 그때 uni_model.revision 은 null 이었고 캐시 판 851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a 의 토크나이저로 쟀다(지금 그 판으로 고정됐다) —
+    # revision 을 다른 판으로 고정하면 다시 잰다(학습기는 한 토큰만 달라도 멈춘다)
+    C1: 2211295
+    C2: 854010
+    C3: 336841
+  uni_prompt_path: vlm/prompts/unified_v2_absorig.txt
+  uni_coord_space: ABS_ORIG
 
   # ====================================================================================
   # content-free 예측기 — 화소를 보지 않고 취득 메타데이터만 쓰는 규칙.
@@ -273,8 +341,10 @@ fixed_before_main_runs:
   # 촬영 순서로 거의 결정된다**는 뜻이다(`diagnose_id_axis.py`: id 구간 64개의 최빈 라벨
   # 점유율 중앙값 1.000, 무작위 기준선 0.445. 구간 안 train↔eval 분포 L1 중앙값 0.0000).
   #
-  # 게이트를 그대로 적용하면 다섯 칸이 전부 불합격한다. **총괄 판정이 필요하다** —
-  # 상세와 선택지는 `docs/dev_log/2026-08-22-데이터확정/76_감사수정_A.md` §1-4.
+  # 게이트를 그대로 적용하면 다섯 칸이 전부 불합격한다. **판정이 필요하다** — 게이트 값만
+  # 낮추는 것으로는 풀리지 않는다. 화소를 안 보는 규칙이 0.91 을 낸다는 사실 자체가 평가셋의
+  # 결함이라, 축 교체·id 구간 층화 채점·평가셋 재분리 가운데 하나를 골라야 하고 채점기와
+  # 논문 서술이 함께 걸린다.
   # 그때까지 이 값은 **등록하되 자동 차단에는 쓰지 않는다.**
   # ====================================================================================
   gate_status: "판정_대기"           # 판정_대기 | 적용 | 대체지표
@@ -337,7 +407,7 @@ experiment:
 # `resolve_conf` 가 configs 에서 어떤 단일 임계도 찾지 못해야 한다. 부재를 시험으로 고정했다
 # (tests/test_conf_sweep_grid.py).
 #
-# 소비 계약 (구현은 D 소관 — 22번 §3, dispatch_D 과제 3):
+# 소비 계약 (구현은 채점기 쪽 — 22번 §3):
 #   · 채점기(evaluation/params.py `ScoringParams.conf_sweep` → scripts/probe/sweep_detection_conf.py)
 #     는 이 키를 **파일에서 읽는다.** 하드코딩 금지. 산출물 `params.conf_sweep` 에 값과 출처를 남긴다.
 #   · 시드 2·3 은 시드 1 과 같은 격자다. 격자를 바꾸면 시드 사이 채점 기준이 갈린다.

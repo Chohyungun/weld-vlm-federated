@@ -108,9 +108,9 @@ class LabelMap:
     def iso_codes(self, *, include_alt: bool = True) -> frozenset[str]:
         """사상표가 인정하는 ISO 6520-1 코드 전체 집합.
 
-        트랙 B 의 `limits.csv` 로더 게이트 V1(`defect_code ∈ 사상표`)이 참조하는 접근자다.
-        소비 트랙이 `{d.iso_code for d in defect_types.values()}` 를 각자 재구성하면
-        **별칭 코드(2012 등)를 포함할지가 트랙마다 갈린다.** 그 판단을 계약 소유자가 한다.
+        `limits.csv` 로더 게이트 V1(`defect_code ∈ 사상표`)이 참조하는 접근자다.
+        소비하는 쪽이 `{d.iso_code for d in defect_types.values()}` 를 각자 재구성하면
+        **별칭 코드(2012 등)를 포함할지가 갈린다.** 그 판단은 이 계약에서 한 번만 한다.
 
         `include_alt=True` 가 기본이다 — 기공의 2012(균일 분포 기공)는 사상표가 인정하는
         코드이고, 어느 자산 경로에서 쓰는지는 소비 트랙의 결정 사항이지 유효성 문제가 아니다.

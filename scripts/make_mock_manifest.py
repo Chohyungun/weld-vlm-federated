@@ -1,12 +1,15 @@
-"""mock 스냅샷 생성 — 트랙 C·D 언블록 (열린질문 Q8, CTO 게이트 #4 승인).
+"""mock 스냅샷 생성 — 학습·채점 코드의 선행 개발용 (열린질문 Q8, 검수 #4 승인).
 
-계약 #2 스키마를 준수하는 매니페스트를 만든다. **실이미지는 없다.** 목적은 C·D 가
+계약 #2 스키마를 준수하는 매니페스트를 만든다. **실이미지는 없다.** 목적은
 AI허브 승인(8/25)을 기다리지 않고 로더·채점기·학습 래퍼를 지금 짜는 것이다.
 
 산출물은 불변식 IV1~IV11 을 전부 통과해야 한다(IV12 는 실파일이 없어 제외).
 
-    uv run python scripts/make_mock_manifest.py
-    uv run python scripts/make_mock_manifest.py --profile mock_aihub_v1 --verdict-mode absolute
+별도 자료 생성은 data/mock/README.md의 새 출력 폴더 확인 절차를 따르고 --out-root를 지정한다.
+생성 전에 선택한 프로필의 출력 경로를 모두 확인한다. 하나라도 비어 있지 않은 디렉터리이거나
+디렉터리 대신 파일이 놓여 있으면, 어느 프로필도 생성하지 않고 종료 코드 2로 끝난다.
+없는 경로와 빈 디렉터리는 허용한다. 강제 덮어쓰기 옵션은 없다.
+기본 출력 경로는 data/mock/이며, 현재 보존된 두 동결본은 거부 조건에 해당한다.
 """
 
 from __future__ import annotations
@@ -343,16 +346,56 @@ def build_profile(
     return manifest, a, caps
 
 
-def main() -> int:
+#: 출력 경로가 비어 있지 않아 거부할 때의 종료 코드. 불변식 위반(1)과 구별한다.
+EXIT_OCCUPIED = 2
+
+#: 거부 메시지에 보여 주는 항목 수. 그 디렉터리에 무엇이 있는지 알려 주되 목록으로 화면을 덮지 않는다.
+SHOWN_ENTRIES = 5
+
+
+def occupied_outputs(out_root: Path, names: list[str]) -> list[tuple[Path, list[str]]]:
+    """쓰려는 스냅샷 디렉터리 가운데 **이미 있고 비어 있지 않은** 곳. `(경로, 그 안의 이름들)` 목록.
+
+    기준은 "생성기가 쓰는 네 파일이 있는가" 가 아니다.
+    알려진 산출물 외의 파일이나 하위 디렉터리가 있어도 기존 내용을 보존하기 위해 거부한다.
+    없는 경로와 빈 디렉터리는 허용한다. 그 이름으로 **파일**이 놓여 있어도 거부한다.
+
+    기본 `--out-root` 는 동결된 `data/mock/` 이다(개발규약 1-6 — 재생성 금지). 인자 없이 한 번 돌리면
+    봉인본이 덮였고, `mock_riawelc_v1` 은 사상표 표기가 바뀐 뒤라 바이트까지 달라진다(65번 §8~§11).
+    **강제 옵션은 없다** — 다시 만들 일이 있으면 새 경로에 만든다.
+    """
+    found = []
+    for name in names:
+        d = Path(out_root) / name
+        if d.is_dir():
+            inside = sorted(e.name for e in d.iterdir())
+            if inside:
+                found.append((d, inside))
+        elif d.exists():
+            found.append((d, ["(디렉터리가 아니라 파일이다)"]))
+    return found
+
+
+def main(argv: list[str] | None = None) -> int:
     cfg = yaml.safe_load(PROFILE_PATH.read_text(encoding="utf-8"))
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--profile", choices=[*cfg["profiles"], "all"], default="all")
     ap.add_argument("--verdict-mode", choices=[v.value for v in VerdictMode], default=None,
                     help="프로파일 기본값을 덮어쓴다. absolute 로 두면 두께·스케일이 채워진다")
     ap.add_argument("--out-root", type=Path, default=OUT_ROOT)
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     names = list(cfg["profiles"]) if args.profile == "all" else [args.profile]
+
+    # 하나라도 걸리면 **아무것도 만들기 전에** 멈춘다 — 앞 프로필만 쓰인 반쯤 상태를 남기지 않는다.
+    blocked = occupied_outputs(args.out_root, names)
+    if blocked:
+        print("비어 있지 않은 경로에는 쓰지 않는다 — 아무것도 쓰지 않았다:", file=sys.stderr)
+        for d, inside in blocked:
+            more = f" 외 {len(inside) - SHOWN_ENTRIES}개" if len(inside) > SHOWN_ENTRIES else ""
+            print(f"  {d}  ({', '.join(inside[:SHOWN_ENTRIES])}{more})", file=sys.stderr)
+        print("새 `--out-root` 를 지정하라. 강제 덮어쓰기 옵션은 없다.", file=sys.stderr)
+        return EXIT_OCCUPIED
     lm = load_label_map()
     rc = 0
     for name in names:

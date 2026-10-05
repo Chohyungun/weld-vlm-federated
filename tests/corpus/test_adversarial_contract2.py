@@ -1,4 +1,4 @@
-"""Phase Attack 2 — 적대 재검증: 계약·결정론 렌즈 (finding #1·#4·#5·#6 수정 이후).
+"""재검토 — 계약·결정론 렌즈 (finding #1·#4·#5·#6 수정 이후).
 
 이 파일이 담는 것은 세 종류다.
 
@@ -423,7 +423,7 @@ def test_counts_schema_diverges_from_spec_7_5():
     """스펙 §7-5 스키마 그대로 만든 counts.json 이 거부된다 (계약 이탈 기록).
 
     `n_generated` 는 §7-5 스키마에 없는 키이고 최상위 키는 순서까지 엄격 비교된다.
-    스키마 변경은 총괄 승인 사항이라 승인 기록 확인이 필요하다.
+    스키마 변경은 승인 사항이라 승인 기록 확인이 필요하다.
     """
     assert "n_generated" in COUNTS_TOP_KEYS
     spec_shaped = {k: v for k, v in _counts().items() if k != "n_generated"}

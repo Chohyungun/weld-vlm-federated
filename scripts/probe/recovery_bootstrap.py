@@ -1,4 +1,4 @@
-"""회복률 CI — 시드 3세트 × 칸 5 의 짝지은 묶음 부트스트랩 (36번 미니스펙, 총괄 게이트 09-16).
+"""회복률 CI — 시드 3세트 × 칸 5 의 짝지은 묶음 부트스트랩 (36번 미니스펙, 게이트 09-16).
 
     python scripts/probe/recovery_bootstrap.py --root outputs/main_d --seeds 1,2,3 \\
         --artifact score_cells_v3.json --dest outputs/main_d/seed3set
@@ -237,7 +237,7 @@ def main() -> int:
         "4_undefined_fraction": {"value": undefined_frac, "max": RECOVERY_CI_MAX_UNDEFINED_FRACTION, "pass": rule4},
         "ci_pass": passed,
         "reading": ("CI 판정만이다. 게재 가부(recovery_reportable)는 집계기가 트립와이어 ①과 "
-                    "함께 낸다. 대표 채택은 총괄 판정"),
+                    "함께 낸다. 대표 채택은 별도 판정"),
     }
     print(f"[R̄] {point_Rbar * 100:+.1f}% · 95% CI [{(ci_Rbar['ci_lo'] or float('nan')) * 100:+.1f}%, "
           f"{(ci_Rbar['ci_hi'] or float('nan')) * 100:+.1f}%] · 반폭 {(ci_Rbar['half_width'] or float('nan')):.3f} "
@@ -251,7 +251,7 @@ def main() -> int:
     payload = {
         # 자기 파일명(판) — 채점 산출물과 같은 필드(A 54번 m-1). 집계기가 읽은 파일 이름과 맞댄다
         "artifact_version": out.name,
-        "spec": "36번 미니스펙 · 총괄 게이트 2026-09-16 00:35 (조건부 통과)",
+        "spec": "36번 미니스펙 · 게이트 2026-09-16 00:35 (조건부 통과)",
         "registration": RECOVERY_CI_REGISTRATION,
         "statistic": {
             "axis": "map_50 (export 하한)",
@@ -274,7 +274,7 @@ def main() -> int:
         "inputs": {"artifacts": artifact_hash, "records_by_seed": inputs,
                    "artifact_name": args.artifact},
         # **입력 결속.** 집계기는 이 블록이 자기가 읽은 산출물과 하나라도 다르면 CI 를 쓰지 않는다
-        # (codex_reply §18). 집계기와 같은 함수(`make_binding`)로 만든다.
+        # (검토 §18). 집계기와 같은 함수(`make_binding`)로 만든다.
         "binding": make_binding(args.artifact, entries),
         "scorer_code": stable_digest(code_start, code_end),
         "cache": {"path_pattern": "outputs/main_d/seed{n}/coco_evalimgs_{tag}_s{seed}.npz",

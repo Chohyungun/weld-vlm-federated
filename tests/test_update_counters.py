@@ -408,18 +408,18 @@ def test_구판_체크포인트는_여전히_통과한다(tmp_path):
 
 
 def test_문면이_시도_수로_정정됐다():
-    """게이트 시험 (c). 같은 저장소가 같은 값을 '실제 갱신 횟수' 라고 말하면 새 의미가 무의미하다."""
+    """검수 시험 (c). 같은 저장소가 같은 값을 '실제 갱신 횟수' 라고 말하면 새 의미가 무의미하다.
+
+    대상은 배포되는 코드와 설계 문서다. 실행 기록 쪽 문면도 같이 고쳤지만 그 기록은 이 저장소에
+    배포되지 않으므로 여기서 대조하지 않는다 — 있지도 않은 파일을 읽어 실패하게 만들지 않는다.
+    """
     root = Path(__file__).resolve().parent.parent
     updated = {
         "detection/budget_audit.py": "시도",
         "fl/client_det.py": "시도",
         "detection/fed_trainer.py": "시도",
-        "docs/dev_log/2026-09-03-본실험/10_검출3칸_C.md": "시도",
         "docs/구현설계.md": "시도",
     }
     for rel, word in updated.items():
         src = (root / rel).read_text(encoding="utf-8")
         assert word in src, rel
-    # 세 시드 값은 수정하지 않는다 — 각주로만 의미를 밝힌다.
-    ten = (root / "docs/dev_log/2026-09-03-본실험/10_검출3칸_C.md").read_text(encoding="utf-8")
-    assert "71,202" in ten and "적용** 수는 이 실행에 계측이 없어" in ten

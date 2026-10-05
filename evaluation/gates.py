@@ -164,7 +164,7 @@ def _gate_tags(ctx: GateContext) -> GateResult:
 
 @register("coord_space_contract")
 def _gate_coord(ctx: GateContext) -> GateResult:
-    """다섯 칸이 **같은 좌표 규약**을 선언하는가 (총괄 판정 1, main 47c4dbc).
+    """다섯 칸이 **같은 좌표 규약**을 선언하는가 (판정 1, main 47c4dbc).
 
     D 는 좌표를 변환하지 않는다. 그래서 이 게이트가 좌표 축의 유일한 방어선이다 —
     규약이 갈린 레코드가 같은 표에 실리는 것이 함정 #4 다.
@@ -214,7 +214,7 @@ def _gate_content_free(ctx: GateContext) -> GateResult:
     """content-free 천장 대조. `gate_status` 에 따라 차단 여부가 갈린다.
 
     `판정_대기` 면 **재고 기록하되 차단하지 않는다** — A 가 76번 §1-4 에서 "값은
-    등록하되 자동 차단에는 쓰지 않는다"로 박아 둔 스위치다. 총괄 판정 6(을안)이
+    등록하되 자동 차단에는 쓰지 않는다"로 박아 둔 스위치다. 판정 6(을안)이
     층화 채점 병기를 정했으므로, 전역 Macro-F1 에 대한 이 선은 **한계 서술용**이다.
     """
     if not ctx.metrics or ctx.population_bound is None:
@@ -235,7 +235,7 @@ def _gate_content_free(ctx: GateContext) -> GateResult:
 
 @register("stratified_scoring")
 def _gate_stratified(ctx: GateContext) -> GateResult:
-    """총괄 판정 6 이행 — 층화 블록이 **같은 산출물 안에** 있고 계측기가 작동하는가.
+    """판정 6 이행 — 층화 블록이 **같은 산출물 안에** 있고 계측기가 작동하는가.
 
     13번 D-1: 본채점 진입점이 층화 블록을 산출하지 않아 병기가 사람 손 절차(별도
     스크립트 실행)에 걸려 있었다. 이제 `score` 가 블록을 만들고 이 게이트가 매 채점마다
@@ -304,10 +304,10 @@ def run_scoring_gates(ctx: GateContext) -> dict:
 
 @register("sweep_curve_recorded")
 def _gate_curve(ctx: GateContext) -> GateResult:
-    """**곡선이 산출물에 있는가** — 총괄 판정 1 이행 (22번 §1-2).
+    """**곡선이 산출물에 있는가** — 판정 1 이행 (22번 §1-2).
 
     단일 임계 한 점은 확증 기준이 아니다. 17번 §3-5 에서 연합↔로컬평균의 대소가 두 축
-    모두 뒤집혔고, 총괄은 헤드라인을 곡선 + 임계 독립 지표로 옮겼다. 그 이행이 사람 손
+    모두 뒤집혔고, 판정 1 이 헤드라인을 곡선 + 임계 독립 지표로 옮겼다. 그 이행이 사람 손
     절차(`--stage sweep` 별도 실행)에 걸려 있으면 어느 시드에서 빠져도 조용하다.
 
     본다: (1) 곡선 블록이 있고, (2) 등록된 격자 **전 점**이 채점된 칸마다 있으며,
@@ -346,7 +346,7 @@ def _gate_curve(ctx: GateContext) -> GateResult:
         return GateResult(
             "sweep_curve_recorded", False,
             f"임계 독립 헤드라인 지표({primary or '미지정'})의 회복률이 산출되지 않았다 — "
-            "총괄 판정 1 은 헤드라인을 임계 독립 지표로 정했다",
+            "판정 1 은 헤드라인을 임계 독립 지표로 정했다",
             value={"grid_source": curve.get("grid_source"), "head": head})
     flips = curve.get("threshold_dependence") or {}
     flipped = sorted(k for k, v in flips.items() if v.get("fed_vs_local_mean_flips"))
@@ -360,14 +360,14 @@ def _gate_curve(ctx: GateContext) -> GateResult:
 
 @register("p9_source_separation")
 def _gate_p9_separation(ctx: GateContext) -> GateResult:
-    """**P9 출처별 분리 보고가 붙어 있는가** — 총괄 판정 2 이행 (22번 §2-2-2).
+    """**P9 출처별 분리 보고가 붙어 있는가** — 판정 2 이행 (22번 §2-2-2).
 
     크롭 한정본 승격은 보류됐고(평가셋 불변), 그 대가로 **분리 보고가 필수**가 됐다.
     전역 점수만 읽는 사람이 "이 점수의 일부는 규격 지름길"을 모르고 지나가지 않게,
     출처별 오탐률·차·CI·TOST 가 항상 함께 있어야 한다.
 
-    **동등하지 않다는 사실 자체는 차단 사유가 아니다** — 실측 결과이고 총괄이 이미 알고
-    보류를 결정했다. 차단하는 것은 **분리 표가 빠지는 것**이다.
+    **동등하지 않다는 사실 자체는 차단 사유가 아니다** — 실측 결과이고 이미 알려진 채
+    보류로 정해졌다. 차단하는 것은 **분리 표가 빠지는 것**이다.
     """
     p9 = ctx.extra.get("p9")
     if p9 is None:
@@ -405,7 +405,7 @@ def _gate_p9_separation(ctx: GateContext) -> GateResult:
 
 @register("macro_ap_baseline_paired")
 def _gate_macro_ap_paired(ctx: GateContext) -> GateResult:
-    """**macro-AP 옆에 무내용 대조선이 서 있는가** — 총괄 판정 22번 §6-2-1 이행.
+    """**macro-AP 옆에 무내용 대조선이 서 있는가** — 판정 22번 §6-2-1 이행.
 
     판정은 macro-AP 를 분류 축 대표에서 **내렸다.** 보조로는 싣되 무내용 대조선을
     반드시 병기하고 단독 인용을 금한다. 그 요구가 사람의 문장 습관에만 걸려 있으면
@@ -436,7 +436,7 @@ def _gate_macro_ap_paired(ctx: GateContext) -> GateResult:
     if not base:
         return GateResult(
             name, False,
-            "macro-AP 를 실으면서 무내용 대조선을 싣지 않았다 — 총괄 판정 22번 §6-2-1 은 "
+            "macro-AP 를 실으면서 무내용 대조선을 싣지 않았다 — 판정 22번 §6-2-1 은 "
             "대조선 병기를 필수로 했다")
     got = (base.get("classification_axis") or {}).get("macro_ap_freq")
     if not isinstance(got, (int, float)):
@@ -457,7 +457,7 @@ def _gate_macro_ap_paired(ctx: GateContext) -> GateResult:
     if "macro_ap" in (policy.get("confirmed_headline") or []):
         return GateResult(
             name, False,
-            "macro_ap 가 확정 대표로 표시돼 있다 — 총괄 판정 22번 §6-2-1 로 대표에서 내려갔다")
+            "macro_ap 가 확정 대표로 표시돼 있다 — 판정 22번 §6-2-1 로 대표에서 내려갔다")
 
     scope = "" if base.get("self_check_applicable", True) else " · 자기 검사 미적용(모집단 다름)"
     return GateResult(

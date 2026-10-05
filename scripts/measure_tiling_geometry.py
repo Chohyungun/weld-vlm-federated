@@ -3,7 +3,7 @@
 원천 이미지를 열지 않는다. 라벨 zip 을 **읽기만** 하고 압축도 풀지 않는다(불변조건 1-1).
 
     uv run python scripts/measure_tiling_geometry.py --labels data/interim/aihub_labels \
-        -o docs/dev_log/2026-08-22-데이터확정/41_선행측정_M0M1M5M6_A.md
+        -o <보고서 경로>.md
 
 측정 항목
 

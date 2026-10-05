@@ -1,0 +1,190 @@
+# 두 동결 스냅샷의 기대값과, **동결본 복원이 검증된 입력**의 식별. 스냅샷 디렉터리 밖에 둔다.
+#
+# 왜 밖인가: `verify_snapshot()` 은 파일을 같은 디렉터리의 `SNAPSHOT.sha256` 과만 대조한다. 생성기가 파일과
+# 잠금 기록을 함께 바꾸면 그 검증은 통과한다. 생성기는 이 파일을 쓰지 않으므로, 그런 교체가 여기서 드러난다
+# (`tests/test_make_mock_manifest.py` 가 대조한다).
+#
+# 입력에 관해 이 파일이 말하는 것과 말하지 않는 것:
+#   말하는 것   — 아래 사상표·프로필을 아래 생성기·환경에 넣으면 두 동결본의 구성 파일 8개가 잠금 기록까지
+#                 바이트 단위로 복원된다(2026-09-21 확인).
+#   말하지 않는 것 — 동결본을 만들 때 실제로 쓴 입력 파일의 모든 바이트와 실행 환경. 당시의 별도 기록은 없다.
+#
+# 왜 내용 해시인가: 사상표 `version` 은 동결본에도 지금도 1 이고 `snapshot_id`·생성 시각도 같다. 이름·버전·시각으로는
+# 동결본과 현행 입력 생성분을 구별할 수 없다.
+#
+# 이 파일은 기록이다. 동결본을 맞추려고 현행 사상표에 옛 표기를 되살리지 않는다(개발규약 1-6 · 65번 §8~§11).
+#
+# **공개본만으로는 동결 검증 당시 판의 바이트를 확인할 수 없다.** 공개 저장소는 부모 없는 단일 커밋이라
+# 그때의 blob 이 객체 DB 에 없다. 그 대조는 아래 `local_ref` 를 가진 저장소에서만 선다.
+# 그 ref 들(`refs/frozen/mock-inputs/*`)은 **로컬 전용이며 공개본에 없다.** blob 에 직접 걸어 두었다 —
+# backup 브랜치를 가리키지 않는다. 그쪽에서 닿는 것은 우연이고, 생성기 하나는 어느 ref 에서도 닿지 않아
+# 정리 한 번이면 사라질 상태였다(2026-09-25 실측).
+#
+# 해시가 갈라지면 **덮어쓰지 않고 병기한다.** 동결 검증 당시의 해시를 새 값으로 바꾸면 "이 바이트가 동결본을
+# 만들었다" 는 기록이 거짓이 된다. 갈라진 항목에는 `after_public_cleanup` 을 달아 당시 값과 지금 값, 그 사이에
+# 바뀐 것, 그래도 결과가 같다는 확인을 함께 남긴다. 한쪽만 있으면 시험이 실패한다.
+record_version: 4
+recorded_on: '2026-09-21'
+hash_rule: sha256. 스냅샷의 파일은 파일 바이트 그대로, 입력·코드 파일은 Git 에 저장된 내용(LF)
+snapshots:
+  mock_aihub_v1:
+    snapshot_digest: 'bb810773d0efcfb4add8fcc5407be8461035117e3b83cec6c9d19044de6523f1'
+    verdict_mode: clause_only
+    files:
+      manifest.csv: '2d179e9ff55748136ee759f838928e93bfb2b4a9d202e215bb57a8dc137494f9'
+      annotations.csv: '8b2da3e438f4227ea1e56a6d3bc212e9fc4894344aac687c55dc23bc29f8ad14'
+      data_capabilities.yaml: 'bfad38e9b9ffbe8924f4945a530f5fb87fcbb235271a7f6da857c99467b632c5'
+    lock_file:
+      name: SNAPSHOT.sha256
+      sha256: '582ffbf6f8fd639a6243843e0bd12a12f0bf21aa12f757967fd5a63ed514f249'
+  mock_riawelc_v1:
+    snapshot_digest: '0e3aabccda808f266424c9b4a8fdcf83c5e1d969bc7cd03eb97641954def5816'
+    verdict_mode: clause_only
+    files:
+      manifest.csv: '9e8c13bc7d86cc532cb08e92e6ddc21255af43602744d29944512a01ccad9f4a'
+      annotations.csv: '5eed81bc8d9adf749670bdd2a9469312a482f6ec74722ea4682c5e815a0c9297'
+      data_capabilities.yaml: '32b219277d08654984a133b0fd817d80164f1daf8acf70d0d274c4b04c2917fa'
+    lock_file:
+      name: SNAPSHOT.sha256
+      sha256: 'd9c1467814882f9286d54dfc9df6e855eb0abcaa7c4734353229aad7022f4f92'
+restoration_verified_inputs:
+  description: 동결본 복원이 검증된 입력. 만들 때 실제로 쓴 입력이라는 당시 기록은 없다
+  verified_on: '2026-09-21'
+  verified_how: 아래 사상표와 프로필을 아래 생성기·환경에 넣어 두 스냅샷의 구성 파일 8개(잠금 기록 포함)가 바이트 단위로 복원됨을 확인했다
+  seed: 20260825
+  verdict_mode: 프로필 기본값(clause_only)
+  label_map:
+    path: configs/label_map.yaml
+    sha256: '183ed63b6347f24660957fce56ae0412c05ff14d9c853345df58acbe407084cd'
+    git_blob: '55bce4236343f0f7714b985ffe7fdd0e8b60a5e4'
+    version_field: 1
+    distinguishing: riawelc 원본 라벨이 CR·PO·LP, 정상이 ND 다 (2026-08-21 실물 검증으로 교체되기 전)
+    in_public_history: false
+    history_status: 공개된_적_없음
+    local_ref: backup/full-history-20260821
+    where: 교체 커밋의 부모에 있다. 그 이력은 위 로컬 보존 ref 에만 남아 있고 공개 이력에는 없다 — 식별은 내용 해시로 한다
+  mock_profile:
+    path: configs/mock_profile.yaml
+    sha256: '1ef4df080abbf626766b1a97e2ce865f9aa99674fea9ef17b3a82a2c845745d0'
+    git_blob: '5a67940158121616a6bca0f9a77415a8beef3ad1'
+    in_public_history: false
+    history_status: 공개_이력_재작성으로_제거
+    local_ref: refs/frozen/mock-inputs/mock-profile
+    after_public_cleanup:
+      sha256: '5e0a353bad0e213dc5911feae49344b384e3e0edbb603775cb19f0b117570901'
+      git_blob: '8b66283ee2c8c62d0b66f5c65dbc9d5216192c14'
+      changed: 머리글 주석 한 줄. 값·키는 그대로다
+      evidence: yaml.safe_load 결과가 위 해시의 판과 완전히 같다
+  generator:
+    scripts/make_mock_manifest.py:
+      sha256: 'ed2b4a1748c425710cd0b04f12d0a8e2b5ab4e7dc1e854908d6d247ed95f8a64'
+      git_blob: '3bd6446432b5c1fdd9403da10aae35d39f21d574'
+      in_public_history: false
+      history_status: 공개_이력_재작성으로_제거
+      local_ref: refs/frozen/mock-inputs/make-mock-manifest-py
+      after_public_cleanup:
+        sha256: '6908d92cb8d20bd89e09e4be730120008982ae4cef2582e1583bfe625dd814fb'
+        git_blob: '9a0a21c2ee0f3c6680ea95cea356a3bad1c55f17'
+        changed: 모듈 독스트링 첫 두 줄
+        evidence: 독스트링을 뺀 구문 트리가 위 해시의 판과 같다
+    data/manifest_io.py:
+      sha256: 'd36de98e74480d6ef54b47d751bb49d3a3cc02e83d3521a36441b122cd324816'
+      git_blob: '3ee147614f106832886c3c6e81693c82d466f49e'
+      in_public_history: false
+      history_status: 공개_이력_재작성으로_제거
+      local_ref: refs/frozen/mock-inputs/manifest-io-py
+      after_public_cleanup:
+        sha256: '287e796e85218ef4345e99ad78920362a082640a56a361ab741d7f91e0e55bc2'
+        git_blob: '0acea39e58275b7439b9d847316f116d7d460f23'
+        changed: ac31631 에서 모듈 독스트링 4줄과 `verify_snapshot` 독스트링 1줄, 65b2e5a 에서 흡수 곁파일 셋의 선택 멤버 추가(스키마 상수 셋, `read_absorb`, `write_snapshot`·`verify_snapshot` 의 선택 멤버 경로)
+        evidence: 위 복원 입력(사상표 183ed63b…, 프로필 1ef4df08…)을 이 판의 생성기에 넣어 두 스냅샷의 구성 파일 8개가 잠금 기록까지 바이트 단위로 다시 복원됨을 확인했다(2026-10-01, `scripts/crosscheck/reverify_mock_restoration.py`)
+        at_cleanup_commit:
+          commit: 'ac31631efb55b743308774897469f0ac90d7bb06'
+          sha256: 'b62885286ff61627b4f5d6f775638ece5ec16c570ac94fd270c734a19bce66a9'
+          git_blob: 'cc260a47e8b3a4f4217f1ee44b2aae860316a629'
+    data/split/dirichlet.py:
+      sha256: 'a780c15838ac41d517ea9f30b240dfcd8777f9b77890f5f1bf179257a8526dae'
+      git_blob: 'c2639b58fd3981e00fe7842785ff5820edc48b6f'
+    data/convert/geometry.py:
+      sha256: '4b7426c9ad3e8e53e2ae678425dd9197a17a31a73825a1c58ce75e31cc4dfa8d'
+      git_blob: '5ebf688436ddcf1119868c40d5335fc4fd279247'
+    data/label_map.py:
+      sha256: '63b41398e02edbb16621f4651ce36a058f8f28ffe7bc4987e68fcf7d25640eae'
+      git_blob: '9011f1b6288ef9f5117f58b81484838d688bf9b3'
+      in_public_history: false
+      history_status: 공개_이력_재작성으로_제거
+      local_ref: refs/frozen/mock-inputs/label-map-py
+      after_public_cleanup:
+        sha256: 'b43002c07c64ef5f0625cdc7745f761bc21134ec14f129dbd5f9a349a8c29c79'
+        git_blob: '4f9cc3f5d035c40698ebb7ca679e3aa41b3d687d'
+        changed: '`iso_codes` 독스트링 3줄'
+        evidence: 독스트링을 뺀 구문 트리가 위 해시의 판과 같다
+        also_pinned_elsewhere: 채점기 코드 지문의 대상 파일이다. 위 해시를 박은 과거 채점 산출물은 그대로 둔다
+    data/invariants.py:
+      sha256: 'fa7ce30648671035b72cced8ef49557fd95dbe18ff58c71f3f9f14dcb852111d'
+      git_blob: 'e69b8b50ab38d464f1b1733eb66eee88654c3089'
+  environment:
+    python: '3.11.13'
+    platform: 'Windows-10-10.0.26200-SP0'
+    numpy: '2.2.6'
+    pandas: '2.3.3'
+    scikit-learn: '1.9.0'
+    PyYAML: '6.0.3'
+    uv_lock:
+      path: uv.lock
+      sha256: '81879259cd3bb3952155d00e3bca397befde741462e4423b0f2f56a7e4248297'
+      git_blob: '26d2f55073ff57d4dc3097ce78479550f52800df'
+current_inputs:
+  checked_on: '2026-09-21'
+  label_map:
+    path: configs/label_map.yaml
+    sha256: 'e09492734ba47b2636826444ca8627154cd7735e82ac75da4ddd69ff4bfba775'
+    git_blob: 'd4992f26298423cc0903cffbb0486d4477e31705'
+    in_public_history: false
+    history_status: 공개_이력_재작성으로_제거
+    local_ref: refs/frozen/mock-inputs/label-map-yaml
+    version_field: 1
+    distinguishing: riawelc 원본 라벨이 Difetto1·Difetto2·Difetto4, 정상이 NoDifetto 다
+    after_public_cleanup:
+      sha256: '46d3cee49701c9f2a9b577eaff911ce58d17c2702a9ee2b852665a5b73df5e41'
+      git_blob: '59bab451e8c477c4352d7ef0236f68b2d179d9fc'
+      changed: 머리글 주석 세 줄을 두 줄로 — 그 가운데 한 줄이 공개에서 빠지는 경로를 가리키고 있었다
+      evidence: yaml.safe_load 결과가 위 해시의 판과 완전히 같다
+      also_pinned_elsewhere: map_50 독립 검산 산출물이 입력 해시로 위 값을 박았다. 그 산출물은 과거 기록이라 그대로 둔다
+  effect:
+    mock_aihub_v1: 현행 입력으로 만들어도 동결본과 네 파일이 모두 같다
+    mock_riawelc_v1: 원본 라벨 열(manifest.csv 의 src_labels_raw 224행 · annotations.csv 의 src_label_raw 259행)과 잠금 기록이 달라진다
+    mock_riawelc_v1_digest_with_current_inputs: 'a0742e36eabd7c910bd58ec6f9886b931c658f554d22e92e62cc0da4b2a61e7f'
+after_public_cleanup:
+  # 위 다섯 항목의 `after_public_cleanup` 이 가리키는 한 번의 변경. 값을 덮어쓰지 않고 병기한 이유가 여기 있다.
+  # 위 줄의 "한 번의 변경" 은 2026-09-21 의 것이다. 그 뒤에 이어진 변경은 이 블록 끝의 `later_changes` 에 있다.
+  date: '2026-09-21'
+  commit: 'ac31631efb55b743308774897469f0ac90d7bb06'
+  what: 공개본에 남을 파일의 주석·독스트링에서 작업 분담 표기와 비공개로 남을 문서 경로를 걷어냈다
+  why_not_overwrite: 위 해시는 "이 바이트가 동결본을 복원했다" 는 기록이다. 새 값으로 덮으면 하지 않은 확인을 했다고 말하게 된다
+  changed_files: 5
+  change_kind: 주석·독스트링·문자열만. 설정 파일은 파싱 결과가, 코드 파일은 독스트링을 뺀 구문 트리가 변경 전과 같다
+  reverify:
+    how: 정리 뒤 코드와 현행 입력으로 생성기를 빈 임시 경로에 다시 돌려 구성 파일의 바이트를 대조했다
+    mock_aihub_v1:
+      snapshot_digest: 'bb810773d0efcfb4add8fcc5407be8461035117e3b83cec6c9d19044de6523f1'
+      lock_file_sha256: '582ffbf6f8fd639a6243843e0bd12a12f0bf21aa12f757967fd5a63ed514f249'
+      same_as_frozen: true
+    mock_riawelc_v1:
+      snapshot_digest: 'a0742e36eabd7c910bd58ec6f9886b931c658f554d22e92e62cc0da4b2a61e7f'
+      same_as_frozen: false
+      note: 위 current_inputs.effect 에 이미 적힌 값과 같다. 2026-08-21 사상표 라벨 교체 때문이며 이번 정리와 무관하다
+  scope: 이 기록 밖에도 같은 해시를 박은 과거 산출물이 있다(채점 산출물 12건 · map_50 독립 검산 1건). 그것들은 그때의 기록이므로 고치지 않는다
+  later_changes:
+    - date: '2026-09-30'
+      commit: '65b2e5a538a9465ee06023c66c86516e1acea1be'
+      files:
+        - data/manifest_io.py
+      change_kind: 코드 추가다. 흡수 곁파일 셋의 선택 멤버(스키마 상수 셋, `read_absorb`, `write_snapshot`·`verify_snapshot` 의 선택 멤버 경로)를 더했다. 독스트링만의 변경이 아니라 구문 트리가 바뀐다
+      reverify:
+        test: tests/test_make_mock_manifest.py::test_재확인_digest_가_현행_코드의_실제_산출과_같다
+        how: 현행 코드와 현행 입력으로 생성기를 빈 임시 경로에 다시 돌려 아래 지문과 잠금 파일 해시를 재현한다
+        mock_aihub_v1_snapshot_digest: 'bb810773d0efcfb4add8fcc5407be8461035117e3b83cec6c9d19044de6523f1'
+        mock_aihub_v1_lock_file_sha256: '582ffbf6f8fd639a6243843e0bd12a12f0bf21aa12f757967fd5a63ed514f249'
+        mock_riawelc_v1_snapshot_digest: 'a0742e36eabd7c910bd58ec6f9886b931c658f554d22e92e62cc0da4b2a61e7f'
+        restoration: 복원 입력으로 돌려도 두 스냅샷의 구성 파일 8개가 잠금 기록까지 바이트로 복원된다(2026-10-01, `scripts/crosscheck/reverify_mock_restoration.py`)

@@ -33,7 +33,7 @@ from vlm.coords import CoordCfg, ImageGeom, quantize, to_model
 FROZEN = Path("data/interim/manifest_v1")
 OUT = Path("outputs/pilot_d")
 MODEL_ID = "Qwen/Qwen3.5-0.8B"
-# **ABS_ORIG.** 총괄 판정 1 (2026-09-02) · C 의 전환 커밋 main 47c4dbc.
+# **ABS_ORIG.** 판정 1 (2026-09-02) · C 의 전환 커밋 main 47c4dbc.
 # 자릿수가 토큰 수를 바꾸므로 규약이 바뀌면 예산도 다시 재야 한다 — 절대 픽셀은
 # 0~1000 정규화보다 자릿수가 길어 타깃 토큰이 늘어난다(C 추정 +0.52개/박스).
 # 이 상수는 `evaluation.params.COORD_SPACE` 와 같아야 하고 시험이 그것을 고정한다.

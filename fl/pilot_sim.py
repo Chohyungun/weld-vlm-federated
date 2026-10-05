@@ -78,21 +78,40 @@ def _server_main(grid: Grid, context: Context) -> None:
     # 34번 §3-1 8-4 — server_app 과 같은 규약: 정책 접미(`_rs1`)를 stamp 에 새기고, 기존 원장과
     # 신원이 다르면 `AtomicLog` 생성자가 거부한다(LedgerIdentityMismatch).
     stamp = policy_stamp(str(cfg["run_stamp"]), _loader_policy(cell, cfg))
+    run_id = new_run_id(cell, int(cfg["base_seed"]), stamp)
+    uni_run = None
+    if cell == "uni_fed":
+        # `fl/server_app.py` 와 같은 앞뒤를 탄다 — 가드 · 원장 검사 · 끝난 뒤 저장과 끝 행.
+        from fl.uni_fed import UniFedRejected, UniFedRun, assert_fresh_ledger
+
+        if str(cfg.get("purpose", "main") or "main") == "main":
+            # 이 경로는 초기 어댑터를 호출부의 파이썬 값으로 받는다 — `flwr run` 경로의 proof · 목적 · 승인 구현 가드를
+            # 타지 않는다(검수 14번 M-9). 본실험은 `fl/server_app.py` 로만 돈다.
+            raise UniFedRejected("pilot_sim_main", "인프로세스 연합 경로는 본실험을 받지 않는다 — flwr run 경로로 돈다")
+        uni_run = UniFedRun(get=lambda k, d: cfg.get(k.replace("-", "_"), d), out_dir=Path(cfg["out_dir"]),
+                            run_id=run_id, base_seed=int(cfg["base_seed"]),
+                            split_hash=str(cfg["split_hash"]), num_rounds=num_rounds,
+                            local_epochs=int(cfg["local_epochs"]), total_epochs=int(cfg["total_epochs"]),
+                            client_tags=list(cfg["client_tags"]))
+        assert_fresh_ledger(out_dir / "atomic_log.csv")
+        uni_run.set_initial(list(cfg["initial_arrays"]), canonical_keys)
     atomic = AtomicLog(
         out_dir / "atomic_log.csv",
-        run_id=new_run_id(cell, int(cfg["base_seed"]), stamp),
+        run_id=run_id,
         seed=int(cfg["base_seed"]),
         cell=cell,
         split_hash=str(cfg["split_hash"]),
     )
 
-    from fl.server_app import _cell_from_metrics, _save_round
+    from fl.server_app import _cell_from_metrics, _save_round, _with_uni_observer
 
     on_round_end = make_round_recorder(
         accounting=accounting, atomic=atomic, timer=RoundTimer(),
         cell_from_metrics=_cell_from_metrics,
         on_save=lambda sr, agg: _save_round(out_dir, sr, num_rounds, agg),
     )
+    if uni_run is not None:
+        on_round_end = _with_uni_observer(on_round_end, uni_run)
 
     strategy = WeldFedAvg(
         expected_nodes=len(client_ids),
@@ -122,10 +141,12 @@ def _server_main(grid: Grid, context: Context) -> None:
     finally:
         # 요약 출력 등 학습 밖 단계가 죽어도 회계는 남아야 한다. 파일럿의 산출물은
         # "어디서 끊겼는가"이고, 회계가 함께 사라지면 그 답을 잃는다.
-        finalize_accounting(
+        report = finalize_accounting(
             accounting=accounting, atomic=atomic, out_dir=out_dir,
             num_rounds=num_rounds, client_ids=client_ids,
         )
+    if uni_run is not None:
+        uni_run.finish(atomic=atomic, report=report)
 
 
 def _loader_policy(cell: str, cfg: dict[str, Any]) -> bool:
@@ -154,10 +175,14 @@ def _cell_train_config(cell: str, cfg: dict[str, Any], out_dir: Path) -> dict[st
         }
     if cell == SMOKE_CELL:
         return {"smoke-fail-at": str(cfg.get("smoke_fail_at", ""))}
+    from fl.uni_run_config import down_config
+
     return {
         # 통합형은 페어를 매니페스트가 아니라 `load_pairs(client=...)` 로 고르므로
         # 뷰 경로 대신 클라이언트 태그를 내려보낸다.
-        f"client-tag-{i}": str(t) for i, t in enumerate(cfg["client_tags"])
+        **{f"client-tag-{i}": str(t) for i, t in enumerate(cfg["client_tags"])},
+        # 통합형 키 — 서버(`fl/server_app.py`)와 같은 함수로 만든다. 인프로세스 설정은 밑줄 키다.
+        **down_config(lambda k, d: cfg.get(k.replace("-", "_"), d)),
     }
 
 

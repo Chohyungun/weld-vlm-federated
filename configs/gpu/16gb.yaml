@@ -16,8 +16,8 @@
 # 전제로 "workers=0 · Windows spawn 이 GPU 저활용 원인"이라는 §5-1 진단을 썼고,
 # 그것이 감사 M2 오진이 됐다. 설정과 실행값이 갈라진 상태가 낳은 사고다.
 #
-# 배선하는 쪽으로 정리할 수도 있었으나 **배선 지점이 `detection/round_runner.py` 라
-# 트랙 C 소관이다.** A 가 남의 트랙 파일을 고치지 않는다는 규칙이 우선한다.
+# 배선하는 쪽으로 정리할 수도 있었으나 **배선 지점이 `detection/round_runner.py` 로
+# 이 파일의 소관 밖이다.** 그래서 학습 쪽 코드는 건드리지 않았다.
 # 따라서 이 파일은 문서로 강등하고, 아래에 실행값 정본의 위치를 명시한다.
 #
 #   학습 실행값 정본:  detection/round_runner.py  ·  PROFILES / FIXED_OVERRIDES / FIXED_PILOT
@@ -41,7 +41,7 @@ precision:
   matmul_tf32: true
   # 결정론 설정은 base.yaml 의 seed 절에서 관리한다 (cudnn.deterministic).
 
-# ⚠ 미배선. 읽는 코드가 없다. 정본은 detection/round_runner.py:PROFILES (트랙 C 소관).
+# ⚠ 미배선. 읽는 코드가 없다. 정본은 detection/round_runner.py:PROFILES.
 detection:                       # YOLO11s (본실험) / YOLO11n (파일럿)
   wired: false                   # 이 블록이 실행에 영향을 주지 않는다는 사실을 값으로 박는다
   runtime_source_of_truth: "detection/round_runner.py:PROFILES"

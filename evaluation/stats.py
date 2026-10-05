@@ -16,6 +16,8 @@ from math import gamma, sqrt
 
 import numpy as np
 
+from evaluation import percentile_rule
+
 BOOTSTRAP_N = 2000
 """§5-3 고정값. 재현을 위해 시드도 함께 고정한다."""
 BOOTSTRAP_SEED = 20260825
@@ -35,17 +37,35 @@ class Interval:
     정밀도가 아니다.
     """
 
+    convention_id: str | None = None
+    """방식을 인자로 준 호출만 싣는 구간 규약 id(`evaluation.percentile_rule`). 기본 호출은 `None` 이고
+    `as_dict()` 에 키가 생기지 않는다 — 기존 산출물의 꼴과 값이 그대로다."""
+    rule: percentile_rule.RuleInterval | None = None
+    """방식을 준 호출의 구간 — 끝점 · 반폭의 **상태**를 든다(07번 §33-3). 기본 호출은 `None`."""
+
     @property
     def half_width(self) -> float:
+        if self.rule is not None:
+            hw = self.rule.half_width
+            return hw.value if hw.state == "finite" else float("nan")
         return (self.hi - self.lo) / 2
 
     def as_dict(self) -> dict:
-        return {
+        if self.rule is not None:
+            # 방식을 준 호출 — 수 칸은 유한일 때만 수이고 상태 칸을 함께 싣는다(07번 §33-3). 표준 JSON 으로 쓸 수 있다
+            finite = isinstance(self.point, float) and np.isfinite(self.point)
+            return {"point": self.point if finite else None, "point_state": "finite" if finite else "undefined",
+                    **self.rule.as_dict(), "n_resamples": self.n_resamples, "n_clusters": self.n_clusters,
+                    "n_undefined_resamples": self.n_undefined}
+        out = {
             "point": self.point, "ci_lo": self.lo, "ci_hi": self.hi,
             "half_width": self.half_width,
             "n_resamples": self.n_resamples, "n_clusters": self.n_clusters,
             "n_undefined_resamples": self.n_undefined,
         }
+        if self.convention_id is not None:
+            out["convention_id"] = self.convention_id
+        return out
 
     def __str__(self) -> str:
         return f"{self.point:.4f} [95% CI {self.lo:.4f}, {self.hi:.4f}]"
@@ -59,6 +79,7 @@ def cluster_bootstrap(
     seed: int = BOOTSTRAP_SEED,
     alpha: float = 0.05,
     drop_undefined: bool = False,
+    method: str | None = None,
 ) -> Interval:
     """묶음 단위 재표집으로 통계량의 CI 를 낸다.
 
@@ -71,11 +92,19 @@ def cluster_bootstrap(
             **두 부분모집단의 차** 같은 통계량은 한쪽이 통째로 안 뽑히면 정의되지 않는데,
             그때 0 으로 대치하면 CI 가 0 쪽으로 끌려가 판정이 뒤집힌다. 기본값은 False 라
             기존 호출부(P9)의 동작은 바뀌지 않는다.
+        method: 백분위 방식. **기본값 `None` 은 지금까지와 같다**(라이브러리 기본 보간) — 사전실험 재채점의 값이
+            말없이 달라지지 않게. 통합형 산출물은 `evaluation.percentile_rule.PERCENTILE_RULE` 을 준다(2026-10-01
+            구간 규약의 적용 범위). 방식을 주면 **미정의를 빼는 통계량의 규칙**(07번 §33-6)을 따른다 — 구간에 규약 id 와
+            끝점 · 반폭의 상태가 실리고(`Interval.rule`), 추첨에 ±무한이 있으면 거부하며(`drop_undefined` 와 무관),
+            `NaN` 은 `drop_undefined=True` 일 때만 빼고 센다(아니면 거부). 빈 입력은 상태 `absent` 의 구간이다.
 
     시드를 고정하므로 같은 입력에 같은 CI 가 나온다 — `check-scorer` 의 비트 단위 일치
     요구와 어긋나지 않는다.
     """
     arr = list(units)
+    if method is not None:
+        return _cluster_bootstrap_rule(arr, statistic, n_resamples=n_resamples, seed=seed, alpha=alpha,
+                                       drop_undefined=drop_undefined, method=method)
     if not arr:
         return Interval(0.0, 0.0, 0.0, 0, 0)
     rng = np.random.default_rng(seed)
@@ -95,6 +124,34 @@ def cluster_bootstrap(
                             n_resamples, n, n_undefined)
     lo, hi = np.percentile(draws, [100 * alpha / 2, 100 * (1 - alpha / 2)])
     return Interval(float(point), float(lo), float(hi), n_resamples, n, n_undefined)
+
+
+def _cluster_bootstrap_rule(arr, statistic, *, n_resamples: int, seed: int, alpha: float, drop_undefined: bool,
+                            method: str) -> Interval:
+    """방식을 준 호출 — 기본 경로와 추첨은 같고, 구간은 `percentile_rule` 이 상태와 함께 낸다."""
+    cid = percentile_rule.convention_id(method, alpha)
+    if not arr:
+        absent = percentile_rule.RuleInterval(percentile_rule.ABSENT, percentile_rule.ABSENT, percentile_rule.ABSENT,
+                                              0, cid)
+        return Interval(float("nan"), float("nan"), float("nan"), 0, 0, 0, cid, absent)
+    rng = np.random.default_rng(seed)
+    point = statistic(arr)
+    n = len(arr)
+    draws = np.empty(n_resamples, dtype=float)
+    for i in range(n_resamples):
+        idx = rng.integers(0, n, size=n)
+        draws[i] = statistic([arr[j] for j in idx])
+    if np.isinf(draws).any() or (isinstance(point, float) and np.isinf(point)):
+        raise ValueError("미정의를 빼는 통계량에 ±무한이 있다 — 거부한다(07번 §33-6). 무한을 넣는 통계량은 회복률의 규칙을 쓴다")
+    if not drop_undefined and np.isnan(draws).any():
+        raise ValueError("추첨값에 NaN 이 있다 — 미정의를 빼려면 drop_undefined=True 로 세어 뺀다")
+    iv, _n_def, n_undefined = percentile_rule.defined_interval(draws, alpha, method=method)
+    return Interval(float(point), _as_float(iv.lo), _as_float(iv.hi), n_resamples, n, n_undefined, cid, iv)
+
+
+def _as_float(b) -> float:
+    """상태 있는 끝점을 `Interval` 의 수 칸으로. 무한은 무한, 정해지지 않은 끝점은 `nan` 이다."""
+    return {"finite": b.value, "pos_inf": float("inf"), "neg_inf": float("-inf")}.get(b.state, float("nan"))
 
 
 @dataclass(frozen=True)
@@ -227,7 +284,7 @@ class DenominatorVerdict:
     """회복률을 헤드라인으로 실어도 되는가. **CI 가 산출·통과된 뒤에만 True.**
 
     CI 가 없으면 `None`(미판정)이다 — 트립와이어만 통과한 상태를 True 로 적으면 "종합 검증
-    통과" 로 읽힌다(총괄 확정, 35번 과제 3). 예전 `reportable` 은 그 둘을 한 값에 섞었다.
+    통과" 로 읽힌다(확정, 35번 과제 3). 예전 `reportable` 은 그 둘을 한 값에 섞었다.
     """
     detail: str
     diagnostic: SeedSdDiagnostic | None = None
@@ -276,7 +333,7 @@ def recovery_denominator_verdict(
 
     둘 중 **하나라도 불합격이면 회복률을 헤드라인으로 싣지 않는다.** 그리고 보조 판정이
     **아직 없으면** 헤드라인 여부는 미판정(`recovery_reportable=None`)이다 — 트립와이어만
-    통과한 것을 "실어도 된다" 로 적지 않는다(총괄 확정, 35번 과제 3).
+    통과한 것을 "실어도 된다" 로 적지 않는다(확정, 35번 과제 3).
     """
     local_mean = float(np.mean(local_values)) if len(local_values) else 0.0
     d = central - local_mean

@@ -1,4 +1,4 @@
-"""D4 페어 축소본 생성기 회귀 방지 — 74번 감사 P4·P6 소급 수정분.
+"""D4 페어 축소본 생성기 회귀 방지 — 74번 P4·P6 소급 수정분.
 
 - P6: 정상 페어의 결함 어휘 락이 정본(`numeric_lock.find_defect_tokens`)을 통과한다.
   재구현판은 사상표의 **영문 명칭**과 전각 표기를 놓쳤다.
@@ -13,23 +13,27 @@ import pytest
 from corpus.generate import make_pairs_pilot as M
 from corpus.rules import limits_loader
 from corpus.rules.skeleton_gen import load_defect_lexicon
+from corpus.validate.pair_criteria_gate import PairRules
 
 LEX = load_defect_lexicon()
 NAMES = {"100": "균열", "2011": "기공", "301": "슬래그혼입", "401": "융합불량"}
+#: 게이트의 기대값 — 허용치 행에서 독립 경로로 만든다 (`tests/corpus/test_pairs_gate.py` 가 그 계약을 고정한다).
+RULES = PairRules(limits_loader.load_limits(str(M.LIMITS_CSV), pilot=True).rows, NAMES)
 
 
 def _normal(text: str) -> dict:
     return {
         "image_id": "x:1", "image_path": "a.jpg", "client": "C1", "split": "train",
+        "material": "ST", "width_px": 100, "height_px": 100, "coord_space": M.COORD_SPACE,
         "skeleton": {"defects": [], "verdict": None, "verdict_mode": "clause_only",
-                     "clauses": []},
+                     "clauses": [], "candidate_rules": [], "uncited_codes": []},
         "target_text": text,
     }
 
 
 def test_동결본_정상문은_정본_락을_통과한다():
     """락을 정본으로 바꿔도 v1 산출물의 판정은 바뀌지 않는다 (2,625건 재검증 불필요)."""
-    assert M.check_pair(_normal(M.NORMAL_TEXT), NAMES, set(), {}, (100, 100), LEX) == []
+    assert M.check_pair(_normal(M.NORMAL_TEXT), NAMES, RULES, LEX, wh=(100, 100)) == []
 
 
 @pytest.mark.parametrize("text", [
@@ -39,8 +43,7 @@ def test_동결본_정상문은_정본_락을_통과한다():
     "기공은 관찰되지 않는다.",                            # 부정 문맥도 폐기 (§4-6-1 ③)
 ])
 def test_정상페어_결함어휘는_문맥·표기_불문_폐기(text):
-    assert "defect_word_in_normal" in M.check_pair(
-        _normal(text), NAMES, set(), {}, (100, 100), LEX)
+    assert "defect_word_in_normal" in M.check_pair(_normal(text), NAMES, RULES, LEX)
 
 
 def test_재구현판이_놓쳤던_영문명칭이_사전에_있다():

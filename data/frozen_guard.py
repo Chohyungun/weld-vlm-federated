@@ -83,6 +83,16 @@ EXPECTED_SEALED: dict[str, dict[str, str]] = {
         "status": "expected", "owner": "A",
         "record": "본실험 매니페스트 계약 4/4(manifest·annotations·data_capabilities·tiles) · "
                   "digest 1f80e98b… · 동결 08-31(58번) · 위생 정리 09-02(80번 G11-1)"},
+    # --- 전수 메타데이터화 1단계 (A). v1 을 옮기고 iso_codes 를 다시 만들고 원본 라벨에서 낸 곁파일 셋을 더한 판.
+    #     본실험의 닻은 아니다(닻은 v1 그대로). 같은 코드로 낸 후보와 지문이 같을 때만 정본 경로로 옮겼다.
+    "data/interim/manifest_v3_rawlabels": {
+        "status": "expected", "owner": "A",
+        "record": "계약 4/4 + 곁파일 3 · digest 3ea6889f… · 2026-10-01 정본 승격(후보 판과 같은 지문) · 읽기 전용"},
+    # --- 근사 중복 간선 판본 (A). 얼린 규칙 X2_v1 을 이미 단 특징에 적용했다. 리허설 계획이 바이트 해시로 묶는다.
+    "data/interim/neardup_edges_v1": {
+        "status": "expected", "owner": "A",
+        "record": "간선 35,504 · 판정 못 함 771 · digest f69c9529… · 2026-10-05 · 두 구현의 간선 해시가 같다(증빙 20b) · "
+                  "큰 이동 후보(G4) 미포함 · 읽기 전용"},
     # --- 코퍼스 봉인 (B)
     "corpus/generate/cycle_pilot": {"status": "expected", "owner": "B"},
     "corpus/generate/cycle_pilot_v2": {"status": "expected", "owner": "B"},
@@ -92,6 +102,11 @@ EXPECTED_SEALED: dict[str, dict[str, str]] = {
     "data/processed/pairs_pilot_v2": {
         "status": "lost", "owner": "B",
         "record": "09-11 소실 확정 · 사본 없음 · 입력 부재로 재생성 불가 (30번 부록 A-3)"},
+    # --- 본실험 페어 (B). 통합형 학습 · 감독 토큰 기대값의 입력. git 밖(.gitignore data/processed/).
+    "data/processed/pairs_main_v1": {
+        "status": "expected", "owner": "B",
+        "record": "본실험 페어 49,845건 · 구성원 4 · digest 456ea615… · 봉인 2026-10-01 · "
+                  "봉인 관문 통과 · 두 번째 빌드와 다섯 파일 바이트 같음 (전수메타데이터 06번)"},
     # --- 파일럿 표본과 어블레이션 두 팔 (A). 새 경로 재생성 digest 가 기록값과 일치해 복원(32번 §1).
     #     `evidence` 는 근거 등급 — 기록이 64자 전체인지 8자 접두뿐인지가 다르다. 재생성이 아니라
     #     동일 바이트 복원이므로 60·61·76번과 채점 산출물이 인용하는 digest 가 그대로 유효하다.

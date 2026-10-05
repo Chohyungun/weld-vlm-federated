@@ -100,6 +100,11 @@ def make_round_recorder(
                     "val_loader_workers": float(m.get("val-loader-workers", -1)),
                 },
                 bytes_up=up,
+                # 하향은 **따로 잰 값이 아니다.** `payload_bytes_down` 을 세팅하는 코드가
+                # 저장소에 없어(`AggregationResult` 에 그 필드가 없다) 항상 상향 값이 들어간다.
+                # 사전실험 세 시드의 연합 원장(`fl/sep_fed/atomic_log.csv`)도 시드마다 1,500행
+                # 전부 `bytes_down == bytes_up` 이다.
+                # 로직을 바꾸지 않는다 — 하향을 재려면 어느 계층에서 쟀는지와 함께 새로 넣는다.
                 bytes_down=int(getattr(agg, "payload_bytes_down", 0) or up),
                 wall_time=elapsed,
             )

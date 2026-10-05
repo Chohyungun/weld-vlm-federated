@@ -1,4 +1,4 @@
-"""공개 저장소 전환 전 전수 검수 — 09-08 총괄 판정 (24번 부록 A-4 ①).
+"""공개 저장소 전환 전 전수 검수 — 09-08 판정 (24번 부록 A-4 ①).
 
 `corpus/generate/cycle_pilot*/` 의 미추적 산출물을 git 추적으로 돌리기 전에, 그 내용이
 **공개 저장소로 나가도 되는지**를 한 건도 빠짐없이 본다. `origin` 은 공개 GitHub
@@ -6,7 +6,7 @@
 
 ## 무엇을 보는가
 
-총괄이 지목한 것은 `PAID_STD` 스크린이다. 그런데 저장소 자체 정책이 그보다 넓다 —
+판정이 지목한 것은 `PAID_STD` 스크린이다. 그런데 저장소 자체 정책이 그보다 넓다 —
 `.gitignore:54` 가 규정 원문 덤프를 막으며 이렇게 적었다.
 
 > 무료 공개 문서라도 '열람·이용'과 '재배포'는 다른 권리다.
@@ -28,7 +28,12 @@
 
 ## 판정
 
-**한 건이라도 걸리면 전환하지 않는다** (총괄 지시). 종료코드 1.
+**한 건이라도 걸리면 전환하지 않는다** (지시 사항). 종료코드 1.
+
+**대상은 미추적 산출물이다 — 새 clone 의 기본 상태에서는 `unverified`(미검사, 종료코드 2)가 정상이다.**
+검사 대상(`cycle_pilot*` 의 미추적 구성원)도 재배포 판정의 원천 문서도 git 밖이라 clone 에는 없다.
+그때 나오는 `no_target_dir`·`no_source_docs` 는 고장이 아니라 "여기서는 검사할 수 없다" 는 사실 표시다
+(09-19 판정). 실제 검사는 그 산출물이 있는 트리에서 돌린다.
 
 실행:
   uv run python -m corpus.validate.screen_public_release
@@ -67,7 +72,7 @@ SHINGLE = 40
 
 AIHUB_ID = re.compile(r"aihub\d+\s*:")
 
-#: 로컬 절대경로. **폴더 이름 목록에 기대지 않는다** (09-16, 50번 추기). 옛 규칙은 드라이브 다음
+#: 로컬 절대경로. **폴더 이름 목록에 기대지 않는다** (09-16 추기). 옛 규칙은 드라이브 다음
 #: 첫 폴더가 `Users`·`Program Files`·이 저장소 이름일 때만 잡아서, 목록 밖 폴더·공유 드라이브·
 #: 이스케이프가 한 겹 남은 경로(문자열에 JSON 이 다시 들어 있는 경우)를 놓쳤다.
 #:
@@ -87,10 +92,39 @@ LOCAL_PATH = re.compile(
 #: 차단 사유. 하나라도 나오면 전환하지 않는다.
 BLOCKING = ("paid_std", "verbatim_source", "aihub_id", "local_path")
 
+#: 기본 제외 — **판정받은 두 스냅샷 디렉터리뿐이다.** 09-18 판정이 "합성" 으로 본 것은 이 둘이고
+#: (해시·지각 해시·경로가 전부 생성기 산물, 접두 형식만 같고 값은 실물이 아니다), 판정은 본 범위에만 선다.
+#: `data/mock/` 아래의 다른 경로(안내문 포함)와 나중에 생기는 자료는 **검사 대상이다** — 경로 이름이 mock
+#: 이라는 이유만으로 새 자료까지 자동 승인하지 않는다(09-21 추기).
+#: 기본 대상에는 없다. **이 경로를 대상으로 줬을 때만** 작동한다 — 차단 규칙 자체는 그대로다.
+EXCLUDED_PREFIXES = ("data/mock/mock_aihub_v1", "data/mock/mock_riawelc_v1")
+EXCLUDE_REASON = ("합성 데이터 — 09-18 판정(해시·지각 해시·경로가 전부 생성기 산물이고 출처 접두의 형식만 실물과 같다). "
+                  "판정 범위는 두 스냅샷 data/mock/mock_aihub_v1 · data/mock/mock_riawelc_v1 뿐이고, "
+                  "그 밖의 data/mock/** 은 판정 밖이라 검사한다")
+
+#: 판정 셋. `clear` 는 **실제로 검사한 문자열이 있을 때만**이다.
+VERDICT_NOTE = {
+    "blocked": "차단 사유가 나왔다 — 전환하지 않는다",
+    "clear": "검사한 문자열에서 차단 사유가 나오지 않았다",
+    "unverified": "검사를 못 했다 — 위험이 없다는 뜻이 아니다",
+}
+
+#: 종료 코드. 게시용 검사에서 필수 대상 누락은 통과할 수 없다.
+EXIT_CODE = {"clear": 0, "blocked": 1, "unverified": 2}
+
 
 def normalize(text: str) -> str:
     """공백만 무너뜨린다. 표 조판이 달라도 같은 문장은 같은 문장이다."""
     return re.sub(r"\s+", " ", text).strip()
+
+
+def doc_shingles(path: Path, n: int = SHINGLE) -> set[str]:
+    """원천 문서 **하나**의 n자 연속 조각. 정규화한 뒤 n자 미만이면 빈 집합이다.
+
+    길이는 정규화(공백 무너뜨리기) **뒤에** 잰다 — 공백으로 부풀린 파일이 긴 문서로 읽히면 안 된다.
+    """
+    t = normalize(path.read_text(encoding="utf-8", errors="replace"))
+    return {t[i:i + n] for i in range(len(t) - n + 1)}
 
 
 def source_shingles(docs=None, n: int = SHINGLE) -> set[str]:
@@ -101,10 +135,8 @@ def source_shingles(docs=None, n: int = SHINGLE) -> set[str]:
     """
     out: set[str] = set()
     for p in (SOURCE_DOCS if docs is None else docs):
-        if not p.is_file():
-            continue
-        t = normalize(p.read_text(encoding="utf-8", errors="replace"))
-        out.update(t[i:i + n] for i in range(len(t) - n + 1))
+        if p.is_file():
+            out |= doc_shingles(p, n)
     return out
 
 
@@ -169,54 +201,156 @@ def _shown(p: Path) -> str:
         return str(p)
 
 
-def screen(dirs=None) -> dict:
+def _excluded_by_prefix(d: Path) -> bool:
+    """기본 제외 접두 아래인가. 대상으로 **줬을 때만** 본다 — 기본 대상에는 이 경로가 없다."""
+    rel = _shown(d).replace("\\", "/")
+    return any(rel == pre or rel.startswith(pre + "/") for pre in EXCLUDED_PREFIXES)
+
+
+def screen(dirs=None, *, excludes: dict[str, str] | None = None) -> dict:
+    """대상별 실재·구성원·검사량을 함께 낸다.
+
+    **`clear` 는 실제로 검사한 문자열이 있을 때만이다.** 옛 판은 대상 디렉터리가 없으면 조용히
+    건너뛰어, 한 글자도 안 본 실행이 적발 0·`clear` 로 나왔다(검토 §20-5). 이제 그런 실행은
+    `unverified` 다 — **"검사를 못 했다" 이지 "위험 없음" 이 아니다.**
+    """
     dirs = TARGET_DIRS if dirs is None else dirs
-    shingles = source_shingles()
+    excludes = excludes or {}
+    # 원천은 **하나씩** 본다. 합집합의 조각 수와 파일 존재만 보면, 원천 하나가 비어 있어도
+    # 다른 원천의 조각에 가려 정상 검사로 읽힌다(검토 §23-3).
+    sources: list[dict] = []
+    shingles: set[str] = set()
+    for p in SOURCE_DOCS:
+        exists = p.is_file()
+        own = doc_shingles(p) if exists else set()
+        shingles |= own
+        sources.append({"path": _shown(p), "exists": exists, "n_shingles": len(own)})
     report: dict = {
         "shingle_len": SHINGLE,
         "n_source_shingles": len(shingles),
-        "source_docs_present": [_shown(p) for p in SOURCE_DOCS if p.is_file()],
+        "source_docs_present": [s["path"] for s in sources if s["exists"]],
+        "sources": sources,
+        "targets": [],
         "files": [],
+        "unverified_reasons": [],
     }
+
+    def _unverified(reason: str, what: str) -> None:
+        report["unverified_reasons"].append({"reason": reason, "what": what})
+
     if not shingles:
-        # 원천이 없으면 재배포 판정을 못 한 것이다. 통과로 적지 않는다.
-        report["warning"] = ("원천 문서가 워크트리에 없어 verbatim_source 를 판정하지 못했다"
+        # 비교할 조각이 하나도 없으면 재배포 판정을 못 한 것이다. 통과로 적지 않는다.
+        report["warning"] = ("원천 문서가 이 트리에 없어 verbatim_source 를 판정하지 못했다"
                              " — 이 상태의 통과는 근거가 아니다")
+    n_present = len(report["source_docs_present"])
+    if n_present < len(SOURCE_DOCS) or not SOURCE_DOCS:
+        _unverified("no_source_docs", f"{len(SOURCE_DOCS)}개 중 {n_present}개만 있다")
+    for s in sources:
+        if s["exists"] and not s["n_shingles"]:
+            # 파일은 있는데 비교 조각을 못 만든다 — 비었거나, 정규화 뒤 SHINGLE 자 미만이다.
+            _unverified("source_without_shingles", s["path"])
+
     for d in dirs:
-        if not d.is_dir():
+        d = Path(d)
+        shown = _shown(d)
+        t: dict = {"path": shown, "exists": d.is_dir(), "excluded": False,
+                   "exclude_reason": None, "n_members": 0, "n_untracked": 0,
+                   "missing_members": []}
+        reason = excludes.get(d.name) or excludes.get(shown.replace("\\", "/"))
+        if reason is None and _excluded_by_prefix(d):
+            reason = EXCLUDE_REASON
+        if reason is not None:
+            t["excluded"], t["exclude_reason"] = True, reason
+            report["targets"].append(t)
             continue
-        for name in untracked_members(d):
+        if not d.is_dir():
+            _unverified("no_target_dir", shown)
+            report["targets"].append(t)
+            continue
+        names, _digest = snapshot_summary(d)
+        t["n_members"] = len(names)
+        members = untracked_members(d)
+        t["n_untracked"] = len(members)
+        if not names:
+            _unverified("missing_members", f"{shown}: 계약서가 없어 구성원을 알 수 없다")
+        for name in members:
             p = d / name
             entry = {"path": _shown(p), "exists": p.is_file(),
                      "n_texts": 0, "hits": []}
             if p.is_file():
                 for where, text in iter_texts(p):
                     entry["n_texts"] += 1
-                    for reason, evidence in screen_text(text, shingles):
-                        entry["hits"].append({"reason": reason, "where": where,
+                    for reason_, evidence in screen_text(text, shingles):
+                        entry["hits"].append({"reason": reason_, "where": where,
                                               "evidence": evidence[:120]})
+            else:
+                t["missing_members"].append(name)
             report["files"].append(entry)
+        if t["missing_members"]:
+            _unverified("missing_members", f"{shown}: {t['missing_members']}")
+        report["targets"].append(t)
+
+    report["n_targets"] = len(report["targets"])
+    report["n_targets_missing"] = sum(1 for t in report["targets"]
+                                      if not t["exists"] and not t["excluded"])
+    report["n_targets_excluded"] = sum(1 for t in report["targets"] if t["excluded"])
+    report["n_members_missing"] = sum(len(t["missing_members"]) for t in report["targets"])
+    report["n_files_examined"] = sum(1 for f in report["files"] if f["exists"])
+    report["n_texts_examined"] = sum(f["n_texts"] for f in report["files"])
     report["n_hits"] = sum(len(f["hits"]) for f in report["files"])
     report["n_blocking"] = sum(1 for f in report["files"] for h in f["hits"]
                                if h["reason"] in BLOCKING)
-    report["verdict"] = "blocked" if report["n_blocking"] else "clear"
+    if report["n_texts_examined"] == 0:
+        _unverified("nothing_examined", "검사한 문자열이 0개다")
+    if report["n_blocking"]:
+        report["verdict"] = "blocked"                 # 적발이 먼저다
+    elif report["unverified_reasons"]:
+        report["verdict"] = "unverified"
+    else:
+        report["verdict"] = "clear"
+    report["verdict_note"] = VERDICT_NOTE[report["verdict"]]
     return report
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="공개 저장소 전환 전 전수 검수")
+    ap = argparse.ArgumentParser(
+        description="공개 저장소 전환 전 전수 검수",
+        epilog="대상은 미추적 산출물이다 — 새 clone 의 기본 상태에서는 unverified(미검사, 종료 2)가"
+               " 정상이고, 그것은 '여기서는 검사할 수 없다' 는 사실 표시다.")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--exclude", action="append", default=[], metavar="이름=사유",
+                    help="대상을 명시적으로 뺀다. 사유는 결과에 남는다 (반복 가능)")
     args = ap.parse_args(argv)
 
-    r = screen()
+    excludes: dict[str, str] = {}
+    for spec in args.exclude:
+        name, _, reason = spec.partition("=")
+        if not name or not reason:
+            ap.error(f"--exclude 는 '이름=사유' 꼴이어야 한다: {spec!r}")
+        excludes[name] = reason
+
+    r = screen(excludes=excludes)
     if args.json:
         print(json.dumps(r, ensure_ascii=False, indent=1))
-        return 1 if r["verdict"] == "blocked" else 0
+        return EXIT_CODE[r["verdict"]]
 
     print(f"원천 조각 {r['n_source_shingles']:,}개 ({SHINGLE}자) "
           f"/ 원천 문서 {len(r['source_docs_present'])}개")
     if r.get("warning"):
         print(f"!! {r['warning']}")
+    for s in r["sources"]:
+        if not s["exists"]:
+            print(f"✕ 원천 {s['path']}  이 트리에 없다 — 재배포 판정 못 함")
+        elif not s["n_shingles"]:
+            print(f"✕ 원천 {s['path']}  비교 조각 0개(비었거나 정규화 뒤 {SHINGLE}자 미만)"
+                  " — 재배포 판정 못 함")
+    for t in r["targets"]:
+        if t["excluded"]:
+            print(f"- {t['path']}  제외 — {t['exclude_reason']}")
+        elif not t["exists"]:
+            print(f"✕ {t['path']}  이 트리에 없다 — 검사 못 함")
+        elif t["missing_members"]:
+            print(f"✕ {t['path']}  구성원 {len(t['missing_members'])}개 없다 — 검사 못 함")
     for f in r["files"]:
         mark = "✕" if f["hits"] else "○"
         print(f"{mark} {f['path']}  문자열 {f['n_texts']:,}개  적발 {len(f['hits'])}건")
@@ -224,10 +358,17 @@ def main(argv: list[str] | None = None) -> int:
             print(f"    [{h['reason']}] {h['where']}: {h['evidence']!r}")
         if len(f["hits"]) > 5:
             print(f"    … 외 {len(f['hits']) - 5}건")
-    print(f"\n판정: {r['verdict']}  (차단 사유 {r['n_blocking']}건)")
+    print(f"\n검사한 파일 {r['n_files_examined']}개 · 문자열 {r['n_texts_examined']:,}개"
+          f"  (대상 {r['n_targets']}곳 · 없음 {r['n_targets_missing']} · 제외 {r['n_targets_excluded']}"
+          f" · 구성원 없음 {r['n_members_missing']})")
+    print(f"판정: {r['verdict']} — {r['verdict_note']}  (차단 사유 {r['n_blocking']}건)")
     if r["verdict"] == "blocked":
-        print("전환하지 마라 — 총괄에 보고한다 (09-08 판정).", file=sys.stderr)
-    return 1 if r["verdict"] == "blocked" else 0
+        print("전환하지 마라 — 적발 내용을 보고한다 (09-08 판정).", file=sys.stderr)
+    if r["verdict"] == "unverified":
+        for u in r["unverified_reasons"]:
+            print(f"    [{u['reason']}] {u['what']}", file=sys.stderr)
+        print("검사를 못 했다 — 이 상태로 게시하지 마라. 위험이 없다는 뜻이 아니다.", file=sys.stderr)
+    return EXIT_CODE[r["verdict"]]
 
 
 if __name__ == "__main__":

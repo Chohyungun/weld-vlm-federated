@@ -18,7 +18,7 @@
 있지 않으면 산출물은 증거로 남기되 `score` 가 2 로 죽는다. 이전 판은 출력만 하고 0 을
 돌려줘 "차단 ○" 열이 기록 이상이 아니었다. 종료 코드 표는 `evaluation/README.md`.
 
-`score` 는 전역 지표 옆에 **같은 산출물 안에** id 구간 층화 블록을 싣고(총괄 판정 6 ·
+`score` 는 전역 지표 옆에 **같은 산출물 안에** id 구간 층화 블록을 싣고(판정 6 ·
 13번 D-1), 채점 디렉터리에 `prereg_recomputed_v1.json` 이 없으면 동결본에서 재산출해
 선배치한다(13번 D-8 파생). 둘 다 게이트가 매 채점마다 확인한다.
 
@@ -87,7 +87,7 @@ HEADLINE_POLICY = {
     "demoted": ["macro_ap"],
     "no_headline_axis": "classification",
     "candidate": ["discrimination_threshold_free (Δ_AUC)"],
-    "ruling": "총괄 판정 22번 §6-2 (main dd430ae)",
+    "ruling": "판정 22번 §6-2 (main dd430ae)",
     "rules": [
         "위치 축 map_50 회복률이 **유일한 확정 대표 숫자**다.",
         ("macro_ap 는 보조지표다 — 무내용 대조선을 **반드시 병기**하고 단독 인용을 금한다. "
@@ -107,19 +107,19 @@ HEADLINE_POLICY = {
 }
 """**산출물이 자기 헤드라인 규칙을 말한다.** 표만 읽고 인용하는 사람이 있기 때문이다.
 
-이 딕셔너리를 고치는 것은 채점 기준을 고치는 것과 같다 — 총괄 판정 없이 바꾸지 마라.
+이 딕셔너리를 고치는 것은 채점 기준을 고치는 것과 같다 — 판정 없이 바꾸지 마라.
 """
 
 ARTIFACT_VERSIONS = {"v1": "score_cells_v1.json", "v2": "score_cells_v2.json",
                      "v3": "score_cells_v3.json"}
 """산출물 파일명. **v2 부터는 새 경로다** — 세 시드를 한 코드 상태(하나의 커밋)로 다시 채점할 때
-옛 판을 덮어쓰지 않고 옆에 둔다(총괄 판정 09-16, C 34번 Important 1). v1 은 역사 기록으로 남는다.
+옛 판을 덮어쓰지 않고 옆에 둔다(판정 09-16, C 34번 Important 1). v1 은 역사 기록으로 남는다.
 v3 = 머지된 main 커밋에서 줄끝 정규화 지문으로 다시 채점(37번 §3-4-3, C 42번 I-2).
 """
 
 
 MAIN_OUTPUT_PARTS: tuple[str, str] = ("outputs", "main_d")
-"""본실험 채점 산출 루트의 경로 성분(총괄 판정 09-16 23:25, C 42번 §9-6 n-1)."""
+"""본실험 채점 산출 루트의 경로 성분(판정 09-16 23:25, C 42번 §9-6 n-1)."""
 
 
 def _has_main_parts(path: Path) -> bool:
@@ -132,7 +132,7 @@ def is_main_output(out: Path) -> bool:
     """`out` 이 본실험 채점 루트(`…/outputs/main_d/…`) 아래인가.
 
     **경로 성분**으로 판정한다 — 절대화한 경로에 `outputs`·`main_d` 두 성분이 **연달아** 있으면 본실험이다.
-    대소문자는 가리지 않는다(윈도우). 다른 워크트리의 절대경로·임시 폴더 아래 `outputs/main_d` 도 같은
+    대소문자는 가리지 않는다(윈도우). 다른 체크아웃의 절대경로·임시 폴더 아래 `outputs/main_d` 도 같은
     규칙으로 잡힌다. `outputs/main_dx`·`main_d` 단독은 본실험이 아니다. 프로파일로 가르지 않는 이유:
     보호 대상은 **자리**(v1 산출물이 있는 곳)이지 채점 설정이 아니다.
 
@@ -153,7 +153,7 @@ def artifact_dest(out: Path, version: str) -> Path:
 
     - v2 부터는 어디서든 — 재채점은 새 판 경로에 쓰고 옛 판을 보존한다(C 42번 I-2).
     - **v1 도 본실험 루트(`is_main_output`)에서는** — 기본값 v1 로 부르면 본실험 v1 을 같은 경로에
-      다시 쓰게 된다(n-1, 총괄 판정 09-16 23:25).
+      다시 쓰게 된다(n-1, 판정 09-16 23:25).
 
     파일럿 루트의 v1·`gate` 부명령(`gate_recheck_*` 에 쓴다)·기존 시험이 기대는 v1 다시 쓰기는 그대로 둔다.
     """
@@ -190,7 +190,7 @@ def exit_code(gates: dict, regressions: dict) -> tuple[int, str]:
 
 def stratified_block(pop: Population, by_cell: dict,
                      frozen: Path = Path(FROZEN_SNAPSHOT)) -> dict:
-    """전역 지표 옆에 **같은 산출물 안에** 층화 지표를 싣는다 (총괄 판정 6 · 13번 D-1).
+    """전역 지표 옆에 **같은 산출물 안에** 층화 지표를 싣는다 (판정 6 · 13번 D-1).
 
     절단점은 동결본 train+val 에서만 온다(A 의 `data.id_strata`). 채점 모집단이 파일럿
     부분집합이든 동결 평가셋 전량이든 같은 절단점을 받는다. K 사다리 전체를 내되 기본
@@ -256,10 +256,10 @@ def _recovery_of(values: dict[str, float]) -> dict:
 
 
 def curve_block(params: ScoringParams, pop: Population, det_tags) -> dict:
-    """**등록된 격자 전 구간의 곡선.** 채점의 정규 단계다 (총괄 판정 1 · 22번 §1-2).
+    """**등록된 격자 전 구간의 곡선.** 채점의 정규 단계다 (판정 1 · 22번 §1-2).
 
     단일 임계 한 점은 확증 기준이 아니다 — 17번 §3-5 에서 연합↔로컬평균의 대소가 두 축
-    모두 뒤집혔고, 총괄은 헤드라인을 곡선 + 임계 독립 지표로 옮겼다. 그래서 이 블록은
+    모두 뒤집혔고, 판정 1 이 헤드라인을 곡선 + 임계 독립 지표로 옮겼다. 그래서 이 블록은
     옵션이 아니라 매 채점마다 나온다: 곡선이 없으면 `sweep_curve_recorded` 게이트가 막는다.
 
     입력은 **하한 레코드**(`sweep/{tag}_raw_s{seed}.jsonl`)다. 하한 1회 + 사후 필터가
@@ -323,7 +323,7 @@ def curve_block(params: ScoringParams, pop: Population, det_tags) -> dict:
         "recovery_by_threshold": recovery,
         "threshold_dependence": flips,
         "note": (
-            "단일 임계 한 점은 확증 기준이 아니다(총괄 판정 1, 22번). 격자는 사전등록 "
+            "단일 임계 한 점은 확증 기준이 아니다(판정 1, 22번). 격자는 사전등록 "
             "대상이고 단일 임계는 아니다 — 격자는 결과와 무관하게 정할 수 있어 사후 선택이 "
             "아니기 때문이다. 대소가 뒤집히는 축은 threshold_dependence 가 말한다"
         ),
@@ -331,7 +331,7 @@ def curve_block(params: ScoringParams, pop: Population, det_tags) -> dict:
 
 
 def threshold_independent_block(params: ScoringParams, pop: Population, det_tags) -> dict:
-    """**임계 독립 헤드라인 지표.** 하한 레코드 한 점에서만 낸다 (총괄 판정 1).
+    """**임계 독립 헤드라인 지표.** 하한 레코드 한 점에서만 낸다 (판정 1).
 
     - `map_50`·`map_50_95`: PR 곡선 전 구간 적분(위치 축)
     - `macro_ap`: 이미지 수준 macro Average Precision(분류 축 — Macro-F1 의 임계 독립 대응물)
@@ -414,7 +414,7 @@ def discrimination_block(pop: Population, by_cell: dict, prov: dict) -> dict:
         "n_context": len(contexts),
         "results": rows,
         "promotion_note": (
-            "헤드라인 보조지표 승격은 총괄 판정 사항이다(22번 §5 과제 4). 여기서는 값과 "
+            "헤드라인 보조지표 승격은 별도 판정 사항이다(22번 §5 과제 4). 여기서는 값과 "
             "판정 재료만 낸다"
         ),
     }
@@ -479,7 +479,7 @@ def threshold_free_block(params: ScoringParams, pop: Population, prov: dict,
 
 
 def content_free_block(params: ScoringParams) -> dict:
-    """**무내용 대조선** — macro-AP 옆에 반드시 서야 하는 값 (총괄 판정 22번 §6-2-1).
+    """**무내용 대조선** — macro-AP 옆에 반드시 서야 하는 값 (판정 22번 §6-2-1).
 
     판정이 "macro-AP 는 보조로 싣되 무내용 대조선을 **반드시 병기**" 로 못박았다. 대조선이
     별도 스크립트를 돌려야만 생기는 상태면 시드 2·3 에서 빠뜨릴 수 있으므로, 없으면
@@ -589,7 +589,7 @@ def decomposition_block(params: ScoringParams, pop: Population, det_tags) -> dic
 
 
 def shortcut_footnote(p9: dict, strata: dict) -> dict:
-    """**전역 지표 표에 자동으로 달리는 각주** (총괄 판정 2 · 22번 §2-2-2).
+    """**전역 지표 표에 자동으로 달리는 각주** (판정 2 · 22번 §2-2-2).
 
     "이 점수의 일부는 규격 지름길이다"를 사람이 기억해서 다는 문장으로 두지 않는다 —
     산출물이 스스로 달게 한다. 두 지름길을 각각의 실측에서 읽는다.
@@ -817,7 +817,7 @@ def cmd_score(args) -> int:
     diag = diagnostics(params, pop, all_records, adapters, uni_tags)
     strata = stratified_block(pop, by_cell)
 
-    # 총괄 판정 1 (22번) — 곡선과 임계 독립 지표는 **정규 단계**다. 옵션이 아니다.
+    # 판정 1 (22번) — 곡선과 임계 독립 지표는 **정규 단계**다. 옵션이 아니다.
     indep = threshold_independent_block(params, pop, det_tags)
     curve = curve_block(params, pop, det_tags)
     footnote = shortcut_footnote(diag["p9"], strata)
@@ -825,7 +825,7 @@ def cmd_score(args) -> int:
     prov = diag.pop("_provenance")
     discrim = discrimination_block(pop, by_cell, prov)
     decomp = decomposition_block(params, pop, det_tags)
-    # 총괄 판정 22번 §6 — 대조선 병기와 Δ_AUC 산출은 **정규 단계**다. 시드 2·3 에서도
+    # 판정 22번 §6 — 대조선 병기와 Δ_AUC 산출은 **정규 단계**다. 시드 2·3 에서도
     # 같은 방식으로 나와야 하므로 별도 스크립트에 맡기지 않는다.
     baseline = content_free_block(params)
     free = threshold_free_block(params, pop, prov, det_tags)
@@ -901,7 +901,7 @@ def cmd_score(args) -> int:
             [record_path(params, t) for t in tags] + [raw_record_path(params, t) for t in det_tags]),
         "metrics": metrics,
         "metrics_role": (
-            f"운용점 예시 conf={params.conf.value} — **확증적 기준 아님**(총괄 판정 1, "
+            f"운용점 예시 conf={params.conf.value} — **확증적 기준 아님**(판정 1, "
             "22번 §1-2-3). 헤드라인은 threshold_independent, 칸 비교는 curve 로 한다"
         ),
         "headline_policy": HEADLINE_POLICY,

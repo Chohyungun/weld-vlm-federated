@@ -217,7 +217,7 @@ def cmd_train() -> None:
 def _load_yolo(npz_path: Path, class_names, imgsz: int):
     """npz 상태를 **본실험 프로파일 모델**(YOLO11s)에 주입한다.
 
-    ## 왜 D 의 `load_yolo_from_npz` 를 그대로 못 쓰는가
+    ## 왜 `load_yolo_from_npz` 를 그대로 못 쓰는가
 
     `evaluation/detect_infer.load_yolo_from_npz` 가 `cfg="yolo11n.yaml"` 을 **하드코딩**한다.
     파일럿 프로파일(YOLO11n)만 상정한 코드라 본실험 프로파일(YOLO11s)로 학습한 가중치를
@@ -225,11 +225,11 @@ def _load_yolo(npz_path: Path, class_names, imgsz: int):
 
         SerializeError: shape 불일치 [model.0.conv.weight]: (32,3,3,3) != (16,3,3,3)
 
-    **`evaluation/` 는 트랙 D 소관이라 고치지 않았다.** 대신 여기서 같은 절차를 모델
-    구성만 바꿔 수행한다. 갈라지는 것은 `cfg` 문자열 하나이고, 가중치 주입은 D 의
-    독스트링이 스스로 지정한 대로 C 의 `detection.serialize` 를 그대로 지난다.
-    **채점(`score_detection`·`cluster_bootstrap`)과 추론(`predict_cell`)은 전부 D 것을
-    그대로 부른다** — 두 번째 채점기를 만들지 않는다.
+    **`evaluation/` 는 고치지 않았다.** 대신 여기서 같은 절차를 모델 구성만 바꿔
+    수행한다. 갈라지는 것은 `cfg` 문자열 하나이고, 가중치 주입은 그 독스트링이 스스로
+    지정한 대로 `detection.serialize` 를 그대로 지난다.
+    **채점(`score_detection`·`cluster_bootstrap`)과 추론(`predict_cell`)은 전부 기존
+    구현을 그대로 부른다** — 두 번째 채점기를 만들지 않는다.
 
     본실험 착수 전에 D 가 `load_yolo_from_npz` 에 모델 cfg 를 인자로 열어야 한다.
     지금 상태로는 **다섯 칸 중 어느 것도 본실험 프로파일로 채점할 수 없다.** 82번에 보고.
@@ -272,7 +272,7 @@ PREDICT_CHUNK = 256
 def cmd_score() -> None:
     """평가셋 전량 추론 → 통과 기준 3종 판정.
 
-    **채점 코드를 새로 짜지 않는다.** `evaluation/`(트랙 D 소유)의 `predict_cell`·
+    **채점 코드를 새로 짜지 않는다.** `evaluation/` 의 `predict_cell`·
     `score_detection`·`cluster_bootstrap` 을 그대로 부른다. 게이트가 다섯 칸과 다른
     채점기를 쓰면 그 게이트가 무엇을 판정한 것인지 알 수 없다.
     """

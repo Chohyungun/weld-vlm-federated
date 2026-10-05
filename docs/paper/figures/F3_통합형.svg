@@ -36,7 +36,7 @@
   <rect x="295" y="205" width="390" height="85" rx="5" fill="#d9d9d9" stroke="#888" stroke-width="1.5"/>
   <text x="490" y="236" text-anchor="middle" font-size="14" font-weight="bold" fill="#222">기본 모델</text>
   <text x="490" y="259" text-anchor="middle" font-size="12" fill="#333">고정 — 학습하지 않는다</text>
-  <text x="490" y="279" text-anchor="middle" font-size="11.5" fill="#333">다섯 조건이 모두 같은 출발점을 쓴다</text>
+  <text x="490" y="279" text-anchor="middle" font-size="11.5" fill="#333">세 학습 방식이 모두 같은 출발점을 쓴다</text>
 
   <!-- 어댑터 (학습됨) -->
   <rect x="295" y="305" width="215" height="70" rx="5" fill="#eaf1f7" stroke="#222" stroke-width="2.2"/>
@@ -51,16 +51,16 @@
 
   <!-- ============ 판정문 ============ -->
   <rect x="785" y="175" width="435" height="210" rx="6" fill="#ffffff" stroke="#444" stroke-width="1.8"/>
-  <text x="1002" y="206" text-anchor="middle" font-size="15" font-weight="bold" fill="#222">판정문 — 한 번에 생성된다</text>
+  <text x="1002" y="206" text-anchor="middle" font-size="15" font-weight="bold" fill="#222">구조화한 출력 — 본실험 설계</text>
   <text x="815" y="241" font-size="12.5" fill="#333">· 결함 종류</text>
-  <text x="815" y="267" font-size="12.5" fill="#333">· 위치 상자와 크기</text>
-  <text x="815" y="293" font-size="12.5" fill="#333">· 합격 / 불합격</text>
+  <text x="815" y="267" font-size="12.5" fill="#333">· 원본 이미지의 픽셀 좌표 상자</text>
+  <text x="815" y="293" font-size="12.5" fill="#333">· 후보 조항과 부족한 정보</text>
   <text x="815" y="319" font-size="12.5" fill="#333">· 인용한 규정 조항 번호</text>
   <text x="815" y="353" font-size="11.5" fill="#555">정해진 형식 하나로 묶여서 나온다</text>
 
   <!-- ============ 각주 ============ -->
   <line x1="60" y1="445" x2="1240" y2="445" stroke="#dddddd" stroke-width="1"/>
-  <text x="60" y="472" font-size="12" fill="#555">규정을 따로 찾지 않는다. 모델이 학습으로 익힌 지식에서 조항을 직접 인용한다.</text>
-  <text x="60" y="494" font-size="12" fill="#555">그 인용이 실제 규정과 맞는지는 채점 항목(무근거 인용률)으로 따로 잰다.</text>
-  <text x="60" y="524" font-size="12" fill="#555">분리형은 규정을 찾아서 인용하고 통합형은 직접 인용한다 — 이 비대칭 자체가 두 구조를 비교하는 축이므로 없애지 않는다.</text>
+  <text x="60" y="472" font-size="12" fill="#555">별도 규정 검색 없이 조항을 출력한다. 조항 번호가 있다는 사실만으로 인용의 정확성을 보장하지 않는다.</text>
+  <text x="60" y="494" font-size="12" fill="#555">조항 정합성과 근거 없는 인용은 별도 채점한다. 두께·화소당 실치수가 없어 이미지 합부는 검증하지 않는다.</text>
+  <text x="60" y="524" font-size="12" fill="#555">이 그림은 계획한 모델 구성이다. 코드 구현과 실제 학습·평가 완료는 구분한다.</text>
 </svg>

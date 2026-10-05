@@ -107,6 +107,32 @@ def smoke_client_round(round_idx: int, client_idx: int, cfg: Any) -> tuple[list,
     return arrays, metrics, strings
 
 
+def uni_client_round(cfg: Any, *, arrays_in: list, canonical_keys: list[str], round_idx: int,
+                     client_idx: int) -> tuple[list, dict, dict]:
+    """통합형 연합 클라이언트 한 라운드 — 서버가 보낸 설정 기록에서 학습 인자를 만들어 `run_client_round` 를 부른다.
+
+    **고의 중단 변수를 무엇보다 먼저 본다**(2판 §1-4 의 순서 2) — 받은 설정을 읽기 전이다. Flower 자료형을 받지 않으므로
+    서버 진입점을 끝까지 도는 시험이 이 함수를 그대로 부른다.
+    """
+    from fl.client_vlm import run_client_round
+    from fl.uni_run_config import client_run_cfg
+    from vlm.fault import assert_no_fault_env
+
+    assert_no_fault_env(who="통합형 연합 클라이언트는")
+    run_cfg = {
+        "client_tag": str(cfg[f"client-tag-{client_idx}"]),
+        "local_epochs": int(cfg["local-epochs"]),
+        "num_rounds": int(cfg["num-rounds"]),
+        "base_seed": int(cfg["base-seed"]),
+        "resume_root": str(cfg["resume-root"]) if cfg.get("resume-root") else None,
+        "run_id": str(cfg.get("run-stamp", "")),
+        # 통합형 키 — 서버가 `fl.uni_run_config.down_config` 로 보낸 것. 빠지면 거부한다.
+        "uni": client_run_cfg(cfg),
+    }
+    return run_client_round(adapter_in=arrays_in, canonical_keys=canonical_keys,
+                            round_idx=round_idx, client_idx=client_idx, cfg=run_cfg)
+
+
 @app.train()
 def train(msg: Message, context: Context) -> Message:
     """서버가 보낸 파라미터로 칸에 맞는 로컬 학습을 돌리고 결과를 돌려준다."""
@@ -145,20 +171,8 @@ def train(msg: Message, context: Context) -> Message:
             profile=str(cfg.get("profile", "main")),
         )
     elif cell == "uni_fed":
-        from fl.client_vlm import run_client_round
-
-        run_cfg = {
-            "client_tag": str(cfg[f"client-tag-{client_idx}"]),
-            "local_epochs": int(cfg["local-epochs"]),
-            "num_rounds": int(cfg["num-rounds"]),
-            "base_seed": int(cfg["base-seed"]),
-            "resume_root": str(cfg["resume-root"]) if cfg.get("resume-root") else None,
-            "run_id": str(cfg.get("run-stamp", "")),
-        }
-        arrays_out, metrics, strings = run_client_round(
-            adapter_in=arrays_in, canonical_keys=canonical_keys,
-            round_idx=round_idx, client_idx=client_idx, cfg=run_cfg,
-        )
+        arrays_out, metrics, strings = uni_client_round(cfg, arrays_in=arrays_in, canonical_keys=canonical_keys,
+                                                        round_idx=round_idx, client_idx=client_idx)
     elif cell == SMOKE_CELL:
         arrays_out, metrics, strings = smoke_client_round(round_idx, client_idx, cfg)
     else:

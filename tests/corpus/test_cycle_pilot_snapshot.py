@@ -1,6 +1,6 @@
 """cycle_pilot 근거 보존 회귀 방지 — 74번 감사 P5.
 
-원본 jsonl 은 `.gitignore` 로 미추적이라 워크트리를 정리하면 사라진다. 통과율
+원본 jsonl 은 `.gitignore` 로 미추적이라 만든 트리를 정리하면 사라진다. 통과율
 0.94 / 0.345 의 근거는 추적된 축약본만으로 재계산돼야 하고, 그 값이 보고서와
 어긋나면 조용히 지나가면 안 된다.
 """
@@ -53,10 +53,10 @@ def test_축약본은_생성문_전문을_담지_않는다():
 
 
 def test_원본과_한건씩_대조된다():
-    """원본이 워크트리에 남아 있는 동안은 실제로 대조된다 (없으면 건너뛴다)."""
+    """원본이 이 트리에 남아 있는 동안은 실제로 대조된다 (없으면 건너뛴다)."""
     src = REPO / "corpus/generate/cycle_pilot/reasoning_accepted.jsonl"
     if not src.exists():
-        pytest.skip("원본이 워크트리에 없다 — 드라이브 보관분")
+        pytest.skip("원본이 이 트리에 없다 — 드라이브 보관분")
     want = {}
     for line in src.read_text(encoding="utf-8").splitlines():
         if line.strip():

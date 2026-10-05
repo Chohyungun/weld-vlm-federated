@@ -117,8 +117,10 @@ def main() -> None:
                 geom = ImageGeom(orig_w=img.size[0], orig_h=img.size[1])
                 msgs = [{"role": "user", "content": [{"type": "image", "image": img},
                                                      {"type": "text", "text": prompt}]}]
+                # 학습 렌더와 **같은 모드**여야 한다 — 11번 §1. 공통 고정 항목이다.
                 enc = proc.apply_chat_template(msgs, tokenize=True, return_dict=True,
-                                               return_tensors="pt", add_generation_prompt=True)
+                                               return_tensors="pt", add_generation_prompt=True,
+                                               enable_thinking=False)
                 enc = {k: (v.to("cuda") if hasattr(v, "to") else v) for k, v in enc.items()}
                 t0 = time.perf_counter()
                 with torch.no_grad():

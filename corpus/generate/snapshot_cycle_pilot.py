@@ -5,7 +5,7 @@
 1. `corpus/generate/cycle_pilot/` 산출물에 sha256 스냅샷이 없다. 규약 1-6 은 corpus·페어·
    색인에 sha256 을 부여하고 재생성을 금지한다.
 2. 통과율 0.94(QA) · 0.345(판정추론)를 뒷받침하는 **항목 레코드가 `.gitignore` 로 추적
-   제외**라 main 에 없다. 워크트리를 정리하면 근거가 소실된다.
+   제외**라 새 체크아웃에 없다. 만든 트리를 정리하면 근거가 소실된다.
 
 용량 때문에 원본 jsonl 을 추적할 수는 없다(약 700KB, 생성문 전문 포함). 그래서 원본은
 그대로 두고 **항목 단위 축약본**을 추적한다. 축약본은 항목마다 판정에 쓰인 플래그와
@@ -528,7 +528,7 @@ def main() -> int:
     missing = [n for n in REQUIRED if not (out_dir / n).exists()]
     if missing:
         print(f"스냅샷 대상이 없다: {missing}", file=sys.stderr)
-        print("원본은 드라이브 보관분이다 — 워크트리에 복원한 뒤 실행하라", file=sys.stderr)
+        print("원본은 드라이브 보관분이다 — 작업 트리에 복원한 뒤 실행하라", file=sys.stderr)
         return 2
 
     entries = [(sha256_file(out_dir / n), n) for n in members(out_dir)]

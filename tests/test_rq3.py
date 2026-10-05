@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from evaluation.rq3 import (
+    CUMULATIVE_BYTES_BASIS,
     Delta,
     attribute_by_client,
     build_rq3_report,
@@ -24,6 +25,11 @@ def report(fed=None, solo=None, **kw):
                                                        "C3": 7156}, **kw)
 
 
+#: `up` 과 `down` 을 따로 받지만 **독립으로 잰 두 값이 아니다.** 실제 원장은 하향을 따로
+#: 재지 않아 `bytes_down` 에 상향과 같은 값이 들어 있다(사전실험의 **비어 있지 않은 원장
+#: 17개 6,155행 전부** 같았다. 0행 원장 하나를 세면 파일 18개다 — 14번 검수 1-2).
+#: 기본값을 같게 둔 것이 그 실물을 따른 것이다. 아래 기대값의 "MB" 는 전부
+#: **상향+하향 합**이고 **기록된 상향 값**의 두 배다 — 회선을 잰 값이 아니다.
 def atomic(round_idx, client, value, cell="sep_fed", up=1_048_576, down=1_048_576):
     return {
         "run_id": "r", "seed": 0, "cell": cell, "split_hash": "h",
@@ -163,13 +169,36 @@ def test_malformed_atomic_rows_are_skipped_not_fatal():
 # --- ⑧ 통신량 대비 이득 -----------------------------------------------------------
 
 def test_gain_per_mb_uses_cumulative_bytes():
-    rows = [atomic(0, "C3", 0.62), atomic(1, "C3", 0.70)]   # 2MB/라운드 × 2라운드
+    # 라운드당 2MB = 상향 1MB + 하향 1MB(상향의 복제) → 누적 4MB. 기록된 상향 값은 2MB 다.
+    rows = [atomic(0, "C3", 0.62), atomic(1, "C3", 0.70)]
     per_mb = report(atomic_rows=rows).gain_per_mb()
     assert per_mb["C3"] == pytest.approx(10.0 / 4, abs=1e-6)
 
 
 def test_gain_per_mb_undefined_without_traffic():
     assert report().gain_per_mb()["C3"] is None
+
+
+def test_gain_per_mb_carries_its_denominator_basis():
+    """**표시를 박는 쪽만 두지 않는다** — 읽는 쪽에서 요구하는 자리를 만든다.
+
+    사람이 읽는 문장에만 적으면 `as_dict` 를 소비하는 코드는 분모가 상향의 두 배인 것을
+    모른다. 이 프로젝트에서 "표시는 있는데 읽는 쪽이 없다" 를 여러 번 봤다(14번 검수 1-4).
+    """
+    rows = [atomic(0, "C3", 0.65)]
+    basis = report(atomic_rows=rows).as_dict()["gain_per_mb_basis"]
+    # id 는 **문자열 리터럴로 고정한다.** 상수를 같은 상수와 맞대면 연결만 보고 값은 못 본다 —
+    # 산출을 읽는 코드가 이 id 로 분기하게 되면 값이 조용히 바뀌는 것이 그 코드를 깨뜨린다.
+    # 규약을 바꿀 때 이 줄도 같이 고치게 두는 쪽이 맞다. 그 수정이 규약 변경의 표시가 된다.
+    assert basis["id"] == "up_plus_down__down_copied_from_up"
+    assert basis["id"] == CUMULATIVE_BYTES_BASIS   # 상수가 산출까지 이어지는지도 함께
+    assert basis["provisional"] is True          # 팀 결정 전 기본안이다
+    assert "따로 재지 않았다" in basis["note"]   # 하향이 독립 실측이 아니라는 사실
+    assert "두 배" in basis["note"]              # 그래서 분모가 무엇인지
+
+    # 사람이 읽는 문장에도 값 옆에 같이 나가야 한다.
+    text = format_report(report(atomic_rows=rows))
+    assert "통신량 대비 이득" in text and "따로 재지 않았다" in text
 
 
 # --- 귀속 분해 (§3) ---------------------------------------------------------------
@@ -238,7 +267,7 @@ def test_formatted_report_marks_a_loser():
 
 # --- 원자 로그 스키마 확장 내성 (16번 B 검수 — 과제 2) -------------------------------
 #
-# C 가 B(검증 로더 워커 제거)를 착지하며 ④ 원자 로그에 `val_loader_workers` 지표 행을
+# B(검증 로더 워커 제거)가 착지하며 ④ 원자 로그에 `val_loader_workers` 지표 행을
 # 더한다(라운드당 27→30행, 시드 1 원장은 없음). 이 파서는 `metric_name` 으로 고르므로 새 행이
 # 궤적 점이나 통신량 누적에 섞이면 안 된다 — 통신량은 (라운드, 클라이언트)당 한 번만 센다.
 
@@ -255,7 +284,10 @@ def test_val_loader_workers_rows_do_not_touch_trajectory_or_traffic():
     a, b = report(atomic_rows=base), report(atomic_rows=with_flags)
     assert a.trajectory == b.trajectory
     assert a.gain_per_mb() == b.gain_per_mb()
-    assert b.gain_per_mb()["C3"] == pytest.approx(10.0 / 4, abs=1e-6)   # 4 MB — 두 번 세지 않았다
+    # 4 MB — **지표 행이 늘어도 (라운드, 클라이언트)당 한 번만 센다**는 뜻이다.
+    # 중복 계수가 없다는 보증이 아니다: 그 4 MB 안에는 상향 2MB 가 상향·하향 두 방향으로
+    # 들어가 있다(하향은 따로 잰 값이 아니다 — `CUMULATIVE_BYTES_NOTE`).
+    assert b.gain_per_mb()["C3"] == pytest.approx(10.0 / 4, abs=1e-6)
 
 
 def test_val_loader_workers_flag_is_readable_per_client():
@@ -292,3 +324,39 @@ def test_v3_metric_rows_do_not_touch_trajectory_or_traffic():
     assert a.gain_per_mb() == b.gain_per_mb()
     assert rows_to_client_metric(mixed, cell="sep_fed", metric_name="batch") == {"C3": 32.0}
     assert rows_to_client_metric(mixed, cell="sep_fed", metric_name="macro_f1") == {"C3": 0.70}
+
+
+# --- 범위 — 사전실험 분석이다 (30번 3-2~3-4) -----------------------------------------------------
+
+def test_보고의_첫_단서가_범위를_말한다():
+    """산출물만 본 사람이 통합형 RQ3 로 읽지 않게 — 두 양은 정의가 다르다(07번 §19-4)."""
+    from evaluation.rq3 import SCOPE_NOTE
+    r = report()
+    assert r.caveats[0] == SCOPE_NOTE
+    assert "통합형 본실험의 RQ3" in SCOPE_NOTE and "아니다" in SCOPE_NOTE
+
+
+def test_지표_행이_없는_원장이면_궤적이_빈_까닭을_적는다():
+    """실제 학습 원장은 성능을 싣지 않는다 — 궤적이 조용히 비지 않게."""
+    ledger_like = [{**atomic(1, "C3", 0.0), "metric_name": "optimizer_steps"}]
+    r = report(atomic_rows=ledger_like)
+    assert r.trajectory == ()
+    assert any("궤적" in c and "비었다" in c for c in r.caveats)
+
+
+def test_칸이_없는_행을_연합으로_세지_않는다():
+    row = atomic(1, "C3", 0.7)
+    del row["cell"]
+    assert report(atomic_rows=[row]).trajectory == ()
+
+
+def test_재개로_겹친_행은_두_번_더하지_않고_멈춘다():
+    rows = [atomic(1, "C3", 0.7), atomic(1, "C3", 0.7)]
+    with pytest.raises(ValueError, match="둘 이상"):
+        report(atomic_rows=rows)
+
+
+def test_쓰지_않는_단독_칸_인자를_받지_않는다():
+    """앞 판은 받고 쓰지 않았다 — 넘기는 쪽은 효과가 있다고 믿는다."""
+    with pytest.raises(TypeError):
+        report(solo_cell="sep_local")

@@ -71,7 +71,7 @@ def effective_limit(row: LimitRow, basis_value: Optional[Decimal] = None) -> Opt
 
     ratio_basis=a(목두께) 행은 **평가 보류**다 — 목두께는 라벨·매니페스트 어디에도 없어
     t 를 대입하면 조용히 다른 물리량으로 판정한다. 골격 생성기만 막고 여기를 열어 두면
-    같은 행에서 B 는 보류, D 는 판정으로 갈린다 (적대 검증 N6). 가드를 공유 평가기에 둔다.
+    같은 행에서 생성 쪽은 보류, 채점 쪽은 판정으로 갈린다 (검토 N6). 가드를 공유 평가기에 둔다.
     """
     rule = row.limit_rule
     if rule is LimitRule.NONE_PERMITTED:

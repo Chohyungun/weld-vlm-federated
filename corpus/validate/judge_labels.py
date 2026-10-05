@@ -52,7 +52,7 @@ LABELER_README = """\
 
 - `{field}: true`  — 자료 범위 안이다.
 - `{field}: false` — 자료를 벗어났다.
-- `labeler`        — 총괄이 지정한 값을 적는다.
+- `labeler`        — 지정받은 값을 적는다.
 - `note`           — 벗어났다고 본 근거를 한 줄로. 비워도 된다.
 
 순서대로 하고, 건너뛰지 않는다. 항목을 지우거나 순서를 바꾸지 않는다.
@@ -172,7 +172,7 @@ def _basis_of(rec: dict) -> str:
 def _f1(prec: float | None, rec: float | None) -> float | None:
     """정밀도·재현율이 **정의되지 않으면**(예측 양성 0 / 정답 양성 0) None, 정의됐는데 둘 다 0 이면
     0.0. `if prec and rec` 는 0.0 을 None 으로 떨어뜨려 "정의 안 됨" 과 "전부 틀림" 을 섞었다
-    (F 39번 m-6)."""
+    (39번 m-6)."""
     if prec is None or rec is None:
         return None
     return 2 * prec * rec / (prec + rec) if prec + rec else 0.0

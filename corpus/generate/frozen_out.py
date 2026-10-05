@@ -148,7 +148,7 @@ def confirm_overwrite(directory: Path, *, action: str, flag: str,
 #
 # 봉인 계약서와 실물이 맞는지 보는 일은 **트리마다 답이 다르다.** 계약 구성원 일부가
 # `.gitignore` 로 추적 밖이라(`corpus/generate/cycle_pilot/*.jsonl`), 그 파일들은
-# 만든 워크트리에만 있고 main 체크아웃에는 없다. 그래서 "구성원이 실물과 맞는가" 를
+# 만든 트리에만 있고 새 체크아웃에는 없다. 그래서 "구성원이 실물과 맞는가" 를
 # 단순 존재 검사로 쓰면 만든 자리에서만 통과하고 다른 곳에서는 무조건 깨진다 — 실제로
 # 09-08 게이트가 그렇게 막혔다.
 #
@@ -216,7 +216,7 @@ def _verify_present(directory: Path, *,
     elif out["unverified"]:
         out["verdict"] = "incomplete_tree"
         out["reason"] = (f"추적 밖 구성원 {len(out['unverified'])}개가 이 트리에 없다."
-                         " 만든 워크트리에만 있는 자산이다 (.gitignore)")
+                         " 만든 트리에만 있는 자산이다 (.gitignore)")
     else:
         out["verdict"] = "ok"
     return out
@@ -232,7 +232,7 @@ def _verify_present(directory: Path, *,
 #:         lost     — 소실이 기록됐다. 없으면 lost_recorded(알림, 실패 아님),
 #:                    다시 나타나면 lost_but_present(실패 — 같은 이름 재생성은 규약 1-6 위반)
 #:
-#: 명부 값(상태 갱신·항목 추가)은 A 파일에서 총괄 판정으로 바꾼다 — 여기서 고치지 않는다.
+#: 명부 값(상태 갱신·항목 추가)은 `data/frozen_guard.py` 에서 판정에 따라 바꾼다 — 여기서 고치지 않는다.
 
 #: 실물이 있어야 하는 상태. 어휘에 단어가 늘면 시험이 멈춰 세운다 — 새 단어가 "있어야 하는지"
 #: 는 이쪽이 정해야 판정이 선다(`test_상태_어휘를_빠짐없이_판정한다`).

@@ -81,14 +81,29 @@ def num_ko(x) -> str:
     return val(f)
 
 
+def _open_encoded(x) -> bool:
+    """`정수 + 0.01` 꼴인가 — 원문 폐구간 `(a, b]` 를 반열림 `[a+0.01, b+0.01)` 로 옮긴 경계다."""
+    try:
+        f = float(val(x))
+    except ValueError:
+        return False
+    return abs(f - round(f) - 0.01) < 1e-9
+
+
 def thickness_ko(tmin, tmax) -> str:
-    """두께 구간을 원문 표기(초과·이하)로 쓴다."""
+    """두께 구간 `[tmin, tmax)` 을 원문 표기로 쓴다.
+
+    `+0.01` 로 부호화된 경계는 "초과"·"이하" 로 되돌린다. 그렇지 않은 경계는 반열림 그대로
+    "이상"·"미만" 이다 — 예전에는 하한을 늘 "초과", 상한을 늘 "이하" 로 써서, `[10, 25)` 같은 구간이
+    "10 mm 초과 25 mm 이하" 로 나갔다(경계값 두 개가 반대로 읽힌다). 파일럿 표에는 그런 행이 없어
+    출력은 그대로다.
+    """
     lo, hi = val(tmin), val(tmax)
     lo_f = float(lo) if lo else 0.0
-    left = "" if lo_f == 0 else f"{num_ko(tmin)} mm 초과"
+    left = "" if lo_f == 0 else f"{num_ko(tmin)} mm {'초과' if _open_encoded(tmin) else '이상'}"
     if not hi:
         return left or "모든 두께"
-    right = f"{num_ko(tmax)} mm 이하"
+    right = f"{num_ko(tmax)} mm {'이하' if _open_encoded(tmax) else '미만'}"
     return f"{left} {right}".strip() if left else right
 
 
@@ -100,14 +115,23 @@ def material_ko(m) -> str:
 # --------------------------------------------------------------- 기준 서술
 
 def op_ko(op) -> str:
-    """부등호 표기. `limit_op` 를 읽는다 — 고정 문자열로 박지 않는다 (74번 M9)."""
-    return {"le": "이하", "lt": "미만"}.get(val(op), "이하")
+    """부등호 표기. `limit_op` 를 읽는다 — 고정 문자열로 박지 않는다 (74번 M9).
+
+    모르는 값은 **예외다.** 예전에는 "이하" 로 떨어뜨렸다 — 새 부등호가 표에 들어오면 방향이 뒤집힌
+    문장이 조용히 나간다(06번 §2-나 (4)).
+    """
+    try:
+        return {"le": "이하", "lt": "미만"}[val(op)]
+    except KeyError:
+        raise ValueError(f"알 수 없는 limit_op: {val(op)!r}") from None
 
 
 def basis_ko(basis) -> str:
-    """비례 기준의 분모. t·s·a 는 서로 다른 양이다."""
-    return {"t": "모재 두께", "s": "용접부 공칭 두께", "a": "목두께"}.get(
-        val(basis), "모재 두께")
+    """비례 기준의 분모. t·s·a 는 서로 다른 양이다. 모르는 값은 예외다(`op_ko` 와 같은 이유)."""
+    try:
+        return {"t": "모재 두께", "s": "용접부 공칭 두께", "a": "목두께"}[val(basis)]
+    except KeyError:
+        raise ValueError(f"알 수 없는 ratio_basis: {val(basis)!r}") from None
 
 
 def criterion_ko(row) -> str:
@@ -200,7 +224,7 @@ def clause_text(rows: Sequence, defect_names: dict[str, str] | None = None) -> s
     # 무엇이 빠졌는지를 여기서 말하려면 원천 표기 필드를 옮겨야 하므로(규약 2-5) 하지
     # 않는다. 대신 **빠진 것이 있다는 사실**을 싣는다. 어떤 항목인지를 기계로 말하려면
     # limits CSV 에 집계 기준 축이 필요하고, 그것은 단일 소스 계약 변경이라 게이트 사항이다
-    # (미니스펙 참조).
+    # (설계 문서 참조).
     if any((getattr(r, "note", None) or "").strip() for r in rows):
         parts.append(
             "이 조항에는 기계 표현으로 옮기지 못한 단서가 있다"

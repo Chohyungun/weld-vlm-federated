@@ -26,7 +26,7 @@
 
 - **내용 기반.** 파일 내용을 읽는다. 경로·수정 시각·git 상태가 아니다.
 - **줄끝 정규화.** `\r\n` → `\n` 로 맞춘 뒤 해싱한다. `core.autocrlf` 설정이 다른 체크아웃에서
-  같은 커밋이 다른 지문을 내면 지문이 커밋을 가리키지 못한다(외부 검토 09-16).
+  같은 커밋이 다른 지문을 내면 지문이 커밋을 가리키지 못한다(검토 09-16).
 - **결정론적.** 저장소 상대 경로를 정렬하고 `경로\\0파일해시\\n` 를 이어 붙여 다시 해싱한다.
   같은 파일 집합이면 언제 어디서 돌려도 같은 값이 나온다.
 - **git 정보는 참고다.** 커밋 해시는 작업 트리가 더러우면 거짓말을 한다. `dirty` 를 함께
@@ -52,7 +52,7 @@ REPO = Path(__file__).resolve().parents[1]
 SCORER_TREES: tuple[str, ...] = ("evaluation",)
 """통째로 해싱하는 디렉터리. 하위 전부의 `.py` 를 넣는다."""
 
-SCORER_FILES: tuple[str, ...] = (
+SCORER_FILES_AT_V3: tuple[str, ...] = (
     "scripts/probe/score_cells.py",             # 진입점
     "scripts/probe/adapt_main_detections.py",   # 채점 레코드 생성 — 레코드 자체의 해시는 산출물 `input_records` 에
     "scripts/probe/content_free_baselines.py",  # 무내용 대조선 생성 — 집계기 "동결본 불변" 판정의 근거
@@ -61,6 +61,12 @@ SCORER_FILES: tuple[str, ...] = (
     "data/manifest_io.py",                      # 매니페스트 읽기
     "detection/serialize.py",                   # 레코드 직렬화
     "scripts/probe/recovery_bootstrap.py",      # 회복률 CI 생성기 — CI 가 채점과 같은 코드로 났는지 대조한다
+)
+"""**당시 값** — 사전실험(v3) 산출물의 `scorer_code` 가 지문을 낸 트리 밖 목록이다. 고치지 않는다. 그 산출물이 싣는
+`rule` · `files` · `combined` 은 이 목록으로 낸 기록이라 그대로 둔다(2026-10-01 재고정 — 덮지 않고 병기한다)."""
+
+SCORER_FILES: tuple[str, ...] = SCORER_FILES_AT_V3 + (
+    "scripts/probe/score_unified.py",           # 통합형 본채점 진입점(진입점 미니스펙 3판 3-4 · 6-1 의 9)
 )
 """`evaluation/` 밖에 있지만 채점 값을 결정하는 모듈. C 34번 Important 3 이 짚은 구멍이다 —
 "같은 코드로 채점됐는가" 를 물으면서 클래스 사상·층화 절단점·레코드 생성기를 지문 밖에
@@ -102,7 +108,7 @@ def _file_sha256(path: Path) -> str:
     `core.autocrlf=true` 인 체크아웃에서 작업 트리는 CRLF, git blob 은 LF 다. 바이트를 그대로
     해싱하면 **같은 커밋을 다른 기계·다른 설정으로 체크아웃한 것만으로 지문이 갈린다** —
     지문이 커밋이 아니라 체크아웃을 가리키게 되고, "같은 코드로 채점됐는가" 에 답하지 못한다
-    (외부 검토 09-16, 37번 §3-4 에서 실측: 39파일 중 7개가 줄끝만으로 달랐다).
+    (검토 09-16, 37번 §3-4 에서 실측: 39파일 중 7개가 줄끝만으로 달랐다).
 
     정규화는 `\r\n` → `\n` 뿐이다. 공백·주석·인코딩은 그대로 두므로 실제 코드 변경은 전부
     잡힌다. 파이썬은 두 줄끝을 같게 해석하므로 정규화가 의미를 지우지도 않는다.

@@ -1,3 +1,7 @@
-e2bed0003949c0a2e9e5c98c59925b483ba50a1a758740b868a88ae5649f431c  vlm/coords.py
-0a47adaf238e895053f60a6347c791ce29d7e7464faedc61fb45442b2916c7e7  vlm/coords_fixtures/golden_fixtures.json
-1ba695f78ccc409e7b040b7aaa233f9d2944eeeb7b5687ca6c281e8e5b710dbd  vlm/coords_fixtures/run_fixtures.py
+# 이 파일을 읽는 코드는 없다(사람이 대조하는 기록이다). `sha256sum -c` 는 # 줄을 건너뛴다.
+# `vlm/coords.py` 는 09-21 공개본 주석 정리로 바이트가 갈렸다. 당시 값·지금 값·바뀐 것·
+# 결과 불변의 근거는 `vlm/coords_fixtures/HASH_RECORD.yaml` 에 있다(단일 소스).
+# 여기 본문은 늘 **지금** 파일의 값이다.
+06eb8289f853354ee236495a49230be4f93caadf12474f62d2bf12a4492d7fc9  vlm/coords.py
+e05284df76e7ede9dd61f195703d1bd3a7dc3c2a7a999c841b6e099fc9bb4972  vlm/coords_fixtures/golden_fixtures.json
+9e593dfa74d7c26b8679e61f08dc7fb827924999f56e66cd382bdcdf74bdb238  vlm/coords_fixtures/run_fixtures.py

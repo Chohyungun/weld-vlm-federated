@@ -55,7 +55,7 @@ def score_records(
     det = score_detection(pred_codes, {k: sorted(v) for k, v in gold_codes.items()}, classes)
     loc = score_bbox_iou(pred_boxes, gold_boxes)
     ap = coco_map(pred_scored, gold_boxes, classes, scores_present=scores_present)
-    # 임계 독립 분류 축 (총괄 판정 1, 22번 §1-2). 점수가 없는 칸(생성형)은 순위가 없어
+    # 임계 독립 분류 축 (판정 1, 22번 §1-2). 점수가 없는 칸(생성형)은 순위가 없어
     # 정의되지 않는다 — 0 으로 채우지 않고 None 을 싣는다.
     img_ap = (
         image_level_ap({i: [(c, s) for c, _, s in v] for i, v in pred_scored.items()},

@@ -1,15 +1,17 @@
-"""counts.json 산출 — 통합·연합 FedAvg 가중치 n_k 의 단일 소스 (스펙 §7-5).
+"""counts.json 산출 — 채택량의 **회계** (스펙 §7-5).
 
 n_k 는 manifest 에서 파생할 수 없다 — 3단계 검증 폐기·quarantine·정상 다운샘플을 거치면
 실제 학습 표본 수가 manifest 수치와 달라진다. **채택 레코드에서 기계 산출**한다
-(손 계산 금지). 스키마 변경은 감독 승인 사항. S4 스냅샷 대상.
+(손 계산 금지). 스키마 변경은 승인 사항. S4 스냅샷 대상.
 
-소비 규약: C 의 통합·연합 n_k = clients[k].n_total. C 는 로드 시 counts.json 이 가리키는
-스냅샷 해시를 대조하고 불일치면 실행을 중단한다 (§8).
+소비 규약: `clients[k]` 는 **train+val 을 합친** 회계이고 학습기는 train 만 읽는다. 그러니 이 값을
+그대로 집계 가중으로 쓰면 val 이 가중에 섞인다. 통합형의 집계 가중은 감독 토큰 수이고 이 파일에서
+나오지 않는다. 분할 축은 PAIRS_META.json 의 counts_by_split 에 있다.
+소비처는 로드 시 counts.json 이 가리키는 스냅샷 해시를 대조하고 불일치면 실행을 중단한다 (§8).
 
 `n_generated`(생성량) 는 §7-5 정합 3항 "discarded 합계 = 생성량 − 채택량" 을 **파일만
 가지고 재검증**하기 위해 counts.json 본문에 기록한다. 이 값이 없으면 build 시점에만
-성립하고, 확정 후 discarded 를 손으로 고쳐도 validate 가 통과한다 (적대 검증 finding #4).
+성립하고, 확정 후 discarded 를 손으로 고쳐도 validate 가 통과한다 (검토 finding #4).
 값의 정의는 validation_report(§6-4) 의 `n_generated`(stage0 투입량) 와 같다.
 """
 
@@ -30,7 +32,7 @@ __all__ = [
     "write_counts",
 ]
 
-# 스펙 §7-5 스키마 그대로 (키 추가·삭제는 감독 승인 사항)
+# 스펙 §7-5 스키마 그대로 (키 추가·삭제는 승인 사항)
 DISCARD_STAGES: tuple[str, ...] = (
     "stage0_numeric_lock", "stage1_rule", "stage2_judge", "stage3_expert", "quarantine",
 )
@@ -229,7 +231,7 @@ def write_counts(path: str | Path, counts: Mapping[str, Any]) -> str:
     바이트로 쓰고 **기록된 파일을 다시 읽어** 해시를 계산한다. `write_text` 는 플랫폼
     개행 변환을 거치므로 Windows 에서 파일에는 CRLF 가 들어가고, 그러면 반환 해시가 실제
     파일 바이트와 달라진다. 그 해시를 SNAPSHOT.sha256·논문에 실으면 §8 의 소비처 해시
-    대조가 항상 불일치해 C 의 n_k 로드가 통째로 중단된다 (적대 검증 critical).
+    대조가 항상 불일치해 소비처의 n_k 로드가 통째로 중단된다 (검토 critical).
     """
     payload = json.dumps(counts, ensure_ascii=False, indent=2, sort_keys=False) + "\n"
     p = Path(path)

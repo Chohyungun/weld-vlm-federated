@@ -17,9 +17,10 @@ bytes_up, bytes_down, wall_time
 
 ## 학습 중에 지표를 만들지 않는다
 
-이 로그가 남기는 것은 **학습 과정의 실측**(표본 수·통신량·소요 시간·파라미터 norm)이지
-성능 지표가 아니다. 성능은 학습이 끝난 뒤 저장된 체크포인트를 단일 채점기로 일괄 채점해
-얻는다. 학습 중에 성능을 보면 조기 종료 유혹이 생기고, 그 순간 `R × E = N` 이 무의미해진다.
+이 로그가 남기는 것은 **학습 과정의 실측**(표본 수·교환 배열의 바이트 합·소요 시간·
+파라미터 norm)이지 성능 지표가 아니다. 성능은 학습이 끝난 뒤 저장된 체크포인트를 단일
+채점기로 일괄 채점해 얻는다. 학습 중에 성능을 보면 조기 종료 유혹이 생기고, 그 순간
+`R × E = N` 이 무의미해진다.
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ from typing import Any, Iterable, Sequence
 
 __all__ = ["AtomicRecord", "AtomicLog", "FIELDS", "IDENTITY_FIELDS", "new_run_id", "policy_stamp",
            "POLICY_SUFFIX_RESEED", "LedgerIdentityMismatch", "read_ledger_identity",
-           "assert_ledger_compatible"]
+           "assert_ledger_compatible", "END_METRIC", "LedgerClosed", "last_data_row"]
 
 #: 열 순서는 51번 지표 설계의 스키마를 그대로 따른다. 순서를 바꾸지 않는다.
 FIELDS = (
@@ -81,6 +82,14 @@ def policy_stamp(stamp: str, loader_reseed_per_epoch: bool = False) -> str:
 #: 원장의 소유자를 정하는 필드. 이 넷이 같으면 같은 실행의 원장이다.
 IDENTITY_FIELDS = ("run_id", "seed", "cell", "split_hash")
 
+#: 끝 행의 지표 이름. 최종 어댑터를 내구 저장한 **뒤에** 한 줄을 쓰고, 그 뒤로는 덧붙이지 않는다.
+#: 채점 쪽은 끝 행이 마지막 데이터 행인 원장만 받는다. 검출 원장에는 끝 행이 없다 — 동작이 바뀌지 않는다.
+END_METRIC = "final_adapter_step"
+
+
+class LedgerClosed(ValueError):
+    """끝 행이 있는 원장에 덧붙이려 했다. 닫힌 원장은 그 실행의 확정 기록이다."""
+
 
 class LedgerIdentityMismatch(ValueError):
     """기존 원장의 신원(run_id·seed·cell·split_hash)과 새 실행이 다르다 — 그 위에 쓰지 않는다.
@@ -125,13 +134,30 @@ def read_ledger_identity(path: str | Path) -> dict[str, str] | None:
     return None
 
 
+def last_data_row(path: str | Path) -> dict[str, str] | None:
+    """원장의 마지막 데이터 행. 헤더만 있거나 파일이 없으면 None. 헤더가 스키마와 다르면 ValueError."""
+    p = Path(path)
+    if not p.exists() or p.stat().st_size == 0:
+        return None
+    last = None
+    with p.open("r", encoding="utf-8", newline="") as fh:
+        reader = csv.reader(fh)
+        head = next(reader, None)
+        if head != list(FIELDS):
+            raise ValueError(f"기존 로그의 열 구성이 다르다: {head}")
+        for row in reader:
+            if row and any(c for c in row):
+                last = row
+    return None if last is None else dict(zip(FIELDS, last))
+
+
 def assert_ledger_compatible(
     path: str | Path, *, run_id: str, seed: int, cell: str, split_hash: str
 ) -> dict[str, str] | None:
     """기존 원장이 있으면 신원을 대조하고, 하나라도 다르면 `LedgerIdentityMismatch`.
 
     같은 run_id 의 재기동(같은 seed·cell·split_hash)은 통과한다 — 원장은 그 실행의 것이다.
-    빈 원장(헤더만)·부재는 통과. 외부 AI 검토 도구 권고(26번 §8-4): 경로 문자열 규칙이 아니라
+    빈 원장(헤더만)·부재는 통과. 검토 권고(26번 §8-4): 경로 문자열 규칙이 아니라
     **기존 run manifest(원장 첫 행)와 대조**해 거부한다.
     """
     found = read_ledger_identity(path)
@@ -198,6 +224,9 @@ class AtomicLog:
         # 09-05 형 혼입("다른 시도의 회계")을 append 전에 막는다. 같은 run_id 의 재기동은 통과.
         assert_ledger_compatible(self.path, run_id=run_id, seed=seed, cell=cell, split_hash=split_hash)
         self._ensure_header()
+        # 끝 행을 보면 이 뒤의 덧붙이기를 거부한다. 여는 것은 막지 않는다 — 닫힌 원장을 읽고 대조하는 쪽이 있다.
+        last = last_data_row(self.path)
+        self.closed = last is not None and last.get("metric_name") == END_METRIC
 
     def _ensure_header(self) -> None:
         exists = self.path.exists() and self.path.stat().st_size > 0
@@ -218,12 +247,27 @@ class AtomicLog:
         rows = [r.as_row() for r in records]
         if not rows:
             return 0
+        if self.closed:
+            raise LedgerClosed(f"끝 행({END_METRIC}) 뒤에는 덧붙이지 않는다: {self.path}")
+        ends = [i for i, r in enumerate(rows) if r["metric_name"] == END_METRIC]
+        if ends and ends != [len(rows) - 1]:
+            raise ValueError(f"끝 행은 한 번, 마지막에만 쓴다: {self.path}")
         with self.path.open("a", encoding="utf-8", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=FIELDS)
             w.writerows(rows)
             fh.flush()
             os.fsync(fh.fileno())
+        if ends:
+            self.closed = True
         return len(rows)
+
+    def close(self, *, client_id: int | str, step: int, n_train_samples: int = 0) -> int:
+        """끝 행 한 줄을 쓴다 — `round` 와 값이 모두 `step` 이다(로컬·중앙은 갱신 수, 연합은 라운드 수)."""
+        return self.write([AtomicRecord(
+            run_id=self.run_id, seed=self.seed, cell=self.cell, split_hash=self.split_hash,
+            client_id=client_id, round=int(step), n_train_samples=int(n_train_samples),
+            metric_name=END_METRIC, metric_value=float(int(step)),
+        )])
 
     def log_round(
         self,

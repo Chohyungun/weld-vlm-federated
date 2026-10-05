@@ -1,4 +1,4 @@
-"""전역 대 층화 대조표 + 판별력 시험 — 총괄 판정 6 (76번 을안). 83번 산출.
+"""전역 대 층화 대조표 + 판별력 시험 — 판정 6 (76번 을안). 83번 산출.
 
     uv run python scripts/probe/stratified_compare.py
     uv run python scripts/probe/stratified_compare.py --k 64 --ladder

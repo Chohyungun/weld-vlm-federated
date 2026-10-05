@@ -9,8 +9,8 @@
 편중된 값이 소수 클래스(슬래그·융합불량)의 실패를 은폐한다.
 
 **판정 로직을 여기서 재구현하지 않는다.** `judge`·`aggregate_verdicts`·`applicable_row`는
-`corpus.rules.limit_eval`(트랙 B 소유)에서 import한다. B의 골격 생성기와 D의 채점기가
-같은 함수를 써야 gold와 재계산이 어긋나지 않는다.
+`corpus.rules.limit_eval`에서 import한다. 골격 생성기와 채점기가 같은 함수를 써야
+gold와 재계산이 어긋나지 않는다.
 """
 
 from __future__ import annotations
@@ -242,7 +242,7 @@ def select_row(
     """판정 정합성 재계산의 **행 선택 단일 경로**. 스펙 §4-3.
 
     인용 조항으로 후보를 좁힌 뒤(`rows_for_clause`) 골격 내장 키로 `applicable_row` 를
-    재사용한다. 두 함수 모두 트랙 B 소유이며 D가 자체 pandas 순회로 행을 고르지 않는다.
+    재사용한다. 두 함수 모두 `corpus.rules` 의 것이며 채점기가 자체 pandas 순회로 행을 고르지 않는다.
 
     **검사 방식이 키에 들어간다.** 축이 빠지면 같은 결함코드·같은 두께의 표면 행과 내부
     행이 한 후보 집합에 섞여, 잘못된 허용치를 집고도 부등식이 정상 계산된다.

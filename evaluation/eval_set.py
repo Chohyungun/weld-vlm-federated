@@ -14,7 +14,7 @@ from pathlib import Path
 Box = tuple[float, float, float, float]
 
 ISO_SEP = ";"
-"""매니페스트 `iso_codes` 열의 구분자. 정본은 `data/ingest/base.py`(트랙 A)의
+"""매니페스트 `iso_codes` 열의 구분자. 정본은 `data/ingest/base.py` 의
 `";".join(codes)` 이고 `scripts/build_manifest_v0.py` 도 같다.
 
 **`|` 는 `strata_key` 의 구분자다**(예: `AL|__normal__`). 두 열이 같은 파일에 있어서

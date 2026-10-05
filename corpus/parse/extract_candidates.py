@@ -170,7 +170,7 @@ def extract_one(path: Path, args, dst: Path) -> dict:
     cls, why = COPYRIGHT.get(path.name, DEFAULT_COPYRIGHT)
     rec["copyright_class"] = cls
     rec["copyright_note"] = why
-    # 공개가 아니면 색인·학습 투입을 막는다. 판단은 총괄이 한다.
+    # 공개가 아니면 색인·학습 투입을 막는다. 판단은 사람이 한다.
     rec["usable_for"] = "색인후보" if cls == "공개" else "참고전용"
 
     out_dir = dst / path.stem

@@ -1,0 +1,91 @@
+# 통합형 배관 리허설의 계획 — 목적 `rehearsal`.
+#
+# **기본 설정에 병합하지 않는다.** 오케스트레이터가 `--plan <이 파일>` 로만 읽는다. 이 파일의 원시 바이트
+# sha256 이 `plan_sha256` 으로 등록·어댑터 meta·곁 파일에 실리므로 한 파일은 한 목적만 가리킨다.
+#
+# 여기에는 **크기와 목록 규칙과 계획된 중단**만 둔다. 모델·어댑터·최적화·전처리·프롬프트·템플릿·좌표 규약·
+# 디코딩(생성 한도 `gen_limit` 하나는 예외)·시드 값·스냅샷과 페어의 지문·본실험 예산은 두지 않는다 —
+# 본실험 키(`fixed_before_main_runs` 의 `uni_*` 와 `snapshot_digest`, `experiment.seeds`)를 그대로 읽는다.
+# 그런 키나 모르는 키가 있으면 읽는 쪽이 거부한다. 키 목록은 리허설 명세 §4-4 다.
+#
+# **`null` 은 아직 없는 값이다.** 그 값이 필요한 단계는 `null` 인 채로 시작하지 않는다.
+#   - (채워졌다) `exclude.near_dup_edges`: 현행 규칙 `X2_v1` 으로 만든 판본 `neardup_edges_v1`(동결 명부의
+#     `data/interim/neardup_edges_v1`, 계약서 digest f69c95296265d7f5…). 꼴은 `{path, sha256}` 이고 간선 파일은 머리행
+#     `a_id,b_id` 의 UTF-8 CSV 다. 값은 계약서에서 읽어 넣었다. 판본은 큰 이동 후보(G4)를 덮지 않고, 규칙의 입력이 모자란
+#     짝은 간선에 넣지 않았다(같은 폴더의 `undecided.csv` · `META.json`). 매니페스트에 없는 id 를 담은 간선은 입력 오류로 거부한다
+#   - `timeouts_s`: 단계 다섯(`lists` · `register` · `train` · `export` · `score`)의 상한(초)이다.
+#     값은 학습 쪽이 모델 적재 시간을 잰 뒤 채운다. 넘으면 그 단계를 프로세스 트리째 끊고 실패로 센다
+kind: rehearsal
+version: 1
+
+# 목록을 뽑는 순서의 씨앗 — sha256(f"{group_id}|{sampling_seed}") 오름차순. 등록 시드표의 첫 값과 같게 두었다.
+# 학습 시드는 이 값이 아니라 `seed_index` 로 `experiment.seeds` 에서 읽는다.
+sampling_seed: 20260828
+seed_index: 1
+
+cells: [uni_central, uni_local_C1, uni_local_C2, uni_local_C3, uni_fed]
+
+gen:
+  split: val
+  defect_only: false
+  target_n: 48            # 목표 장 수. 층(재질×클래스)마다 최소 한 묶음을 넣고 나머지는 층의 후보 장 수에 비례해 채운다
+  max_n: 64               # 장 수 상한
+  min_groups_per_stratum: 1
+  max_target_tokens: null
+
+echo:
+  same_as_gen: true       # 에코 목록 = 생성 목록
+
+train:
+  split: train
+  rows:                   # 참여자별 목표 행. 묶음 단위로 뽑아 근사다
+    C1: 100
+    C2: 60
+    C3: 30
+  avoid_multiple_of_accum: true   # 32 로 나누어 떨어지면 다음 묶음 하나를 더 넣어 마지막 부분 창을 세운다
+  central_rows: union             # 중앙 = 세 참여자 행의 합집합
+  fed_rows: same_as_local         # 연합 클라이언트 = 로컬과 같은 행
+
+amount:                   # 이 목적의 학습량. n == r × e 가 아니면 읽는 쪽이 거부한다
+  n: 2
+  r: 2
+  e: 1
+
+exclude:
+  near_dup_edges:                         # {path, sha256} — 판본 neardup_edges_v1 의 계약서에서 읽었다
+    path: data/interim/neardup_edges_v1/edges.csv
+    sha256: 3c7750e9efc27e1cd87298447247dc9f3ef37d9c8aa61edcb067886b14a41602
+  drop_components_touching_eval: true     # 같은 묶음 간선과 함께 이은 성분 가운데 평가셋을 품은 성분의 묶음 전체를 뺀다
+
+gen_limit:                # 이 목적의 등록에만 선다. 본실험 한도가 아니다
+  max_new_tokens: 512
+  provisional: true
+
+# 계획된 중단. 값의 꼴은 `<단계>:<지점>:<태그>:<인자>` 다.
+faults:
+  train:
+    uni_central: 'train:after_ckpt:uni_central:ep=0'
+    uni_local_C3: 'train:before_ckpt:uni_local_C3:ep=0'
+  export:                 # 칸마다 시도의 순서. `to_end` 는 중단 없이 끝까지 쓰는 시도다
+    uni_central:
+      - {fault: 'export:after_lines:uni_central:n=12'}
+      - {fault: 'export:torn_line:uni_central:n=21'}
+      - {stop_after_lines: 10}
+      - {to_end: true}
+    uni_local_C3:
+      - {fault: 'export:after_all_lines:uni_local_C3:-'}
+      - {to_end: true}
+
+negatives: [policy_blank, identity_key_missing, identity_key_extra, format_mismatch]
+
+timeouts_s:
+  lists: null
+  register: null
+  train: null
+  export: null
+  score: null
+
+optional:                 # 선택 측정. 창에 여유가 있을 때만 켠다
+  t_eq_uni: false
+  dtype_compare: false
+  logprob_invariance: false

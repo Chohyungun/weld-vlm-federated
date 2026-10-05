@@ -59,9 +59,9 @@ def test_load_progress_ignores_records_whose_file_vanished(tmp_path: Path) -> No
 
 def test_missing_source_stops_instead_of_skipping(tmp_path: Path) -> None:
     """원천을 못 찾으면 조용히 건너뛰지 않는다. 회계가 틀린 채 맞아 보이면 안 된다."""
-    rows = [Row("aihub71761:1")]
-    plans = {"aihub71761:1": TilePlan("aihub71761:1", REASON_OK, (0, 0, 1280, 720), 1)}
-    rc = encode_all(rows, plans, {}, {"aihub71761:1": "RT_ST_00_9"}, SPEC,
+    rows = [Row("synth:1")]
+    plans = {"synth:1": TilePlan("synth:1", REASON_OK, (0, 0, 1280, 720), 1)}
+    rc = encode_all(rows, plans, {}, {"synth:1": "RT_ST_00_9"}, SPEC,
                     make_args(tmp_path))
     assert rc == 4
 
@@ -71,27 +71,27 @@ def test_join_uses_file_name_not_id(tmp_path: Path) -> None:
     zp = tmp_path / "src.zip"
     make_zip(zp, {"RT_ST_02_62757373.jpg": (1280, 720)})
     members = {"RT_ST_02_62757373": (zp, "RT_ST_02_62757373.jpg")}
-    rows = [Row("aihub71761:13121")]                      # id 는 파일명과 무관하다
-    plans = {"aihub71761:13121": TilePlan("aihub71761:13121", REASON_OK, (0, 0, 1280, 720), 1)}
+    rows = [Row("synth:90001")]                          # id 는 파일명과 무관하다(합성 식별자)
+    plans = {"synth:90001": TilePlan("synth:90001", REASON_OK, (0, 0, 1280, 720), 1)}
     args = make_args(tmp_path)
 
-    assert encode_all(rows, plans, members, {"aihub71761:13121": "RT_ST_02_62757373"},
+    assert encode_all(rows, plans, members, {"synth:90001": "RT_ST_02_62757373"},
                       SPEC, args) == 0
     recs = [json.loads(x) for x in
             (args.manifest_out / "encode_progress.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert [r["image_id"] for r in recs] == ["aihub71761:13121"]
+    assert [r["image_id"] for r in recs] == ["synth:90001"]
     # 출력 이름은 id 다. 원천 파일명은 클래스를 담고 있어 그대로 옮기면 지름길이 된다.
-    assert recs[0]["rel_path"].endswith("/13121.jpg")
+    assert recs[0]["rel_path"].endswith("/90001.jpg")
 
 
 def test_encodes_to_locked_spec_and_resumes(tmp_path: Path) -> None:
     zp = tmp_path / "src.zip"
     make_zip(zp, {"RT_ST_00_1.jpg": (2560, 720)})
     members = {"RT_ST_00_1": (zp, "RT_ST_00_1.jpg")}
-    rows = [Row("aihub71761:1")]
-    plans = {"aihub71761:1": TilePlan("aihub71761:1", REASON_TILED, (640, 0, 1920, 720), 3)}
+    rows = [Row("synth:1")]
+    plans = {"synth:1": TilePlan("synth:1", REASON_TILED, (640, 0, 1920, 720), 3)}
     args = make_args(tmp_path)
-    names = {"aihub71761:1": "RT_ST_00_1"}
+    names = {"synth:1": "RT_ST_00_1"}
 
     assert encode_all(rows, plans, members, names, SPEC, args) == 0
     out = args.out / "RT" / "ST" / "1.jpg"
@@ -116,7 +116,7 @@ def test_build_v1_stops_when_defect_image_was_cropped(tmp_path: Path) -> None:
     mock = Path(__file__).resolve().parents[1] / "data" / "mock" / "mock_aihub_v1"
     for name in ("manifest.csv", "annotations.csv"):
         df = pd.read_csv(mock / name, dtype=str, keep_default_na=False).head(1)
-        df["image_id"] = "aihub71761:1"
+        df["image_id"] = "synth:1"
         with (v0 / name).open("w", encoding="utf-8", newline="\n") as fh:
             df.to_csv(fh, index=False, na_rep="", lineterminator="\n")
     args = make_args(tmp_path)
@@ -124,8 +124,8 @@ def test_build_v1_stops_when_defect_image_was_cropped(tmp_path: Path) -> None:
     tile = tmp_path / "t.jpg"
     Image.new("L", (1280, 720)).save(tile)
     (args.manifest_out / "encode_progress.jsonl").write_text(
-        json.dumps({"image_id": "aihub71761:1", "rel_path": repo_rel(tile)}) + "\n",
+        json.dumps({"image_id": "synth:1", "rel_path": repo_rel(tile)}) + "\n",
         encoding="utf-8")
-    plans = {"aihub71761:1": TilePlan("aihub71761:1", REASON_TILED, (640, 0, 1920, 720), 3)}
+    plans = {"synth:1": TilePlan("synth:1", REASON_TILED, (640, 0, 1920, 720), 3)}
     assert load_progress(args.manifest_out / "encode_progress.jsonl")
     assert build_v1(args, SPEC, plans, {"cells": {}}) == 6

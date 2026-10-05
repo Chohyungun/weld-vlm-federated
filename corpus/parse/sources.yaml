@@ -7,7 +7,7 @@
 
 meta:
   updated: 2026-08-17
-  spec: docs/dev_log/2026-08-17-kickoff/11_spec_B_코퍼스합성.md#3-1
+  spec: 코퍼스 합성 스펙 §3-1
   note: >
     raw/ 원본 PDF는 재배포 조건 미확인으로 git 미추적 (.gitignore).
     무결성은 아래 sha256 + corpus/parse/raw/RAW.sha256 으로 추적한다.

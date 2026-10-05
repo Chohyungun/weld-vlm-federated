@@ -159,7 +159,16 @@ def params_l2_norm(arrays: Sequence[np.ndarray]) -> float:
 
 
 def payload_nbytes(arrays: Sequence[np.ndarray]) -> int:
-    """직렬화 페이로드 크기(바이트). 통신량 결과표의 실측 입력이다."""
+    """교환 대상 배열 원소의 바이트 합(`ndarray.nbytes` 의 합).
+
+    직렬화 헤더와 전송 계층의 오버헤드를 포함하지 않고 회선을 계측한 값도 아니다.
+    전송 표현과 압축 조건이 정해져 있지 않으므로 **실제 회선 바이트의 하한으로도
+    단정하지 않는다.** 통신량 결과표가 싣는 것은 이 배열 크기 지표이고, 회선 전송량을
+    따로 계측하는 경우와는 구분해 보고한다.
+
+    함수 이름과 기록 필드 이름(`payload_bytes`·`payload-bytes`)은 로그 스키마와
+    기존 산출의 뒤호환 때문에 바꾸지 않는다 — 이름이 계산보다 넓다.
+    """
     return int(sum(a.nbytes for a in arrays))
 
 

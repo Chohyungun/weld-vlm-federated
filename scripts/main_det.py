@@ -15,7 +15,7 @@
   같은 CLI 로 스모크 칸을 끝까지 돌려 진입점 생존을 확인한다.
 - 조기 종료 금지(N=100 연속·last 채점) · 원자 로그 · 회계 finally · `gates_evaluated`
   기록 확인(첫 시드 첫 칸에서 멈춰 검사) · 스테이지 사이 GPU/커밋 여유 대기
-  (트랙 B 와의 경합으로 죽은 §4-6 의 교훈).
+  (다른 작업과의 경합으로 죽은 §4-6 의 교훈).
 - **detections.jsonl 원시 출력 계약(13_spec_D §2-3)을 C 가 낸다** — D 가 임시 추론을
   다시 하는 일이 없어야 한다(74번 M11). 추론 진입점은 D 의 `load_yolo_from_npz`
   (fp32 · model_cfg 명시) 하나다.
@@ -370,13 +370,16 @@ def _flwr_run(run_config: str, log_path: Path) -> None:
         if "UnicodeDecodeError: 'cp949'" in text and "install_from_fab" in text:
             print("  상주 SuperLink 의 cp949 환경 결함 감지 — 데몬 재기동 후 1회 재시도",
                   flush=True)
-            subprocess.run(
-                ["powershell", "-NoProfile", "-Command",
-                 "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
-                 "Where-Object { $_.CommandLine -like '*superlink*' -or "
-                 "$_.CommandLine -like '*flwr*' } | "
-                 "ForEach-Object { Stop-Process -Id $_.ProcessId -Force "
-                 "-ErrorAction SilentlyContinue }"], capture_output=True)
+            # 내릴 프로세스는 정확한 진입점과 이 venv 의 소유로만 고른다(`fl/flwr_procs.py`) — 명령줄의 부분 문자열로
+            # 고르면 무관한 프로세스가 걸린다(외부 검토 §50 요청 2). 신원이 불명확한 것이 있으면 내리지 않고 재시도하지 않는다.
+            from fl.flwr_procs import flwr_processes, stop_processes
+
+            found = flwr_processes()
+            unclear = [p for p in found if p["kind"] != "target"]
+            if unclear:
+                raise SystemExit("flwr 프로세스의 신원이 불명확해 내리지 않는다 — 재시도하지 않는다: "
+                                 + ", ".join(f"{p['pid']}:{p['name']}" for p in unclear[:5]))
+            stop_processes(found)
             time.sleep(5)
             with log_path.open("a", encoding="utf-8") as fh:
                 fh.write("\n===== cp949 데몬 재기동 후 재시도 =====\n")
@@ -574,7 +577,7 @@ if __name__ == "__main__":
                                     "cell4", "export", "status"])
     ap.add_argument("--seed", type=int, default=1, help="시드 번호 (1~3)")
     a = ap.parse_args()
-    dispatch = {
+    commands = {
         "preflight": cmd_preflight,
         "views": stage_views,
         "status": cmd_status,
@@ -584,4 +587,4 @@ if __name__ == "__main__":
         "cell4": lambda: stage_cell4(a.seed),
         "export": lambda: cmd_export(a.seed),
     }
-    dispatch[a.cmd]()
+    commands[a.cmd]()

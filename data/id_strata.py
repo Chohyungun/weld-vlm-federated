@@ -48,7 +48,7 @@ _SNAPSHOT = _REPO_ROOT / "data/interim/manifest_v1"
 
 
 def id_number(image_ids: Iterable[str]) -> np.ndarray:
-    """`aihub71761:14503000` → `14503000`. 취득 순서의 대리 변수다."""
+    """`<출처>:<8자리 취득 id>` → 숫자부. 취득 순서의 대리 변수다."""
     return np.array([int(str(i).rsplit(":", 1)[-1]) for i in image_ids], dtype=np.int64)
 
 

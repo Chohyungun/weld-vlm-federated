@@ -1,4 +1,4 @@
-"""적대 검증 — 수치 의미론 렌즈.
+"""검토 — 수치 의미론 렌즈.
 
 목표는 잘못된 verdict·잘못된 margin·정의되지 않은 동작을 내는 **구체적 입력**을 실행으로
 찾는 것이다. 스펙 §1-3(양자화·부등호 규약) · §4-3(그리드 직접 추출·버킷·최소 보장) ·
@@ -400,7 +400,7 @@ def test_finding_high_percent_limit_is_reported_at_load(load, limit_pct: str) ->
 
     min(2.5L, 100%) 규약에서 (1.1L, 2.5L] ∩ (0, 100%] 이 비는 구간이 있다. 예전에는
     V10 이 하한(L ≥ 0.1)만 봐서 로드가 조용히 통과했고, 조합 하나가 생성 1만 건을 막았다.
-    이제 로드가 보고 → CTO 가 scope=excluded 로 배제 → 나머지 조합은 정상 생성이라는
+    이제 로드가 보고 → scope=excluded 로 배제 → 나머지 조합은 정상 생성이라는
     경로가 성립한다. 배제 전에 생성을 걸면 여전히 fail-closed 로 중단되며, 그때의 메시지도
     V10 을 가리킨다.
     """
@@ -413,7 +413,7 @@ def test_finding_high_percent_limit_is_reported_at_load(load, limit_pct: str) ->
     with pytest.raises(SG.SkeletonGenError, match="빈 버킷|V10"):
         SG.generate_corpus_skeletons(table, seed=0, total=20, cap=20)
 
-    # scope=excluded 로 배제하면 로드도 생성도 막히지 않는다 (CTO 판단 경로)
+    # scope=excluded 로 배제하면 로드도 생성도 막히지 않는다 (판단 경로)
     excluded = load([csv_row(rule_id="R-pct", scope="excluded", **ratio)])
     assert SG.generate_corpus_skeletons(excluded, seed=0, total=20, cap=20) == ()
 

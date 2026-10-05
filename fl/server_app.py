@@ -96,6 +96,23 @@ def _cell_from_metrics(round_idx: int, m: dict[str, Any]) -> AccountingCell:
     )
 
 
+def cell_out_dir(cell: str, cfg: Any) -> Path:
+    """칸의 출력 폴더(`resolve()` 전). 통합형 연합은 `uni-train-root` 가 있으면 `<그 루트>/uni_fed_s<n>`(로컬 · 중앙과 같은 꼴,
+    리허설 2판 §13-4), 없으면 종전 자리 `<project>/fl/<cell>` 이다. 본실험은 키를 비워 둘 수 없다 — 평가 쪽이 학습 루트에서 읽는다.
+    거부는 `ValueError` 하위 예외다(SuperLink 가 FAILED 로 적게 — 2판 §1-4)."""
+    from fl.uni_fed import UniFedRejected
+
+    root = str(cfg.get("uni-train-root", "") or "") if cell == "uni_fed" else ""
+    if cell == "uni_fed" and not root and str(cfg.get("purpose", "main") or "main") == "main":
+        raise UniFedRejected("main_train_root_missing", "본실험 연합은 uni-train-root 가 있어야 한다 — 평가 쪽이 학습 루트에서 읽는다")
+    if not root:
+        return Path(str(cfg["project"])) / "fl" / cell
+    si = str(cfg.get("uni-seed-index", "") or "")
+    if not si.isdigit() or int(si) < 1:
+        raise UniFedRejected("train_root_needs_seed_index", f"uni-train-root 에는 1 이상의 uni-seed-index 가 있어야 한다: {si!r}")
+    return Path(root) / f"uni_fed_s{int(si)}"
+
+
 @app.main()
 def main(grid: "Grid", context: "Context") -> None:
     cfg = context.run_config
@@ -103,7 +120,7 @@ def main(grid: "Grid", context: "Context") -> None:
     num_rounds = int(cfg["num-server-rounds"])
     local_epochs = int(cfg["local-epochs"])
     total_epochs = int(cfg["total-epochs"])
-    out_dir = Path(str(cfg["project"])).resolve() / "fl" / cell
+    out_dir = cell_out_dir(cell, cfg).resolve()
 
     client_ids = cell_to_client_ids(cell, int(cfg.get("num-clients", 3)))
     if cell == SMOKE_CELL:
@@ -122,11 +139,26 @@ def main(grid: "Grid", context: "Context") -> None:
     # run-stamp 가 빠진 실행에서 원장 run_id 와 재개 신원이 어긋날 수 있었다.
     stamp = policy_stamp(str(cfg.get("run-stamp", "000000")), policy)
     run_id = new_run_id(cell, base_seed, stamp)
+    uni_run = None
+    if cell == "uni_fed":
+        # 통합형은 **가드가 먼저다**(2판 §1-4) — 중단 변수 → 필수 키 → 목적 · 계획 → 루트 → 본실험 설정 대조를
+        # `UniFedRun` 이 원장을 보기 전에 한다. 그 뒤 원장 신원과 신선도(같은 원장에 이어 쓰지 않는다)를 보고,
+        # 그 뒤에야 초기 어댑터를 읽는다. meta 의 경로 기록은 resolve 전의 경로로 한다(2판 §5-1).
+        from fl.uni_fed import UniFedRun
+
+        uni_run = UniFedRun(get=lambda k, d: cfg.get(k, d), out_dir=cell_out_dir(cell, cfg),
+                            run_id=run_id, base_seed=base_seed, split_hash=split_hash, num_rounds=num_rounds,
+                            local_epochs=local_epochs, total_epochs=total_epochs,
+                            client_tags=_as_list(cfg.get("client-tags", ["C1", "C2", "C3"])))
     # `LedgerIdentityMismatch`(ValueError)를 **그대로** 올린다. `SystemExit` 로 감싸면 flwr 의
     # 두 서버 런타임(`except Exception`)이 받지 못해 SuperLink 는 run 을 FAILED 로 못 적고
     # 인프로세스 시뮬레이션은 성공으로 끝난다(예외 docstring 에 근거).
     assert_ledger_compatible(out_dir / "atomic_log.csv", run_id=run_id, seed=base_seed,
                              cell=cell, split_hash=split_hash)
+    if uni_run is not None:
+        from fl.uni_fed import assert_fresh_ledger
+
+        assert_fresh_ledger(out_dir / "atomic_log.csv")
 
     accounting = build_accounting(
         num_rounds=num_rounds,
@@ -137,6 +169,8 @@ def main(grid: "Grid", context: "Context") -> None:
 
     # 초기 파라미터·정본 키는 칸마다 다르다. 그 외는 공통 경로다.
     initial_arrays, canonical_keys, reference_sd = _load_initial(cell, cfg)
+    if uni_run is not None:
+        uni_run.set_initial(initial_arrays.to_numpy_ndarrays(), canonical_keys)
 
     atomic = AtomicLog(
         out_dir / "atomic_log.csv",
@@ -152,6 +186,8 @@ def main(grid: "Grid", context: "Context") -> None:
         cell_from_metrics=_cell_from_metrics,
         on_save=lambda sr, agg: _save_round(out_dir, sr, num_rounds, agg),
     )
+    if uni_run is not None:
+        on_round_end = _with_uni_observer(on_round_end, uni_run)
 
     strategy = WeldFedAvg(
         expected_nodes=len(client_ids),
@@ -184,10 +220,23 @@ def main(grid: "Grid", context: "Context") -> None:
     finally:
         # **`finally` 여야 한다.** 학습 밖 단계(요약 출력 등)가 죽어도 회계는 디스크에
         # 남아야 한다 — 파일럿에서 정확히 그 순서로 라운드를 날렸다(F1).
-        finalize_accounting(
+        report = finalize_accounting(
             accounting=accounting, atomic=atomic, out_dir=out_dir,
             num_rounds=num_rounds, client_ids=list(client_ids),
         )
+    # 통합형은 감사가 통과한 **뒤에만** 어댑터를 저장하고 원장을 닫는다. 감사에 실패하면 위에서 올라가 여기 오지 않는다.
+    if uni_run is not None:
+        uni_run.finish(atomic=atomic, report=report)
+
+
+def _with_uni_observer(on_round_end, uni_run):
+    """라운드 기록 뒤에 통합형 연합의 관찰을 붙인다. 두 서버 경로가 같은 함수를 쓴다."""
+
+    def wrapped(server_round, cells, agg):
+        on_round_end(server_round, cells, agg)
+        uni_run.observe(server_round, cells, agg)
+
+    return wrapped
 
 
 def _loader_policy(cell: str, cfg: Any) -> bool:
@@ -219,8 +268,12 @@ def _cell_train_config(cell: str, cfg: Any, out_dir: Path) -> dict[str, Any]:
             **{f"num-examples-{i}": int(n)
                for i, n in enumerate(_as_list(cfg.get("num-examples", [])))},
         }
-    return {f"client-tag-{i}": str(t)
-            for i, t in enumerate(_as_list(cfg.get("client-tags", ["C1", "C2", "C3"])))}
+    from fl.uni_run_config import down_config
+
+    return {**{f"client-tag-{i}": str(t)
+               for i, t in enumerate(_as_list(cfg.get("client-tags", ["C1", "C2", "C3"])))},
+            # 통합형 키 — 선언 · 내려보내기 · 읽기가 한 목록이다(`fl/uni_run_config.py`).
+            **down_config(lambda k, d: cfg.get(k, d))}
 
 
 def _as_list(v: Any) -> list:
@@ -243,6 +296,10 @@ def _load_initial(cell: str, cfg: Any) -> tuple["ArrayRecord", list[str], dict]:
 
     seed = int(cfg.get("base-seed", 0))
     cache = Path(str(cfg["project"])).resolve() / "fl" / cell / "initial.npz"
+    init_file = str(cfg.get("uni-init-adapter", "") or "") if cell == "uni_fed" else ""
+    if init_file:
+        # 리허설 · 진단의 초기 어댑터 — 등록 단계가 루트에 만든 파일(목적 · 루트 검사는 `UniFedRun` 이 먼저 했다)
+        cache = Path(init_file)
 
     if cell == SMOKE_CELL:
         # 더미 2텐서 — `fl.client_app.smoke_client_round` 가 돌려주는 것과 같은 모양이어야
@@ -264,9 +321,15 @@ def _load_initial(cell: str, cfg: Any) -> tuple["ArrayRecord", list[str], dict]:
     elif cell == "uni_fed":
         from vlm.init_adapter import build_initial_adapter
 
+        # 모델은 **통합형 키**(`uni-model`)를 먼저 본다 — 클라이언트가 학습하는 모델과 같아야 한다.
+        # 비었으면 종전대로 `model` 키를 쓴다(파일럿 재현).
+        uni_model = str(cfg.get("uni-model", "") or "")
         arrays, keys, ref = build_initial_adapter(
-            model_id=str(cfg["model"]) if cfg.get("model") else None,
+            model_id=uni_model or (str(cfg["model"]) if cfg.get("model") else None),
             seed=seed, cache_path=cache,
+            revision=str(cfg.get("uni-model-revision", "") or "") or None,
+            # 목적이 캐시 규칙을 가른다 — 본실험은 proof 가 없거나 목적이 다른 캐시를 받지 않는다.
+            purpose=str(cfg.get("purpose", "main") or "main"),
         )
         if not ref:
             # F11 — 캐시 분기가 ref 를 비워 돌려주면 `assert_compatible` 이 모든 키에서

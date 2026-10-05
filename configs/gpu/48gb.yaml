@@ -19,7 +19,7 @@ precision:
   amp_dtype: bf16
   matmul_tf32: true
 
-# ⚠ 미배선. 16gb.yaml 머리글 참조 — 정본은 detection/round_runner.py:PROFILES (트랙 C 소관).
+# ⚠ 미배선. 16gb.yaml 머리글 참조 — 정본은 detection/round_runner.py:PROFILES.
 detection:
   wired: false
   runtime_source_of_truth: "detection/round_runner.py:PROFILES"

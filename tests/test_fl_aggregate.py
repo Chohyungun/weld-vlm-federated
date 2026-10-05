@@ -1,4 +1,4 @@
-"""fl/aggregate.py 테스트 (트랙 C · 지정 함정 구간 #2 — BatchNorm 연합 평균)."""
+"""fl/aggregate.py 테스트 (지정 함정 구간 #2 — BatchNorm 연합 평균)."""
 
 from __future__ import annotations
 

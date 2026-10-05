@@ -1,9 +1,9 @@
-"""`map_50` 독립 구현 검산 실행기 (53번 미니스펙 · 총괄 게이트 57번, 2026-09-17).
+"""`map_50` 독립 구현 검산 실행기 (53번 미니스펙 · 게이트 57번, 2026-09-17).
 
     python scripts/probe/map50_independent.py --root outputs/main_d --seeds 1,2,3 \\
         --artifact score_cells_v3.json --dest outputs/main_d/seed3set
 
-v3 칸 × 시드 15개의 `map_50` 을 **두 번째 구현**(`evaluation/metrics/map_independent.py`, 트랙 C)으로 다시 내고
+v3 칸 × 시드 15개의 `map_50` 을 **두 번째 구현**(`evaluation/metrics/map_independent.py`)으로 다시 내고
 허용 차 1e−12(53번 §4)로 맞댄다. 두 모드를 모두 돌리고 둘 다 판정한다(57번).
 
 - **S(공유 입력)** — 기존 `load_population`·`read_records`·`to_coco_xywh` 결과를 새 알고리즘에 넣는다. 진단용이다.
@@ -203,7 +203,7 @@ def overall_verdict(s: dict | None, i: dict | None) -> dict:
                 "어느 쪽이 맞다고 적기 전에 원인을 보고한다(57번)")
     return {"S_pass": None if s is None else s["pass"], "I_pass": None if i is None else i["pass"],
             "adoption_condition_closed_by_I": closed, "note": note,
-            "decision": "대표 채택 판정은 총괄 몫이다. 불일치가 있으면 채택을 다시 연다(57번)"}
+            "decision": "대표 채택 판정은 이 검산의 몫이 아니다. 불일치가 있으면 채택을 다시 연다(57번)"}
 
 
 def _result_view(res) -> dict:
@@ -378,7 +378,7 @@ def main() -> int:
 
     payload = {
         "artifact_version": out.name,
-        "spec": "53번 미니스펙(A 58번 정의표 승인) · 총괄 게이트 57번(00:15 추기 포함)",
+        "spec": "53번 미니스펙(A 58번 정의표 승인) · 게이트 57번(00:15 추기 포함)",
         "purpose": "대표 채택 조건 판정용 검산 — map_50 을 대체하지 않는다(53번 §9)",
         "input_artifact": args.artifact, "input_artifact_version": artifact_version(args.artifact),
         "seeds": seeds, "modes": modes, "tolerance": TOLERANCE,

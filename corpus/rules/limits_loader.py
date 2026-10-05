@@ -44,8 +44,8 @@ __all__ = ["load_limits", "coverage_report", "LimitsValidationError", "Violation
 
 logger = logging.getLogger("corpus.rules.limits_loader")
 
-# 스펙 §1-2 컬럼 전수 (순서 포함 — 계약 #3 동결, 변경은 CTO 승인 사항)
-# inspection_method 는 게이트 #13 승인분(스펙 v1.3 §1-2 5a) — 동결 후 첫 계약 변경이다.
+# 스펙 §1-2 컬럼 전수 (순서 포함 — 계약 #3 동결, 변경은 승인 사항)
+# inspection_method 는 결정 #13 승인분(스펙 v1.3 §1-2 5a) — 동결 후 첫 계약 변경이다.
 EXPECTED_COLUMNS: tuple[str, ...] = (
     "rule_id", "canonical", "scope", "defect_code", "material", "inspection_method",
     "thickness_min", "thickness_max", "quality_scheme", "quality_level",
@@ -457,14 +457,14 @@ def _check_v9(rows: list[LimitRow], violations: list[Violation]) -> list[str]:
 
 
 def _check_v10(rows: list[LimitRow], skipped: list[str]) -> list[str]:
-    """샘플링 실현성 (보고, CTO 판단 대상).
+    """샘플링 실현성 (보고, 판단 대상).
 
     ① 하한: 구간 최소 t 기준 유효 한계 L ≥ 0.1 (그리드 10칸). prop 계열은 생성기가 t 하한을
        실현 가능한 최소 그리드 값으로 올려 살려내므로(§4-3 경계 두께 배치의 보정) 여기서는
        보고만 하고, const 계열처럼 t 로 살릴 수 없는 행은 생성 시점에 전체 중단된다.
     ② 비율형 상한: unit=percent 행은 1.1L < 100% 여야 불합격 버킷 (1.1L, min(2.5L,100%)] 이
        공집합이 아니다. 하한만 검사하면 L=95% 류가 로드를 통과한 뒤 생성 전량을 중단시킨다
-       (적대 검증 N3). 상한 미달 행도 실현성 미달로 올려 scope=excluded 판단 경로를 태운다.
+       (검토 N3). 상한 미달 행도 실현성 미달로 올려 scope=excluded 판단 경로를 태운다.
     """
     flags: list[str] = []
     active = [r for r in rows if r.scope is Scope.ACTIVE]
@@ -481,7 +481,7 @@ def _check_v10(rows: list[LimitRow], skipped: list[str]) -> list[str]:
         if L < _FEASIBILITY_MIN_L:
             flags.append(
                 f"[V10] 실현성 미달: {r.rule_id} — t_min={r.thickness_min} 에서 L={L} < 0.1 "
-                "(scope=excluded 여부 CTO 판단)"
+                "(scope=excluded 여부 판단 대상)"
             )
         if r.unit is Unit.PERCENT:
             L_max = effective_limit(r, basis_value=r.thickness_max or r.thickness_min)
@@ -489,7 +489,7 @@ def _check_v10(rows: list[LimitRow], skipped: list[str]) -> list[str]:
                 flags.append(
                     f"[V10] 실현성 미달(비율 상한): {r.rule_id} — L={L_max}% 에서 "
                     f"1.1L ≥ {_PERCENT_MAX}% 라 불합격 버킷이 공집합이다 "
-                    "(scope=excluded 여부 CTO 판단)"
+                    "(scope=excluded 여부 판단 대상)"
                 )
     # configs 교차 검증: t_sample_max > 활성 행 최대 thickness_min
     if _CORPUS_GEN_CONFIG_PATH.exists():

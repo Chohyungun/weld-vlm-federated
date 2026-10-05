@@ -97,7 +97,7 @@ def test_predictions_범위가_80번과_일치한다():
 
 
 # ---------------------------------------------------------------------------------
-# 실물 산출물 — 워크트리에 있을 때만
+# 실물 산출물 — 이 트리에 있을 때만
 # ---------------------------------------------------------------------------------
 
 
@@ -105,7 +105,7 @@ def test_predictions_범위가_80번과_일치한다():
 def test_실물_표식이_제자리에_있다(ban):
     d = REPO_ROOT / ban.directory
     if not d.is_dir():
-        pytest.skip(f"{ban.directory} 가 워크트리에 없다")
+        pytest.skip(f"{ban.directory} 가 이 트리에 없다")
     marker = d / MARKER
     assert marker.is_file(), (
         f"{ban.directory}/{MARKER} 이 없다 — `uv run python scripts/citation_ban.py --write`")

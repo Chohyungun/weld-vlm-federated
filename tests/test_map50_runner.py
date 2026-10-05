@@ -1,4 +1,4 @@
-"""`map_50` 독립 검산 실행기 — 판정·입력 대조·코드 대조·출력 보호 (D 53번 · 총괄 57번).
+"""`map_50` 독립 검산 실행기 — 판정·입력 대조·코드 대조·출력 보호 (D 53번 · 57번).
 
 지키는 것:
 1. **판정은 전부 허용 안이어야 통과다**(53번 §4) — `map_50`·카테고리 평균 판·카테고리별 AP·R_s·R̄. 허용 차 1e−12.
@@ -155,7 +155,7 @@ def test_채택_조건은_I_모드만_닫는다(s, i, closed, noted):
     v = run.overall_verdict(None if s is None else {"pass": s}, None if i is None else {"pass": i})
     assert v["adoption_condition_closed_by_I"] is closed
     assert (v["note"] is not None) is noted
-    assert "총괄" in v["decision"]
+    assert "이 검산의 몫이 아니다" in v["decision"]
 
 
 # ---- 3. 입력 · 코드 대조 ------------------------------------------------------------------

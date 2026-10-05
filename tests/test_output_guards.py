@@ -1,6 +1,6 @@
 """본실험 산출물 보호 — 채점기·추론 부명령이 옛 판과 본실험 레코드를 덮지 않는다.
 
-지키는 것(총괄 09-16 23:25 추기, C 42번 §9-6, D 49번 §7-4):
+지키는 것(09-16 23:25 추기, C 42번 §9-6, D 49번 §7-4):
 
 1. **n-1** 본실험 채점 루트(`…/outputs/main_d/…`)에서는 `score` 가 **v1 도** 대상이 있으면 멈춘다.
    경계는 경로 성분(`outputs`·`main_d` 연속, 대소문자 무시)이다. 파일럿 루트의 v1 다시 쓰기는 그대로다.
@@ -26,7 +26,7 @@ from scripts.probe import score_cells as sc
     ("outputs/main_d", True),
     ("outputs/main_d/seed1", True),
     ("OUTPUTS/Main_D/seed2", True),                  # 윈도우 — 대소문자 무시
-    ("other_tree/outputs/main_d/seed3", True),       # 다른 워크트리·임시 폴더 아래도 같은 규칙
+    ("other_tree/outputs/main_d/seed3", True),       # 다른 체크아웃·임시 폴더 아래도 같은 규칙
     ("outputs/pilot_d", False),
     ("outputs/main_dx/seed1", False),
     ("outputs/main_c/seed1", False),

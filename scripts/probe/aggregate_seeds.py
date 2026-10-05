@@ -23,8 +23,8 @@
    판정은 **셋으로 갈라 적는다** — 트립와이어 충족 / 회복률 CI 미산출 / 대표 채택 미결.
    종합 검증 통과로 읽히면 안 된다.
 4. **Δ_AUC 는 촬영 ID 빈도 규칙 대조선을 반드시 병기한다**(감사 F06). "지름길 면역" 근거는
-   철회됐고, 후보 지위 판단은 총괄 판정이다 — 여기서는 판정 재료만 낸다.
-5. **총괄 판정 22번 §6:** 위치 축 `map_50` 회복률만 대표 후보. 분류 축(`macro_ap`)은 대조선
+   철회됐고, 후보 지위 판단은 별도 판정이다 — 여기서는 판정 재료만 낸다.
+5. **판정 22번 §6:** 위치 축 `map_50` 회복률만 대표 후보. 분류 축(`macro_ap`)은 대조선
    병기, 대표 숫자 없음.
 
 GPU 무접촉. 원장·predictions·동결본 읽기 전용.
@@ -74,11 +74,11 @@ LOCALS = ("sep_local_C1", "sep_local_C2", "sep_local_C3")
 FLOOR_METRICS = ("map_50", "map_50_95", "macro_ap")
 OPERATING_METRICS = ("macro_f1", "miss_rate", "defect_recall", "class_jaccard", "bbox_iou")
 HEADLINE_AXIS = "map_50"
-"""총괄 판정 22번 §6-2-3 — 유일한 확정 대표 후보 축."""
+"""판정 22번 §6-2-3 — 유일한 확정 대표 후보 축."""
 
 LOCAL_MEAN_DEFINITION = "로컬 평균 = 로컬 세 칸(C1·C2·C3) 점수의 **비가중** 산술평균"
 """C1:C2:C3 = 26,451:16,253:7,143 이라 가중이면 D·회복률이 달라진다. 집계기는 비가중을 쓰고
-그 사실을 산출물에 적는다(C 34번 Minor 13 — 의사결정로그 확정은 총괄)."""
+그 사실을 산출물에 적는다(C 34번 Minor 13 — 의사결정로그 확정은 별도)."""
 
 PUBLIC_STATUS = {
     "ci_bound_passed": "CI 산출 완료, 코드·출처 최종 검수 및 대표 채택 대기",
@@ -88,13 +88,13 @@ PUBLIC_STATUS = {
                    "— 회복률 게재 가부 미판정"),
     "ci_missing": "CI 미산출 — 회복률 게재 가부 미판정",
 }
-"""공개 문구(총괄 09-16). `recovery_reportable=true` 여도 **코드·출처 최종 검수와 대표 채택은
+"""공개 문구(09-16 판정). `recovery_reportable=true` 여도 **코드·출처 최종 검수와 대표 채택은
 남아 있다** — 게재 가능 판정을 완료로 읽지 않게 문구가 그 두 가지를 함께 말한다."""
 
 VARIANCE_INTERPRETATION = (
     "세 시드의 분산은 **기존 난수 정책(라운드마다 같은 첫 두 epoch 순열, 감사 F01) 아래의 "
     "변동**이다. 데이터 순서·증강 다양성을 바꾼 분산으로 설명하지 않는다. 시드 3세트가 "
-    "완성됐다는 사실이 F06 의 메타데이터 교락 반례를 없애지도 않는다(codex_reply Q1·Q2)."
+    "완성됐다는 사실이 F06 의 메타데이터 교락 반례를 없애지도 않는다(검토 Q1·Q2)."
 )
 
 
@@ -425,7 +425,7 @@ def recovery_table(payloads: dict[int, dict], table: dict) -> dict:
                             "통과가 아니라 판정 자체가 없다"
                         ),
                         "3_headline_adoption": (
-                            "**미결.** 대표 지표 채택은 총괄 판정 사항이다(22번 §6-2-3). "
+                            "**미결.** 대표 지표 채택은 별도 판정 사항이다(22번 §6-2-3). "
                             "분모 규칙 충족은 채택의 필요조건이지 충분조건이 아니다"
                         ),
                         "combined": (
@@ -645,7 +645,7 @@ def apply_recovery_ci(rec: dict, ci_payload: dict | None, observed: dict | None 
                       ci_source: str = "recovery_ci") -> dict:
     """회복률 CI 를 대표 축의 판정에 배선한다 — **결속을 확인하고, 판정은 다시 한다.**
 
-    정책(총괄 09-15·09-16, 외부 검토 codex_reply §18):
+    정책(09-15·09-16 판정, 검토 §18):
 
     1. CI 가 없으면 `recovery_reportable = null`(미산출).
     2. CI 의 결속(`binding` — 산출물 이름·시드 집합·시드별 산출물 sha256·채점기 지문과 규칙 표기)이
@@ -657,7 +657,7 @@ def apply_recovery_ci(rec: dict, ci_payload: dict | None, observed: dict | None 
     5. 기록된 `ci_pass` 는 **믿지 않는다.** 구간·반폭·미정의 수에서 규칙 ②③④를 다시 판정한다
        (`evaluation/prereg.py`). 기록이 자기모순이거나 등록 조건과 다르면 `null`.
     6. 위를 전부 지나면 트립와이어 ① ∧ 재판정 ②③④ → `true`, 아니면 `false`.
-    7. 대표 채택은 어느 경우에도 총괄 판정이다 — `public_status` 가 그것을 말한다.
+    7. 대표 채택은 어느 경우에도 별도 판정이다 — `public_status` 가 그것을 말한다.
 
     검사 2~4 는 서로를 대신하지 않는다. 해시가 같아도 항등·점추정을 따로 본다.
     공개 상태는 사유의 종류로 가른다 — 결속(2) 실패는 `ci_unbound`, 항등·점추정·재판정 조건(3~5)
@@ -735,7 +735,7 @@ def apply_recovery_ci(rec: dict, ci_payload: dict | None, observed: dict | None 
         f"(≤ {RECOVERY_CI_MAX_UNDEFINED_FRACTION}: {rj['4_undefined_fraction']['pass']})"
         + "".join(f" · **경고: {w}**" for w in warnings))
     v["combined"] = ("트립와이어 ①과 CI 규칙 ②③④(집계기 재판정) 전부 충족 → 회복률 게재 가능"
-                     "(recovery_reportable=true). ③ 대표 채택은 총괄 판정" if reportable else
+                     "(recovery_reportable=true). ③ 대표 채택은 별도 판정" if reportable else
                      "①~④ 중 미달이 있다 → 회복률을 헤드라인으로 싣지 않는다(recovery_reportable=false)")
     g["recovery_reportable"] = reportable
     g["recovery_ci_rejected"] = None
@@ -819,7 +819,7 @@ def discrimination_tables(payloads: dict[int, dict], ladder: dict | None,
         },
         "delta_auc": {
             "definition": "2·AUROC − 1 (N-crop 고정, 하한 레코드)",
-            "status": ("후보 지위 총괄 재판정 대기. '지름길 면역' 근거는 감사 F06 으로 철회 — "
+            "status": ("후보 지위 재판정 대기. '지름길 면역' 근거는 감사 F06 으로 철회 — "
                        "촬영 ID 빈도 규칙이 같은 모집단에서 양수를 낸다"),
             "by_cell": auc_out,
             "contrasts": contrast_out,

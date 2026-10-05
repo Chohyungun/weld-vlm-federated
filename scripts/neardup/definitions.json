@@ -1,0 +1,78 @@
+{
+  "note": "규칙에는 화소·해시 특징만 쓴다. 정답 라벨·분할·참여자는 쓰지 못한다(nd_stage5_lists.compile_rule 이 거부한다). 문턱의 근거는 별도 기록에 있다.",
+  "how_to_read": "A0 은 06번 미니스펙이 쓴 기준을 안쪽 상자에서 잰 것이고, A1 은 그 기준을 증폭 이전 판에 정합해서 적용한 것이다. X 가 자동 제외, R 이 사람이 보는 검토 띠이며 둘은 겹치지 않는다. X_narrow 는 민감도용으로 X 를 좁힌 것이다.",
+  "기각된_규칙을_왜 남기나": "2026-09-21 적대 검증에서 기각된 네 정의는 지우지 않고 `기각됨: true` 로 남긴다. 제외 목록은 만들지 않는다(5단계가 건너뛴다). 남기는 이유는 **옛 라벨이 어느 구간에서 나왔는지 재기 위해서**다 — 눈으로 본 판정은 이 규칙들이 띄운 후보를 본 것이라 그 밖의 구간에는 라벨이 없다. 그 편향의 크기를 세려면 식이 있어야 한다.",
+  "definitions": [
+    {
+      "key": "A0",
+      "name": "참고 — 06번 미니스펙의 기준(정합 판에서 평균 절대차 < 2 · 상관 > 0.99)",
+      "rule": "mad < 2 and corr > 0.99"
+    },
+    {
+      "key": "A1",
+      "name": "참고 — 같은 기준을 증폭 이전 판(tiles_v1)에 정합해서 적용",
+      "rule": "v1_reg_mad < 2 and v1_reg_corr > 0.99"
+    },
+    {
+      "key": "X2_v1",
+      "name": "자동 제외 v1 — 2026-09-25 개발 180쌍에서 정하고 얼렸다",
+      "얼림": {
+        "정한_표본": "sample_v1.csv 의 개발 180쌍(씨앗 20260925, 목록 sha256 3b7fd054…). 보류 120쌍은 열지 않았다",
+        "고르는_기준": "미리 적어 둔 후보 꼴 160개 안에서, 오탐률 ≤ 0.05 인 것 가운데 미탐률 최소. 동점이면 조건 수가 적은 것",
+        "개발_성능": "미탐 4/86 (4.65%) · 오탐 2/84 (2.38%)",
+        "같은_표본의_현행_X": "미탐 26/86 (30.2%) · 오탐 0/84",
+        "식의_sha256": "79662c2e8f92c4d0540c5612dbc24eb6c416b17a910986c9070aa7ff934494b3",
+        "주의": "개발 표본의 값이다. 보류 120쌍으로 다시 보기 전에는 새 자료의 성능이 아니다"
+      },
+      "rule": "max(abs(rd_dx), abs(rd_dy)) <= 48 and blk_med >= 0.15 and not (txt_gap >= 0.3 and txt_energy >= 1.0 and blk_med < 0.2)"
+    },
+    {
+      "key": "R2_v1",
+      "name": "검토 띠 v1 — 자동 제외 밖에서 사람이 보는 구간. **오탐률이라는 것이 없다**",
+      "얼림": {
+        "재는_것": "자동 제외가 놓친 같은 그림을 담는가. 개발에서 놓친 4쌍 가운데 3쌍을 담았고 1쌍은 어디에도 없다",
+        "띠의_크기": "개발 180쌍 가운데 54쌍"
+      },
+      "rule": "not (max(abs(rd_dx), abs(rd_dy)) <= 48 and blk_med >= 0.15 and not (txt_gap >= 0.3 and txt_energy >= 1.0 and blk_med < 0.2)) and (blk_med >= 0.05 or txt_energy < 1.2)"
+    },
+    {
+      "key": "기각_보수",
+      "name": "기각됨 — 보수 관점의 정의(2026-09-21 적대 검증에서 기각)",
+      "기각됨": true,
+      "rule": "rd_sharp >= 0.40 and blk_frac >= 0.80 and max(abs(rd_dx), abs(rd_dy)) <= 32 and reg_mid >= 0.40"
+    },
+    {
+      "key": "기각_측정",
+      "name": "기각됨 — 측정 관점의 정의(같은 날 기각). 게이트가 없어 다른 프레임을 함께 받는다",
+      "기각됨": true,
+      "rule": "(rd_sharp >= 0.25 and blk_frac >= 0.50) or (rd_sharp >= 0.30 and reg_mid >= 0.40)"
+    },
+    {
+      "key": "기각_누출",
+      "name": "기각됨 — 누출 관점의 정의(같은 날 기각)",
+      "기각됨": true,
+      "rule": "ov >= 0.85 and abs(rd_dx) <= 48 and abs(rd_dy) <= 48 and reg_corr >= 0.50 and blk_frac >= 0.30 and blk_med >= 0.15 and (rd_sharp >= 0.18 or reg_corr >= 0.85)"
+    },
+    {
+      "key": "기각_과분리core",
+      "name": "기각됨 — 과분리 렌즈가 권고한 core(같은 날 기각)",
+      "기각됨": true,
+      "rule": "ov >= 0.85 and max(abs(rd_dx), abs(rd_dy)) <= 48 and blk_med >= 0.15 and blk_frac >= 0.50 and rd_sharp >= 0.25"
+    },
+    {
+      "key": "X",
+      "name": "자동 제외 — 같은 방사선 사진. 작은 이동 팔 + 큰 이동 팔 + 같은 필름 다른 프레임 가드",
+      "rule": "(max(abs(rd_dx), abs(rd_dy)) <= 48 and ov >= 0.85 and rd_sharp >= 0.25 and blk_frac >= 0.50 and blk_med >= 0.15 and reg_corr >= 0.50 or 48 < max(abs(rd_dx), abs(rd_dy)) and abs(rd_dx) <= 358 and abs(rd_dy) <= 200 and rd_sharp >= 0.25 and blk_frac >= 0.90 and blk_med >= 0.40) and not (hi_min <= -0.2 and hi_min_energy >= 2.5)"
+    },
+    {
+      "key": "R",
+      "name": "검토 띠 — 자동 제외가 아니다. 사람이 보고 판정한다",
+      "rule": "abs(rd_dx) <= 358 and abs(rd_dy) <= 200 and blk_frac >= 0.30 and blk_med >= 0.10 and (rd_sharp >= 0.10 or reg_corr >= 0.85) and not ((max(abs(rd_dx), abs(rd_dy)) <= 48 and ov >= 0.85 and rd_sharp >= 0.25 and blk_frac >= 0.50 and blk_med >= 0.15 and reg_corr >= 0.50 or 48 < max(abs(rd_dx), abs(rd_dy)) and abs(rd_dx) <= 358 and abs(rd_dy) <= 200 and rd_sharp >= 0.25 and blk_frac >= 0.90 and blk_med >= 0.40) and not (hi_min <= -0.2 and hi_min_energy >= 2.5))"
+    },
+    {
+      "key": "X_narrow",
+      "name": "민감도 — 자동 제외를 정합 봉우리 0.50 위로 좁힌 것",
+      "rule": "(max(abs(rd_dx), abs(rd_dy)) <= 48 and ov >= 0.85 and rd_sharp >= 0.50 and blk_frac >= 0.50 and blk_med >= 0.15 and reg_corr >= 0.50 or 48 < max(abs(rd_dx), abs(rd_dy)) and abs(rd_dx) <= 358 and abs(rd_dy) <= 200 and rd_sharp >= 0.50 and blk_frac >= 0.90 and blk_med >= 0.40) and not (hi_min <= -0.2 and hi_min_energy >= 2.5)"
+    }
+  ]
+}

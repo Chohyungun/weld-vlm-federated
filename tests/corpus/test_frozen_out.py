@@ -1,4 +1,4 @@
-"""봉인 산출 디렉터리 가드 — 이빨 시험. 09-08 총괄 지시(dispatch_B_동결가드).
+"""봉인 산출 디렉터리 가드 — 오류 검출 시험. 09-08 지시.
 
 `run_cycle_corpus --out` 기본값이 이미 봉인된 `cycle_pilot` 이었다. 인자 없는 실행 한 번이
 논문에 실을 해시의 실물을 지운다(규약 1-6). `make_pairs_pilot` 은 더 나빴다 — 가드가 있긴
@@ -214,7 +214,7 @@ def test_reseal_은_비대화식에서_거부한다(tmp_path, monkeypatch, capsy
     with pytest.raises(SystemExit) as e:
         S.main()
     assert "확인" in str(e.value)
-    # 무엇을 지우는지 화면에 찍었어야 한다 (총괄 지시 과제 1).
+    # 무엇을 지우는지 화면에 찍었어야 한다 (지시 과제 1).
     out_txt = capsys.readouterr().out
     assert "snapshot_digest" in out_txt and "pairs.jsonl" in out_txt
 
@@ -331,7 +331,7 @@ def test_봉인_구성원이_실물과_이름이_맞는다(d: Path):
     """계약 파일이 유령 목록이 되지 않았는지. 이름이 어긋나면 대조가 불가능하다.
 
     **트리마다 답이 다르다.** 계약 구성원 일부가 `.gitignore` 로 추적 밖이라
-    (`corpus/generate/cycle_pilot/*.jsonl`) 만든 워크트리에만 있고 main 체크아웃에는
+    (`corpus/generate/cycle_pilot/*.jsonl`) 만든 트리에만 있고 새 체크아웃에는
     없다. 단순 존재 검사로 두면 만든 자리에서만 통과하고 게이트에서 깨진다 — 09-08 에
     실제로 그랬다.
 
@@ -342,7 +342,7 @@ def test_봉인_구성원이_실물과_이름이_맞는다(d: Path):
     rel = d.relative_to(REPO).as_posix()
     entry = FO.EXPECTED_SEALED.get(rel)
     assert entry is not None, (f"{rel}: 봉인처 명부에 없다 — data/frozen_guard.py 의 "
-                               "EXPECTED_SEALED(A 소관)에 올리도록 총괄에 보고하라")
+                               "EXPECTED_SEALED 에 올려야 한다")
     # 옛 판정은 디렉터리가 없으면 그냥 건너뛰었다 — 09-11 소실이 그렇게 초록으로 지나갔다.
     r = verify_contract(d, expectation=entry)
 
@@ -358,7 +358,7 @@ def test_봉인_구성원이_실물과_이름이_맞는다(d: Path):
         msg = (f"{d.name}: 계약 구성원 {r['n_members']}개 중 "
                f"{len(r['unverified'])}개를 이 트리에서 대조하지 못했다 "
                f"({r['verdict']}) — {r['unverified']}. "
-               "추적 밖 자산이라 만든 워크트리에만 있다.")
+               "추적 밖 자산이라 만든 트리에만 있다.")
         warnings.warn(msg, IncompleteTreeWarning, stacklevel=2)
         pytest.skip(msg)
 

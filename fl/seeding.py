@@ -64,7 +64,7 @@ def seed_all(seed: int, *, deterministic: bool = False) -> None:
     # `PYTHONHASHSEED` 는 **여기서 건드리지 않는다.** 인터프리터 시작 전에만 효력이 있어
     # 현재 프로세스에는 아무 영향이 없는데, `seeded()` 안에서 설정하면 그 뒤 spawn 되는
     # 로더 워커가 초기화용 임시 시드를 물려받는다. 이득 없이 프로세스 간 결합만 생긴다.
-    # 필요하면 런처(pane 기동 명령)에서 준다.
+    # 필요하면 런처에서 준다.
     try:
         import numpy as np
 

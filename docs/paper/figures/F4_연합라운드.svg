@@ -15,8 +15,8 @@
   <!-- ============ 서버 ============ -->
   <rect x="480" y="70" width="320" height="82" rx="8" fill="#ffffff" stroke="#222" stroke-width="2.2"/>
   <text x="640" y="98" text-anchor="middle" font-size="16" font-weight="bold" fill="#222">서버</text>
-  <text x="640" y="121" text-anchor="middle" font-size="12" fill="#333">받은 가중치를 회사별 사진 수에 비례해</text>
-  <text x="640" y="139" text-anchor="middle" font-size="12" fill="#333">④ 평균하고, 평균본을 다시 나눠준다</text>
+  <text x="640" y="121" text-anchor="middle" font-size="12" fill="#333">본실험: 고정한 감독 토큰 총합으로</text>
+  <text x="640" y="139" text-anchor="middle" font-size="12" fill="#333">④ 가중 평균한 뒤 다시 나눠준다</text>
 
   <!-- 순환 횟수 주석 -->
   <text x="955" y="100" text-anchor="middle" font-size="12.5" fill="#555">이 순환(①~④)을</text>
@@ -38,54 +38,54 @@
   <!-- ============ 회사 3곳 ============ -->
   <!-- 회사 A -->
   <rect x="110" y="330" width="220" height="170" rx="8" fill="#f2f2f2" stroke="#444" stroke-width="1.8"/>
-  <text x="220" y="358" text-anchor="middle" font-size="14.5" font-weight="bold" fill="#222">회사 A — 강재, 대형</text>
+  <text x="220" y="358" text-anchor="middle" font-size="14.5" font-weight="bold" fill="#222">C1 — 명목 ST</text>
   <text x="220" y="381" text-anchor="middle" font-size="12.5" fill="#333">사진 26,451장</text>
   <text x="220" y="406" text-anchor="middle" font-size="12.5" fill="#333">② 자기 사진으로만 학습</text>
   <circle cx="141" cy="459" r="9" fill="none" stroke="#a33" stroke-width="2"/>
   <line x1="134.6" y1="465.4" x2="147.4" y2="452.6" stroke="#a33" stroke-width="2"/>
-  <text x="158" y="456" font-size="11.5" fill="#a33">사진은 회사 밖으로</text>
-  <text x="158" y="473" font-size="11.5" fill="#a33">나가지 않는다</text>
+  <text x="158" y="456" font-size="11.5" fill="#a33">이미지는 집계 서버로</text>
+  <text x="158" y="473" font-size="11.5" fill="#a33">보내지 않는 설계</text>
 
   <!-- 회사 B -->
   <rect x="530" y="330" width="220" height="170" rx="8" fill="#f2f2f2" stroke="#444" stroke-width="1.8"/>
-  <text x="640" y="358" text-anchor="middle" font-size="14.5" font-weight="bold" fill="#222">회사 B — 강재, 중형</text>
+  <text x="640" y="358" text-anchor="middle" font-size="14.5" font-weight="bold" fill="#222">C2 — 명목 ST</text>
   <text x="640" y="381" text-anchor="middle" font-size="12.5" fill="#333">사진 16,253장</text>
   <text x="640" y="406" text-anchor="middle" font-size="12.5" fill="#333">② 자기 사진으로만 학습</text>
   <circle cx="561" cy="459" r="9" fill="none" stroke="#a33" stroke-width="2"/>
   <line x1="554.6" y1="465.4" x2="567.4" y2="452.6" stroke="#a33" stroke-width="2"/>
-  <text x="578" y="456" font-size="11.5" fill="#a33">사진은 회사 밖으로</text>
-  <text x="578" y="473" font-size="11.5" fill="#a33">나가지 않는다</text>
+  <text x="578" y="456" font-size="11.5" fill="#a33">이미지는 집계 서버로</text>
+  <text x="578" y="473" font-size="11.5" fill="#a33">보내지 않는 설계</text>
 
   <!-- 회사 C -->
   <rect x="880" y="330" width="200" height="170" rx="8" fill="#f2f2f2" stroke="#444" stroke-width="1.8"/>
-  <text x="980" y="352" text-anchor="middle" font-size="14.5" font-weight="bold" fill="#222">회사 C</text>
-  <text x="980" y="371" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">취득처가 다름, 소형</text>
+  <text x="980" y="352" text-anchor="middle" font-size="14.5" font-weight="bold" fill="#222">C3 — 명목 AL</text>
+  <text x="980" y="371" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">실제 재질·취득처 미확인</text>
   <text x="980" y="392" text-anchor="middle" font-size="12.5" fill="#333">사진 7,143장</text>
   <text x="980" y="412" text-anchor="middle" font-size="12.5" fill="#333">② 자기 사진으로만 학습</text>
   <circle cx="906" cy="459" r="9" fill="none" stroke="#a33" stroke-width="2"/>
   <line x1="899.6" y1="465.4" x2="912.4" y2="452.6" stroke="#a33" stroke-width="2"/>
-  <text x="923" y="456" font-size="11.5" fill="#a33">사진은 회사 밖으로</text>
-  <text x="923" y="473" font-size="11.5" fill="#a33">나가지 않는다</text>
+  <text x="923" y="456" font-size="11.5" fill="#a33">이미지는 집계 서버로</text>
+  <text x="923" y="473" font-size="11.5" fill="#a33">보내지 않는 설계</text>
 
   <!-- 회사 C 표시 (소규모 참여 이득 확인 대상) -->
-  <text x="980" y="522" text-anchor="middle" font-size="11.5" fill="#555">↑ 작은 회사가 연합 참여로</text>
-  <text x="980" y="539" text-anchor="middle" font-size="11.5" fill="#555">이득을 보는지 확인하는 대상</text>
+  <text x="980" y="522" text-anchor="middle" font-size="11.5" fill="#555">↑ 각 역할의 자체 모델과</text>
+  <text x="980" y="539" text-anchor="middle" font-size="11.5" fill="#555">공동 모델의 차이를 비교</text>
 
   <!-- 순환 단계 요약 (경계 안 하단) -->
-  <text x="80" y="545" font-size="12" fill="#555">① 가중치 배포 → ② 각 회사 자기 사진으로 학습 → ③ 학습된 가중치만 반환 → ④ 평균, 다시 ①</text>
+  <text x="80" y="545" font-size="12" fill="#555">① 모델 배포 → ② 각자 학습 → ③ 학습한 값 반환 → ④ 집계, 다시 ①</text>
 
   <!-- ============ 경계 밖: 교환물 크기 주석 ============ -->
-  <text x="60" y="596" font-size="12" fill="#555">한 번 오갈 때 주고받는 크기 (실측으로 채움):</text>
-  <text x="60" y="616" font-size="12" fill="#555">분리형 = 결함 찾는 모델 전체 {} MB  ·  통합형 = 어댑터(작은 추가 가중치)만 {} MB</text>
+  <text x="60" y="596" font-size="12" fill="#555">교환량: 상향 배열 바이트를 기록하며 하향·실회선은 미측정</text>
+  <text x="60" y="616" font-size="12" fill="#555">통합형은 어댑터만, 사전실험은 검출기 전체 값을 교환한다. 장수는 기존 학습·검증 풀의 합이다.</text>
 
   <!-- ============ 경계 밖: 규정 색인 ============ -->
   <rect x="920" y="580" width="320" height="86" rx="8" fill="#fafafa" stroke="#666" stroke-width="1.5"/>
-  <text x="1080" y="606" text-anchor="middle" font-size="13.5" font-weight="bold" fill="#222">규정 색인 — 공개 규정 문서</text>
-  <text x="1080" y="628" text-anchor="middle" font-size="12" fill="#333">모든 회사가 같은 것을 사용하며</text>
+  <text x="1080" y="606" text-anchor="middle" font-size="13.5" font-weight="bold" fill="#222">규정 색인 — 분리형 확장용</text>
+  <text x="1080" y="628" text-anchor="middle" font-size="12" fill="#333">통합형 본실험은 검색하지 않음</text>
   <text x="1080" y="647" text-anchor="middle" font-size="12" fill="#333">교환·평균 대상이 아니다</text>
   <line x1="1080" y1="580" x2="1080" y2="566" stroke="#666" stroke-width="1.5" stroke-dasharray="3 3"/>
 
   <!-- ============ 각주 ============ -->
   <line x1="60" y1="695" x2="1240" y2="695" stroke="#dddddd" stroke-width="1"/>
-  <text x="60" y="722" font-size="12" fill="#555">본 실험의 연합학습은 GPU 1장 위의 모의 실행(시뮬레이션)이며, 통신량은 주고받는 가중치 묶음의 실측 크기 × 반복 횟수 × 회사 수로 계산한다.</text>
+  <text x="60" y="722" font-size="12" fill="#555">참여자 역할을 한 장비에서 모사한다. 실제 기업 간 운영·정보 유출 방지를 입증한 것이 아니며 본실험 전 구간 검증은 남아 있다.</text>
 </svg>

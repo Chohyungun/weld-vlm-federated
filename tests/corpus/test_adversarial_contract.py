@@ -1,4 +1,4 @@
-"""Phase Attack — 적대 검증: 결정론·계약 렌즈 (dispatch 지시).
+"""검토 — 결정론·계약 렌즈.
 
 이 파일은 두 종류의 테스트를 담는다:
 
@@ -308,7 +308,7 @@ def test_finding1_inspection_method_column_accepted(tmp_path):
 
 
 def test_finding1_rt_vt_coexistence_loadable(load):
-    """finding #1 수정 확인 (회귀 가드): RT/VT 기준 병존 — 게이트 #13 의 존재 이유 —
+    """finding #1 수정 확인 (회귀 가드): RT/VT 기준 병존 — 결정 #13 의 존재 이유 —
     이 표현 가능하다. 예전에는 V6 이중 canonical·V3 구간 겹침으로 로드가 거부됐다."""
     rt = csv_row()  # RT 기공 상당
     vt = csv_row(rule_id="KR-VT-001", clause_id="KR-3.2.2", limit_value="4")  # VT 기공 상당

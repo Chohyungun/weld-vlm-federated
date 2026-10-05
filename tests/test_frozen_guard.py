@@ -142,6 +142,34 @@ def test_pilot3000_계열_3개는_A_소유_restored_로_등록돼_있다():
         assert "8자 접두" in EXPECTED_SEALED[k]["evidence"], k
 
 
+def test_본실험_페어와_원좌표_판이_명부에_있다():
+    """본실험 페어는 학습 · 감독 토큰 기대값의 입력이고, 원좌표 판은 정본 승격 뒤 잠갔다. 둘 다 git 밖 단일 사본이다."""
+    pairs = EXPECTED_SEALED["data/processed/pairs_main_v1"]
+    v3 = EXPECTED_SEALED["data/interim/manifest_v3_rawlabels"]
+    assert (pairs["status"], pairs["owner"]) == ("expected", "B")
+    assert (v3["status"], v3["owner"]) == ("expected", "A")
+
+
+def test_명부의_지문_접두는_실물_계약서와_같다():
+    """`record` 에 적은 지문 접두가 실물 계약서의 지문과 다르면 명부가 다른 판을 가리킨다.
+    실물이 없는 자리는 여기서 판단하지 않는다(대조기의 몫)."""
+    import re
+
+    from data.manifest_io import SNAPSHOT_FILENAME
+    seen = 0
+    for rel, e in EXPECTED_SEALED.items():
+        m = re.search(r"digest ([0-9a-f]{8})…", e.get("record", ""))
+        contract = REPO_ROOT / rel / SNAPSHOT_FILENAME
+        if not m or not contract.is_file():
+            continue
+        line = [ln for ln in contract.read_text(encoding="utf-8").splitlines() if ln.startswith("# snapshot_digest")]
+        assert len(line) == 1, rel
+        assert line[0].split()[-1].startswith(m.group(1)), rel
+        seen += 1
+    if not seen:
+        pytest.skip("지문을 적은 자리의 실물이 이 트리에 없다")
+
+
 @pytest.mark.skipif(
     not (REPO_ROOT / "data/processed").is_dir(), reason="저장 뿌리 data/processed 가 이 트리에 없다"
 )
@@ -174,14 +202,14 @@ def test_expected_항목은_실물이_있으면_계약서를_가진다():
 # ---------------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(not V1.is_dir(), reason="동결 스냅샷이 워크트리에 없다")
+@pytest.mark.skipif(not V1.is_dir(), reason="동결 스냅샷이 이 체크아웃에 없다")
 def test_동결_디렉터리가_실제로_잠겨_있다():
     assert is_frozen(V1), f"{CONTRACT_NAME} 이 없다 — 동결이 풀렸다"
     with pytest.raises(FrozenDirectoryError):
         assert_writable(V1)
 
 
-@pytest.mark.skipif(not V1.is_dir(), reason="동결 스냅샷이 워크트리에 없다")
+@pytest.mark.skipif(not V1.is_dir(), reason="동결 스냅샷이 이 체크아웃에 없다")
 def test_경쟁_매니페스트가_본_디렉터리로_돌아오지_않았다():
     """격리가 풀리면 여기서 잡힌다. 80번 E16 이 지목한 사고 경로다."""
     loose = [n for n in QUARANTINE if (V1 / n).is_file()]

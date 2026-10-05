@@ -20,7 +20,7 @@ from data.id_strata import STRATUM_AXIS, id_number, load_cut_points, materialize
 REPO_ROOT = Path(__file__).resolve().parents[1]
 V1 = REPO_ROOT / "data/interim/manifest_v1"
 pytestmark = pytest.mark.skipif(not (V1 / "manifest.csv").is_file(),
-                                reason="동결 스냅샷이 워크트리에 없다")
+                                reason="동결 스냅샷이 이 체크아웃에 없다")
 
 
 @pytest.fixture(scope="module")
@@ -34,7 +34,8 @@ def manifest():
 
 
 def test_id_number_는_접두사를_떼낸다():
-    assert list(id_number(["aihub71761:14503000", "x:7"])) == [14503000, 7]
+    # 식별자는 합성이다 — 실물 취득 id 를 추적 파일에 두지 않는다(공개 검수기 AIHUB_ID 형식).
+    assert list(id_number(["src:87654321", "x:7"])) == [87654321, 7]
 
 
 def test_축_이름이_고정돼_있다():

@@ -104,7 +104,7 @@ def entries_from_derived(rows: Iterable[Mapping[str, object]]) -> tuple[GoldEntr
 def assert_unique(entries: Sequence[GoldEntry]) -> None:
     """유일성 검사 — 위반 시 **빌드 실패 + B 회부**. 경고로 넘기지 않는다.
 
-    누가 언제 검사하는지가 없으면 "조용한 다대다"가 그대로 통과한다(트랙 C의 R-재현
+    누가 언제 검사하는지가 없으면 "조용한 다대다"가 그대로 통과한다(재개 재현 검토
     Minor #2). 검사축이 키에 들어간 것이 핵심이다 — 축이 없으면 표면·내부 기공 행이
     같은 키로 보여 중복 검사를 통과해 버린다.
     """

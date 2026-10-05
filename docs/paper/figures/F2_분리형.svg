@@ -35,13 +35,13 @@
   <rect x="265" y="200" width="185" height="95" rx="6" fill="#eaf1f7" stroke="#222" stroke-width="2.2"/>
   <text x="357" y="236" text-anchor="middle" font-size="15" font-weight="bold" fill="#222">결함 찾는 모델</text>
   <text x="357" y="261" text-anchor="middle" font-size="12" fill="#333">이 모델만 학습된다</text>
-  <text x="357" y="281" text-anchor="middle" font-size="11.5" fill="#555">(회사 간 교환 대상)</text>
+  <text x="357" y="281" text-anchor="middle" font-size="11.5" fill="#555">(참여자 간 교환 대상)</text>
 
   <!-- 검출 결과 -->
   <rect x="515" y="200" width="275" height="95" rx="6" fill="#ffffff" stroke="#444" stroke-width="1.8"/>
   <text x="652" y="231" text-anchor="middle" font-size="14" font-weight="bold" fill="#222">검출 결과</text>
-  <text x="652" y="256" text-anchor="middle" font-size="12.5" fill="#333">결함 종류 · 위치 상자 · 크기</text>
-  <text x="652" y="278" text-anchor="middle" font-size="11.5" fill="#555">전부 숫자로 나온다</text>
+  <text x="652" y="256" text-anchor="middle" font-size="12.5" fill="#333">결함 종류 · 픽셀 좌표 상자</text>
+  <text x="652" y="278" text-anchor="middle" font-size="11.5" fill="#555">상자 크기는 mm 치수가 아님</text>
 
   <!-- 화살표: 사진 → 검출 모델 → 검출 결과 -->
   <line x1="205" y1="247" x2="260" y2="247" stroke="#444" stroke-width="2" marker-end="url(#arrow)"/>
@@ -67,12 +67,12 @@
   <rect x="780" y="420" width="220" height="110" rx="6" fill="#d9d9d9" stroke="#666" stroke-width="1.8"/>
   <text x="890" y="455" text-anchor="middle" font-size="14" font-weight="bold" fill="#222">판정 모델</text>
   <text x="890" y="481" text-anchor="middle" font-size="11.5" fill="#333">고정 — 학습하지 않는다</text>
-  <text x="890" y="503" text-anchor="middle" font-size="11.5" fill="#333">분리형 세 조건 공통</text>
+  <text x="890" y="503" text-anchor="middle" font-size="11.5" fill="#333">확장 설계 · 전 구간 미검증</text>
 
   <!-- 판정문 -->
   <rect x="1050" y="420" width="200" height="110" rx="6" fill="#ffffff" stroke="#444" stroke-width="1.8"/>
   <text x="1150" y="453" text-anchor="middle" font-size="14" font-weight="bold" fill="#222">판정문</text>
-  <text x="1150" y="479" text-anchor="middle" font-size="12" fill="#333">합격 / 불합격</text>
+  <text x="1150" y="479" text-anchor="middle" font-size="12" fill="#333">조건부 결론·부족한 정보</text>
   <text x="1150" y="501" text-anchor="middle" font-size="12" fill="#333">근거 조항 번호</text>
 
   <line x1="430" y1="475" x2="484" y2="475" stroke="#444" stroke-width="2" marker-end="url(#arrow)"/>
@@ -82,13 +82,13 @@
   <!-- ============ 규정 색인 (학습·교환 경계 바깥) ============ -->
   <rect x="470" y="605" width="270" height="95" rx="6" fill="#fafafa" stroke="#666" stroke-width="1.5"/>
   <text x="605" y="632" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">규정 색인 — 공개 규정 문서</text>
-  <text x="605" y="655" text-anchor="middle" font-size="11.5" fill="#333">학습하지 않고, 모든 회사가</text>
+  <text x="605" y="655" text-anchor="middle" font-size="11.5" fill="#333">학습하지 않고, 각 참여자가</text>
   <text x="605" y="673" text-anchor="middle" font-size="11.5" fill="#333">같은 색인을 쓴다</text>
   <text x="605" y="692" text-anchor="middle" font-size="11.5" fill="#333">교환·평균 대상이 아니다</text>
   <line x1="605" y1="601" x2="605" y2="537" stroke="#444" stroke-width="2" marker-end="url(#arrow)"/>
 
   <!-- ============ 각주 ============ -->
   <line x1="60" y1="728" x2="1240" y2="728" stroke="#dddddd" stroke-width="1"/>
-  <text x="60" y="754" font-size="12" fill="#555">결함의 종류·위치·크기를 먼저 숫자로 만들고, 그 숫자를 조건 삼아 규정 조항을 찾은 뒤, 고정된 판정 모델이 근거를 인용해 판정문을 쓴다.</text>
-  <text x="60" y="776" font-size="12" fill="#555">학습되는 것은 결함 찾는 모델 하나뿐이며, 규정 색인은 학습·교환 대상이 아니어서 세 조건 모두 같은 것을 쓴다.</text>
+  <text x="60" y="754" font-size="12" fill="#555">분리형 확장 설계다. 반복 실험을 마친 것은 검출기이며 규정 판정부의 성능을 검증한 결과가 아니다.</text>
+  <text x="60" y="776" font-size="12" fill="#555">두께와 화소당 실치수가 없으면 이미지로 합부를 확정하지 않는다. 규정 색인은 집계 대상이 아니다.</text>
 </svg>

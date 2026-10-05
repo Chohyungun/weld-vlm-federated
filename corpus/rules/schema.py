@@ -1,6 +1,6 @@
 """계약 #3 스키마 — LimitRow · LimitsTable · Judgment · enum 전부.
 
-스펙: docs/dev_log/2026-08-17-kickoff/11_spec_B_코퍼스합성.md §1-2 (컬럼 전수 명세),
+스펙 §1-2 (컬럼 전수 명세),
 §1-3 (허용치 표현 규약), §4-4 (verdict·margin), 인터페이스 고정 조항.
 
 - 수치는 전부 decimal.Decimal, Q = Decimal("0.01"), ROUND_HALF_UP 양자화 후 비교 (§1-3).
@@ -79,7 +79,7 @@ class Material(str, Enum):
 
 
 class InspectionMethod(str, Enum):
-    """검사 방법 축 (§1-2 5a, 게이트 #13). 표면 검사(VT)와 방사선 내부 검사(RT)는 같은
+    """검사 방법 축 (§1-2 5a, 결정 #13). 표면 검사(VT)와 방사선 내부 검사(RT)는 같은
     결함코드라도 허용치가 다르다 — 축이 없으면 잘못된 행을 집어도 형식상 정상으로 보인다.
     ALL 은 검사 방법과 무관한 조항이라 RT·VT 어느 질의에도 응한다."""
 
@@ -332,7 +332,7 @@ class LimitsTable(BaseModel):
     pilot: bool = False  # True = 파일럿 전용·미검수 (V0·검수 컬럼·V5(sources 부재) 면제됨)
     v4_warnings: tuple[str, ...] = ()  # 단조성 경보 (예외 아님)
     v9_conflicts: tuple[str, ...] = ()  # 교차 문서 충돌 — canonical 로 해소된 기록
-    v10_flags: tuple[str, ...] = ()  # 샘플링 실현성 미달 행 (CTO 판단 대상)
+    v10_flags: tuple[str, ...] = ()  # 샘플링 실현성 미달 행 (판단 대상)
     checks_skipped: tuple[str, ...] = ()  # pilot 면제 등으로 건너뛴 검사 목록
 
     @property

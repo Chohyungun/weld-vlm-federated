@@ -1,0 +1,53 @@
+# 간선 판본 v2 — 구현 회차 1(파일럿 · 후보 넓히기 · 규칙 입력 달기, 판정 없음). 미니스펙 2판(wt/A 473137b).
+# **후보 문턱 · 규칙 문턱 · 겹침 하한은 여기 없다.** 등록(미니스펙 9절 3.5)에서 총괄 게이트로 정한다.
+# 아래 floors 는 기록 바닥(그보다 낮은 짝은 분포로만 남긴다)이고, compute_min_overlap 은 계산 바닥이다.
+
+inputs:
+  manifest: data/interim/manifest_v1/manifest.csv            # 읽기만 (동결)
+  tiles: data/interim/manifest_v1/tiles.csv
+  encode_progress: data/interim/manifest_v1/encode_progress.jsonl
+  manifest_v0: data/interim/manifest_v0/manifest.csv          # 파노라마 원래 폭
+  histmatch_reference: data/interim/manifest_v1/histmatch_reference.json
+  border_mask_calibration: data/interim/manifest_v1/border_mask_calibration.json
+  desc: _workspace/2026-09-21-neardup/bpdesc_64x36.npy        # 3a 기술자(저장 타일 62,308장)
+  desc_ids: _workspace/2026-09-21-neardup/thumbs_ids.txt
+  raw_zips: data/raw/aihub71761/_zips                         # 읽기만
+  labels: data/interim/aihub_labels                           # 원천 파일명(정상 라벨 zip 만 읽는다)
+
+chain:                                     # 실물 사슬의 설정 — base.yaml · 보정 파일에서 읽어 대조한다
+  quality: 74
+  tile_w: 1280
+  tile_h: 720
+  stride_x: 640
+  align: 8
+
+resources:
+  start_min_gb: 8.0        # 실물 단계는 시작할 때 이만큼 비어 있어야 한다(게이트 회차 1)
+  chunk_min_gb: 6.0        # 덩어리 앞에서 이 아래면 기다린다
+  wait_step_s: 60
+  fft_workers: 1           # 작업자 하나(게이트 회차 1). 스레드도 하나로 잰다
+  block_rows: 50
+
+pilot:
+  out: _workspace/2026-10-05-isolation/v2/pilot_r2   # r1 은 54e7870 코드의 실행 기록(홉에서 멈춤) — 지우지 않는다
+  seed: 20261005           # 공개 시드 — 파일럿 표본만. 검증 시드(총괄의 약속값)와 무관하다
+  n_eval: 100
+  n_trainval: 1000
+  record_floors: {g3: 0.30, g4: 0.35, p: 0.60}
+  p_min_overlap: 0.20
+  hop_g4: 0.45             # 미니스펙 3-1 (나) 의 생성기 값 — 도달을 재는 데만 쓴다
+  hop_seed_cap: 5000       # 2 홉을 재는 시작 영상(1 홉 + 묶음 동료)의 상한 — 넘는 변형은 1 홉만 적는다
+  # G3 의 홉 문턱은 보정(calib)의 합성 양성 5 백분위에서 온다(pilot.hop_g3_taus). G4 ≥ G3 이므로 0.45 이상이면 G4 와 같다
+  hop_seed_steps: [25, 50, 100]
+  attach_max_pairs: 300
+  recut_check_n: 50
+  desc_check_n: 50
+
+features:
+  window_cells: 1
+  compute_min_overlap: 0.05
+
+calib:
+  g3_per_provenance: 150   # 학습검증에서만 고른다
+  overlap_panoramas: 60    # 학습검증 파노라마
+  overlaps: [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2]

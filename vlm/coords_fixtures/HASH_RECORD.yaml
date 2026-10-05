@@ -1,0 +1,43 @@
+# vlm/coords.py 의 해시 이력 — 갈라진 값을 지우지 않고 병기한다.
+#
+# 왜 이 파일이 있나: `coords_source_sha256()` 이 이 모듈의 **바이트 전체**를 해시해
+# `coord_cfg_hash` 의 입력에 넣는다. 그래서 주석 한 줄만 고쳐도 `coord_cfg_hash` 가 달라진다.
+# 바이트를 되돌리면 공개본에 빼야 할 표기가 되살아나므로 되돌리지 않고, 사슬을 다른 방식으로 잇는다.
+#
+# 사슬: 동결 export 의 coord_cfg_hash -> 당시 바이트 -> 구문 트리 -> 지금 바이트
+# 형식은 data/mock/FROZEN_RECORD.yaml 의 병기 방식을 따른다.
+# 강제하는 시험: tests/test_coords_scrub_ast.py
+
+files:
+  vlm/coords.py:
+    # 09-02 좌표 규약 ABS_ORIG 전환(dffd3db) 이후의 값. 검출 세 시드의 export 가 이 바이트로 돌았다.
+    sha256: 43d1821fa8a0482f4e9140741968b77169beeed9cbf554bd616986ad1eb9693f
+    git_blob: bf126772094b9f0ee611e1aa287039590fa44762
+    derived:
+      # 이 바이트에서 나온 값. 동결 산출물이 기록하고 있는 것이다.
+      coord_cfg_hash_ABS_ORIG: c598d5490e781c1add7fe54cf265dff59ff353a5f9bf8c1bf65f7989c1bc3fac
+      recorded_in: 검출 세 시드의 export 15 벌(10번 09-07·09-11 항목)
+    earlier:
+      # 08-21 최초 봉인 값. 09-02 전환 때 SHA256SUMS 갱신이 누락돼 09-21 까지 낡은 채 남아 있었다.
+      sha256: e2bed0003949c0a2e9e5c98c59925b483ba50a1a758740b868a88ae5649f431c
+      note: 2026-08-21 최초 봉인. 09-02 전환 뒤 기록이 갱신되지 않았다
+    after_public_cleanup:
+      sha256: 06eb8289f853354ee236495a49230be4f93caadf12474f62d2bf12a4492d7fc9
+      git_blob: db4b1c3dd10e989cb0c2c7c333a54e2aa84f2dd4
+      changed: >-
+        주석 두 줄에서 소관 표시를 뺐다. 4행은 "트랙 C가 소유하고, 트랙 D는 import만" 을
+        "규약은 이 모듈이 정의하고 다른 쪽은 import만" 으로, 6행의 괄호 설명을 소관 이름 없이
+        다시 썼고, 277행의 "테스트·픽스처 스크립트·트랙 D가" 를 "…·채점 쪽이" 로 바꿨다.
+        코드·상수·공개 API·독스트링의 규약 서술은 건드리지 않았다.
+      evidence: >-
+        독스트링과 주석을 벗긴 구문 트리 다이제스트가 정리 전과 같다
+        (a8245ff82daf86ad7bbae55f7297fb56e4e3b75733d798572f57ceb0de1508d2) — 실행되는 코드가 같다는 뜻이다.
+        골든 픽스처 12건이 전부 통과한다(vlm/coords_fixtures/run_fixtures.py).
+        문자열 상수가 바뀌면 구문 트리도 달라지므로 규약 이름·경계 상수가 섞여 든 경우는 이 검사가 잡는다.
+      diverged:
+        # 결과가 불변이라는 것이 해시가 같다는 뜻은 아니다. 갈라진 값을 그대로 적는다.
+        coord_cfg_hash_ABS_ORIG: 0cc62b38f041a2b79c51a18caeef4d6e7db7e3f443b3259c4f949d20de6a9cfd
+        consequence: >-
+          규약은 그대로 ABS_ORIG 이고 달라진 것은 소스 바이트뿐이다. 동결 export 15 벌은 옛 값을
+          기록하고 있으므로, 새 실행의 값과 동결 값을 해시로 직접 대조하지 말고 이 기록을 거쳐 비교한다.
+          칸 간 대조(tracking/mlflow_local.check_cells_identical)는 한 실행 묶음 안에서만 보므로 영향이 없다.

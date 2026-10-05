@@ -302,6 +302,18 @@ _RAY_STARTUP_SIGNS = (
 )
 
 
+class HeadroomUnavailable(RuntimeError):
+    """자원 관문 — 여유 메모리를 기한 안에 못 얻었다. 시뮬레이션은 **시작하지 않았다.**"""
+
+
+class SmokeStartupExhausted(AssertionError):
+    """Ray 기동이 재시도 한도까지 연속 실패했다. 시뮬레이션은 **시작하지 않았다.**"""
+
+
+#: 넓은 `pytest.raises` 가 삼키면 안 되는 것 — "의도대로 죽었다" 가 아니라 "돌지 않았다" 다.
+_INFRA_FAILURES = (HeadroomUnavailable, SmokeStartupExhausted)
+
+
 def _free_gb() -> float:
     import psutil
 
@@ -320,7 +332,7 @@ def _wait_for_headroom(deadline_s: float = HEADROOM_WAIT_S) -> float:
         if last >= NEED_FREE_GB:
             return last
         _t.sleep(10)
-    raise RuntimeError(
+    raise HeadroomUnavailable(
         f"자원 여유를 {deadline_s:.0f}초 기다렸지만 {last:.1f}GB 뿐이다 "
         f"(필요 {NEED_FREE_GB}GB). 이 기계에서 다른 장기 작업이 돌고 있다 — "
         "스모크를 건너뛰지 않고 실패로 남긴다."
@@ -379,7 +391,7 @@ def _run(tmp_path: Path, *, out_name: str, fail_at: str = "", _attempts: int = 3
                 pass
             _t.sleep(15 * attempt)
 
-    raise AssertionError(
+    raise SmokeStartupExhausted(
         f"Ray 기동이 {_attempts}회 연속 실패했다 — 마지막: {last_startup_exc}. "
         "스모크를 건너뛰지 않는다(무이빨이 된다). 기계가 계속 이 상태면 CI 러너의 "
         "자원 배정을 고쳐야 한다."
@@ -406,7 +418,7 @@ def test_run_simulation_스모크가_완주한다(tmp_path):
 
 @pytest.mark.resource_heavy
 def test_가중_단위가_회계에_기록되고_거짓말하지_않는다(tmp_path):
-    """총괄 판정 2 / 85번 ① — 실제 전송 가중이 단위가 가리키는 값과 같아야 한다.
+    """판정 2 / 85번 ① — 실제 전송 가중이 단위가 가리키는 값과 같아야 한다.
 
     구판 스모크는 가중과 페어 수에 **같은 값**을 실어 키 충돌을 원리적으로 못 봤다.
     지금은 토큰(1000+c)과 페어 수(100+c)가 다른 값이라, 충돌이 재발해 페어 수가
@@ -443,18 +455,61 @@ def test_원자_로그에_epochs_ran_과_lr_이_남는다(tmp_path):
 
 @pytest.mark.resource_heavy
 def test_클라이언트를_죽이면_실패하되_회계는_디스크에_남는다(tmp_path):
-    """`finally` 가 실제로 값을 하는지 — 파일럿에서 라운드를 날린 그 고장이다."""
+    """`finally` 가 실제로 값을 하는지 — 파일럿에서 라운드를 날린 그 고장이다.
+
+    여유 메모리가 모자라면 `_run` 안의 자원 관문이 예외를 낸다. 넓은 `pytest.raises(Exception)`
+    가 그것을 삼키면 시뮬레이션이 시작도 안 했는데 아래 단언이 `finally` 를 탓한다. 여유가
+    서는 회차에는 통과하므로 통과가 결함의 부재가 아니다. 그래서 **돌지 않았다** 를 **의도대로
+    죽었다** 와 가른다.
+    """
     out = tmp_path / "killed"
-    with pytest.raises(Exception):
+    # 관문을 raises 밖에서 먼저 — 여기서 나는 예외는 삼켜지지 않고 시험 실패로 그대로 뜬다.
+    # 여유가 문턱 근처에서 오르내리면 이 대기와 `_run` 안의 대기가 겹쳐 대기 상한이 최대
+    # HEADROOM_WAIT_S 만큼 는다. 여유가 아예 없으면 전과 같이 한 번의 대기로 끝난다.
+    _wait_for_headroom()
+    with pytest.raises(Exception) as caught:
         _run(tmp_path, out_name="killed", fail_at="1,2")
+    # 위 호출과 `_run` 안의 관문 사이에 여유가 다시 줄 수 있다. 그 경우도 여기서 가른다.
+    assert not isinstance(caught.value, _INFRA_FAILURES), (
+        "클라이언트를 죽이기 전에 기반이 먼저 실패했다 — 시뮬레이션이 돌지 않았다: "
+        f"{type(caught.value).__name__}: {caught.value}"
+    )
+    # 잡힌 예외가 **의도한 클라이언트 실패** 인지 본다. `fl/client_app.py` 가 낸 문구는
+    # Flower 의 오류 응답 `reason` 에 실려 `WeldFedAvg` 의 `RoundFailure` 문구로 오고, 그 뒤
+    # `finally` 의 회계 감사가 새 예외를 내면 그 `__context__` 로 남는다. 사슬 전체를 훑는다.
+    chain, exc = [], caught.value
+    while exc is not None and len(chain) < 10:
+        chain.append(f"{type(exc).__name__}: {exc}")
+        exc = exc.__cause__ or exc.__context__
+    assert any("스모크 의도적 실패: r1 c2" in t for t in chain), (
+        "잡힌 예외 사슬에 의도한 클라이언트 실패가 없다 — 다른 원인으로 끝났다:\n  "
+        + "\n  ".join(t[:300] for t in chain)
+    )
 
     # 여기가 요점이다 — 실패했어도 회계가 남아 있어야 "어디서 끊겼는가"를 답할 수 있다.
-    assert (out / "audit.json").exists(), "회계가 유실됐다 — finally 가 값을 못 했다"
+    assert (out / "audit.json").exists(), (
+        "audit.json 이 없다. 잡힌 예외 — "
+        f"{type(caught.value).__name__}: {str(caught.value)[:200]}. "
+        "자원 관문·Ray 기동 소진은 위에서 걸렀다. 남은 원인에는 시뮬레이션이 도중에 회계 "
+        "없이 끝난 경우와 걸러지지 않은 다른 이유로 시작 전에 실패한 경우가 둘 다 있다 — "
+        "위 예외가 의도한 클라이언트 실패인지부터 본다"
+    )
     audit = json.loads((out / "audit.json").read_text(encoding="utf-8"))
     assert not audit["ok"], "라운드가 깨졌는데 회계가 통과로 남았다"
     assert audit["failures"], "실패 사유가 비어 있다"
     # 1라운드는 정상이었으므로 그 셀은 남아 있어야 한다 — 어디까지 갔는지가 산출물이다.
-    assert (out / "accounting.csv").exists()
+    # `fail_at="1,2"` 는 0부터 세는 두 번째 라운드의 클라이언트 2다(`fl/client_app.py` 가 서버
+    # 라운드에서 1을 뺀다). 첫 라운드(round_idx=0)의 세 셀이 실제로 남았는지 본다 — 헤더만 있는
+    # CSV 는 실패다.
+    import csv
+
+    with (out / "accounting.csv").open(encoding="utf-8", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    observed = [(int(r["round_idx"]), int(r["client_idx"])) for r in rows]
+    assert len(observed) == 3, f"첫 라운드의 회계 세 행이 필요하다: {observed}"
+    assert set(observed) == {(0, 0), (0, 1), (0, 2)}, (
+        f"보존된 라운드·클라이언트가 다르다: {observed}"
+    )
 
 
 # ==========================================================================
@@ -512,7 +567,7 @@ def _fake_train_metrics() -> dict:
 
 
 def test_uni_fed_가중은_감독_토큰이고_페어수는_별도_키다__행동_시험():
-    """총괄 판정 2 / 85번 ① — **문자열이 아니라 실구성 dict 를 검사한다.**
+    """판정 2 / 85번 ① — **문자열이 아니라 실구성 dict 를 검사한다.**
 
     구판 시험은 `'WEIGHT_KEY: float(...)' in src` 문자열 검사라, dict 리터럴 중복 키로
     가중이 페어 수로 바뀐 깨진 코드에서도 통과했다. 여기서는 페이로드를 실제로 만들어

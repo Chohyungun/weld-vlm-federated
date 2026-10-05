@@ -31,6 +31,9 @@ from detection import serialize
 
 __all__ = [
     "build_initial_adapter",
+    "read_initial_cache",
+    "init_adapter_digest",
+    "InitCacheRejected",
     "assert_same_start",
     "assert_injected_matches",
     "adapter_proof",
@@ -44,6 +47,43 @@ class InitProof(dict):
     dict 를 그대로 쓰는 이유는 회계 CSV·JSON·원자 로그 세 곳에 그대로 실려야 하기
     때문이다. 별도 타입을 만들면 직렬화 지점마다 변환 코드가 붙는다.
     """
+
+
+class InitCacheRejected(ValueError):
+    """초기 어댑터 캐시를 이 목적에서 받을 수 없다. 캐시를 읽기만 하고 고치지 않는다."""
+
+
+def init_adapter_digest(arrays: list[np.ndarray]) -> str:
+    """정본 키 순서로 배열 바이트를 이은 sha256 — 학습 설정 원문 · 등록의 `init_adapter_digest`.
+
+    `adapter_proof` 의 `tensor_digest`(표집한 노름 목록)와 다른 양이다. 둘 다 meta 에 싣는다
+    (리허설 2판 §2-7 의 `init_adapter_digest` · `init_adapter_tensor_digest`).
+    """
+    import hashlib
+
+    h = hashlib.sha256()
+    for a in arrays:
+        h.update(np.ascontiguousarray(a).tobytes())
+    return h.hexdigest()
+
+
+#: proof 에 실린 구현 식별자가 가져야 하는 필드(`vlm/seams.impl_id`). 본실험은 비어 있으면 받지 않는다.
+IMPL_ID_REQUIRED = ("seam", "module", "qualname", "source_path", "blob_sha1")
+
+
+def _check_proof_binding(proof: dict, arrays: list[np.ndarray], keys: list[str], *, required: bool,
+                         where: str) -> None:
+    """proof 의 세 증빙(`init_adapter_digest` · 키 · 텐서)을 읽은 배열에서 다시 내 맞댄다."""
+    got = adapter_proof(arrays, keys)
+    want = {"init_adapter_digest": init_adapter_digest(arrays), "keys_digest": got["keys_digest"],
+            "tensor_digest": got["tensor_digest"], "n_tensors": got["n_tensors"]}
+    for k, v in want.items():
+        if k not in proof:
+            if required:
+                raise InitCacheRejected(f"본실험은 {k} 가 없는 proof 를 받지 않는다: {where}")
+            continue
+        if json.loads(json.dumps(proof[k])) != json.loads(json.dumps(v)):
+            raise InitCacheRejected(f"초기 어댑터 캐시의 배열이 proof 의 {k} 와 다르다 — 파일이 바뀌었다: {where}")
 
 
 def adapter_proof(arrays: list[np.ndarray], keys: list[str]) -> InitProof:
@@ -61,6 +101,10 @@ def build_initial_adapter(
     model_id: str | None = None,
     seed: int,
     cache_path: str | Path | None = None,
+    revision: str | None = None,
+    purpose: str = "main",
+    model_loader=None,
+    standin_allowed: bool = False,
 ) -> tuple[list[np.ndarray], list[str], dict[str, torch.Tensor]]:
     """(초기 어댑터 ndarray, 정본 키, 기준 state_dict) 를 돌려준다.
 
@@ -70,54 +114,107 @@ def build_initial_adapter(
     peft 는 `lora_B` 를 0 으로, `lora_A` 를 난수로 놓는다. 즉 고정해야 하는 것은 A
     하나지만, 저장·주입은 어댑터 전체로 한다 — 부분 주입은 "무엇이 주입됐는가"를
     다시 사람이 판별해야 하는 상태를 만든다.
+
+    `revision` 은 모델 판이다. proof 에 싣고 캐시 대조에 넣는다 — 이름이 같고 판이 다른 모델로 만든
+    캐시를 받지 않는다. 판을 적지 않던 옛 proof 는 `None` 으로 읽힌다.
+
+    `purpose` · `model_loader` 는 모델 적재 이음새다(리허설 2판 §1-4). 적재기는 **캐시를 보기 전에**
+    목적과 맞댄다. proof 에 목적과 구현 식별자를 싣고, **본실험은 proof 가 없거나 목적이 `main` 이
+    아니거나 승인되지 않은 구현으로 만든 캐시를 받지 않는다**(X-16). 옛 proof 는 목적이 없어 본실험에서
+    거부된다 — 파일럿 캐시를 본실험이 조용히 물려받지 않게 한다. 캐시 파일은 고치지 않는다.
     """
-    from vlm.pilot_vlm import MODEL_ID
+    from vlm.pilot_vlm import MODEL_ID, resolve_model_loader
 
     mid = model_id or MODEL_ID
+    loader, impl_ids = resolve_model_loader(model_loader, purpose=purpose,
+                                            standin_allowed=standin_allowed)
 
     if cache_path is not None and Path(cache_path).exists():
-        # **캐시를 조건 없이 믿지 않는다.** 다른 모델·다른 시드로 만든 파일을 조용히
-        # 재사용하면 "동일 출발"이 파일 이름 하나에 걸리게 된다 — 이번 사고와 같은
-        # 종류의 침묵이다. 곁의 proof 가 신원을 들고 있으므로 대조한다.
-        proof_p = Path(cache_path).with_suffix(".proof.json")
-        if proof_p.exists():
-            meta = json.loads(proof_p.read_text(encoding="utf-8"))
-            if int(meta.get("seed", -1)) != int(seed) or meta.get("model_id") != mid:
-                raise RuntimeError(
-                    f"초기 어댑터 캐시의 신원이 다르다: 캐시 "
-                    f"(model={meta.get('model_id')}, seed={meta.get('seed')}) != "
-                    f"요청 (model={mid}, seed={seed}). {cache_path} 를 지우고 다시 만들어라."
-                )
-        loaded = np.load(cache_path)
-        keys = list(loaded.files)
-        arrays = [loaded[k] for k in keys]
+        arrays, keys = read_initial_cache(cache_path, model_id=mid, seed=seed, revision=revision, purpose=purpose)
         return arrays, keys, {}
 
     from peft import get_peft_model_state_dict
 
-    from vlm.pilot_vlm import _load_model
-
-    model, _ = _load_model(mid, init_seed=seed)
+    model, _ = loader(mid, init_seed=seed, revision=revision)
     sd = get_peft_model_state_dict(model)
     keys = serialize.canonical_keys(sd)
     arrays = serialize.state_dict_to_ndarrays(sd, keys)
     ref = {k: v.detach().cpu() for k, v in sd.items()}
     del model
-    torch.cuda.empty_cache()
+    if torch.cuda.is_initialized():
+        torch.cuda.empty_cache()
 
     if cache_path is not None:
+        # proof 먼저, 배열(완료 표지)을 마지막에 — 둘 다 tmp → fsync → 교체다. 도중에 죽으면 배열이 없어 다음 호출이
+        # 다시 만든다(찢긴 배열 · 찢긴 proof 가 캐시로 읽히지 않는다). 다섯 칸이 이 파일 하나에서 출발한다.
         p = Path(cache_path)
         p.parent.mkdir(parents=True, exist_ok=True)
-        np.savez(p, **{k: a for k, a in zip(keys, arrays)})
-        p.with_suffix(".proof.json").write_text(
-            json.dumps(
-                {"model_id": mid, "seed": int(seed), **adapter_proof(arrays, keys)},
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
+        proof = json.dumps(
+            {"model_id": mid, "revision": revision, "seed": int(seed), "purpose": purpose,
+             "impl_ids": impl_ids, "init_adapter_digest": init_adapter_digest(arrays),
+             **adapter_proof(arrays, keys)},
+            ensure_ascii=False, indent=2).encode("utf-8")
+        _durable_replace(p.with_suffix(".proof.json"), lambda fh: fh.write(proof))
+        _durable_replace(p, lambda fh: np.savez(fh, **{k: a for k, a in zip(keys, arrays)}))
     return arrays, keys, ref
+
+
+def _durable_replace(path: Path, write) -> None:
+    """`write(fh)` 로 tmp 에 쓰고 fsync 한 뒤 `os.replace` 로 제 이름을 준다."""
+    import os
+
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "wb") as fh:
+        write(fh)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
+
+
+def read_initial_cache(cache_path: str | Path, *, model_id: str, seed: int, revision: str | None,
+                       purpose: str) -> tuple[list[np.ndarray], list[str]]:
+    """공통 초기 어댑터 캐시를 **읽기만** 한다 — 모델을 올리지 않는다. 규칙은 `build_initial_adapter` 의 캐시 분기와 같다.
+
+    실행기가 연합 칸의 앞 산출물을 되짚을 때(초기 어댑터 digest 의 대조) 같은 규칙으로 읽으려고 따로 꺼냈다.
+    """
+    # **캐시를 조건 없이 믿지 않는다.** 다른 모델·다른 시드로 만든 파일을 조용히
+    # 재사용하면 "동일 출발"이 파일 이름 하나에 걸리게 된다 — 이번 사고와 같은
+    # 종류의 침묵이다. 곁의 proof 가 신원을 들고 있으므로 대조한다.
+    proof_p = Path(cache_path).with_suffix(".proof.json")
+    mid = model_id
+    if purpose == "main":
+        if not proof_p.exists():
+            raise InitCacheRejected(
+                f"본실험은 proof 없는 초기 어댑터 캐시를 받지 않는다: {cache_path}")
+        pm = json.loads(proof_p.read_text(encoding="utf-8"))
+        ids = pm.get("impl_ids")
+        if pm.get("purpose") != "main" or not ids or not all(i.get("approved") for i in ids):
+            raise InitCacheRejected(
+                f"본실험이 받을 수 없는 초기 어댑터 캐시다(목적 {pm.get('purpose')!r}, "
+                f"승인 구현 {[i.get('approved') for i in ids or []]}): {cache_path}. "
+                "본실험 경로에서 새로 만든다.")
+        bad_ids = [i for i in ids if any(not i.get(k) for k in IMPL_ID_REQUIRED)]
+        if bad_ids:
+            raise InitCacheRejected(
+                f"proof 의 구현 식별자에 빈 필드가 있다(필수 {list(IMPL_ID_REQUIRED)}): {cache_path}")
+    if proof_p.exists():
+        meta = json.loads(proof_p.read_text(encoding="utf-8"))
+        if (int(meta.get("seed", -1)) != int(seed) or meta.get("model_id") != mid
+                or meta.get("revision") != revision):
+            raise RuntimeError(
+                f"초기 어댑터 캐시의 신원이 다르다: 캐시 "
+                f"(model={meta.get('model_id')}, revision={meta.get('revision')}, seed={meta.get('seed')}) != "
+                f"요청 (model={mid}, revision={revision}, seed={seed}). {cache_path} 를 지우고 다시 만들어라."
+            )
+    with np.load(cache_path) as loaded:
+        keys = list(loaded.files)
+        arrays = [loaded[k] for k in keys]
+    if proof_p.exists():
+        # proof 를 **읽은 배열과** 결속한다 — 배열 파일만 바뀌면 옛 proof 가 그대로 통과해 새 배열이 공통
+        # 출발점이 된다. 본실험은 세 증빙이 모두 있어야 하고, 다른 목적은 있는 증빙을 모두 맞댄다.
+        _check_proof_binding(json.loads(proof_p.read_text(encoding="utf-8")), arrays, keys,
+                             required=(purpose == "main"), where=str(cache_path))
+    return arrays, keys
 
 
 def assert_injected_matches(sent: list[np.ndarray], keys: list[str],

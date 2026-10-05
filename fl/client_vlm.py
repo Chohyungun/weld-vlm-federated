@@ -93,10 +93,25 @@ def run_client_round(
         (어댑터 ndarray 리스트, 수치 메트릭, 문자열 필드). 검출 클라이언트와 같은
         3튜플이다 — `MetricRecord` 가 문자열을 거부하므로 나눠 돌려준다.
     """
+    from vlm.coords import CoordCfg
+    from vlm.fault import assert_no_fault_env
     from vlm.init_adapter import assert_injected_matches
     from vlm.pilot_vlm import load_pairs, train_rounds
 
-    rows = load_pairs("train", client=str(cfg["client_tag"]))
+    # 연합 클라이언트는 목적과 무관하게 고의 중단 변수를 받지 않는다(2판 §1-3 의 연합 ③) — 데몬의 환경을 물려받는다.
+    assert_no_fault_env(who="통합형 연합 클라이언트는")
+
+    # 모델 · 페어 · 프롬프트 · 템플릿 · 좌표 규약은 **서버가 내려보낸 값**으로 학습한다(`fl/uni_run_config.py`).
+    # 빈 값이면 파일럿 기본값이다. 서버가 초기 어댑터를 만든 모델과 여기서 학습하는 모델이 같아야 한다.
+    uni = cfg.get("uni") or {}
+    if uni.get("train_lists"):
+        # 리허설 · 진단 — 목록 단계가 만든 그 참여자의 행만(로컬 칸과 같은 행). 기록 · 페어의 원본 행과 맞댄다.
+        from vlm.rehearsal_run import fed_client_rows
+
+        rows = fed_client_rows(uni["train_lists"], client=str(cfg["client_tag"]), pairs_path=uni.get("pairs_path"),
+                               run_root=uni.get("rehearsal_root"))
+    else:
+        rows = load_pairs("train", client=str(cfg["client_tag"]), pairs_path=uni.get("pairs_path"))
     arrays, keys, m, _ref = train_rounds(
         rows=rows,
         epochs=int(cfg["local_epochs"]),
@@ -109,6 +124,15 @@ def run_client_round(
         if cfg.get("resume_root") else None,
         run_id=str(cfg.get("run_id", "")),
         num_rounds=int(cfg["num_rounds"]),
+        model_id=uni.get("model_id"),
+        model_revision=uni.get("model_revision"),
+        pairs_path=uni.get("pairs_path"),
+        prompt_path=uni.get("prompt_path"),
+        chat_template_kwargs=uni.get("chat_template_kwargs"),
+        coord_cfg=CoordCfg(coord_space=uni["coord_space"]) if uni.get("coord_space") else None,
+        processor_kwargs=uni.get("processor_kwargs"),
+        purpose=str(uni.get("purpose") or "main"),
+        tag="uni_fed", client_tag=str(cfg["client_tag"]), pairs_digest=uni.get("pairs_digest"),
     )
 
     # G2-5 — 주입이 **서버가 보낸 것과** 같은지 대조한다. 클라이언트끼리 비교하면
@@ -120,6 +144,10 @@ def run_client_round(
     metrics, strings = payload_metrics(m, n_pairs=len(rows),
                                        canonical_keys=canonical_keys,
                                        client_idx=client_idx)
+    # 학습 쪽 값 — 서버가 연합 칸의 어댑터 meta 와 학습 설정 원문을 여기서 만든다(`fl/uni_fed.py`).
+    from fl.uni_fed import client_strings
+
+    strings.update(client_strings(m, rows=rows, client_tag=str(cfg["client_tag"])))
     return arrays, metrics, strings
 
 

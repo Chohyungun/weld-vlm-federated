@@ -41,8 +41,8 @@ def test_expected_gates_are_registered() -> None:
         "coord_space_contract",
         "scoring_population",
         "stratified_scoring",          # 13번 D-1 — 판정 6 이행 담보
-        "sweep_curve_recorded",        # 22번 §1-2 — 총괄 판정 1 이행 담보
-        "p9_source_separation",        # 22번 §2-2-2 — 총괄 판정 2 이행 담보
+        "sweep_curve_recorded",        # 22번 §1-2 — 판정 1 이행 담보
+        "p9_source_separation",        # 22번 §2-2-2 — 판정 2 이행 담보
         "macro_ap_baseline_paired",    # 22번 §6-2-1 — 대조선 병기 담보
     } <= set(REGISTRY)
 
@@ -247,7 +247,7 @@ def test_stratified_gate_has_teeth() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# sweep_curve_recorded — 곡선 병기 담보 (총괄 판정 1 · 22번 §1-2)
+# sweep_curve_recorded — 곡선 병기 담보 (판정 1 · 22번 §1-2)
 # --------------------------------------------------------------------------------------
 
 def _curve(grid=(0.01, 0.25, 0.5), tags=("sep_central", "sep_fed"), missing=(),
@@ -304,7 +304,7 @@ def test_curve_gate_has_teeth() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# p9_source_separation — 출처별 분리 보고 필수화 (총괄 판정 2 · 22번 §2-2-2)
+# p9_source_separation — 출처별 분리 보고 필수화 (판정 2 · 22번 §2-2-2)
 # --------------------------------------------------------------------------------------
 
 def _p9(equivalent=False, client="C1", drop=None) -> dict:
@@ -330,7 +330,7 @@ def test_p9_gate_skips_without_block() -> None:
 
 
 def test_p9_gate_passes_with_separation_even_when_not_equivalent() -> None:
-    """**동등하지 않다는 사실은 차단 사유가 아니다** — 총괄이 알고 보류를 정했다.
+    """**동등하지 않다는 사실은 차단 사유가 아니다** — 알고서 보류로 정했다.
     차단하는 것은 분리 표가 빠지는 것이다."""
     out = run_scoring_gates(GateContext(
         env={}, extra={"p9": _p9(equivalent=False), "shortcut_footnote": _note()}))
@@ -356,7 +356,7 @@ def test_p9_gate_has_teeth() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# macro_ap_baseline_paired — 대조선 병기 담보 (총괄 판정 22번 §6-2-1)
+# macro_ap_baseline_paired — 대조선 병기 담보 (판정 22번 §6-2-1)
 #
 # **통과선 게이트가 아니다.** 판정 §6-2-6 은 `content_free_gate`(칸이 대조선을 넘어야 한다)
 # 를 AP 축으로 넓히는 것을 금했다. 여기서 보는 것은 값이 나란히 실렸는가뿐이고, 그 구분이

@@ -1,0 +1,72 @@
+# 착수 전 좌표 프레임 진단의 계획 — 목적 `frame_diag`.
+#
+# **기본 설정에 병합하지 않는다.** 오케스트레이터가 `--plan <이 파일>` 로만 읽는다. 이 파일의 원시 바이트
+# sha256 이 `plan_sha256` 으로 등록·어댑터 meta·곁 파일에 실리므로 한 파일은 한 목적만 가리킨다.
+#
+# 여기에는 **크기와 목록 규칙**만 둔다. 모델·어댑터·최적화·전처리·프롬프트·템플릿·좌표 규약·디코딩(생성 한도
+# `gen_limit` 하나는 예외)·시드 값·스냅샷과 페어의 지문·본실험 예산은 두지 않는다 — 본실험 키(`fixed_before_main_runs`
+# 의 `uni_*` 와 `snapshot_digest`, `experiment.seeds`)를 그대로 읽는다. 그런 키나 모르는 키가 있으면 읽는 쪽이
+# 거부한다. **중단 계획(`faults`)은 키가 있으면 거부한다.** 키 목록은 리허설 명세 §4-4 다.
+#
+# 학습 표본 4,000 · 정답 박스 1,416 · 장 수 상한 480 은 승인된 계획값에서 낸 수다. 짝 성립률과 흩어짐을 가정해 낸
+# 수이고 실측이 아니다.
+#
+# **`null` 은 아직 없는 값이다.** 그 값이 필요한 단계는 `null` 인 채로 시작하지 않는다.
+#   - `exclude.near_dup_edges`: 현행 규칙으로 만든, 판본 있는 근사 중복 간선 파일이 아직 없다.
+#     꼴은 `{path, sha256}` 이고, 간선 파일은 머리행 `a_id,b_id` 의 UTF-8 CSV 다 — 한 줄이 `image_id` 한 쌍이다.
+#     매니페스트에 없는 id 를 담은 간선은 입력 오류로 거부한다(조용히 버리지 않는다)
+#   - `timeouts_s`: 단계 다섯(`lists` · `register` · `train` · `export` · `score`)의 상한(초)이다.
+#     값은 학습 쪽이 모델 적재 시간을 잰 뒤 채운다. 넘으면 그 단계를 프로세스 트리째 끊고 실패로 센다
+kind: frame_diag
+version: 1
+
+# 목록을 뽑는 순서의 씨앗 — sha256(f"{group_id}|{sampling_seed}") 오름차순. 등록 시드표의 첫 값과 같게 두었다.
+# 학습 시드는 이 값이 아니라 `seed_index` 로 `experiment.seeds` 에서 읽는다.
+sampling_seed: 20260828
+seed_index: 1
+
+cells: [uni_central]
+
+gen:
+  split: val
+  defect_only: true
+  target_boxes: 1416      # 목표 정답 박스 수. 목표에 닿으면 멈춘다
+  max_n: 480              # 장 수 상한
+  min_groups_per_stratum: 1
+  max_target_tokens: 512  # 이 길이를 넘는 타깃의 장을 뺀다
+
+echo:
+  same_as_gen: true
+
+train:
+  split: train
+  rows:
+    central: 4000
+  avoid_multiple_of_accum: false
+  central_rows: direct    # 참여자 행 없이 중앙 풀에서 바로 뽑는다
+
+amount:                   # 이 목적의 학습량. n == r × e 가 아니면 읽는 쪽이 거부한다
+  n: 1
+  r: 1
+  e: 1
+
+exclude:
+  near_dup_edges: null                    # {path, sha256}
+  drop_components_touching_eval: true
+
+gen_limit:
+  max_new_tokens: 512
+  provisional: true
+
+# 단계별 상한(초). 진단 값은 리허설과 따로 낸다 — 리허설 값을 쓰면 진단의 학습 · export 를 중간에 끊는다.
+# 식: 상한 ≥ 단가 × 수 × 여유 + 적재. `train` 은 3.621 s/표본(실측) × 학습 표본 통과 수
+# (`train.rows.central` × `amount.n` = 4,000) × 1.5 + 적재, `export` 는 88.039 s/장(생성 한도 512 에서
+# 모두 한도에 닿는 최악) × `gen.max_n`(480) × 1.5 + 적재다. 적재 시간을 재지 않아 값은 비워 둔다.
+timeouts_s:
+  lists: null
+  register: null
+  train: null
+  export: null
+  score: null
+
+attempts_allowed: 1       # 판정을 낸 시도의 상한. 다시 돌면 새 등록이다. 루트 밖에서 센다

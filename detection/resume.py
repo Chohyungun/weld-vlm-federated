@@ -59,6 +59,7 @@ __all__ = [
     "FORMAT",
     "ResumeState",
     "ResumeCheckpointer",
+    "ResumeRejected",
     "latest_resume",
     "clear_resume",
 ]
@@ -78,7 +79,7 @@ class ResumeIdentity:
     모델 **구조**의 동일성은 여기서 보지 않는다 — `apply_resume` 의 `assert_compatible`
     이 키·모양·dtype 계열까지 대조하므로 중복이고, 정본 키는 모델이 만들어진 뒤에야
     알 수 있어 신원 필드로 쓰면 저장 시점과 대조 시점이 어긋난다.
-    여기 있는 것은 **학습량 등가를 좌우하는 값들**이다.
+    여기 있는 것은 **학습량 등가를 좌우하는 값들**과 **정책의 판**이다.
     """
 
     run_id: str
@@ -92,6 +93,15 @@ class ResumeIdentity:
     loader_reseed_per_epoch: bool = False
     loader_seed: int | None = None
     profile: str = ""
+    #: 아래 셋은 **학습 정책의 판**이다. 값이 아니라 판을 적는다 — 같은 seed·같은 예산이어도
+    #: 정책이 다르면 다른 프로토콜이고, 이어 가면 회계는 맞는데 궤적이 섞인다.
+    #:
+    #: 기본값이 빈 문자열인 이유는 뒤호환이다. `_load_one` 이 `ResumeIdentity(**dict)` 로
+    #: 되살리므로 이 필드가 없던 체크포인트는 `""` 가 되고, 값을 채우는 새 실행과 **자동으로
+    #: 어긋나 거부된다**(`mismatch` 가 전 필드를 본다). 검출 쪽은 세 값을 비우므로 영향이 없다.
+    shuffle_policy: str = ""
+    template_mode: str = ""
+    gen_prefix_digest: str = ""
 
     def mismatch(self, other: "ResumeIdentity") -> list[str]:
         return [
@@ -99,6 +109,15 @@ class ResumeIdentity:
             for f in self.__dataclass_fields__
             if getattr(self, f) != getattr(other, f)
         ]
+
+
+class ResumeRejected(ValueError):
+    """읽을 수는 있는데 이어 받을 수 없는 재개 파일이다 — 형식이 다르거나 신원을 해석할 수 없다.
+
+    **건너뛰고 직전 파일로 물러나지 않는다.** 물러나면 모든 후보가 걸러진 뒤 처음부터 학습하게 되고, 새 실행의
+    저장이 그 폴더의 기존 체크포인트 이름을 덮는다. 찢어진 파일(끝까지 쓰이지 않아 `torch.load` 가 못 읽는 파일)만
+    건너뛴다.
+    """
 
 
 @dataclass
@@ -249,6 +268,19 @@ class ResumeCheckpointer:
         tmp = final.with_suffix(".tmp")
         # 원자적 교체. 찢어진 쓰기는 .tmp 에 남고 최신 정상본은 그대로 살아 있다.
         torch.save(payload, tmp)
+        # 바이트가 디스크에 닿은 뒤에 교체한다. 저장 형식은 바꾸지 않는다 — `torch.save` 가 쓴 파일을 다시 열어
+        # fsync 만 한다(판정 05 의 14).
+        with open(tmp, "rb+") as fh:
+            os.fsync(fh.fileno())
+        if final.exists():
+            # 같은 이름이 이미 있으면 **그 파일을 건드리지 않고** 새 이름으로 저장한다 — 기존 체크포인트는 지우지도
+            # 옮기지도 않고 재개 후보에서도 빠지지 않는다(결정표 8번). 찢어져 건너뛴 최신본 자리에 다시 저장할 때가
+            # 이 경우다. 새 이름 `resume_epNNNN.rKKK.pt` 는 같은 epoch 의 옛 이름보다 뒤로 정렬되어 먼저 읽히고,
+            # 교체 한 번(`os.replace(tmp, …)`)이 실패하거나 그 사이에 죽어도 옛 파일은 후보로 남는다.
+            k = 1
+            while final.with_name(f"{final.stem}.r{k:03d}{_SUFFIX}").exists():
+                k += 1
+            final = final.with_name(f"{final.stem}.r{k:03d}{_SUFFIX}")
         os.replace(tmp, final)
         self.n_saves += 1
         self.saved.append(final)
@@ -256,11 +288,17 @@ class ResumeCheckpointer:
         return final
 
     def _prune(self) -> None:
-        for old in sorted(self.out_dir.glob(f"{_PREFIX}*{_SUFFIX}"))[: -self.keep]:
+        """이 체크포인터가 **이번 프로세스에서 저장한** 파일만 `keep` 개로 줄인다.
+
+        폴더의 다른 파일(앞 프로세스의 체크포인트 · 찢어진 파일 · 같은 이름을 피해 새 이름으로 남긴 옛 파일)은
+        지우지 않는다 — 기존 체크포인트를 지우지 않는다(결정표 8번).
+        """
+        for old in self.saved[: -self.keep]:
             try:
                 old.unlink()
             except OSError:
                 pass
+        self.saved = self.saved[-self.keep:]
 
 
 def loader_generator_state(trainer: Any) -> Any | None:
@@ -307,13 +345,39 @@ def restore_loader_generator(trainer: Any, state: Any) -> bool:
     return True
 
 
-def _load_one(path: Path) -> ResumeState:
+class _Torn(Exception):
+    """끝까지 쓰이지 않은 파일 — `torch.load` 가 바이트를 풀지 못했다."""
+
+
+def _is_torn(exc: BaseException) -> bool:
+    """`torch.load` 가 낸 예외가 **바이트가 덜 쓰인 파일**의 것인지. 모듈 부재 같은 해석 실패는 아니다."""
+    import pickle
+    import zipfile
+
+    if isinstance(exc, (EOFError, pickle.UnpicklingError, zipfile.BadZipFile)):
+        return True
+    msg = str(exc)
+    return isinstance(exc, RuntimeError) and any(
+        s in msg for s in ("PytorchStreamReader", "zip archive", "central directory", "file read failed"))
+
+
+def _load_one(path: Path, identity_cls: type | None = None) -> ResumeState:
     import torch
 
-    payload = torch.load(path, map_location="cpu", weights_only=False)
-    if payload.get("format") != FORMAT:
-        raise ValueError(f"알 수 없는 체크포인트 형식: {payload.get('format')!r} ({path})")
-    ident = ResumeIdentity(**payload["identity"])
+    try:
+        payload = torch.load(path, map_location="cpu", weights_only=False)
+    except Exception as exc:  # noqa: BLE001 - 찢어짐만 가려내고 나머지는 그대로 올린다
+        if _is_torn(exc):
+            raise _Torn(f"{type(exc).__name__}: {exc}") from exc
+        raise ResumeRejected(f"재개 파일을 해석할 수 없다({type(exc).__name__}: {exc}): {path}") from exc
+    if not isinstance(payload, dict) or payload.get("format") != FORMAT:
+        got = payload.get("format") if isinstance(payload, dict) else type(payload).__name__
+        raise ResumeRejected(f"알 수 없는 체크포인트 형식: {got!r} ({path})")
+    cls = identity_cls or ResumeIdentity
+    try:
+        ident = cls(**payload["identity"])
+    except (KeyError, TypeError) as exc:
+        raise ResumeRejected(f"재개 파일의 신원을 해석할 수 없다({type(exc).__name__}: {exc}): {path}") from exc
     return ResumeState(
         path=path,
         identity=ident,
@@ -325,25 +389,31 @@ def _load_one(path: Path) -> ResumeState:
     )
 
 
-def latest_resume(out_dir: str | Path, *, identity: ResumeIdentity | None = None) -> ResumeState | None:
+def latest_resume(out_dir: str | Path, *, identity: ResumeIdentity | None = None,
+                  identity_cls: type | None = None) -> ResumeState | None:
     """가장 최신의 온전한 재개 상태. 없으면 `None`.
 
-    최신본이 읽히지 않으면(찢어짐·부분 쓰기) 그 다음으로 물러난다. 물러난 사실은
-    표준출력에 남긴다 — 조용히 옛 상태로 재개하면 몇 epoch 이 유실된 채 진행된다.
+    최신본이 **찢어졌으면**(끝까지 쓰이지 않아 `torch.load` 가 못 읽으면) 그 다음으로 물러난다. 물러난 사실은
+    표준출력에 남긴다 — 조용히 옛 상태로 재개하면 몇 epoch 이 유실된 채 진행된다. **읽히는데 형식이 다르거나
+    신원을 해석할 수 없는 파일은 `ResumeRejected` 로 멈춘다** — 물러나 처음부터 학습하면 그 폴더의 기존
+    체크포인트가 새 저장에 덮인다.
 
     `identity` 를 주면 신원 대조까지 한다. 어긋나면 `ValueError` 다 — **다른 실행의 상태로
     이어 가는 것을 허용하지 않는다.** 이어 갔다면 `R × E = N` 이 회계에는 맞는데 실제
     학습량은 다른 상태가 되고, 그 어긋남은 지표에 흔적을 남기지 않는다.
+
+    `identity_cls` 는 신원을 되살릴 클래스다. 없으면 `identity` 의 클래스, 그것도 없으면 `ResumeIdentity` 다 —
+    통합형은 필드가 더 많은 자기 신원(`vlm/resume_uni.py`)을 쓴다.
     """
     d = Path(out_dir)
     if not d.is_dir():
         return None
+    cls = identity_cls or (type(identity) if identity is not None else None)
     for path in sorted(d.glob(f"{_PREFIX}*{_SUFFIX}"), reverse=True):
         try:
-            state = _load_one(path)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[resume] {path.name} 읽기 실패({type(exc).__name__}) — 직전 것으로 물러난다",
-                  flush=True)
+            state = _load_one(path, cls)
+        except _Torn as exc:
+            print(f"[resume] {path.name} 찢어진 파일({exc}) — 직전 것으로 물러난다", flush=True)
             continue
         if identity is not None:
             bad = state.identity.mismatch(identity)

@@ -1,11 +1,11 @@
 """계약 #2 — 매니페스트 스키마 + **유일하게 승인된 로더·조인·잠금 경로.**
 
-CTO 게이트 #4 조건:
+검수 #4 조건:
   1. `manifest.csv` 와 `annotations.csv` 를 하나의 `SNAPSHOT.sha256` 에 함께 잠근다.
-  2. **조인은 이 모듈의 `join_defects()` 로만 한다.** 하류 트랙(C·D)이 각자 조인 로직을
-     짜면 조인 규칙이 트랙마다 갈라진다. 로더가 계약의 일부다.
+  2. **조인은 이 모듈의 `join_defects()` 로만 한다.** 학습·채점 쪽이 각자 조인 로직을
+     짜면 조인 규칙이 갈라진다. 로더가 계약의 일부다.
 
-하류 트랙이 쓰는 것은 이 4개다.
+하류에서 쓰는 것은 이 4개다.
 
     from data.manifest_io import load_snapshot, join_defects, MetricStatus
 
@@ -125,6 +125,46 @@ SNAPSHOT_FILENAME = "SNAPSHOT.sha256"
 TILES_FILENAME = "tiles.csv"
 TILES_COLUMNS: tuple[str, ...] = ("image_id", "provenance", "reason")
 
+# 흡수 곁파일 셋 (흡수 미니스펙 §1-3·§3). **선택 멤버다** — 없는 스냅샷도 그대로 읽힌다.
+# 두 핵심 파일의 컬럼을 늘리지 않는 것이 요점이다. 늘리면 옛 스냅샷이 그 순간 읽히지 않는다(§1-2 가).
+ABSORB_IMAGE_FILENAME = "absorb_image.csv"
+ABSORB_DEFECT_FILENAME = "absorb_defect.csv"
+ABSORB_REGION_FILENAME = "absorb_region.csv"
+
+#: §3-1. 이미지 1장 = 1행.
+ABSORB_IMAGE_COLUMNS: tuple[str, ...] = (
+    "image_id", "covered", "source_zip", "material_source",
+    "orig_width_px", "orig_height_px", "frame_match", "absorb_note",
+)
+_AI_STR = ("image_id", "source_zip", "material_source", "frame_match", "absorb_note")
+_AI_INT = ("orig_width_px", "orig_height_px")
+_AI_BOOL = ("covered",)
+
+#: §3-2. 결함 주석 1건 = 1행. `ann_id` 가 `annotations.csv` 외래키다.
+ABSORB_DEFECT_COLUMNS: tuple[str, ...] = (
+    "ann_id", "image_id",
+    "raw_bbox_x1_px", "raw_bbox_y1_px", "raw_bbox_x2_px", "raw_bbox_y2_px",
+    "clip_applied", "clip_kind", "raw_source",
+)
+_AD_STR = ("ann_id", "image_id", "clip_kind", "raw_source")
+_AD_INT = ("raw_bbox_x1_px", "raw_bbox_y1_px", "raw_bbox_x2_px", "raw_bbox_y2_px")
+_AD_BOOL = ("clip_applied",)
+
+#: §3-3. 정상영역 1개 = 1행. 한 장에 영역이 여럿인 장이 있어 이미지 1행에 못 담는다.
+ABSORB_REGION_COLUMNS: tuple[str, ...] = (
+    "region_id", "image_id", "polygon_json", "n_vertices", "frame", "usable_in_tile_frame",
+)
+_AR_STR = ("region_id", "image_id", "polygon_json", "frame")
+_AR_INT = ("n_vertices",)
+_AR_BOOL = ("usable_in_tile_frame",)
+
+#: 흡수 곁파일의 (파일명, 컬럼, 정렬키, 읽기 규약). **이 순서가 지문 멤버 순서다**(§2-3).
+ABSORB_SPECS: tuple[tuple, ...] = (
+    (ABSORB_IMAGE_FILENAME, ABSORB_IMAGE_COLUMNS, "image_id", _AI_STR, _AI_INT, _AI_BOOL),
+    (ABSORB_DEFECT_FILENAME, ABSORB_DEFECT_COLUMNS, "ann_id", _AD_STR, _AD_INT, _AD_BOOL),
+    (ABSORB_REGION_FILENAME, ABSORB_REGION_COLUMNS, "region_id", _AR_STR, _AR_INT, _AR_BOOL),
+)
+
 #: 타일링 reason → 출처. 결함/정상 구분 없이 전 이미지에 적용된다.
 REASON_TO_PROVENANCE: dict[str, str] = {
     "ok": "N-crop",                       # 원래부터 1280×720 이던 이미지
@@ -227,6 +267,13 @@ def read_tiles(path: Path | str) -> pd.DataFrame:
     return df
 
 
+def read_absorb(path: Path | str, name: str) -> pd.DataFrame:
+    """흡수 곁파일 하나를 읽는다 (§2-4 4번). 컬럼 규약은 핵심 파일과 같게 엄격하다."""
+    spec = next(s for s in ABSORB_SPECS if s[0] == name)
+    _, cols, _sort, strs, ints, bools = spec
+    return _read_csv(Path(path), cols, strs, ints, bools, ())
+
+
 def read_capabilities(path: Path | str) -> dict[str, Any]:
     with Path(path).open(encoding="utf-8") as fh:
         return yaml.safe_load(fh)
@@ -243,6 +290,10 @@ class Snapshot:
     capabilities: dict[str, Any]
     #: 이미지별 출처. 동결 스냅샷에만 있고 옛 스냅샷은 None 이다.
     tiles: pd.DataFrame | None = None
+    #: 흡수 곁파일 셋 (§2-2). 흡수 스냅샷에만 있고 그 밖에는 None 이다.
+    absorb_image: pd.DataFrame | None = None
+    absorb_defect: pd.DataFrame | None = None
+    absorb_region: pd.DataFrame | None = None
 
     @property
     def verdict_mode(self) -> VerdictMode:
@@ -276,6 +327,13 @@ def load_snapshot(root: Path | str, *, verify: bool = True) -> Snapshot:
         annotations=read_annotations(root / ANNOTATIONS_FILENAME),
         capabilities=caps,
         tiles=read_tiles(tiles_path) if tiles_path.exists() else None,
+        # 있으면 읽고 없으면 None. 곁파일이 없는 스냅샷은 지금과 똑같이 동작한다.
+        absorb_image=(read_absorb(root / ABSORB_IMAGE_FILENAME, ABSORB_IMAGE_FILENAME)
+                      if (root / ABSORB_IMAGE_FILENAME).exists() else None),
+        absorb_defect=(read_absorb(root / ABSORB_DEFECT_FILENAME, ABSORB_DEFECT_FILENAME)
+                       if (root / ABSORB_DEFECT_FILENAME).exists() else None),
+        absorb_region=(read_absorb(root / ABSORB_REGION_FILENAME, ABSORB_REGION_FILENAME)
+                       if (root / ABSORB_REGION_FILENAME).exists() else None),
     )
 
 
@@ -379,6 +437,9 @@ def write_snapshot(
     annotations: pd.DataFrame,
     capabilities: dict[str, Any],
     tiles: pd.DataFrame | None = None,
+    absorb_image: pd.DataFrame | None = None,
+    absorb_defect: pd.DataFrame | None = None,
+    absorb_region: pd.DataFrame | None = None,
 ) -> str:
     """구성 파일을 쓰고 **하나의 SNAPSHOT.sha256 에 함께 잠근다** (게이트 조건 1).
 
@@ -397,6 +458,13 @@ def write_snapshot(
     if tiles is not None:
         _canonical_csv(tiles, root / TILES_FILENAME, TILES_COLUMNS, "image_id")
         members.append(TILES_FILENAME)
+    # 흡수 곁파일은 **기존 넷 뒤에** 정해진 순서로 붙인다 (§2-3).
+    # 순서가 흔들리면 같은 파일로도 다른 지문이 나온다. 뒤에 붙이므로 옛 스냅샷의 지문은 바뀌지 않는다.
+    for frame, (name, cols, sort_by, *_r) in zip(
+            (absorb_image, absorb_defect, absorb_region), ABSORB_SPECS):
+        if frame is not None:
+            _canonical_csv(frame, root / name, cols, sort_by)
+            members.append(name)
 
     lines = [f"{file_sha256(root / name)}  {name}" for name in members]
     digest = hashlib.sha256(("\n".join(lines) + "\n").encode("utf-8")).hexdigest()
@@ -409,7 +477,7 @@ def write_snapshot(
 def verify_snapshot(root: Path | str) -> str:
     """SNAPSHOT.sha256 대조. 불일치면 예외.
 
-    잠금은 OS 읽기 전용 속성이 아니라 이 검증이다 (열린질문 Q7 확정). worktree·정션
+    잠금은 OS 읽기 전용 속성이 아니라 이 검증이다 (열린질문 Q7 확정). 정션
     환경에서 읽기 전용 속성은 도구마다 다르게 동작해 오히려 사고를 낸다.
     """
     root = Path(root)
@@ -429,13 +497,16 @@ def verify_snapshot(root: Path | str) -> str:
         recorded[name.strip()] = digest
 
     # 필수 멤버는 전부 있어야 하고, 허용된 선택 멤버(tiles.csv) 외의 것은 올 수 없다.
-    required, optional = set(SNAPSHOT_MEMBERS), {TILES_FILENAME}
+    # 흡수 곁파일 셋을 **선택**으로 더한다. 선택이므로 곁파일이 없는 스냅샷은 그대로 통과한다.
+    required = set(SNAPSHOT_MEMBERS)
+    optional = {TILES_FILENAME} | {name for name, *_r in ABSORB_SPECS}
     if not required <= set(recorded) or set(recorded) - required - optional:
         raise SnapshotVerificationError(
             f"{snap}: 잠긴 파일 목록이 계약과 다르다. 기록={sorted(recorded)} "
             f"계약={sorted(required)} (+선택 {sorted(optional)}). 파일은 함께 잠겨야 한다"
         )
-    members = list(SNAPSHOT_MEMBERS) + [n for n in (TILES_FILENAME,) if n in recorded]
+    members = list(SNAPSHOT_MEMBERS) + [
+        n for n in (TILES_FILENAME, *(name for name, *_r in ABSORB_SPECS)) if n in recorded]
 
     for name in members:
         actual = file_sha256(root / name)

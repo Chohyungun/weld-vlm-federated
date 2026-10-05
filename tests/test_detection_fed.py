@@ -1,4 +1,4 @@
-"""detection/ 교환 규약·회계 매트릭스 테스트 (트랙 C · 지정 함정 구간 #1).
+"""detection/ 교환 규약·회계 매트릭스 테스트 (지정 함정 구간 #1).
 
 **이 파일은 선택적 의존성 없이 돈다.** torch(기본 의존성)와 표준 라이브러리만 쓴다.
 ultralytics 가 필요한 트레이너 검사는 `tests/test_detection_trainer.py` 에 분리했고

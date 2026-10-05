@@ -36,7 +36,6 @@ mlartifacts/
 !**/SNAPSHOT.sha256
 
 # --- 개인 설정 ---
-CLAUDE.local.md
 .env
 .env.*
 !.env.example
@@ -71,28 +70,12 @@ corpus/parse/survey/**
 docs/회의록_*.md
 docs/액션아이템.md
 
-# --- 로컬 운영 규칙 (공개 저장소 비추적) ---
-# 프로젝트 불변조건은 docs/개발규약.md 가 정본이다.
-CLAUDE.md
-CLAUDE.local.md
 
-# --- 내부 작업지시서 (공개 저장소 비추적) ---
-# 배분 내역이고, 결정 내용은 스펙과 게이트 기록에 반영돼 있다.
-docs/dev_log/**/dispatch_*.md
-
-# --- 옛 판본 보관 (공개 저장소 비추적) ---
-docs/archive/CLAUDE_구판_260817.md
-
-# --- 윤문 작업 폴더 (산출물만 반영, 중간 파일 비추적) ---
-_workspace/
-
-# 내부 지시 문서 (공개 대상 아님)
-docs/dev_log/**/50_공개문서_검수방침.md
 
 # --- 파일럿 합성 산출물 (드라이브·로컬 보관, 저장소는 스크립트·보고서만) ---
 corpus/generate/cycle_pilot/*.jsonl
 corpus/generate/cycle_pilot/_raw_generated.json
-# 단, 통과율의 근거는 추적한다 — 원본이 미추적이라 워크트리를 정리하면 근거가
+# 단, 통과율의 근거는 추적한다 — 원본이 미추적이라 작업 사본을 정리하면 근거가
 # 소실된다(74번 감사 P5). 축약본은 생성문 전문 없이 판정 플래그와 sha256 만 담는다.
 !corpus/generate/cycle_pilot/EVIDENCE.jsonl
 # 재실행분(2026-09-02, 체크리스트 19)도 같은 규칙 — 산출물은 로컬, 근거만 추적
@@ -111,3 +94,9 @@ logs/
 # 감사 임시 산출물과 로컬 경로 설정 파일 (2026-09-15 재검토)
 _audit_tmp_*/
 configs/*.local.yaml
+
+# 비공개 작업 산출물. 지금까지 .git/info/exclude 로만 막혀 있었는데 그것은 로컬 전용이라
+# 커밋되지 않는다 — 새 클론·팀원 클론·CI 체크아웃에는 없다. 그 아래에는 판독 원문,
+# 영상 식별자 목록, 라벨 원시 값이 들어간다. 새 클론에서 조사기를 돌리고 전부 스테이지하면
+# 그대로 색인에 오른다. 09-25 검수에서 나왔다.
+_workspace/

@@ -1,0 +1,128 @@
+# VT 데이터 스냅샷 — 구현 회차 1 의 상수
+#
+# 근거: 미니스펙 4판 5절(`docs/dev_log/2026-10-02-VT확장/02_미니스펙_VT스냅샷_A_4판.md`).
+# 코드는 이 파일의 값을 받아 쓸 뿐 자체 기본값을 두지 않는다. RT 의 `configs/base.yaml` 은 고치지 않는다.
+# 타일 규칙의 값은 base.yaml 의 `preprocess.tile` 과 같고 시험(VT-3c)이 둘을 맞댄다.
+
+snapshot_id: aihub71761_vt_v1      # 분할 회차가 쓸 봉인 이름(예약) — 회차 1 은 읽지도 쓰지도 않는다
+source_key: aihub71761_vt          # `source` · 원천 키 · `image_id` 접두가 셋 다 이 값이다(2판 6절)
+
+# 구현 회차 1 의 산출 — 봉인 이름이 아니다(4판 5-1). 분할 회차가 결정 넷을 확인한 뒤 옮긴다.
+staging_root: data/interim/vt_build_r1
+
+# --------------------------------------------------------------------------------------
+# 원천 복사 (4판 5-2 · 3판 1-2)
+# --------------------------------------------------------------------------------------
+copy:
+  raw_zip_dir: data/raw/aihub71761_vt/_zips        # 원천 이미지 zip 열 개 (TS_ · VS_)
+  label_zip_dir: data/interim/aihub_labels_vt      # 라벨 zip 열 개 (TL_ · VL_) — RT 의 aihub_labels 에 넣지 않는다
+  image_prefixes: ["TS_", "VS_"]
+  label_prefixes: ["TL_", "VL_"]
+  author_split:                   # 저자 분할 ↔ zip 접두 — 이 스냅샷의 분할이 아니다
+    Training: {image: "TS_", label: "TL_"}
+    Validation: {image: "VS_", label: "VL_"}
+  zip_name: "{prefix}VTST_{folder}.zip"
+  chunk_bytes: 268435456          # 256 MB — 구간마다 원천을 다시 연다
+  read_bytes: 8388608             # 구간 안에서 한 번에 읽는 양
+  c_free_min_gb: 10.0             # C: 여유가 이 아래면 기다린다(공유 드라이브 캐시)
+  c_wait_max_s: 600               # C: 가 이 시간 안에 돌아오지 않으면 멈춘다
+  mem_free_min_gb: 6.0            # 여유 메모리가 이 아래면 기다린다
+  wait_step_s: 30
+
+# --------------------------------------------------------------------------------------
+# 원천 라벨의 어휘 (1판 1절 실측) — 사상 파일(순서 2)이 서기 전의 원천 문자열이다.
+# 파싱 산출은 이 문자열을 그대로 싣고 L2 키 · 코드로 바꾸지 않는다(4판 5-1).
+# --------------------------------------------------------------------------------------
+labels:
+  name_pattern: 'VT_ST_(?P<code>\d{2})_(?P<id>\d+)\.(?P<ext>json|jpg)$'
+  info_type: VT
+  info_material: ST
+  normal_folder: "정상"
+  normal_class: normal
+  defect_class: defect
+  folders:                         # 폴더 → 파일명 코드 · image_data.information
+    "결함_1. 기공": {code: "02", information: "기공"}
+    "결함_2. 용입부족": {code: "03", information: "용입부족"}
+    "결함_3. 융합불량": {code: "04", information: "융합불량"}
+    "결함_4. 언더컷": {code: "06", information: "언더컷"}
+    "정상": {code: "00", information: "정상"}
+  in_space_cases: ["porosity", "lack of fusion", "incomplete penetration", "undercut"]
+  out_of_space_cases: ["crack"]    # 장째 뺀다(1판 8절). 이 두 목록 밖의 값은 멈춘다
+  missing_case: ""                 # 결함 주석의 case 가 빈 값 — 실측 8 건(기공 2 · 언더컷 6), 전부 같은 장에 이름 있는 결함 주석이 있다.
+                                   # 장은 남기고 세어 싣는다. 그 주석의 사상은 사상 파일(순서 2)이 정한다. 이름 있는 결함 주석이 없는 장은 멈춘다
+
+# --------------------------------------------------------------------------------------
+# 화소 꼴 (2판 4-1 · 4판 5-3)
+# --------------------------------------------------------------------------------------
+tile:
+  rule_version: "vt1"
+  tile_size: [1280, 720]
+  stride_x: 640
+  vertical_anchor: band_center
+  tau_mode: band_containment
+  align8: true
+  padding: forbidden
+  selection: "sha256(image_id + seed) mod N_cand"
+  selection_seed: 20261004         # VT 타일 선택. 입력 문자열은 "aihub71761_vt:{info.id}|20261004"
+  portrait_normal_rot90_k: 1       # 세로 정상은 반시계 90°(np.rot90 k=1) 로 돌린 뒤 P1
+  defect_crop:                     # 1280×720 이 아닌 결함 가운데 창으로 자르는 무리
+    - {folder: "결함_3. 융합불량", size: [1800, 720]}
+  defect_exclude:                  # 1280×720 이 아닌 결함 가운데 장째 빼는 무리. 이 밖의 크기는 멈춘다
+    - {folder: "결함_4. 언더컷", size: [720, 1280], reason: portrait_undercut}
+    - {folder: "결함_1. 기공", size: [2603, 1464], reason: odd_size_defect}
+  normal_exclude:
+    - {size: [1280, 1280], reason: square_normal}
+  known_over_cap: ["결함_4. 언더컷"]   # RT 폐기 상한을 넘는 것으로 등록된 셀(2판 4-1 — 세로 언더컷 279 장, 알려진 편향). 이 밖의 셀이 넘으면 계획이 멈춘다
+
+encode:
+  mode: RGB                        # 3판 1-1 — R-3 의 등록 규칙으로 확정
+  quality: 74                      # R-9 산출(스테이징 records/r9_quality.json, sha256 8467804754DB0651…) — 두 모집단 최저 74.6 의 내림.
+                                   # 인코딩 단계가 이 값을 그 산출과 맞대고 다르면 멈춘다(check_r9)
+  quality_floor_stop: 50           # R-9 — 정한 품질이 이 아래면 멈춘다
+  progressive: false
+  optimize: false
+  strip_exif: true
+
+# --------------------------------------------------------------------------------------
+# 근사 중복 — 후보 생성기 R-10 과 검증 (4판 5-4). 문턱 t · k 는 분할 회차에 정한다.
+# --------------------------------------------------------------------------------------
+neardup:
+  id_span: 5                       # G-id — 같은 폴더 안 id 차 1 ~ 5
+  nn_k: 5                          # G-nn — 코사인 최근접 상위 5
+  descriptor_size: [64, 36]        # 거친 구조 기술자 (1/8 해독 회색)
+  dog_sigmas: [1.0, 4.0]
+  cross:                           # G-x — 결함 크롭 ↔ 정상 사진의 창
+    descriptor_size: [32, 18]
+    window_scales: [1.0, 1.5, 2.0] # 창 = 1280×720 / 배율, 간격은 창의 절반
+    top_k: 3
+  random_control:                  # G-rand — 같은 폴더의 무작위 짝 대조군(5판 — 06b I-4). 점수의 바닥 분포를 낸다
+    seed: 20261005
+    per_folder: 2000
+  verify:
+    orb_features: 1000
+    defect_reduce: 2               # 결함 크롭은 1/2 해독
+    normal_reduce: 4               # 정상 사진은 1/4 해독
+    ratio: 0.8
+    ransac_reproj_px: 4.0
+
+# --------------------------------------------------------------------------------------
+# 근사 중복의 대조 — 점수를 읽기 전에 등록했다(6판 1절, 06c N-2 · N-3). 후보 · 검증을 바꾸지 않는 별도 단계다.
+# --------------------------------------------------------------------------------------
+neardup_control:
+  positive_rule:                   # 폴더마다 — R-8b 와 같은 옮긴 창 짝의 정합점이 그 폴더 G-rand 의 99 백분위를 넘는 몫이
+    rand_percentile: 0.99          # 0.9 이상이면 ORB 양성 대조가 선다. 서지 않은 폴더에서는 "G-id ≈ G-rand" 를 "겹치지 않는다" 의
+    min_share: 0.9                 # 근거로 쓰지 않는다
+  cross_random:                    # 결함–정상 무작위 짝 — G-x 의 바닥(결함 크롭 대 정상 사진)
+    seed: 20261006
+    per_defect_folder: 2000
+
+# --------------------------------------------------------------------------------------
+# R-8 — 이웃 화소 측정의 양성 대조 (4판 4절)
+# --------------------------------------------------------------------------------------
+r8:
+  random_seed: 20261004
+  synth_per_folder: 200
+  synth_rank_salt: "20261004|r8b|"
+  synth_window_frac: 0.9
+  synth_shift_frac: 0.05
+  synth_quality: 90

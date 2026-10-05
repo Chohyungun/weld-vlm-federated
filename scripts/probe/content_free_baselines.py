@@ -124,7 +124,7 @@ def _position_axis(fit_ids, gold_boxes_fit, eval_ids, gold_boxes_eval, classes,
 def compute_baselines(params, *, position_axis: bool = True, log=print) -> dict:
     """무내용 대조선 전량을 계산해 payload 를 돌려준다. **파일을 쓰지 않는다.**
 
-    본채점(`score_cells.py score`)이 이 함수를 그대로 부른다 — 총괄 판정(22번 §6-2-1)이
+    본채점(`score_cells.py score`)이 이 함수를 그대로 부른다 — 판정(22번 §6-2-1)이
     "macro-AP 는 무내용 대조선을 **반드시 병기**" 로 못박았으므로, 대조선이 별도 스크립트를
     돌려야만 생기는 상태로 두면 시드 2·3 에서 빠뜨릴 수 있다. 같은 함수를 부르게 해서
     **빠뜨리는 것이 불가능하게** 만든다.

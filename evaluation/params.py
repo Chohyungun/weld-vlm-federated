@@ -1,7 +1,7 @@
 """채점 파라미터 단일 수납처 — 임계·모집단·시드가 여기서만 나온다 (77번 과제 2·6).
 
 **코드는 값을 읽기만 한다.** 확정 하이퍼파라미터는 `configs/` 에 둔다(개발규약). 검출
-`conf` 는 다섯 칸 공통 고정 항목이므로 정착지는 `configs/base.yaml`(A 소관)이고, 총괄
+`conf` 는 다섯 칸 공통 고정 항목이므로 정착지는 `configs/base.yaml`(A 소관)이고, 설정 키
 배분 전까지만 여기 폴백 상수로 산다. **configs 에 키가 생기면 그쪽이 이긴다** —
 `resolve_*` 가 configs 를 먼저 보고 어디서 읽었는지를 `source` 로 산출물에 남긴다.
 
@@ -57,7 +57,7 @@ CONF_SWEEP: tuple[float, ...] = (
 """
 
 COORD_SPACE = "ABS_ORIG"
-"""다섯 칸 공통 좌표 규약. **총괄 판정 1 (2026-09-02) · main 47c4dbc.**
+"""다섯 칸 공통 좌표 규약. **판정 1 (2026-09-02) · main 47c4dbc.**
 
 카나리아-1 실측 6/6 이 절대 원본 픽셀이었고 개발규약 3-8 이 "네이티브를 따른다"를 이미
 정해 두었다. NORM_1000 은 라벨 왕복에서 계통 오차를 심는다(실페어 4,560 박스 median
@@ -167,7 +167,7 @@ CONF_SWEEP_KEYS: tuple[str, ...] = (
     "evaluation.detection.conf_sweep_grid",
     "detection.conf_sweep_grid",
 )
-"""**스윕 격자**를 찾을 configs 키 (총괄 판정 1, 22번 §1-2-2).
+"""**스윕 격자**를 찾을 configs 키 (판정 1, 22번 §1-2-2).
 
 단일 임계는 사전등록하지 않는다 — 결과를 본 뒤 한 점을 고르면 사후 선택이다. 대신
 **격자를 등록한다**: 격자는 결과와 무관하게 정할 수 있으므로 사후 선택이 아니고, 시드·칸이
@@ -229,7 +229,7 @@ def _resolve(
 def resolve_conf(cfg: dict | None = None) -> Resolved:
     """검출 conf 임계 — **운용점 예시**. configs 우선, 없으면 폴백 + 그 사실을 출처에 적는다.
 
-    **여기서 configs 를 찾지 못하는 것이 정상이다**(총괄 판정 1, 22번 §1-2-2). 단일 임계를
+    **여기서 configs 를 찾지 못하는 것이 정상이다**(판정 1, 22번 §1-2-2). 단일 임계를
     사전등록하면 결과를 본 뒤 한 점을 고른 것이 되므로 등록 대상은 격자(`conf_sweep_grid`)
     이고 단일 임계 키는 `configs/base.yaml` 에 일부러 두지 않았다. A 가 그 부재를 시험으로
     고정했다(`tests/test_conf_sweep_grid.py`). 이 값은 65·66번 재현·운용점 표기에만 쓴다.
@@ -237,7 +237,7 @@ def resolve_conf(cfg: dict | None = None) -> Resolved:
     return _resolve(
         CONF_KEYS, CONF_FALLBACK,
         ("fallback:evaluation.params.CONF_FALLBACK — configs 에 **일부러 없다**"
-         "(총괄 판정 1, 22번 §1-2-2: 단일 임계는 사전등록하지 않는다. 등록 대상은 격자다). "
+         "(판정 1, 22번 §1-2-2: 단일 임계는 사전등록하지 않는다. 등록 대상은 격자다). "
          "운용점 예시이며 확증 기준이 아니다"),
         cfg if cfg is not None else load_base_config(),
     )
@@ -293,7 +293,7 @@ def resolve_coord_space(cfg: dict | None = None) -> tuple[str, str]:
         v = _dig(src, k)
         if isinstance(v, str) and v:
             return v, f"configs/base.yaml:{k}"
-    return COORD_SPACE, "fallback:evaluation.params.COORD_SPACE (총괄 판정 1)"
+    return COORD_SPACE, "fallback:evaluation.params.COORD_SPACE (판정 1)"
 
 
 def resolve_gate_tolerance(cfg: dict | None = None) -> Resolved:
@@ -332,7 +332,7 @@ class ScoringParams:
     gate_tolerance: Resolved = field(default_factory=resolve_gate_tolerance)
     class_names: tuple[str, ...] = CLASS_NAMES
     coord_space: str = COORD_SPACE
-    coord_space_source: str = "fallback:evaluation.params.COORD_SPACE (총괄 판정 1)"
+    coord_space_source: str = "fallback:evaluation.params.COORD_SPACE (판정 1)"
 
     def __post_init__(self) -> None:
         profiles = detection_profiles()
@@ -375,7 +375,7 @@ class ScoringParams:
             "max_det": self.max_det,
             "conf": {
                 **self.conf.as_dict(),
-                "role": ("운용점 예시 — 확증적 기준 아님(총괄 판정 1, 22번 §1-2-3). "
+                "role": ("운용점 예시 — 확증적 기준 아님(판정 1, 22번 §1-2-3). "
                          "칸 비교는 conf_sweep 곡선과 임계 독립 지표로 한다"),
             },
             "conf_floor": self.conf_floor,
