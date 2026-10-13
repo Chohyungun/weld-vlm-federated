@@ -41,13 +41,18 @@ _LEAK = re.compile(r"[0-9{}\[\]]")
 EVIDENCE = {"audit": "AUDIT.json", "review": "REVIEW.json", "rights": "RIGHTS.json"}
 #: 생성 QA 의 JSON 객체 하나를 담은 울타리 하나 — 코퍼스 측의 quality 와 같은 허용(render_v1)
 _FENCE = re.compile(r"```(?:json)?\s*(\{.*\})\s*```", re.DOTALL)
-#: 판정 출처(B 05h) — run_config: RUN.json 의 판정 칸으로 돈 첫 판정, separate: 판정 신원을 따로 둔 새 판정. 한 릴리스 안에서 섞지 않는다
+#: 판정 출처(검토 05h) — run_config: RUN.json 의 판정 칸으로 돈 첫 판정, separate: 판정 신원을 따로 둔 새 판정. 한 릴리스 안에서 섞지 않는다
 JUDGE_SOURCES = ("run_config", "separate")
 #: 판정 출력의 꼴(코퍼스 측의 quality `parser_schema`) — 옛 네 키 · 구조화 v5 · 구조화 v6. 칸이 없으면 옛 네 키(이전 집계).
 #: v6 는 v5 를 대체하지 않는다 — 판 표지로 갈리고, 한 꼴을 다른 파서로 다시 읽지 않는다(B 05l)
-JUDGE_SCHEMAS = ("legacy_four_keys", "judge_structured_v5", "judge_structured_v6")
-#: 구조화 꼴 → 코퍼스 측의 파서(`quality` 의 이름). 파서 판은 `quality.JUDGE_PARSER_VERSIONS` 의 같은 짝에서 읽는다(R-11)
-STRUCTURED_PARSERS = {"judge_structured_v5": "parse_judge_v5", "judge_structured_v6": "parse_judge_v6"}
+JUDGE_SCHEMAS = ("legacy_four_keys", "judge_structured_v5", "judge_structured_v6", "judge_structured_v7")
+#: 구조화 꼴 → 파서(`quality` 의 이름). 파서 판은 `quality.JUDGE_PARSER_VERSIONS` 의 같은 짝에서 읽는다(R-11 · R-13) —
+#: v7 은 집계가 v7 을 읽게 되어(`quality_v9`) 그 표에 들 때 열린다. 그 전에는 `judge_parser` 로 닫혀 있다
+STRUCTURED_PARSERS = {"judge_structured_v5": "parse_judge_v5", "judge_structured_v6": "parse_judge_v6",
+                      "judge_structured_v7": "parse_judge_v7"}
+#: 판정 모델을 부르지 않는 행이 있을 수 있는 꼴 — v7 정상 행(B 05m · 05n R-15). 그 행의 판정 칸은 '적용 안 됨' 꼴
+#: `{"applicable": false, "identity_sha256": <판정 신원>}` 두 칸뿐이다(05n 의 제안 꼴 — 집계 v7 소비와 함께 확정)
+MODEL_OPTIONAL_SCHEMAS = ("judge_structured_v7",)
 #: 구조화 판정의 행 출처에서 판정 샤드를 다시 읽은 값과 맞대는 칸(B 05k · 05j R-9 · 05l)
 STRUCTURED_FIELDS = ("schema", "parser", "answers", "flags", "format_normalized")
 #: 판정 신원 읽기에 넘기는 외부 기대 핀(최종 API) — 운영 원천은 하나 이상 필요하다
@@ -114,6 +119,15 @@ def _image_path_ok(value: Any) -> bool:
     return not pure.is_absolute() and ".." not in pure.parts and "." not in pure.parts
 
 
+def _verdict_keys(jschema: str, kind: str) -> tuple[str, ...]:
+    """행 판정값의 물음 키(검토 05n R-14b) — v7 영상 행(결함 행)은 v7 결함 물음 넷(참 = 문제 없음), 그 밖은 옛 셋."""
+    if jschema == "judge_structured_v7" and kind == "image_report":
+        from . import quality
+
+        return tuple(k for k in quality.JUDGE_V7_KEYS["defect"] if k != "reason")
+    return JUDGE_KEYS
+
+
 def check_row(row: Any, audit: dict) -> dict:
     """한 행의 꼴 · 출처를 검사하고 user · assistant 문자열을 돌려준다."""
     _need(isinstance(row, dict), "row_schema", "행은 객체")
@@ -145,18 +159,27 @@ def check_row(row: Any, audit: dict) -> dict:
     _need(isinstance(prov, dict), "row_provenance", f"{rid}: provenance")
     gen, judge = prov.get("generate"), prov.get("judge")
     _need(isinstance(gen, dict) and isinstance(judge, dict), "row_provenance", f"{rid}: generate · judge 출처")
-    _need(gen.get("backend") == "transformers" and judge.get("backend") == "transformers", "row_backend",
+    jschema = (audit.get("judge_identity") or {}).get("parser_schema", "legacy_four_keys")
+    applicable = "applicable" not in judge
+    if not applicable:
+        # 판정 모델을 부르지 않은 행(v7 정상 행) — 판정 샤드 · 원문 · 판정값 칸이 없어야 한다. 작업 행과의 대조는 check_against_run
+        _need(jschema in MODEL_OPTIONAL_SCHEMAS and row["kind"] == "image_report" and judge.get("applicable") is False
+              and set(judge) == {"applicable", "identity_sha256"}, "row_judge",
+              f"{rid}: 판정 '적용 안 됨' 꼴은 {MODEL_OPTIONAL_SCHEMAS} 의 영상 행에서 두 칸(applicable · identity_sha256)뿐이다")
+    _need(gen.get("backend") == "transformers" and (not applicable or judge.get("backend") == "transformers"), "row_backend",
           f"{rid}: _backend 가 transformers 가 아니다(시험용 출력은 릴리스 금지)")
-    _need(bool(_family(gen.get("family"))) and _family(gen.get("family")) != _family(judge.get("family")),
+    _need(bool(_family(gen.get("family"))) and (not applicable or _family(gen.get("family")) != _family(judge.get("family"))),
           "row_family", f"{rid}: 생성 · 판정 계열이 같거나 비었다")
-    for side in (gen, judge):
+    for side in ((gen, judge) if applicable else (gen,)):
         _need(_hex(side.get("shard_sha256")) and _hex(side.get("text_sha256")), "row_provenance",
               f"{rid}: 샤드 · 출력 지문")
-    verdict = judge.get("verdict")
-    _need(isinstance(verdict, dict) and set(verdict) == {*JUDGE_KEYS, "reason"}
-          and all(verdict[k] is True for k in JUDGE_KEYS)
-          and isinstance(verdict["reason"], str) and bool(verdict["reason"].strip()),
-          "row_judge", f"{rid}: 다른 계열 판정이 통과가 아니거나 근거가 없다")
+    if applicable:
+        keys = _verdict_keys(jschema, row["kind"])
+        verdict = judge.get("verdict")
+        _need(isinstance(verdict, dict) and set(verdict) == {*keys, "reason"}
+              and all(verdict[k] is True for k in keys)
+              and isinstance(verdict["reason"], str) and bool(verdict["reason"].strip()),
+              "row_judge", f"{rid}: 다른 계열 판정이 통과가 아니거나 근거가 없다")
     return {"user": "\n".join(user_texts), "assistant": "\n".join(assistant_texts)}
 
 
@@ -269,8 +292,10 @@ def check_audit(audit: dict, dataset_sha: str, rows: list[dict]) -> None:
         g, j = r["provenance"]["generate"], r["provenance"]["judge"]
         _need(j.get("identity_sha256", "absent") == jid, "row_judge_identity",
               f"{r['id']}: 행의 판정 신원이 AUDIT 의 판정 신원과 다르다")
-        _need(_family(g.get("family")) == _family(gen_cfg["family"]) and _family(j.get("family")) == _family(judge_model["family"])
-              and j.get("model_id") == judge_model["model_id"], "row_family",
+        _need(_family(g.get("family")) == _family(gen_cfg["family"])
+              and (j.get("applicable") is False
+                   or (_family(j.get("family")) == _family(judge_model["family"]) and j.get("model_id") == judge_model["model_id"])),
+              "row_family",
               f"{r['id']}: 행의 계열 · 모델이 집계의 생성(config) · 판정(judge_identity.model) 모델과 다르다")
     templates = (audit.get("user_templates") or {}).get("image_report") or []
     names = _label_names()
@@ -411,11 +436,44 @@ def _structured_parser(schema: str):
     return parse, version
 
 
+def _no_model_ids(parse, tasks: list[dict]) -> set[str]:
+    """판정 모델을 부르지 않는 작업 행의 id(검토 05n R-15 · R-16) — 파서가 판정 행 없이 그 작업을 '적용 안 됨'
+    (`judge_not_applicable`)으로 고르는 행. 한 정의(파서)를 따르고, 옛 네 키 · v5 · v6 에는 없다."""
+    if parse is None:
+        return set()
+    return {t["id"] for t in tasks if parse(t, None)["errors"] == ["judge_not_applicable"]}
+
+
+def _v7_source_receipts(audit: dict, ji: dict, verified: dict, tasks: list[dict], no_model: set[str],
+                        given: list[dict]) -> tuple[dict[str, dict], str]:
+    """v7 판정 출처의 모델 대상 · 결정적 영수증 · 정책 지문(B 05p R-20 ~ R-22) — 다시 읽은 출처에서 본다(집계를 믿지 않는다).
+    돌려주는 것: (작업 id → 영수증, 정책 지문). 행마다의 영수증 대조(R-19)는 부르는 쪽이 한다."""
+    task_ids = [t["id"] for t in tasks]
+    model_ids = [tid for tid in task_ids if tid not in no_model]
+    _need(verified.get("all_task_ids") == task_ids, "stage_incomplete", "v7 판정을 마친 작업 id 가 작업 명부 전체와 같은 수열이 아니다")
+    _need(verified.get("model_task_ids") == model_ids and [r.get("id") for r in given] == model_ids, "judge_model_task_ids",
+          "v7 모델 대상 id 가 작업 − 판정을 부르지 않는 행(명부 순서) 이나 판정 행의 수열과 다르다")
+    receipts = verified.get("deterministic_receipts")
+    _need(isinstance(receipts, list) and all(isinstance(r, dict) for r in receipts)
+          and [r.get("id") for r in receipts] == task_ids, "stage_incomplete", "결정적 영수증이 작업 명부 전체와 하나씩 같지 않다")
+    _need(all(r.get("_judge_identity_sha256") == ji["identity_sha256"] for r in receipts), "judge_receipt_identity",
+          "다른 판정 신원의 결정적 영수증이 섞였다")
+    policy_sha = (audit.get("policy") or {}).get("identity_sha256")
+    _need(_hex(policy_sha) and policy_sha == _sha_bytes(canonical_bytes((ji.get("identity_basis") or {}).get("policy_identity"))),
+          "audit_policy_identity", "AUDIT 의 정책 지문이 판정 신원 근거에 묶인 정책의 지문이 아니다")
+    dr = audit.get("deterministic_receipts")
+    _need(isinstance(dr, dict) and dr.get("policy_identity_sha256") == policy_sha and dr.get("rows") == len(task_ids)
+          and dr.get("planned") == len(task_ids)
+          and dr.get("model_task_ids") == {"count": len(model_ids), "ids_sha256": ids_sha256(model_ids)},
+          "audit_deterministic_receipts", "AUDIT 의 결정적 영수증 요약이 다시 읽은 출처와 다르다")
+    return {r["id"]: r for r in receipts}, policy_sha
+
+
 def check_against_run(audit: dict, audit_dir: Path, rows: list[dict], texts: list[dict], judge_source: dict | None = None,
                       pins: dict | None = None) -> None:
     """AUDIT 가 가리키는 실행 디렉터리를 검증 읽기로 다시 읽어 행마다 대조한다.
 
-    판정 행은 AUDIT 의 판정 출처에서만 읽는다(B 05h R-3). separate 이면 `judge_source`(코퍼스 측의 `audit_run` 과 같은 꼴 —
+    판정 행은 AUDIT 의 판정 출처에서만 읽는다(검토 05h R-3). separate 이면 `judge_source`(코퍼스 측의 `audit_run` 과 같은 꼴 —
     `identity_sha256` · `identity_basis` · `rows`)의 행만 쓰고 실행 디렉터리의 옛 판정은 읽지 않는다."""
     from . import infer
 
@@ -432,6 +490,11 @@ def check_against_run(audit: dict, audit_dir: Path, rows: list[dict], texts: lis
     gen_rows = infer.read_stage_rows(run_dir, "generate", config)
     tasks = list(iter_jsonl(run_dir / "tasks.jsonl"))                # 지문은 위 읽기가 RUN.json 과 대조했다
     ji = audit["judge_identity"]
+    jschema = ji.get("parser_schema", "legacy_four_keys")
+    parse, parser_version = _structured_parser(jschema) if jschema in STRUCTURED_PARSERS else (None, None)
+    no_model = _no_model_ids(parse, tasks)
+    receipts: dict[str, dict] | None = None       # v7 의 결정적 영수증(작업 id → 영수증), 그 밖은 None
+    policy_sha = None
     if ji["source"] == "run_config":
         _need(judge_source is None, "judge_identity_mixed", "AUDIT 는 run_config 판정인데 따로 둔 판정이 주어졌다")
         judge_rows = infer.read_stage_rows(run_dir, "judge", config)    # 자기 판정 · 샤드 · 입력 지문은 infer 가 검사한다
@@ -462,13 +525,20 @@ def check_against_run(audit: dict, audit_dir: Path, rows: list[dict], texts: lis
         for r in given:
             _need(r.get("id") not in by_id, "judge_identity_mixed", f"판정 행 id 가 겹친다: {r.get('id')}")
             by_id[r.get("id")] = r
-        _need(set(by_id) == {t["id"] for t in tasks}, "stage_incomplete",
-              f"판정 행 {len(by_id)} · 작업 {len(tasks)} — 작업 명부와 같은 집합이 아니다")
-        judge_rows = [by_id[t["id"]] for t in tasks]
+        _need(not set(by_id) & no_model, "judge_row_not_applicable",
+              f"판정 모델을 부르지 않는 작업 행의 판정 행이 있다 — {len(set(by_id) & no_model)}개")
+        _need(set(by_id) == {t["id"] for t in tasks} - no_model, "stage_incomplete",
+              f"판정 행 {len(by_id)} · 판정을 부르는 작업 {len(tasks) - len(no_model)} — 작업 명부와 같은 집합이 아니다")
+        judge_rows = [by_id.get(t["id"]) for t in tasks]              # 판정을 부르지 않는 행은 None
+        if jschema in MODEL_OPTIONAL_SCHEMAS:
+            receipts, policy_sha = _v7_source_receipts(audit, ji, verified, tasks, no_model, given)
+    if receipts is None:
+        _need(audit.get("deterministic_receipts") is None, "audit_deterministic_receipts",
+              "결정적 영수증 요약은 v7 판정 출처의 집계에만 있다")
     _need(len(gen_rows) == len(tasks) and len(judge_rows) == len(tasks), "stage_incomplete",
           f"생성 {len(gen_rows)} · 판정 {len(judge_rows)} · 작업 {len(tasks)} — 전량이 아니다")
     for stage_rows in (gen_rows, judge_rows):
-        bad = [r["id"] for r in stage_rows if r.get("_backend") != "transformers"]
+        bad = [r["id"] for r in stage_rows if r is not None and r.get("_backend") != "transformers"]
         _need(not bad, "stage_backend", f"_backend 가 transformers 가 아닌 행 {len(bad)}개(첫 {bad[:1]})")
     task_ids = [t["id"] for t in tasks]
     _need([r["id"] for r in rows] == task_ids, "planned_sequence", "데이터셋 id 수열이 tasks.jsonl 과 같지 않다")
@@ -477,14 +547,12 @@ def check_against_run(audit: dict, audit_dir: Path, rows: list[dict], texts: lis
     got_docs = sorted((d.get("source_id"), d.get("source_sha256")) for d in audit.get("source_documents") or [])
     _need(got_docs == docs, "source_documents", "AUDIT 의 원문 문서 목록이 작업 명부와 다르다")
     gen_cfg, judge_cfg = config["generation"], ji["model"]
-    jschema = ji.get("parser_schema", "legacy_four_keys")
-    parse, parser_version = _structured_parser(jschema) if jschema in STRUCTURED_PARSERS else (None, None)
     # 집계를 만든 파서의 판 = 지금 다시 읽는 파서의 판(B 05j R-9 · 06f A-1). 옛 네 키면 None — 다른 판으로 만든 집계는 여기서 멈춘다
     _need(audit.get("judge_parser_version") == parser_version, "audit_judge_identity",
           f"AUDIT 의 파서 판 {audit.get('judge_parser_version')!r} 가 지금 다시 읽는 파서의 판 {parser_version!r} 과 다르다")
     for row, txt, task, g, j in zip(rows, texts, tasks, gen_rows, judge_rows):
         rid = row["id"]
-        _need(g["id"] == rid and j["id"] == rid, "stage_order", rid)
+        _need(g["id"] == rid and (j is None or j["id"] == rid), "stage_order", rid)
         for key in TASK_FIELDS:
             _need(row.get(key) == task.get(key), "task_field", f"{rid}: {key} 가 작업 명부와 다르다")
         if task["kind"] == "image_report":
@@ -494,12 +562,30 @@ def check_against_run(audit: dict, audit_dir: Path, rows: list[dict], texts: lis
         _need(row["messages"] == render_messages(task, g["text"]), "message_mismatch",
               f"{rid}: 학습 메시지가 판정받은 생성문에서 정규 렌더러로 만든 것과 다르다")
         prov = row["provenance"]
+        if receipts is not None:
+            # 수락의 결정적 근거(B 05p R-19 · R-22) — 그 행의 영수증이 통과이고, 같은 생성문 · 같은 정책 지문이어야 한다
+            rc = receipts[rid]
+            _need(rc.get("deterministic_pass") is True, "judge_receipt_rejected", f"{rid}: 결정적 영수증이 기각인 행이 데이터셋에 있다")
+            _need(rc.get("candidate_sha256") == _sha_bytes(g["text"].encode("utf-8")) and rc.get("policy_identity_sha256") == policy_sha,
+                  "judge_receipt_mismatch", f"{rid}: 결정적 영수증의 생성문 · 정책 지문이 이 행과 다르다")
+            if row["kind"] == "image_report":
+                _need((prov.get("policy") or {}).get("identity_sha256") == policy_sha, "row_policy_identity",
+                      f"{rid}: 행의 정책 지문이 AUDIT 의 정책 지문과 다르다")
+        if j is None:     # 판정 모델을 부르지 않은 행 — 판정 칸은 '적용 안 됨' 꼴 두 칸뿐(검토 05n R-15)
+            _need(prov["judge"] == {"applicable": False, "identity_sha256": ji["identity_sha256"]}, "judge_mismatch",
+                  f"{rid}: 판정을 부르지 않은 행의 판정 칸이 '적용 안 됨' 꼴이 아니다")
+        else:
+            _need("applicable" not in prov["judge"], "judge_mismatch", f"{rid}: 판정을 부른 행인데 판정 칸이 '적용 안 됨' 꼴이다")
         for side, stage_row, spec in (("generate", g, gen_cfg), ("judge", j, judge_cfg)):
+            if stage_row is None:
+                continue
             p = prov[side]
             _need(p.get("backend") == stage_row["_backend"] and p.get("shard_sha256") == stage_row["_shard_sha256"]
                   and p.get("text_sha256") == _sha_bytes(stage_row["text"].encode("utf-8"))
                   and _family(p.get("family")) == _family(spec["family"]) and p.get("model_id") == spec["model_id"],
                   "provenance_mismatch", f"{rid}: {side} 출처가 샤드와 다르다")
+        if j is None:
+            continue
         if parse is not None:
             # 구조화 판정 — 샤드의 원 답을 그 꼴의 B 파서(한 정의)로 다시 읽어 판정값 · 답 · 표지 · 꼴 · 파서 판 · 형식 정규화를 맞댄다
             parsed = parse(task, j)

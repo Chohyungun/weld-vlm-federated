@@ -36,13 +36,15 @@ def main(argv=None) -> int:
     separate.add_argument("--config", required=True, type=Path)
     separate.add_argument("--judge-dir", required=True, type=Path)
     separate.add_argument("--judge-config", type=Path, default=None, help="별도 모델 spec JSON; RUN config를 바꾸지 않음")
+    separate.add_argument("--policy-version", choices=("v6", "v7"), default="v6",
+                          help="명시한 판정 정책만 실행; v7은 정상 행 모델 미호출")
     separate.add_argument("--max-shards", type=int, default=None)
     separate.add_argument("--probe-approval", type=Path, default=None, help="봉인된 두 탐침 승인 폴더")
     separate.add_argument("--probe-approval-sha256", default=None, help="별도로 기록한 APPROVAL.json SHA256")
     cases = commands.add_parser("judge-cases", help="독립 N+ 기대를 포함한 합성 입력 고정 (CPU)")
     cases.add_argument("--nplus", required=True, type=Path)
     cases.add_argument("--output", required=True, type=Path)
-    for version in ("v5", "v6"):
+    for version in ("v5", "v6", "v7"):
         fixed_cases = commands.add_parser("judge-cases-" + version,
                                          help=f"고정된 G 네 원파일을 보존한 {version} 150개 입력 작성 (CPU)")
         for name in ("nplus", "dplus", "adv1", "adv2"):
@@ -101,13 +103,15 @@ def main(argv=None) -> int:
             result = run_judge(args.run, config, args.judge_dir,
                                judge_config=judge_config, max_shards=args.max_shards,
                                probe_approval=args.probe_approval,
-                               probe_approval_sha256=args.probe_approval_sha256)
+                               probe_approval_sha256=args.probe_approval_sha256,
+                               **({"policy_version": "v7"} if args.policy_version == "v7" else {}))
         elif args.stage == "judge-cases":
             from .judge_cases import write_cases
             result = write_cases(args.nplus, args.output)
-        elif args.stage in ("judge-cases-v5", "judge-cases-v6"):
-            from .judge_cases import write_v5_cases, write_v6_cases
-            write_fixed = write_v6_cases if args.stage == "judge-cases-v6" else write_v5_cases
+        elif args.stage in ("judge-cases-v5", "judge-cases-v6", "judge-cases-v7"):
+            from .judge_cases import write_v5_cases, write_v6_cases, write_v7_cases
+            write_fixed = {"judge-cases-v5": write_v5_cases, "judge-cases-v6": write_v6_cases,
+                           "judge-cases-v7": write_v7_cases}[args.stage]
             groups = {"N+": "nplus", "D+": "dplus", "ADV1": "adv1", "ADV2": "adv2"}
             result = write_fixed({g: getattr(args, name) for g, name in groups.items()}, args.output,
                                     expected_source_sha256={g: getattr(args, name + "_sha256")

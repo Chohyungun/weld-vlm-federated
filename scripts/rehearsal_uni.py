@@ -1,4 +1,4 @@
-"""통합형 배관 리허설의 오케스트레이터 — 리허설 2판 §1-2 의 단계 표(줄 A · 줄 B 의 로컬 칸) · §1-3 · §1-4 · §5-4 · §3 의 판정기.
+"""통합형 배관 리허설의 오케스트레이터 — 리허설 2판 §1-2 의 단계 표(줄 A · 줄 로컬 칸) · §1-3 · §1-4 · §5-4 · §3 의 판정기.
 
     python -X utf8 scripts/rehearsal_uni.py run --plan configs/rehearsal_uni.yaml --snapshot <동결 스냅샷> --device <장비>
     python -X utf8 scripts/rehearsal_uni.py judge --run-root outputs/rehearsal_u/reh-YYYYMMDDTHHMMSS
@@ -18,7 +18,7 @@
 **이음새는 파이썬 인자로만**(2판 §1-4). 명령줄에는 구현을 고르는 인자가 없다 — `main(argv, measure_env=..., model_loader=..., ...)`.
 기본값은 승인된 실제 구현이다. **모델 생성기의 실제 구현이 아직 없다** — 등록 단계(구현 식별자를 적는다)가 그 이음새 없이 시작하지 않는다.
 
-**줄 B 의 연합 칸(`uni_fed`)** 은 본실험과 같은 `flwr run` 경로로 돈다(2판 §1-1 · §1-3 의 연합 행). 중단을 넣지 않는다. 학습 단계
+**줄 연합 칸(`uni_fed`)** 은 본실험과 같은 `flwr run` 경로로 돈다(2판 §1-1 · §1-3 의 연합 행). 중단을 넣지 않는다. 학습 단계
 (`train --tag uni_fed`)가 상주 SuperLink · 시뮬레이션 프로세스를 앞뒤로 내리고 남은 것이 없는지 본다. 출력은 `<루트>/train/uni_fed_s<n>/`
 (2판 §13-4), 초기 어댑터는 등록 단계가 만든 `<루트>/init/initial.npz`, 학습 행은 로컬 칸의 목록이다.
 계획의 `exclude.near_dup_edges` · `timeouts_s` 가 `null` 이면 시작하지 않는다.

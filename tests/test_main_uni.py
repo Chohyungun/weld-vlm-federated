@@ -169,7 +169,23 @@ def test_연합_칸의_상태별로_사유와_함께_멈춘다(tmp_path):
     assert calls == []
 
 
-def test_연합은_새로_돌고_끝나면_닫힌_원장을_확인한다(tmp_path):
+def test_연합은_착수_고정과_허가가_없으면_실행기를_부르기_전에_멈춘다(tmp_path, capsys):
+    p = _cfg_yaml(tmp_path)
+    cfg = M.load_main_config(p)
+    out = tmp_path / "out"
+    init = M.seed_dir(out, 1) / "fl" / "uni_fed"
+    init.mkdir(parents=True)
+    import numpy as np
+
+    np.savez(init / "initial.npz", a=np.zeros(2, dtype=np.float32))
+    M.fed_dir(out, 1).mkdir(parents=True)
+    with pytest.raises(SystemExit) as exc:
+        M.stage_fed(cfg, 1, out=out, config_path=p, runner=lambda s, log: pytest.fail("실행기를 불렀다"))
+    assert exc.value.reason == "pin_missing"
+
+
+def test_연합은_새로_돌고_끝나면_닫힌_원장을_확인한다(tmp_path, monkeypatch):
+    monkeypatch.setattr(M, "_start_gate", lambda spec: {})       # 시작 문은 위 시험과 tests/test_ecc_train.py 가 본다
     p = _cfg_yaml(tmp_path)
     cfg = M.load_main_config(p)
     out = tmp_path / "out"

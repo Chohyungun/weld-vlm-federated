@@ -247,8 +247,55 @@ def make_judge_source(run_dir: Path, config: dict, judge_dir: Path, *, model_id:
     return infer.read_judge_source(run_dir, config, judge_dir, expected_judge_identity_sha256=done["judge_identity_sha256"])
 
 
+def make_v7_judge_source(run_dir: Path, config: dict, judge_dir: Path, *, mutate=None) -> dict:
+    """v7 판정 출처의 흉내(시험 전용) — v7 판정 신원 읽기가 이 트리에 없어 그 꼴(검토 05o · 05p)을 손으로 짓는다.
+
+    모델 대상(정상 행이 아닌 행)에만 판정 행, 모든 작업에 결정적 영수증(통과). 판정 신원 = 근거의 정규 JSON 지문.
+    `mutate(source)` 는 신원을 만든 뒤 출처를 고친다(영수증 · 모델 대상 위조 시험). 릴리스의 폴더 다시 읽기는 시험에서 이 객체의
+    사본을 돌려주게 갈아 끼운다(`v7_reader`)."""
+    import copy
+
+    from corpus.production import infer, quality
+    from corpus.production.common import read_json
+
+    run = read_json(run_dir / "RUN.json")
+    tasks = [json.loads(x) for x in (run_dir / "tasks.jsonl").read_text(encoding="utf-8").splitlines()]
+    gen = {g["id"]: g for g in infer.read_stage_rows(run_dir, "generate", config)}
+    policy = {"output_schema": quality.JUDGE_V7_SCHEMA_VERSION, "policy_version": "v7", "test_only": True}
+    basis = {"run_identity_sha256": run["identity_sha256"], "judge_model": {"model_id": "local/judge-v7", "family": "phi"},
+             "policy_identity": policy, "output_schema": quality.JUDGE_V7_SCHEMA_VERSION}
+    ident = sha(canonical_bytes(basis))
+    policy_sha = sha(canonical_bytes(policy))
+    shard = sha(b"judge-v7-shard-0")
+    normal = {t["id"] for t in tasks if quality.parse_judge_v7(t, None)["errors"] == ["judge_not_applicable"]}
+    q7 = [k for k in quality.JUDGE_V7_KEYS["defect"] if k != "reason"]
+    rows, receipts = [], []
+    for t in tasks:
+        g = gen[t["id"]]
+        if t["id"] not in normal:
+            answer = ({**dict.fromkeys(q7, True), "reason": "근거와 일치"} if t["kind"] == "image_report"
+                      else {"grounded": True, "scope_ok": True, "language_ok": True, "reason": "근거와 일치"})
+            rows.append({"id": t["id"], "text": json.dumps(answer, ensure_ascii=False), "finish_reason": "json_closed",
+                         "_backend": "transformers", "_shard_sha256": shard, "_judge_identity_sha256": ident})
+        receipts.append({"id": t["id"], "candidate_sha256": sha(g["text"].encode("utf-8")),
+                         "candidate_finish_reason": g["finish_reason"], "policy_identity_sha256": policy_sha,
+                         "deterministic_pass": True, "deterministic_reasons": [], "deterministic_codes": {}, "flags": [],
+                         "generation_contract_applied": True, "model_applicable": t["id"] not in normal,
+                         "row_class": "defect_free" if t["id"] in normal else "model", "_judge_identity_sha256": ident,
+                         "_shard_sha256": shard})
+    source = {"judge_dir": str(judge_dir), "identity_sha256": ident, "identity_basis": basis, "rows": rows,
+              "caller_expected_pins": {"expected_judge_identity_sha256": ident, "expected_probe_approval_sha256": None},
+              "pin_provenance": "test_only", "probe_approval_sha256": None, "gpu_model_verified": False,
+              "output_schema": quality.JUDGE_V7_SCHEMA_VERSION, "policy_version": "v7",
+              "all_task_ids": [t["id"] for t in tasks], "model_task_ids": [t["id"] for t in tasks if t["id"] not in normal],
+              "deterministic_receipts": receipts}
+    if mutate:
+        mutate(source)
+    return copy.deepcopy(source)
+
+
 def build_audit(run_dir: Path, config: dict, audit_dir: Path, *, mutate_rows=None, judge_source=None) -> dict:
-    """B 의 `audit_run` 이 낼 꼴(보고 05 공유 계약 안)을 흉내 낸다 — 시험 전용 참조 구현."""
+    """`audit_run` 이 낼 꼴(보고 05 공유 계약 안)을 흉내 낸다 — 시험 전용 참조 구현."""
     from corpus.production import infer, quality
     from corpus.production.common import read_json, write_json_new
     from corpus.production.release import counts_of, ids_sha256
@@ -262,12 +309,16 @@ def build_audit(run_dir: Path, config: dict, audit_dir: Path, *, mutate_rows=Non
                           "model": {"model_id": config["judge"]["model_id"], "family": config["judge"]["family"]}}
     else:
         by_id = {r["id"]: r for r in judge_source["rows"]}
-        judge = [by_id[t["id"]] for t in tasks]
+        judge = [by_id.get(t["id"]) for t in tasks]                 # v7 정상 행은 판정 행이 없다
         judge_identity = {"source": "separate", "identity_sha256": judge_source["identity_sha256"],
                           "identity_basis": judge_source["identity_basis"], "model": dict(judge_source["identity_basis"]["judge_model"]),
                           "parser_schema": judge_source["identity_basis"]["policy_identity"]["output_schema"],
                           "caller_expected_pins": judge_source.get("caller_expected_pins"),
                           **{k: judge_source.get(k) for k in ("probe_approval_sha256", "gpu_model_verified", "pin_provenance")}}
+    v7 = judge_source is not None and judge_identity["parser_schema"] == quality.JUDGE_V7_SCHEMA_VERSION
+    policy_sha = sha(canonical_bytes(judge_source["identity_basis"]["policy_identity"])) if v7 else None
+    parsers = {quality.JUDGE_V7_SCHEMA_VERSION: quality.parse_judge_v7, quality.JUDGE_V6_SCHEMA_VERSION: quality.parse_judge_v6,
+               quality.JUDGE_V5_SCHEMA_VERSION: quality.parse_judge_v5}
     rows = []
     for t, g, j in zip(tasks, gen, judge):
         if t["kind"] == "image_report":
@@ -280,22 +331,30 @@ def build_audit(run_dir: Path, config: dict, audit_dir: Path, *, mutate_rows=Non
         if t["kind"] == "image_report":
             row["image_sha256"] = t["image_sha256"]
         row["messages"] = [{"role": "user", "content": user}, {"role": "assistant", "content": assistant}]
-        row["provenance"] = {
-            side: {"backend": s["_backend"], "family": m["family"], "model_id": m["model_id"],
-                   "shard_sha256": s["_shard_sha256"], "text_sha256": sha(s["text"].encode())}
-            for side, s, m in (("generate", g, config["generation"]), ("judge", j, judge_identity["model"]))}
-        if judge_source is None:
-            row["provenance"]["judge"]["verdict"] = json.loads(j["text"])
+        prov = {"generate": {"backend": g["_backend"], "family": config["generation"]["family"],
+                             "model_id": config["generation"]["model_id"], "shard_sha256": g["_shard_sha256"],
+                             "text_sha256": sha(g["text"].encode())}}
+        if j is None:          # v7 — 판정 모델을 부르지 않은 정상 행(B 05p): '적용 안 됨' 두 칸
+            prov["judge"] = {"applicable": False, "identity_sha256": judge_identity["identity_sha256"]}
         else:
-            # 코퍼스 측의 집계와 같은 짝 — 출력 계약이 v6 면 v6 파서, v5 면 v5 파서(한 꼴을 다른 파서로 읽지 않는다)
-            parse = quality.parse_judge_v6 if judge_identity["parser_schema"] == quality.JUDGE_V6_SCHEMA_VERSION else quality.parse_judge_v5
-            parsed = parse(t, j)
-            row["provenance"]["judge"].update(verdict=parsed["verdict"], schema=parsed["schema"], parser=parsed["parser"],
-                                              answers=parsed["answers"], flags=list(parsed["flags"]),
-                                              format_normalized=list(parsed["format_normalized"]))
-            for side in ("generate", "judge"):        # 시험용(fake) 판정 — 행 검사를 지나 폴더 대조까지 가게 transformers 로 적는다
-                row["provenance"][side]["backend"] = "transformers"
-        row["provenance"]["judge"]["identity_sha256"] = judge_identity["identity_sha256"]
+            m = judge_identity["model"]
+            prov["judge"] = {"backend": j["_backend"], "family": m["family"], "model_id": m["model_id"],
+                             "shard_sha256": j["_shard_sha256"], "text_sha256": sha(j["text"].encode())}
+            if judge_source is None:
+                prov["judge"]["verdict"] = json.loads(j["text"])
+            else:
+                # 집계와 같은 짝 — 출력 계약의 꼴의 파서(한 꼴을 다른 파서로 읽지 않는다)
+                parsed = parsers[judge_identity["parser_schema"]](t, j)
+                prov["judge"].update(verdict=parsed["verdict"], schema=parsed["schema"], parser=parsed["parser"],
+                                     answers=parsed["answers"], flags=list(parsed["flags"]),
+                                     format_normalized=list(parsed["format_normalized"]))
+                prov["judge"]["backend"] = "transformers"   # 시험용(fake) 판정 — 행 검사를 지나 폴더 대조까지 가게
+            prov["judge"]["identity_sha256"] = judge_identity["identity_sha256"]
+        if judge_source is not None:
+            prov["generate"]["backend"] = "transformers"
+        if v7 and t["kind"] == "image_report":
+            prov["policy"] = {"identity_sha256": policy_sha, "flags": []}
+        row["provenance"] = prov
         rows.append(row)
     if mutate_rows:
         rows = mutate_rows(rows)
@@ -323,7 +382,13 @@ def build_audit(run_dir: Path, config: dict, audit_dir: Path, *, mutate_rows=Non
         # 코퍼스 측의 집계(quality_v7 ~)가 싣는 파서 판 — 구조화 꼴이면 그 꼴의 판, 옛 네 키면 None
         "judge_parser_version": quality.JUDGE_PARSER_VERSIONS.get(judge_identity.get("parser_schema", "legacy_four_keys")),
         "review": {"strata": strata, "stratum_sizes": sizes},
+        # v7 판정 출처의 결정적 영수증 요약(B quality_v9) — 다른 꼴이면 None
+        "deterministic_receipts": None if not v7 else {
+            "policy_identity_sha256": policy_sha, "rows": len(tasks), "planned": len(tasks),
+            "model_task_ids": {"count": len(judge_source["model_task_ids"]), "ids_sha256": ids_sha256(judge_source["model_task_ids"])}},
     }
+    if v7:
+        audit["policy"] = {"identity_sha256": policy_sha}
     write_json_new(audit_dir / "AUDIT.json", audit)
     return audit
 

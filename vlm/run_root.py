@@ -15,13 +15,21 @@ import re
 from pathlib import Path
 from typing import Iterable
 
-__all__ = ["NON_MAIN_PARENT", "ROOT_KIND", "run_root_problems", "REPO_ROOT"]
+__all__ = ["NON_MAIN_PARENT", "ECC_PARENT", "ROOT_KIND", "parent_of", "run_root_problems", "REPO_ROOT"]
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 NON_MAIN_PARENT = Path("outputs/rehearsal_u")
 #: 목적 → 루트 이름의 꼴.
 #: `fullmatch` 로만 쓴다 — `$` 는 끝 개행을, `\d` 는 유니코드 숫자를 받는다.
-ROOT_KIND = {"rehearsal": re.compile(r"reh-[0-9]{8}T[0-9]{6}"), "frame_diag": re.compile(r"fdiag-[0-9]{8}T[0-9]{6}")}
+ROOT_KIND = {"rehearsal": re.compile(r"reh-[0-9]{8}T[0-9]{6}"), "frame_diag": re.compile(r"fdiag-[0-9]{8}T[0-9]{6}"),
+             "early_coord_check": re.compile(r"ecc-[0-9]{8}T[0-9]{6}")}
+#: 조기 좌표 점검의 기본 부모 — 리허설 부모가 아니라 `outputs/early_check/` 아래다(평가 쪽 10번 §8).
+ECC_PARENT = Path("outputs/early_check")
+
+
+def parent_of(purpose: str) -> Path:
+    """목적 → 기본 부모. 부를 때 모듈 값을 읽는다(가져올 때 묶으면 시험의 부모 바꾸기가 먹지 않는다)."""
+    return ECC_PARENT if purpose == "early_coord_check" else NON_MAIN_PARENT
 
 
 def run_root_problems(purpose: str, run_root: str | Path | None, paths: Iterable[str | Path], *,
@@ -33,7 +41,7 @@ def run_root_problems(purpose: str, run_root: str | Path | None, paths: Iterable
         return [f"모르는 목적: {purpose!r}"]
     if run_root is None:
         return [f"{purpose} 는 루트(--run-root)가 있어야 한다"]
-    pp = (REPO_ROOT / NON_MAIN_PARENT if parent is None else Path(parent)).resolve()
+    pp = (REPO_ROOT / parent_of(purpose) if parent is None else Path(parent)).resolve()
     rr = Path(run_root).resolve()
     out: list[str] = []
     if rr.parent != pp:

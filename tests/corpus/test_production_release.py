@@ -22,7 +22,9 @@ from corpus.production.release import (
     JUDGE_SOURCES,
     STRUCTURED_PARSERS,
     ReleaseRefused,
+    _no_model_ids,
     _structured_parser,
+    check_row,
     release_run,
     verify_release,
 )
@@ -31,6 +33,7 @@ from tests.corpus.production_fixtures import (
     World,
     build_audit,
     make_judge_source,
+    make_v7_judge_source,
     review_for,
     rights_for,
     sha,
@@ -49,13 +52,17 @@ def _stage(world, run_dir, backend="transformers"):
 class Case:
     """한 실행 · 한 AUDIT · 검수 · 이용 확인 파일. 시험마다 새로 만든다."""
 
-    def __init__(self, tmp_path, *, backend="transformers", mutate_rows=None, prepare_over=None, separate=False, **quality):
+    def __init__(self, tmp_path, *, backend="transformers", mutate_rows=None, prepare_over=None, separate=False, v7=None,
+                 **quality):
         self.world = World(tmp_path, **quality)
         self.world.prepare(**(prepare_over or {}))
         self.run_dir = tmp_path / "run"
         _stage(self.world, self.run_dir, backend)
         self.audit_dir = tmp_path / "audit"
-        self.judge_source = make_judge_source(self.run_dir, self.world.config, tmp_path / "judge-new") if separate else None
+        separate = separate or v7 is not None
+        self.judge_source = (make_v7_judge_source(self.run_dir, self.world.config, tmp_path / "judge-v7", mutate=v7 if callable(v7) else None)
+                             if v7 is not None
+                             else make_judge_source(self.run_dir, self.world.config, tmp_path / "judge-new") if separate else None)
         # 기본은 separate 만 — 실행 안의 구판정 경로(run_config)는 허용 출처를 명시한다
         self.release_kw: dict = ({"judge_source": self.judge_source,
                                   "expected_judge_identity_sha256": self.judge_source["identity_sha256"]} if separate
@@ -380,7 +387,7 @@ def test_영상_설명만이면_원문_QA_하한_0_에서_릴리스된다(tmp_pa
     assert verify_release(c.out)["verified"] is True
 
 
-# --------------------------------------------------------------------------- 판정 신원(B 05h)
+# --------------------------------------------------------------------------- 판정 신원(검토 05h)
 
 
 def test_따로_둔_판정은_폴더_다시_읽기까지_지나고_시험용_판정이라_릴리스되지_않는다(tmp_path):
@@ -505,11 +512,12 @@ def operational_judge(monkeypatch):
     monkeypatch.setattr(infer, "read_judge_source", wrapped)
 
 
-def test_구조화_꼴과_파서의_짝은_B_의_판_표와_같고_v5_를_보존한다():
-    assert set(STRUCTURED_PARSERS) == set(quality.JUDGE_PARSER_VERSIONS)
+def test_구조화_꼴과_파서의_짝은_B_의_판_표를_덮고_v5_v6_를_보존한다():
+    assert set(quality.JUDGE_PARSER_VERSIONS) <= set(STRUCTURED_PARSERS)       # 집계가 읽는 꼴은 모두 릴리스도 읽는다
     assert JUDGE_SCHEMAS == ("legacy_four_keys", *STRUCTURED_PARSERS)
     probe = {"text": "{}", "finish_reason": "eos"}
-    for jschema, name in STRUCTURED_PARSERS.items():
+    for jschema in quality.JUDGE_PARSER_VERSIONS:
+        name = STRUCTURED_PARSERS[jschema]
         parse, version = _structured_parser(jschema)
         assert parse is getattr(quality, name) and version == quality.JUDGE_PARSER_VERSIONS[jschema]
         out = parse({"kind": "source_qa", "locked_target": None}, probe)       # 판독 실패여도 꼴 · 판은 싣는다
@@ -603,3 +611,167 @@ def test_실행_안의_구판정이_구조화_꼴이라_적히면_거부(case, j
 def test_실행_안의_구판정_집계에_파서_판이_있으면_거부(case):
     case.audit["judge_parser_version"] = quality.JUDGE_V6_PARSER_VERSION
     case.refused("audit_judge_identity")
+
+
+
+# --------------------------------------------------------------------------- 판정 v7 자리(검토 05n R-12 ~ R-18) — 집계가 v7 을 읽기 전이라 단위로
+
+
+def test_v7_은_B_의_판_표에_들어_열렸고_표에서_빠지면_닫힌다(monkeypatch):
+    parse, version = _structured_parser("judge_structured_v7")                 # 집계 v7 소비(quality_v9)와 함께 열렸다
+    assert parse is quality.parse_judge_v7 and version == "parse_judge_v7" == quality.JUDGE_PARSER_VERSIONS["judge_structured_v7"]
+    monkeypatch.setattr(quality, "JUDGE_PARSER_VERSIONS", {k: v for k, v in quality.JUDGE_PARSER_VERSIONS.items()
+                                                          if k != "judge_structured_v7"})
+    with pytest.raises(ReleaseRefused) as err:
+        _structured_parser("judge_structured_v7")
+    assert err.value.code == "judge_parser"
+
+
+def test_v7_판정을_부르지_않는_행은_B_의_파서가_고른_정상_행뿐이다(case):
+    tasks = [json.loads(x) for x in (case.run_dir / "tasks.jsonl").read_text(encoding="utf-8").splitlines()]
+    normal = {t["id"] for t in tasks if t["kind"] == "image_report" and not t["locked_target"]["defects"]}
+    assert normal and _no_model_ids(quality.parse_judge_v7, tasks) == normal
+    assert _no_model_ids(quality.parse_judge_v6, tasks) == set() == _no_model_ids(None, tasks)
+
+
+def _v7_row(case, kind="image_report"):
+    audit = json.loads(json.dumps(case.audit))
+    audit["judge_identity"]["parser_schema"] = "judge_structured_v7"
+    rows = [json.loads(x) for x in (case.audit_dir / "dataset.jsonl").read_text(encoding="utf-8").splitlines()]
+    return audit, next(r for r in rows if r["kind"] == kind)
+
+
+def _refused_row(row, audit, code="row_judge"):
+    with pytest.raises(ReleaseRefused) as err:
+        check_row(row, audit)
+    assert err.value.code == code
+
+
+def test_v7_정상_행의_적용_안_됨_꼴은_두_칸뿐이고_v7_영상_행에서만_받는다(case):
+    audit, row = _v7_row(case)
+    na = {"applicable": False, "identity_sha256": "c" * 64}
+    row["provenance"]["judge"] = dict(na)
+    check_row(row, audit)
+    for bad in ({**na, "verdict": {"reason": "r"}}, {**na, "backend": "transformers"}, {"applicable": False},
+                {**na, "applicable": True}, {**na, "applicable": None}):
+        row["provenance"]["judge"] = bad
+        _refused_row(row, audit)
+    row["provenance"]["judge"] = dict(na)
+    _refused_row(row, {**audit, "judge_identity": {**audit["judge_identity"], "parser_schema": "judge_structured_v6"}})
+
+
+def test_v7_결함_행의_판정값은_물음_넷이_모두_참이어야_받는다(case):
+    audit, row = _v7_row(case)
+    keys = [k for k in quality.JUDGE_V7_KEYS["defect"] if k != "reason"]
+    row["provenance"]["judge"]["verdict"] = {**dict.fromkeys(keys, True), "reason": "근거와 일치"}
+    check_row(row, audit)
+    for k in keys:
+        row["provenance"]["judge"]["verdict"] = {**dict.fromkeys(keys, True), k: False, "reason": "r"}
+        _refused_row(row, audit)
+    row["provenance"]["judge"]["verdict"] = {"grounded": True, "scope_ok": True, "language_ok": True, "reason": "r"}
+    _refused_row(row, audit)                                                  # 옛 셋은 v7 영상 행의 판정값이 아니다
+
+
+
+# --------------------------------------------------------------------------- v7 집계를 받는다(B 05p R-19 ~ R-22)
+
+
+@pytest.fixture
+def v7_reader(monkeypatch):
+    """릴리스의 판정 폴더 다시 읽기를 주어진 v7 출처의 사본으로 갈아 끼운다 — v7 판정 신원 읽기가 이 트리에
+    없어서다(시험 전용). 출처 객체와 다시 읽은 것의 대조 · 그 뒤의 v7 검사는 그대로 돈다."""
+    import copy
+
+    from corpus.production import release
+
+    monkeypatch.setattr(release, "_reread_judge_source", lambda run_dir, config, judge_source, pins: copy.deepcopy(judge_source))
+
+
+def _receipt(source, pick):
+    return next(r for r in source["deterministic_receipts"] if pick(r))
+
+
+def _normal(r):
+    return r["model_applicable"] is False
+
+
+def _model_image(source):
+    image_ids = {r["id"] for r in source["rows"] if "has_limitation" in r["text"]}
+    return lambda r: r["id"] in image_ids
+
+
+def test_v7_집계를_받는다_정상_행은_적용_안_됨_결함은_물음_넷(tmp_path, v7_reader):
+    c = Case(tmp_path, v7=True)
+    c.release()
+    assert verify_release(c.out)["verified"] is True
+    rows = [json.loads(x) for x in (c.out / "dataset.jsonl").read_text(encoding="utf-8").splitlines()]
+    normal = [r for r in rows if r["provenance"]["judge"].get("applicable") is False]
+    defect = [r for r in rows if r["kind"] == "image_report" and "applicable" not in r["provenance"]["judge"]]
+    assert normal and defect and any(r["kind"] == "source_qa" for r in rows)
+    assert all(r["provenance"]["judge"] == {"applicable": False, "identity_sha256": c.audit["judge_identity"]["identity_sha256"]}
+               for r in normal)
+    q7 = {k for k in quality.JUDGE_V7_KEYS["defect"] if k != "reason"}
+    assert all(set(r["provenance"]["judge"]["verdict"]) == {*q7, "reason"} for r in defect)
+
+
+@pytest.mark.parametrize("which", ["normal", "model"])
+def test_v7_영수증이_기각인_행이_데이터셋에_있으면_거부(tmp_path, v7_reader, which):
+    def mutate(src):
+        pick = _normal if which == "normal" else _model_image(src)
+        _receipt(src, pick)["deterministic_pass"] = False
+    Case(tmp_path, v7=mutate).refused("judge_receipt_rejected")
+
+
+@pytest.mark.parametrize("field,value", [("candidate_sha256", "e" * 64), ("policy_identity_sha256", "f" * 64)])
+def test_v7_영수증의_생성문_정책_지문이_다르면_거부(tmp_path, v7_reader, field, value):
+    def mutate(src):
+        _receipt(src, _normal)[field] = value
+    Case(tmp_path, v7=mutate).refused("judge_receipt_mismatch")
+
+
+@pytest.mark.parametrize("change", ["drop_model", "add_normal"])
+def test_v7_모델_대상_수열을_고치면_거부(tmp_path, v7_reader, change):
+    def mutate(src):
+        if change == "drop_model":
+            src["model_task_ids"].pop()
+        else:
+            nid = _receipt(src, _normal)["id"]
+            src["model_task_ids"] = [t for t in src["all_task_ids"] if t in set(src["model_task_ids"]) | {nid}]
+    Case(tmp_path, v7=mutate).refused("judge_model_task_ids")
+
+
+def test_v7_영수증이_모자라면_미완료(tmp_path, v7_reader):
+    def mutate(src):
+        src["deterministic_receipts"].pop()
+    Case(tmp_path, v7=mutate).refused("stage_incomplete")
+
+
+def test_v7_정상_행_id_의_판정_행이_있으면_거부(tmp_path, v7_reader):
+    c = Case(tmp_path, v7=True)                     # 집계 · 데이터셋은 정직하게, 다시 읽는 출처에만 정상 행의 판정 행을 넣는다
+    nid = _receipt(c.judge_source, _normal)["id"]
+    c.judge_source["rows"].append({**c.judge_source["rows"][0], "id": nid})
+    c.refused("judge_row_not_applicable")
+
+
+def test_v7_행의_정책_지문이_다르면_거부(tmp_path, v7_reader):
+    def change(rows):
+        next(r for r in rows if r["kind"] == "image_report")["provenance"]["policy"]["identity_sha256"] = "a" * 64
+        return rows
+    c = Case(tmp_path, v7=True, mutate_rows=change)
+    c.refused("row_policy_identity")
+
+
+@pytest.mark.parametrize("mutate,code", [
+    (lambda a: a["policy"].update(identity_sha256="b" * 64), "audit_policy_identity"),
+    (lambda a: a["deterministic_receipts"]["model_task_ids"].update(count=0), "audit_deterministic_receipts"),
+    (lambda a: a.update(deterministic_receipts=None), "audit_deterministic_receipts"),
+])
+def test_v7_집계의_정책_지문_영수증_요약이_어긋나면_거부(tmp_path, v7_reader, mutate, code):
+    c = Case(tmp_path, v7=True)
+    mutate(c.audit)
+    c.refused(code)
+
+
+def test_v7_밖의_집계에_영수증_요약이_있으면_거부(case):
+    case.audit["deterministic_receipts"] = {"rows": 0}
+    case.refused("audit_deterministic_receipts")

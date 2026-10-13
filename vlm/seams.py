@@ -104,4 +104,7 @@ def check_seam(fn: Callable, approved_fns: Iterable[Callable], *, seam: str, pur
         if purpose == "frame_diag" and not standin_allowed:
             raise SeamRejected(
                 f"프레임 진단은 로컬 합성 영수증일 때만 대역을 받는다 — {seam} 에 대역이 왔다")
+        if purpose == "early_coord_check" and not standin_allowed:
+            raise SeamRejected(
+                f"조기 좌표 점검은 본실험 중앙 칸 자체다 — 합성 시험이 아니면 대역을 받지 않는다: {seam}")
     return impl_id(fn, seam=seam, approved=approved)

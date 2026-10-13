@@ -34,7 +34,7 @@ BASE_CONFIG = Path("configs/base.yaml")
 
 #: 본실험이 쓰거나 읽지 않는 부모 — 리허설 · 진단 루트의 부모(리허설 2판 §5-1)와 파일럿 출력 루트
 #: (`pyproject.toml` 의 `project` 기본값). 작업 트리 루트 기준이다.
-NON_MAIN_PARENTS: tuple[Path, ...] = (Path("outputs/rehearsal_u"), Path("outputs/pilot_c"))
+NON_MAIN_PARENTS: tuple[Path, ...] = (Path("outputs/rehearsal_u"), Path("outputs/pilot_c"), Path("outputs/early_check"))
 #: 감독 토큰 기대값의 키 — 참여자 셋이 **정확히** 있어야 한다. 중앙은 셋의 합이다.
 TOKEN_KEYS: tuple[str, ...] = ("C1", "C2", "C3")
 

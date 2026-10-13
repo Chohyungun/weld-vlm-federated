@@ -223,6 +223,70 @@ def _training(adapter_dir: Path, *, tag: str, seed_index: int, purpose: str, reg
     return meta, stamp, side
 
 
+def _training_check_step(adapter_dir: Path, *, step: int, tag: str, measured: Mapping, coord_hash: str, cfg,
+                         reg, run_root: Path | None) -> tuple[dict, dict, dict]:
+    """조기 좌표 점검의 학습 쪽 출처 — **별도 분기**다(11번 §3-3). `_training`(본실험 · 리허설 · 진단)의 검사는 고치지 않는다.
+
+    받는 것은 점검 실행의 step 파일이다 — meta 의 목적 · step · 등록 step 목록, step 어댑터 · 소비 행 목록의 sha256 이 meta 와 같고,
+    점검 원장에 그 step 줄이 정확히 하나 있고 그 줄의 지문이 meta 와 같다. 학습 행은 본실험 중앙과 같은(페어의 학습 분할 전체) 행이다.
+    """
+    from evaluation.schema_v14 import tag_parts
+    from vlm.ecc import LEDGER_FILE as ECC_LEDGER
+    from vlm.ecc import PURPOSE, ledger_rows, step_paths
+    from vlm.pilot_vlm import load_pairs, train_rows_digest
+    from vlm.train_cell import CENTRAL_TAG, _record_path, _sha256_file
+
+    if tag != CENTRAL_TAG:
+        raise ExportRefused("check_tag", f"조기 좌표 점검은 중앙 칸 자체만 받는다: {tag!r}")
+    d = Path(adapter_dir)
+    paths = step_paths(d, int(step))
+    led = d / ECC_LEDGER
+    for p in (paths["meta"], paths["adapter"], paths["consumed"], led):
+        if not p.is_file():
+            raise ExportRefused("check_step_missing", f"점검 step 의 산출물이 없다: {p.name}")
+    meta = json.loads(paths["meta"].read_text(encoding="utf-8"))
+    if meta.get("purpose") != PURPOSE:
+        raise ExportRefused("check_purpose", "점검 실행의 step 이 아니다")
+    if int(meta.get("step", -1)) != int(step) or int(step) not in (meta.get("registered_steps") or []):
+        raise ExportRefused("check_step", f"step {step} 이 meta 의 step · 등록 step 목록과 맞지 않는다")
+    ident = meta.get("identity") or {}
+    if ident.get("cell") != tag:
+        raise ExportRefused("adapter_identity", f"점검 step meta 의 칸 {ident.get('cell')!r} ≠ {tag!r}")
+    if _sha256_file(paths["adapter"]) != (meta.get("adapter") or {}).get("sha256"):
+        raise ExportRefused("adapter_sha", "점검 step 어댑터의 sha 가 meta 와 다르다")
+    if _sha256_file(paths["consumed"]) != (meta.get("consumed") or {}).get("sha256"):
+        raise ExportRefused("check_consumed", "소비 행 목록의 sha 가 meta 와 다르다")
+    lines = [r for r in ledger_rows(d) if r.get("event") == "step" and r.get("step") == str(int(step))]
+    if len(lines) != 1 or lines[0].get("adapter_sha256") != meta["adapter"]["sha256"] \
+            or lines[0].get("consumed_sha256") != meta["consumed"]["sha256"]:
+        raise ExportRefused("check_ledger", "점검 원장에 이 step 의 줄이 정확히 하나가 아니거나 지문이 meta 와 다르다")
+    if ident.get("processor_config_sha256") != measured.get("processor_config_sha256"):
+        raise ExportRefused("adapter_processor", "점검 학습의 프로세서 설정이 export 의 프로세서와 다르다")
+    if ident.get("coord_cfg_hash") != coord_hash:
+        raise ExportRefused("adapter_coord", "점검 학습의 좌표 해시가 export 의 좌표 규약과 다르다")
+    g = reg.generation
+    rows_got = meta.get("train_rows_digest")
+    if g.train_rows_digest is not None and rows_got != g.train_rows_digest:
+        raise ExportRefused("train_rows", "점검 step meta 의 train_rows_digest 가 등록과 다르다")
+    if cfg.pairs_path is None:
+        raise ExportRefused("train_rows", "점검 학습 행을 다시 낼 페어 경로가 설정에 없다")
+    if rows_got != train_rows_digest(load_pairs("train", None, pairs_path=cfg.pairs_path)):
+        raise ExportRefused("train_rows", "점검 실행이 본실험 중앙의 학습 행(페어의 학습 분할 전체)으로 학습되지 않았다")
+    if not isinstance(meta.get("train_config"), str):
+        raise ExportRefused("train_config", "점검 step meta 에 학습 설정 원문이 없다")
+    if run_root is None or not _under(d, run_root):
+        raise ExportRefused("run_root", "점검 step 이 이 루트 아래가 아니다")
+    cell, client = tag_parts(tag)
+    stamp = {"train_run_id": ident.get("run_id"), "train_ledger_sha256": _sha256_file(led),
+             "scored_adapter_sha256": meta["adapter"]["sha256"], "check_step": int(step)}
+    side = {"train_ledger_path": _record_path(led), "scored_adapter_step": int(step), "train_config": meta["train_config"],
+            "check_consumed_sha256": meta["consumed"]["sha256"], "check_consumed_rows": int(meta["consumed"]["rows"]),
+            "check_pin_sha256": meta.get("pin_sha256")}
+    out = {"init_adapter_digest": ident.get("input_adapter_digest"), "adapter_step": int(step), "cell": cell,
+           "client": client}
+    return out, stamp, side
+
+
 #: 커밋된 등록 옆의 학습 설정 원문 — 등록 파일과 같은 줄기 이름(`{purpose}-{YYYYMMDD}-{n}`)에 이 꼬리를 붙인다(평가 쪽 `configs/registration/README.md`).
 TRAIN_CONFIG_SUFFIX = ".train_config.json"
 
@@ -295,7 +359,7 @@ def export_preflight(*, purpose: str, mode: str, tag: str, seed_index: int, rece
                      snapshot_root: Path, adapter_dir: Path | None, plan_path: Path | None, run_root: Path | None,
                      measure_env: Callable, impl_ids: Mapping[str, Any], parser_sha256: str,
                      repo: Path | None = None, code_repo: Path | None = None, exposure_ledger: Path | None = None,
-                     now: datetime | None = None) -> PreflightResult:
+                     now: datetime | None = None, check_step: int | None = None) -> PreflightResult:
     """§2-4 의 1. 통과하면 도장 · 곁 파일에 실을 값과 생성기를 여는 값을 돌려준다. 어긋나면 `ExportRefused`."""
     from evaluation.actuals import check_actuals
     from evaluation.entry_gate import (
@@ -401,11 +465,18 @@ def export_preflight(*, purpose: str, mode: str, tag: str, seed_index: int, rece
     # 10 모델 모드의 학습 출처 · 에코의 학습 설정 원문
     stamp: dict[str, Any] = {}
     side: dict[str, Any] = {}
+    if (check_step is not None) != (purpose == "early_coord_check" and mode == "model"):
+        # 점검 step 어댑터는 점검 목적의 모델 모드만 받는다 — 본실험 · 리허설 · 진단의 export 는 step 어댑터를 받지 않는다(11번 T6).
+        raise ExportRefused("check_step_scope", "점검 step 은 early_coord_check 의 모델 모드에서만(그때는 반드시) 준다")
     if mode == "model":
         if adapter_dir is None:
             raise ExportRefused("adapter_missing", "모델 모드는 어댑터 폴더가 있어야 한다")
-        meta, stamp, side = _training(Path(adapter_dir), tag=tag, seed_index=seed_index, purpose=purpose, reg=reg,
-                                      measured=measured, coord_hash=chash, cfg=cfg, run_root=run_root)
+        if purpose == "early_coord_check":
+            meta, stamp, side = _training_check_step(Path(adapter_dir), step=int(check_step), tag=tag, measured=measured,
+                                                     coord_hash=chash, cfg=cfg, reg=reg, run_root=run_root)
+        else:
+            meta, stamp, side = _training(Path(adapter_dir), tag=tag, seed_index=seed_index, purpose=purpose, reg=reg,
+                                          measured=measured, coord_hash=chash, cfg=cfg, run_root=run_root)
         tc_text = side["train_config"]
         init_digest = meta.get("init_adapter_digest")
     else:
@@ -463,7 +534,9 @@ def export_preflight(*, purpose: str, mode: str, tag: str, seed_index: int, rece
                                decoding=dict(g.decoding or {}), batch_size=int(cfg.batch_size),
                                padding_side=str(g.padding_side), coord_space=cfg.coord_space,
                                pairs_path=cfg.pairs_path,
-                               adapter_path=(Path(adapter_dir) / "adapter_last.npz") if mode == "model" else None,
+                               adapter_path=(None if mode != "model" else
+                                             Path(adapter_dir) / f"adapter_step{int(check_step):06d}.npz"
+                                             if check_step is not None else Path(adapter_dir) / "adapter_last.npz"),
                                purpose=purpose)
     return PreflightResult(registration=reg, receipt=rc, generation_sha256=gen_sha, eval_list=el,
                            seed_value=seed_value, gen_cfg=gen_cfg, stamp_fields=stamp_fields,

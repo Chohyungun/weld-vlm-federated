@@ -14,6 +14,24 @@
     python -X utf8 scripts/main_uni.py fed --seed 1
     python -X utf8 scripts/main_uni.py all [--seed 1]
     python -X utf8 scripts/main_uni.py close-ledger --seed 1 --tag uni_local_C1
+    python -X utf8 scripts/main_uni.py pin --seed 1
+    python -X utf8 scripts/main_uni.py ecc-prepare --seed 1 --ecc-root outputs/early_check/ecc-YYYYMMDDTHHMMSS
+    python -X utf8 scripts/main_uni.py ecc --seed 1 --ecc-root outputs/early_check/ecc-… --spent-hours H --next-hours H \
+        [--max-hours H] [--max-won W] [--resume-step S]
+    python -X utf8 scripts/main_uni.py ecc-accept --seed 1 --ecc-root outputs/early_check/ecc-… --permit <평가 쪽 통과 파일>
+
+- **착수 고정 · 착수 허가(11번 §4 · §10, 평가 쪽 10번 §14-3)** — 칸을 열기 전에 `pin` 이 그 시드의 `PIN.json` 을 쓴다(코드 · 환경 ·
+  공통 설정 · 초기 어댑터). 로컬 · 중앙 · 연합은 **시작 · 재개마다** 그것을 지금 값과 맞대고, 조기 좌표 점검의 통과 파일
+  (`ecc_permit.json` — 평가 쪽 `early_coord_check.json` 을 그 자리에 둔다)을 평가 쪽 `verify_permit` 으로 대조한다. 어느 하나라도
+  없거나 어긋나면 시작하지 않는다.
+- **조기 좌표 점검** — `ecc-prepare` 가 그 시드의 공통 초기 어댑터를 점검 루트로 옮기며 착수 고정의 digest 와 맞대고(규칙 파일의
+  허용 시도 수를 넘으면 새 루트를 만들지 않는다), `ecc` 가 본실험 중앙 칸 자체를 다음 점검 step 까지 학습해 멈춘다(종료 4).
+  step 목록 · 상한 · 단가(`limits`)는 평가 쪽 규칙 파일(`configs/early_coord_check.yaml`)을 평가 쪽 `load_rules` ·
+  `effective_limits` 로 읽어 쓴다. 실행 인자 `--max-hours` · `--max-won` 은 규칙의 상한을 좁히기만 하고, 단가는 실행 인자로 받지
+  않는다(금액 = 시간 × 단가 × 계수). 평가 쪽 결정이
+  `이어 간다` 면 `--resume-step` 으로 다음 step 까지 잇는다. 통과면 `ecc-accept` 가 평가 쪽 통과 파일을 평가 쪽 검증으로 받아
+  시드 폴더에 사본과 착수 허가의 키 기록(`ECC_PERMIT_KEY.json`)을 쓴다 — 본실험 칸은 그 키를 통과 파일 밖에서 읽는다.
+  점검 단계의 진행 기록은 점검 루트의 `progress.jsonl` 에 남긴다(본실험 진행 기록과 섞지 않는다).
 
 - **멱등** — 칸마다 어댑터 파일이 있으면 meta 의 신원을 먼저 맞댄다(`vlm/train_cell.py`). 같고 원장이 닫혔으면 건너뛰고,
   열렸으면 `close-ledger` 를 안내하며 멈추고, 다르면 멈춘다. 연합도 같은 재료(신원 · 신원 해시 · 초기 어댑터 digest ·
@@ -46,6 +64,9 @@ OUT = REPO_ROOT / "outputs" / "main_u"
 TAGS = ("uni_local_C1", "uni_local_C2", "uni_local_C3", "uni_central", "uni_fed")
 FAULT_VARS = (FAULT_VAR, NONCE_VAR)
 CLIENT_TAGS = ("C1", "C2", "C3")
+#: 시드 폴더 안의 착수 고정 · 착수 허가(조기 좌표 점검의 통과 파일)의 자리.
+PIN_FILE = "PIN.json"
+PERMIT_FILE = "ecc_permit.json"
 
 
 class MainRefused(SystemExit):
@@ -110,6 +131,7 @@ def spec_for(cfg: Any, n: int, *, out: Path = OUT, config_path: Path | None = No
         prompt_path=str(cfg.prompt_path), coord_space=str(cfg.coord_space),
         processor_kwargs=dict(cfg.processor_kwargs),
         expected_supervised_tokens=dict(cfg.expected_supervised_tokens), config_path=config_path,
+        pin_path=sd / PIN_FILE, ecc_permit_path=sd / PERMIT_FILE,
     )
 
 
@@ -236,6 +258,7 @@ def stage_fed(cfg: Any, n: int, *, out: Path = OUT, config_path: Path | None = N
                           "R 라운드를 처음부터 다시 돈다(스탬프는 시드마다 고정이고 연합은 재개가 없다)")
     if not spec.init_adapter_path.exists():
         raise MainRefused("init_adapter_missing", f"공통 초기 어댑터가 없다: {spec.init_adapter_path} — initadapter 먼저")
+    _start_gate(spec)
     if runner is None:
         from scripts.main_det import _flwr_run as runner          # 검출과 같은 flwr 실행 함수(2판 §1-3 의 연합 행)
     runner(fed_run_config(cfg, n, out=out), seed_dir(out, n) / "flwr_uni_fed.log")
@@ -260,6 +283,185 @@ def fed_expected_identity(spec: Any, init_digest: str) -> dict[str, Any]:
         coord_space=spec.coord_space, init_digest=init_digest, snapshot_digest=spec.snapshot_digest, plan_sha256=None,
         client_tags=CLIENT_TAGS, processor_kwargs=spec.processor_kwargs,
         expected_supervised_tokens=spec.expected_supervised_tokens)
+
+
+def _start_gate(spec: Any) -> dict[str, str]:
+    """연합의 시작 문 — 로컬 · 중앙과 같은 함수(`vlm.train_cell.main_start_gate`)로 착수 고정과 착수 허가를 맞댄다."""
+    from vlm.pin import init_probe
+    from vlm.train_cell import CellRejected, main_start_gate
+
+    try:
+        return main_start_gate(spec, init_digest=init_probe(spec.init_adapter_path)["init_adapter_digest"])
+    except CellRejected as exc:
+        raise MainRefused(exc.code, str(exc)) from None
+
+
+def stage_pin(cfg: Any, n: int, *, out: Path = OUT, config_path: Path | None = None) -> str:
+    """그 시드의 착수 고정을 쓴다 — 공통 초기 어댑터가 있어야 하고, 코드가 커밋과 다르면 쓰지 않는다. 덮지 않는다."""
+    from vlm.pin import PinMismatch, build_pin, write_pin
+
+    spec = spec_for(cfg, n, out=out, config_path=config_path)
+    _guarded(spec)
+    if not spec.init_adapter_path.exists():
+        raise MainRefused("init_adapter_missing", f"공통 초기 어댑터가 없다: {spec.init_adapter_path} — initadapter 먼저")
+    try:
+        sha = write_pin(spec.pin_path, build_pin(init_adapter_path=spec.init_adapter_path, config_path=config_path))
+    except (PinMismatch, FileExistsError) as exc:
+        raise MainRefused("pin_write", str(exc)) from None
+    _progress(out, n, "pin", pin_sha256=sha)
+    return sha
+
+
+def spec_for_ecc(cfg: Any, n: int, root: Path, *, config_path: Path | None = None,
+                 non_main_parent: Path | None = None):
+    """조기 좌표 점검의 칸 설정 — 본실험 중앙과 같은 값, 출력 · 초기 어댑터만 점검 루트 아래다(11번 §1 · §3-1)."""
+    from dataclasses import replace
+
+    from vlm.ecc import PURPOSE
+
+    base = spec_for(cfg, n, config_path=config_path)
+    root = Path(root)
+    return replace(base, purpose=PURPOSE, run_stamp=f"ecc_s{n}_{root.name}", train_root=root / "train",
+                   init_adapter_path=root / "init" / "initial.npz", resume_root=None, run_root=root,
+                   non_main_parent=non_main_parent, pin_path=None, ecc_permit_path=None)
+
+
+def stage_ecc_prepare(cfg: Any, n: int, root: Path, *, out: Path = OUT, config_path: Path | None = None,
+                      non_main_parent: Path | None = None, rule_path: Path | None = None) -> str:
+    """점검 루트를 만들고 그 시드의 공통 초기 어댑터(· proof)를 옮긴다. 옮긴 digest 가 착수 고정의 것과 같아야 한다."""
+    import shutil
+
+    from vlm.ecc import PREPARE_FILE, PURPOSE, EccRefused, attempts_started, load_check_rules
+    from vlm.pin import init_probe, read_pin
+    from vlm.run_root import run_root_problems
+
+    main_spec = spec_for(cfg, n, out=out, config_path=config_path)
+    root = Path(root)
+    bad = run_root_problems(PURPOSE, root, [root], parent=non_main_parent)
+    if bad:
+        raise MainRefused("run_root", " · ".join(bad))
+    if root.exists():
+        raise MainRefused("ecc_root_exists", f"점검 루트가 이미 있다 — 새 점검 실행은 새 루트로: {root}")
+    if not Path(main_spec.pin_path).is_file():
+        raise MainRefused("pin_missing", f"그 시드의 착수 고정이 없다 — pin 먼저: {main_spec.pin_path}")
+    pin, pin_sha = read_pin(main_spec.pin_path)
+    try:
+        rules = load_check_rules(rule_path)
+    except EccRefused as exc:
+        raise MainRefused(exc.code, str(exc)) from None
+    used = attempts_started(root.parent, pin_sha)
+    if used >= rules["max_attempts"]:
+        raise MainRefused("ecc_attempts_exhausted",
+                          f"이 시드의 점검 시도 {used} 번이 허용 시도 수 {rules['max_attempts']} 에 닿았다 — 새 루트를 만들지 않는다")
+    src = Path(main_spec.init_adapter_path)
+    want = pin["init_adapter"]["init_adapter_digest"]
+    if init_probe(src)["init_adapter_digest"] != want:
+        raise MainRefused("pin_mismatch", "그 시드의 공통 초기 어댑터가 착수 고정의 것과 다르다")
+    ecc = spec_for_ecc(cfg, n, root, config_path=config_path, non_main_parent=non_main_parent)
+    dst = Path(ecc.init_adapter_path)
+    dst.parent.mkdir(parents=True)
+    shutil.copyfile(src, dst)
+    if src.with_suffix(".proof.json").is_file():
+        shutil.copyfile(src.with_suffix(".proof.json"), dst.with_suffix(".proof.json"))
+    got = init_probe(dst)["init_adapter_digest"]
+    if got != want:
+        raise MainRefused("pin_mismatch", "옮긴 초기 어댑터의 digest 가 착수 고정과 다르다")
+    rec = {"seed_index": n, "pin_sha256": pin_sha, "init_adapter_digest": got, "rules_sha256": rules["rules_sha256"],
+           "attempt": used + 1, "init_source": src.name, "time": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    (root / PREPARE_FILE).write_text(json.dumps(rec, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    _progress(root, n, "ecc_prepare", ecc_root=root.name, pin_sha256=pin_sha)
+    return got
+
+
+def stage_ecc(cfg: Any, n: int, root: Path, *, spent_hours: float, next_hours: float,
+              max_hours: float | None = None, max_won: float | None = None, resume_step: int | None = None,
+              out: Path = OUT, config_path: Path | None = None, rule_path: Path | None = None,
+              non_main_parent: Path | None = None, **seams: Any) -> dict[str, Any]:
+    """점검 학습을 다음 점검 step 까지 — 평가 쪽 규칙의 step 목록 · 상한과 단가(`limits` — 평가 쪽 `effective_limits`, 실행 인자는
+    좁히기만)로. 점검 step 도달이면 `exit_code` 4. 단가를 코드 기본값 · 실행 인자로 두지 않는다(20b 의 I-2).
+
+    규칙의 지문이 루트를 준비할 때(`ecc-prepare`)와 다르면 시작 · 재개하지 않는다 — 한 시도 안에서 규칙이 바뀌지 않는다.
+    """
+    from vlm.ecc import PREPARE_FILE, EccRefused, effective_limits, load_check_rules, run_ecc_train
+    from vlm.train_cell import CellRejected
+
+    main_spec = spec_for(cfg, n, out=out, config_path=config_path)
+    spec = spec_for_ecc(cfg, n, root, config_path=config_path, non_main_parent=non_main_parent)
+    prep = Path(root) / PREPARE_FILE
+    if not prep.is_file():
+        raise MainRefused("ecc_not_prepared", f"점검 루트의 준비 기록이 없다 — ecc-prepare 먼저: {Path(root).name}")
+    try:
+        rules = load_check_rules(rule_path)
+        if json.loads(prep.read_text(encoding="utf-8")).get("rules_sha256") != rules["rules_sha256"]:
+            raise MainRefused("ecc_rules_changed", "규칙 파일이 이 루트를 준비할 때와 다르다 — 새 시도는 새 루트로")
+        lim = effective_limits(rules["rules"], max_hours=max_hours, max_won=max_won)
+        budget = {"spent_hours": spent_hours, "next_hours": next_hours, "max_hours": lim["max_hours"],
+                  "max_won": lim["max_cost_krw"], "won_per_hour": lim["cost_krw_of_hour"],
+                  "price_detail": {k: lim[k] for k in ("price_krw_per_hour", "safety_factor", "price_source")}}
+        res = run_ecc_train(spec, steps=rules["steps"], registered_steps=rules["steps"],
+                            pin_path=Path(main_spec.pin_path), resume_step=resume_step, budget=budget, **seams)
+    except (EccRefused, CellRejected) as exc:
+        raise MainRefused(exc.code, str(exc)) from None
+    _progress(Path(root), n, "ecc", ecc_root=Path(root).name, exit_code=res["exit_code"], step=res.get("step"))
+    return res
+
+
+def stage_ecc_accept(cfg: Any, n: int, root: Path, permit: Path, *, out: Path = OUT, config_path: Path | None = None,
+                     rule_path: Path | None = None, non_main_parent: Path | None = None) -> dict[str, Any]:
+    """점검 통과 뒤 — 평가 쪽 통과 파일을 평가 쪽 `verify_permit` 으로 받아 시드 폴더에 사본 · 착수 허가의 키 기록을 쓴다.
+
+    대조값(평가 쪽 3판의 넷)은 **점검 실행 쪽에서** 낸다: 출발 어댑터(점검 루트의 초기 어댑터 digest), 착수 고정(시드의
+    `PIN.json`), 점검 실행 신원(`cell_run_id(점검 칸, 중앙)` — step meta 의 신원과 같아야 한다), 시드 번호. 시도 기록의 시간은
+    점검 원장의 누적 처리 시간, 금액은 그 시간 × 규칙의 단가 × 계수(평가 쪽 `effective_limits`)다.
+    """
+    from vlm.ecc import (
+        PREPARE_FILE,
+        EccRefused,
+        accept_permit,
+        cum_wall_s,
+        effective_limits,
+        load_check_rules,
+    )
+    from vlm.pin import init_probe, read_pin
+    from vlm.train_cell import CENTRAL_TAG, cell_dir, cell_run_id
+
+    root = Path(root)
+    main_spec = spec_for(cfg, n, out=out, config_path=config_path)
+    ecc = spec_for_ecc(cfg, n, root, config_path=config_path, non_main_parent=non_main_parent)
+    prep = root / PREPARE_FILE
+    if not prep.is_file():
+        raise MainRefused("ecc_not_prepared", f"점검 루트의 준비 기록이 없다: {root.name}")
+    if not Path(permit).is_file():
+        raise MainRefused("ecc_permit_missing", f"평가 쪽 통과 파일이 없다: {Path(permit).name}")
+    rec = json.loads(prep.read_text(encoding="utf-8"))
+    _, pin_sha = read_pin(main_spec.pin_path)
+    if rec.get("pin_sha256") != pin_sha or rec.get("seed_index") != n:
+        raise MainRefused("pin_mismatch", "점검 루트의 준비 기록이 이 시드의 착수 고정과 다르다")
+    cdir = cell_dir(ecc, CENTRAL_TAG)
+    metas = [json.loads(m.read_text(encoding="utf-8")) for m in sorted(cdir.glob("step*.meta.json"))]
+    if not metas:
+        raise MainRefused("ecc_no_steps", "점검 실행에 step 기록이 없다 — 통과를 받을 수 없다")
+    run_id = cell_run_id(ecc, CENTRAL_TAG)
+    if {m["identity"].get("run_id") for m in metas} != {run_id}:
+        raise MainRefused("ecc_identity", "점검 step 들의 실행 신원이 이 점검 루트의 것과 다르다")
+    hours = cum_wall_s(cdir) / 3600
+    try:
+        rules = load_check_rules(rule_path)
+        if rec.get("rules_sha256") != rules["rules_sha256"]:
+            raise MainRefused("ecc_rules_changed", "규칙 파일이 이 루트를 준비할 때와 다르다")
+        rate = effective_limits(rules["rules"])["cost_krw_of_hour"]
+        expected = {"start_adapter_digest": init_probe(ecc.init_adapter_path)["init_adapter_digest"],
+                    "pin_sha256": pin_sha, "check_run_id": run_id, "seed": n}
+        key = accept_permit(Path(permit), rules=rules["rules"], expected=expected,
+                            seed_dir=Path(main_spec.pin_path).parent, permit_name=Path(main_spec.ecc_permit_path).name,
+                            attempts_parent=root.parent,
+                            attempt_row={"run_id": run_id, "pin_sha256": pin_sha, "last_step": max(m["step"] for m in metas),
+                                         "hours": round(hours, 4), "won": round(hours * float(rate))},
+                            extra={"attempt": rec.get("attempt"), "ecc_root": root.name})
+    except EccRefused as exc:
+        raise MainRefused(exc.code, str(exc)) from None
+    _progress(root, n, "ecc_accept", ecc_root=root.name, permit_sha256=key["permit_sha256"])
+    return key
 
 
 def _check_fed_prior(spec: Any, out_dir: Path) -> None:
@@ -333,7 +535,15 @@ def cmd_status(out: Path = OUT, config_path: Path | None = None) -> dict[int, di
 
 def main(argv: list[str] | None = None, *, out: Path = OUT, config_path: Path | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("cmd", choices=["status", "initadapter", "local", "central", "fed", "all", "close-ledger"])
+    ap.add_argument("cmd", choices=["status", "initadapter", "local", "central", "fed", "all", "close-ledger",
+                                    "pin", "ecc-prepare", "ecc", "ecc-accept"])
+    ap.add_argument("--ecc-root", type=Path, default=None, help="ecc-prepare · ecc 의 점검 루트(outputs/early_check/ecc-…)")
+    ap.add_argument("--resume-step", type=int, default=None, help="ecc — 판정 불가 뒤 이 점검 step 에서 잇는다")
+    ap.add_argument("--spent-hours", type=float, default=None, help="ecc — 인스턴스가 켜져 있던 시간(상한 대조)")
+    ap.add_argument("--next-hours", type=float, default=None, help="ecc — 다음 일의 예상 시간(상한 대조)")
+    ap.add_argument("--max-hours", type=float, default=None, help="ecc — 점검 시도의 GPU 시간 상한")
+    ap.add_argument("--max-won", type=float, default=None, help="ecc — 점검 시도의 금액 상한(원)")
+    ap.add_argument("--permit", type=Path, default=None, help="ecc-accept — 평가 쪽 통과 파일(early_coord_check.json)")
     ap.add_argument("--seed", type=int, default=None, help="시드 번호(1 부터)")
     ap.add_argument("--tag", default=None, help="close-ledger 의 칸 태그")
     a = ap.parse_args(argv)
@@ -350,6 +560,33 @@ def main(argv: list[str] | None = None, *, out: Path = OUT, config_path: Path | 
             return 0
         if a.seed is None:
             raise MainRefused("seed_missing", "--seed 가 필요하다")
+        ecc_args = (a.ecc_root, a.resume_step, a.spent_hours, a.next_hours, a.max_hours, a.max_won, a.permit)
+        if a.cmd not in ("ecc", "ecc-prepare", "ecc-accept") and any(v is not None for v in ecc_args):
+            raise MainRefused("ecc_args_on_main", "점검 인자(--ecc-root · --resume-step · …)는 ecc · ecc-prepare · ecc-accept 에서만 받는다")
+        if a.cmd in ("ecc", "ecc-prepare", "ecc-accept"):
+            if a.ecc_root is None:
+                raise MainRefused("ecc_root_missing", "--ecc-root 가 필요하다")
+            if a.cmd == "ecc-prepare":
+                if any(v is not None for v in ecc_args[1:]):
+                    raise MainRefused("ecc_args_on_prepare", "ecc-prepare 는 --ecc-root 만 받는다")
+                stage_ecc_prepare(cfg, a.seed, a.ecc_root, out=out, config_path=config_path)
+                return 0
+            if a.cmd == "ecc-accept":
+                if a.permit is None or any(v is not None for v in ecc_args[1:-1]):
+                    raise MainRefused("ecc_args_on_accept", "ecc-accept 는 --ecc-root · --permit 만 받는다")
+                stage_ecc_accept(cfg, a.seed, a.ecc_root, a.permit, out=out, config_path=config_path)
+                return 0
+            if a.permit is not None:
+                raise MainRefused("ecc_args_on_run", "ecc 는 --permit 을 받지 않는다")
+            if a.spent_hours is None or a.next_hours is None:
+                raise MainRefused("ecc_budget_args", "ecc 는 --spent-hours · --next-hours 가 있어야 한다(11번 §5)")
+            res = stage_ecc(cfg, a.seed, a.ecc_root, spent_hours=a.spent_hours, next_hours=a.next_hours,
+                            max_hours=a.max_hours, max_won=a.max_won,
+                            resume_step=a.resume_step, out=out, config_path=config_path)
+            return int(res["exit_code"])
+        if a.cmd == "pin":
+            stage_pin(cfg, a.seed, out=out, config_path=config_path)
+            return 0
         if a.cmd == "close-ledger":
             from vlm.train_cell import CellRejected, close_ledger
 

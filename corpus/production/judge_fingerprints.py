@@ -16,6 +16,8 @@ import json
 import re
 import sys
 import unicodedata
+from collections import Counter
+from functools import lru_cache
 from collections.abc import Mapping
 from pathlib import Path
 from types import CodeType, FunctionType, ModuleType
@@ -29,6 +31,8 @@ _DYNAMIC = {"eval", "exec", "globals", "locals", "vars", "getattr", "setattr",
 _MISSING = object()
 _V5_SCHEMA = "judge_structured_v5"
 _V6_SCHEMA = "judge_structured_v6"
+_V7_SCHEMA = "judge_structured_v7"
+_LABEL_CACHE_TYPE = type(lru_cache(maxsize=8)(lambda: None))
 
 
 class FingerprintRefused(ValueError):
@@ -249,6 +253,8 @@ class _Closure:
 
 def _parser_identity(quality_module, common_module, schema=_V5_SCHEMA):
     """선택한 출력 계약의 실제 파서 폐포. 기본값은 기존 v5 호출자와 호환된다."""
+    if schema == _V7_SCHEMA:
+        return _parser_identity_v7(quality_module, common_module)
     if schema == _V6_SCHEMA:
         return _parser_identity_v6(quality_module, common_module)
     if schema != _V5_SCHEMA:
@@ -309,6 +315,36 @@ def parser_identity(schema=_V5_SCHEMA):
     from . import common, quality
 
     return _parser_identity(quality, common, schema)
+
+
+def _parser_identity_v7(quality_module, common_module):
+    namespace = vars(quality_module)
+    marker = namespace.get("JUDGE_V7_SCHEMA_VERSION", _MISSING)
+    parser = namespace.get("parse_judge_v7", _MISSING)
+    present = marker is not _MISSING or parser is not _MISSING
+    if present and (marker != _V7_SCHEMA or type(marker) is not str or
+                    not isinstance(parser, FunctionType)):
+        raise FingerprintRefused("incomplete structured-v7 parser capability")
+    roots = [(common_module, "parse_json"), (common_module, "canonical_bytes")]
+    if present:
+        roots += [(quality_module, "JUDGE_V7_SCHEMA_VERSION"), (quality_module, "parse_judge_v7")]
+    report = _Closure((quality_module, common_module)).result(roots)
+    if present and (report["symbols"][f"{quality_module.__name__}:parse_judge_v7"]["kind"] != "FunctionDef" or
+                    any(f"{quality_module.__name__}:parse_judge_{v}" in report["symbols"] for v in ("v5", "v6"))):
+        raise FingerprintRefused("structured-v7 parser aliases or falls back to an older parser")
+    if (namespace.get("JUDGE_V7_SCHEMA_VERSION", _MISSING) is not marker or
+            namespace.get("parse_judge_v7", _MISSING) is not parser):
+        raise FingerprintRefused("structured-v7 parser changed during fingerprinting")
+    report.update(selected_schema=_V7_SCHEMA, capabilities={_V7_SCHEMA: present})
+    return _rehash_report(report)
+
+
+def require_v7_parser():
+    from . import common, quality
+    report = _parser_identity_v7(quality, common)
+    if report["capabilities"][_V7_SCHEMA] is not True:
+        raise FingerprintRefused("B structured-v7 parser is not implemented and fingerprinted")
+    return report
 
 
 def _require_v5_parser(quality_module, common_module):
@@ -427,3 +463,118 @@ def leak_identity():
     from . import common, infer, quality
 
     return _leak_identity(quality, common, infer)
+
+
+def _policy_value(value):
+    """Stable runtime constants; no repr containing process addresses."""
+    if value is None or type(value) in (str, int, bool, float):
+        return value
+    if isinstance(value, re.Pattern):
+        return {"regex": value.pattern, "flags": value.flags}
+    if isinstance(value, (tuple, list)):
+        return [_policy_value(x) for x in value]
+    if isinstance(value, (set, frozenset)):
+        return sorted((_policy_value(x) for x in value), key=_canonical)
+    if isinstance(value, dict):
+        return {str(k): _policy_value(v) for k, v in value.items()}
+    raise FingerprintRefused("unsupported policy constant")
+
+
+def _policy_selection(module, roots):
+    """Select executable definitions and their local globals, checking loaded code.
+
+    Imported dependency boundaries are separately pinned by policy_implementation_v7.
+    This is not arbitrary code execution or a supply-chain authentication claim.
+    """
+    raw = Path(module.__file__).read_bytes()
+    tree = ast.parse(raw)
+    compiled = compile(tree, str(Path(module.__file__)), "exec", dont_inherit=True,
+                       optimize=sys.flags.optimize)
+    codes = {c.co_name: c for c in compiled.co_consts if isinstance(c, CodeType)}
+    definitions = {}
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef):
+            definitions[node.name] = node
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    definitions[target.id] = node
+    selected, pending = {}, list(roots)
+    while pending:
+        name = pending.pop()
+        if name in selected:
+            continue
+        node = definitions.get(name)
+        if node is None:
+            raise FingerprintRefused(f"missing policy symbol: {module.__name__}.{name}")
+        actual = vars(module).get(name, _MISSING)
+        entry = {"ast_sha256": hashlib.sha256(ast.dump(node, include_attributes=False).encode()).hexdigest()}
+        if isinstance(node, ast.FunctionDef):
+            # Only the existing read-only label cache is decorated.
+            if node.decorator_list:
+                if (name != "_load_defect_names" or type(actual) is not _LABEL_CACHE_TYPE or
+                        actual.cache_parameters() != {"maxsize": 8, "typed": False}):
+                    raise FingerprintRefused("unsupported decorated policy symbol")
+                actual = actual.__wrapped__
+            if (not isinstance(actual, FunctionType) or actual.__globals__ is not vars(module) or
+                    _code_value(actual.__code__) != _code_value(codes[name])):
+                raise FingerprintRefused(f"loaded policy code differs: {module.__name__}.{name}")
+            expected_defaults = tuple(ast.literal_eval(v) for v in node.args.defaults) or None
+            expected_kw = {a.arg: ast.literal_eval(v) for a, v in zip(node.args.kwonlyargs, node.args.kw_defaults)
+                           if v is not None} or None
+            if actual.__defaults__ != expected_defaults or actual.__kwdefaults__ != expected_kw:
+                raise FingerprintRefused("loaded policy defaults differ")
+            pending += sorted(_global_names(codes[name]) & definitions.keys())
+        else:
+            entry["runtime_value"] = _policy_value(actual)
+            pending += sorted({n.id for n in ast.walk(node.value) if isinstance(n, ast.Name)} & definitions.keys())
+        selected[name] = entry
+    if Path(module.__file__).read_bytes() != raw:
+        raise FingerprintRefused("policy changed while fingerprinting")
+    return dict(sorted(selected.items()))
+
+
+def policy_implementation_v7():
+    """v7 renderer/rules, canonical grounding and narrow dependency identities.
+
+    Unrelated quality/release/report code is deliberately not hashed. The parser
+    and leak checker have their own validated selected closures in policy identity.
+    """
+    from . import judge_policy as policy, judge_grounded_v7 as grounded, generation_policy, prepare, common
+    from data import label_map
+    roots = ("evaluate_v7", "render_judge_v7", "JUDGE_SYSTEM_V7", "V7_RULES",
+             "deterministic_reasons_v7", "structured_questions_v7", "policy_identity_v7",
+             "model_parser_ready_v7")
+    grounded_roots = [n.name for n in ast.parse(Path(grounded.__file__).read_bytes()).body
+                      if isinstance(n, ast.FunctionDef)]
+    if (grounded.P is not policy or grounded.G is not generation_policy or
+            grounded._label_names is not prepare._label_names):
+        raise FingerprintRefused("canonical grounded imports changed")
+    if (policy.canonical_bytes is not common.canonical_bytes or policy.label_map is not label_map or
+            policy.sha256_file is not common.sha256_file or policy.Path is not Path or
+            policy.re is not re or grounded.re is not re or policy.hashlib is not hashlib or
+            policy.unicodedata is not unicodedata or policy.Counter is not Counter):
+        raise FingerprintRefused("policy imported dependency binding changed")
+    loader_tree = ast.parse(Path(label_map.__file__).read_bytes())
+    loader_module_code = compile(loader_tree, str(Path(label_map.__file__)), "exec", dont_inherit=True,
+                                 optimize=sys.flags.optimize)
+    loader_code = next(c for c in loader_module_code.co_consts
+                       if isinstance(c, CodeType) and c.co_name == "load_label_map")
+    loader = label_map.load_label_map
+    if (not isinstance(loader, FunctionType) or loader.__globals__ is not vars(label_map) or
+            _code_value(loader.__code__) != _code_value(loader_code) or loader.__defaults__ != (None,)):
+        raise FingerprintRefused("loaded label loader differs from source")
+    expected_names = tuple(sorted(set(prepare._label_names().values()), key=lambda name: (-len(name), name)))
+    if grounded.NAMES != expected_names:
+        raise FingerprintRefused("canonical grounded label cache differs")
+    payload = {"method": "selected-policy-ast-and-runtime-v7",
+               "policy": _policy_selection(policy, roots),
+               "grounded": _policy_selection(grounded, grounded_roots),
+               "grounded_source_sha256": hashlib.sha256(Path(grounded.__file__).read_bytes()).hexdigest(),
+               "generation_constants": {k: _policy_value(getattr(generation_policy, k)) for k in
+                                        ("NORMAL_ABSENCE_FORMS", "NORMAL_LIMITATION_FORMS", "LIMITATION_FORMS")},
+               "label_reader": _policy_selection(prepare, ("_label_names",)),
+               "runtime_label_names_by_code": prepare._label_names(),
+               "label_loader_sha256": hashlib.sha256(Path(label_map.__file__).read_bytes()).hexdigest(),
+               "serializer": _Closure((common,)).result(((common, "canonical_bytes"),))["closure_sha256"]}
+    return {**payload, "closure_sha256": _digest(payload)}

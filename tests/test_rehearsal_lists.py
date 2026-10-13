@@ -253,8 +253,8 @@ CASES = [(f"reh{s}", s, False, False) for s in range(1, 9)] + [(f"diag{s}", 100 
 
 
 def _counterfactual_gen(inp) -> list[str] | None:
-    """빈 층이 있으면 2판 §14-2 의 생성 목록을 **독립 구현 B 의 함수**로 따로 낸다 — B 의 제외 결과에서 빈 층의 묶음만 되돌린 세계로 B 의 생성 뽑기
-    (`sample_gen`)를 목표 T 그대로 돌리고 빈 층의 장만 걷는다. 빈 층이 없으면 `None`(B 의 `run` 을 그대로 쓴다)."""
+    """빈 층이 있으면 2판 §14-2 의 생성 목록을 **독립 구현 함수**로 따로 낸다 — 제외 결과에서 빈 층의 묶음만 되돌린 세계로 생성 뽑기
+    (`sample_gen`)를 목표 T 그대로 돌리고 빈 층의 장만 걷는다. 빈 층이 없으면 `None`(`run` 을 그대로 쓴다)."""
     B = _b()
     excluded_groups, _ex = B.build_exclusion(inp["manifest"], [tuple(e) for e in inp["edges"]], True)
     gen = inp["plan"]["gen"]
@@ -383,7 +383,7 @@ def test_리허설은_빈_층의_몫만_비우고_다른_층의_몫은_빈_층�
 
 
 def test_빈_층이_생겨도_다른_층의_장이_늘지_않는다_회신의_반례():
-    """회신의 반례 그대로 — 층 A · B 의 후보가 3 · 7 장(묶음마다 1 장), T 4, 층마다 최소 1 묶음. 제외 전 선택은 A 2 · B 2 다.
+    """회신의 반례 그대로 — 층 A · 후보가 3 · 7 장(묶음마다 1 장), T 4, 층마다 최소 1 묶음. 제외 전 선택은 A 2 · B 2 다.
     A 가 통째로 제외되면 앞 판은 B 를 3 장으로 늘렸다 — 이 판은 B 2 장 그대로이고 목록은 2 장(T 미달), 빈 몫은 2 다."""
     from collections import Counter
 
@@ -472,7 +472,7 @@ def test_내용_거름으로_빈_층은_빈_층이_아니다(monkeypatch):
 
 @pytest.mark.parametrize("name,seed,boxes,unknown", [c for c in CASES if not c[3]], ids=[c[0] for c in CASES if not c[3]])
 def test_빈_층의_기록이_독립_구현의_제외로_낸_값과_같다(name, seed, boxes, unknown):
-    """빈 층의 기록은 이 구현 하나가 낸다 — 독립 구현 B 에는 이 규칙이 없다(고정 바이트, 고치지 않는다). 그래서 **B 의 제외 결과**(뺀 묶음)로
+    """빈 층의 기록은 이 구현 하나가 낸다 — 독립 구현 B 에는 이 규칙이 없다(고정 바이트, 고치지 않는다). 그래서 **제외 결과**(뺀 묶음)로
     읽기 11 의 문장대로 따로 낸 빈 층과 맞댄다(리허설 꼴의 계획 — 진단의 멈춤은 위의 시험이 본다)."""
     inp = world(seed, boxes=boxes, unknown_edge=unknown)
     excluded_groups, _ex = _b().build_exclusion(inp["manifest"], [tuple(e) for e in inp["edges"]], True)

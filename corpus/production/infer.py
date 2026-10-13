@@ -254,13 +254,16 @@ def _input_digest(tasks: list[dict], upstream: dict | None) -> str:
     return _digest({"tasks": tasks, "upstream_payload_sha256": None if upstream is None else upstream["payload_sha256"]})
 
 
-def _check_rows(rows, task_ids: list[str], spec: dict) -> None:
+def _check_rows(rows, task_ids: list[str], spec: dict, *, allow_json_closed: bool = False) -> None:
+    if type(allow_json_closed) is not bool:
+        raise StageRefused("row_content", "explicit JSON-close permission must be bool")
+    finishes = ("eos", "length", "json_closed") if allow_json_closed else ("eos", "length")
     if not isinstance(rows, list) or len(rows) != len(task_ids):
         raise StageRefused("row_count", "backend/shard row count differs from tasks")
     for row, tid in zip(rows, task_ids):
         if not isinstance(row, dict) or row.get("id") != tid:
             raise StageRefused("row_order", tid)
-        if not isinstance(row.get("text"), str) or row.get("finish_reason") not in ("eos", "length"):
+        if not isinstance(row.get("text"), str) or row.get("finish_reason") not in finishes:
             raise StageRefused("row_content", tid)
         for field, limit in (("input_tokens", spec["max_input_tokens"]), ("output_tokens", spec["max_new_tokens"])):
             value = row.get(field)
@@ -470,21 +473,24 @@ def run_stage(run_dir, stage: str, config: dict, max_shards=None, backend_factor
 
 def run_judge(run_dir, config: dict, judge_dir, *, judge_config=None,
               max_shards=None, backend_factory=None, probe_approval=None,
-              probe_approval_sha256=None) -> dict:
+              probe_approval_sha256=None, policy_version="v6") -> dict:
     """Run a separately identified judge without changing the legacy run."""
     from .judge_identity import run_judge as separate_run
     return separate_run(run_dir, config, judge_dir, judge_config=judge_config,
                         max_shards=max_shards, backend_factory=backend_factory,
-                        probe_approval=probe_approval, probe_approval_sha256=probe_approval_sha256)
+                        probe_approval=probe_approval, probe_approval_sha256=probe_approval_sha256,
+                        policy_version=policy_version)
 
 
 def read_judge_source(run_dir, config: dict, judge_dir, *, judge_config=None,
-                      expected_judge_identity_sha256=None, expected_probe_approval_sha256=None) -> dict:
+                      expected_judge_identity_sha256=None, expected_probe_approval_sha256=None,
+                      policy_version=None) -> dict:
     """Verify an explicitly selected separate judge; never load a model."""
     from .judge_identity import read_judge_source as separate_read
     return separate_read(run_dir, config, judge_dir, judge_config=judge_config,
                          expected_judge_identity_sha256=expected_judge_identity_sha256,
-                         expected_probe_approval_sha256=expected_probe_approval_sha256)
+                         expected_probe_approval_sha256=expected_probe_approval_sha256,
+                         policy_version=policy_version)
 
 
 class TransformersBackend:
@@ -508,6 +514,8 @@ class TransformersBackend:
         from transformers.utils.hub import cached_file
 
         self.spec = spec
+        self.stage = stage
+        self.json_object_stopping = False
         self.torch = torch
         self.model = None
         self.tokenizer = None
@@ -562,6 +570,22 @@ class TransformersBackend:
                          "torch_version": str(torch.__version__), "transformers_version": transformers.__version__,
                          "device": torch.cuda.get_device_name(0)}
 
+    def enable_json_object_stopping(self) -> None:
+        """Opt in before runtime pinning; never change legacy decoding implicitly."""
+        from . import judge_stopping as stop
+
+        if self.stage != "judge" or type(self.spec.get("max_new_tokens")) is not int or self.spec["max_new_tokens"] != stop.JUDGE_MAX_NEW_TOKENS:
+            raise StageRefused("judge_json_stopping", "v7 JSON stopping requires judge stage and exactly 160 tokens")
+        eos = self.model.generation_config.eos_token_id
+        eos_ids = list(eos) if isinstance(eos, (list, tuple)) else [eos]
+        if not eos_ids or any(type(token) is not int or token < 0 for token in eos_ids):
+            raise StageRefused("judge_json_stopping", "actual nonempty model EOS IDs are required")
+        if type(self.tokenizer.pad_token_id) is not int or self.tokenizer.pad_token_id < 0:
+            raise StageRefused("judge_json_stopping", "actual tokenizer pad ID is required")
+        self.json_object_stopping = True
+        self.identity["json_stop_protocol"] = stop.JSON_STOP_PROTOCOL
+        self.identity["json_stop_implementation_sha256"] = _file_sha(Path(stop.__file__))
+
     def generate_batch(self, prompts: list[str], system: str, deadline: float) -> list[dict]:
         from transformers import StoppingCriteria, StoppingCriteriaList
 
@@ -584,17 +608,47 @@ class TransformersBackend:
         encoded = encoded.to(self.model.device)
         if time.monotonic() >= deadline:
             raise StageTimeLimit()
+        json_state = None
+        criteria = [stopper]
+        generation_overrides = {}
+        if self.json_object_stopping:
+            from . import judge_stopping as stop
+
+            if (self.stage != "judge" or self.spec["max_new_tokens"] != stop.JUDGE_MAX_NEW_TOKENS
+                    or self.identity.get("json_stop_protocol") != stop.JSON_STOP_PROTOCOL
+                    or self.identity.get("json_stop_implementation_sha256") != _file_sha(Path(stop.__file__))):
+                raise StageRefused("judge_json_stopping", "enabled JSON stop contract or implementation changed")
+            eos = self.model.generation_config.eos_token_id
+            eos_ids = list(eos) if isinstance(eos, (list, tuple)) else [eos]
+            json_state = stop.JsonObjectStopState(
+                lambda ids: self.tokenizer.decode(ids, skip_special_tokens=True,
+                                                  clean_up_tokenization_spaces=False),
+                width, len(prompts), eos_ids, self.tokenizer.pad_token_id,
+                max_new_tokens=self.spec["max_new_tokens"], stage=self.stage)
+            criteria.append(stop.make_hf_stopping_criteria(json_state))
+            # Keep the actual EOS identity: HF uses it to pad rows that the
+            # per-row JSON criterion has finished while other rows continue.
+            generation_overrides = {"eos_token_id": eos, "num_return_sequences": 1,
+                                    "return_dict_in_generate": False}
         self.torch.cuda.reset_peak_memory_stats(0)
         with self.torch.inference_mode():
             output = self.model.generate(**encoded, max_new_tokens=self.spec["max_new_tokens"],
                 do_sample=False, num_beams=1, temperature=None, top_p=None, top_k=None,
                 forced_eos_token_id=None,
                 pad_token_id=self.tokenizer.pad_token_id,
-                stopping_criteria=StoppingCriteriaList([stopper]))
+                stopping_criteria=StoppingCriteriaList(criteria), **generation_overrides)
         self.last_metrics = {"peak_allocated_bytes": self.torch.cuda.max_memory_allocated(0),
                              "peak_reserved_bytes": self.torch.cuda.max_memory_reserved(0)}
         if stopper.expired:
             raise StageTimeLimit()
+        if json_state is not None:
+            # This only reads receipts made inside generate(); no text is
+            # searched or cut here. Known post-stop HF padding is retained in
+            # full_generated_token_ids and excluded from the decoded content.
+            rows = json_state.finish(output[:, width:].tolist())
+            for row, n_input in zip(rows, lengths):
+                row["input_tokens"] = int(n_input)
+            return rows
         eos = self.model.generation_config.eos_token_id
         eos_ids = set(eos if isinstance(eos, (list, tuple)) else [eos])
         eos_ids.discard(None)

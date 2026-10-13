@@ -84,7 +84,9 @@ def _main_yaml(tmp: Path, **over) -> Path:
 def _main_spec(tmp: Path, **over):
     kw = dict(purpose="main", plan_sha256=None, prompt_path=PROMPT, processor_kwargs={}, run_root=None,
               expected_supervised_tokens={"C1": 1, "C2": 1, "C3": 1}, config_path=_main_yaml(tmp),
-              pairs_digest=pairs_snapshot(tmp))
+              pairs_digest=pairs_snapshot(tmp),
+              # 착수 고정 · 착수 허가의 자리(11번 §4 · 10번 §14-3) — 값의 대조는 칸의 문(`main_start_gate`)이 초기 어댑터 뒤에 한다.
+              pin_path=tmp / "PIN.json", ecc_permit_path=tmp / "ecc_permit.json")
     kw.update(over)
     return _spec(tmp, **kw)
 

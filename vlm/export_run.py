@@ -11,7 +11,7 @@
    `vlm.export_generator.load_generator` 다(모드별 구현 결속 — 등록의 구현 식별자가 한 칸이다).
    **모델 생성기의 실제 구현은 아직 없다** — 그래서 본실험의 모델 export 는 아직 시작하지 않는다.
 4. 루트와 경로 — 리허설 · 진단은 출력 · 영수증 · 목록 · 어댑터 · 계획이 모두 루트 아래, 본실험은 어느 것도 비본실험 부모 아래가 아니다.
-5. 적합성 벡터 — 이 프로세스 안에서 C 파서를 평가 쪽 벡터에 태우고, 모든 사례에서 줄의 두 필드가 짝을 지키는지 본다.
+5. 적합성 벡터 — 이 프로세스 안에서 예측 파서를 평가 쪽 벡터에 태우고, 모든 사례에서 줄의 두 필드가 짝을 지키는지 본다.
 6. 사전 점검(`vlm.export_preflight`) — 평가 쪽 실제 함수로 영수증 · 등록 · 닻 · 목록 · 분할 · 노출 기록 · 실측값 · 학습 출처 · 청결.
    진단의 커밋된 영수증이면 대역 이음새를 거부한다(2판 §1-4 의 순서 3, 진단 열).
 
@@ -59,7 +59,7 @@ __all__ = [
     "run_export",
 ]
 
-PURPOSES = ("main", "rehearsal", "frame_diag")
+PURPOSES = ("main", "rehearsal", "frame_diag", "early_coord_check")
 #: 승인된 실제 구현 — import 시점에 잡아 둔 참조다. 생성기는 모드마다 따로 본다 — 모델 생성기의 실제 구현은 아직 없다.
 APPROVED_MEASURES: tuple = (_measure_env_real,)
 APPROVED_GENERATOR_LOADERS: dict[str, tuple] = {"model": (_generator_real,) if model_generator_available() else (),
@@ -107,7 +107,7 @@ def grid_key(g: Sequence[int]) -> str:
 
 
 def conformance_problems() -> list[str]:
-    """평가 쪽 적합성 벡터에 C 파서를 태운다. 어긋난 사례 이름 목록 — 비어야 시작한다(2판 §2-4 의 1)."""
+    """평가 쪽 적합성 벡터에 예측 파서를 태운다. 어긋난 사례 이름 목록 — 비어야 시작한다(2판 §2-4 의 1)."""
     from evaluation.conformance_v14 import KNOWN_CODES, SCORING_CODES, all_cases, check_case
     from vlm.coords import CoordCfg, ImageGeom
     from vlm.gen_parse import conformance_tuple, line_fields, pair_ok, parse_generation
@@ -157,6 +157,16 @@ def _export_fault_events(run_root, tag: str, w: ExportWriter) -> list[dict[str, 
     return out
 
 
+def _root_files(root: Path, folder: Path) -> dict[str, str]:
+    """루트 안 파일의 sha256 — 이 export 의 묶음 폴더는 뺀다."""
+    fr = folder.resolve()
+    out = {}
+    for p in sorted(Path(root).rglob("*")):
+        if p.is_file() and not (p.resolve() == fr or p.resolve().is_relative_to(fr)):
+            out[p.relative_to(root).as_posix()] = hashlib.sha256(p.read_bytes()).hexdigest()
+    return out
+
+
 def run_export(*, folder: str | Path, tag: str, seed_index: int, mode: str, purpose: str,
                receipt_path: str | Path, list_path: str | Path, snapshot_root: str | Path,
                image_path_of: Mapping[str, str | Path] | Callable, measure_env: Callable, load_generator: Callable,
@@ -165,7 +175,7 @@ def run_export(*, folder: str | Path, tag: str, seed_index: int, mode: str, purp
                with_tokens: bool = False, stop_after_lines: int | None = None, abort_mismatched: bool = False,
                clock: Callable | None = None, standin_allowed: bool = False, env: Mapping[str, str] | None = None,
                repo: str | Path | None = None, code_repo: str | Path | None = None,
-               exposure_ledger: str | Path | None = None) -> ExportResult:
+               exposure_ledger: str | Path | None = None, check_step: int | None = None) -> ExportResult:
     """한 묶음을 쓴다. `stop_after_lines` 는 계획된 멈춤이다(이 시도에서 K 줄을 쓰고 끝 줄을 적는다 — 중단이 아니다).
 
     `repo` · `code_repo` · `exposure_ledger` · `non_main_parent` 는 시험의 이음새다(파이썬 인자로만) — 정본은 본체 체크아웃 ·
@@ -232,7 +242,9 @@ def run_export(*, folder: str | Path, tag: str, seed_index: int, mode: str, purp
                            plan_path=None if plan_path is None else Path(plan_path),
                            run_root=None if run_root is None else Path(run_root), measure_env=measure_env,
                            impl_ids=impl_ids, parser_sha256=parser_sha256(), repo=repo, code_repo=code_repo,
-                           exposure_ledger=exposure_ledger, now=now)
+                           exposure_ledger=exposure_ledger, now=now, check_step=check_step)
+    # 점검 export 는 루트 안의 원 체크포인트 · 원장을 바꾸지 않는다 — 전후의 파일 해시 목록이 같다(묶음 폴더만 는다, 11번 T5).
+    root_before = _root_files(Path(run_root), Path(folder)) if purpose == "early_coord_check" else None
 
     n_list = len(pre.eval_list.ids)
     if armed is not None and armed.spec.k is not None and not 1 <= int(armed.spec.k) <= n_list:
@@ -318,6 +330,8 @@ def run_export(*, folder: str | Path, tag: str, seed_index: int, mode: str, purp
     if purpose != "main" and run_root is not None:
         measured["rehearsal_id"] = Path(run_root).name
     meta = w.seal(pre.sidecar_values, measured)
+    if root_before is not None and _root_files(Path(run_root), Path(folder)) != root_before:
+        raise ExportRefused("check_root_changed", "점검 export 가 루트 안의 묶음 밖 파일을 바꿨다")
     line = None
     if purpose != "main":
         # 노출 원장의 생성 줄 — 끝 줄과 곁 파일을 쓴 뒤(§5-4).

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from collections import Counter
@@ -29,6 +30,7 @@ from corpus.production.quality import (
     numbers_in,
     parse_judge_v5,
     parse_judge_v6,
+    parse_judge_v7,
 )
 from data import label_map
 
@@ -504,7 +506,7 @@ def test_형식_정규화는_행_출처_상태_AUDIT_에_남는다(tmp_path):
     a, st = read_json(tmp_path / "audit" / "AUDIT.json"), _status(tmp_path / "audit")
     assert result["status"] == "blocked" and a["blockers"] == ["non_transformers_backend"], a["blockers"]
     assert a["counts"]["accepted"] == 4 and a["errors"] == 0
-    assert a["audit_version"] == "quality_v8" and a["judge_parser_version"] == "parse_judge_v6"
+    assert a["audit_version"] == "quality_v9" and a["judge_parser_version"] == "parse_judge_v6"
     assert a["judge_identity"]["parser_schema"] == "judge_structured_v6"
     assert a["counts"]["judge_format_normalized"] == {"code_fence": 1, "string_boolean": 1}
     assert st["img-000"]["judge_format_normalized"] == ["code_fence"]
@@ -1247,7 +1249,8 @@ def test_v6_파서의_폐쇄는_v5_파서를_담지_않고_정책이_그것을_�
                     "_unfence_judge_text_v6", "parse_json", "parse_judge_v6"}
     assert P.policy_identity()["parser_implementation"] == report and P.model_parser_ready() is True
     assert J.require_v6_parser() is parse_judge_v6
-    assert Q.JUDGE_PARSER_VERSIONS == {"judge_structured_v5": "parse_judge_v5_1", "judge_structured_v6": "parse_judge_v6"}
+    assert Q.JUDGE_PARSER_VERSIONS == {"judge_structured_v5": "parse_judge_v5_1", "judge_structured_v6": "parse_judge_v6",
+                                      "judge_structured_v7": "parse_judge_v7"}
 
 
 # --------------------------------------------------------------------------- 판정 탐침의 진입(가짜 판정기 — GPU 아님)
@@ -1497,3 +1500,476 @@ def test_v6_정책의_형식_예시는_그대로_읽히고_키가_같다(kind):
     out = parse_judge_v6(task, _row(canonical_bytes(example).decode("utf-8")))
     assert out["errors"] == [] and out["answers"] == example and out["format_normalized"] == []
     assert sorted(example) == list(Q.JUDGE_V6_KEYS[kind]) == sorted(P.OUTPUT_KEYS[kind])
+
+
+# --------------------------------------------------------------------------- 구조화 판정 v7(결함 행 다섯 키 · 정상 행은 판정 모델 없음)
+
+
+#: v7 결함 행의 통과 답 — 물음 넷은 모두 "참 = 문제 없음"
+D7_ANSWERS = {"has_limitation": True, "language_ok": True, "no_unannotated_attributes": True,
+              "no_unsupported_relation": True, "reason": "주석과 같다"}
+D7_TEXT = v5(**D7_ANSWERS)
+D7_QUESTIONS = ("has_limitation", "language_ok", "no_unannotated_attributes", "no_unsupported_relation")
+
+
+@pytest.mark.parametrize("task,answers,rejected", [
+    (DEFECT_TASK, {}, []),
+    *[(DEFECT_TASK, {k: False}, [f"judge_{k}_false"]) for k in D7_QUESTIONS],
+    (DEFECT_TASK, dict.fromkeys(D7_QUESTIONS, False), [f"judge_{k}_false" for k in D7_QUESTIONS]),
+    (DEFECT_TASK, {"no_unsupported_relation": False, "has_limitation": False},
+     ["judge_has_limitation_false", "judge_no_unsupported_relation_false"]),
+    # 원문 QA — 옛 네 키 그대로
+    (QA_TASK, {}, []),
+    (QA_TASK, {"scope_ok": False, "grounded": False}, ["judge_grounded_false", "judge_scope_ok_false"]),
+])
+def test_v7_결함_행은_다섯_키이고_물음_넷은_참이_문제_없음이다(task, answers, rejected):
+    defect = task["id"] == DEFECT_TASK["id"]
+    answers = {**(D7_ANSWERS if defect else json.loads(JUDGE_OK)), **answers}
+    out = parse_judge_v7(task, _row(v5(**answers)))
+    assert out["errors"] == [] and out["answers"] == answers and out["flags"] == [] and out["format_normalized"] == []
+    assert out["rejected"] == rejected
+    if defect:
+        # 판정값은 물음 넷 그대로다 — grounded · scope_ok 를 만들지 않는다(grounded 는 결정적 정책이 가른다)
+        assert out["verdict"] == answers and list(out["verdict"]) == [*D7_QUESTIONS, "reason"]
+    else:
+        assert out["verdict"] == {k: answers[k] for k in ("grounded", "scope_ok", "language_ok", "reason")}
+    assert Q.JUDGE_V7_KEYS == {"defect": (*D7_QUESTIONS, "reason"),
+                               "source_qa": ("grounded", "language_ok", "reason", "scope_ok")}
+
+
+@pytest.mark.parametrize("row", [
+    _row(D7_TEXT), _row(D7_TEXT, "json_closed"), _row(v5(**N_ANSWERS)), _row(_fence(D7_TEXT)), _row(D7_TEXT, "length"),
+    _row(""), {"text": None}, None,
+])
+def test_v7_정상_행은_판정_모델의_행을_받지_않는다(row):
+    out = parse_judge_v7(NORMAL_TASK, row)
+    assert out["errors"] == ["judge_not_applicable"] and out["row_class"] == "defect_free"
+    assert out["verdict"] is None and out["answers"] is None and out["rejected"] == [] and out["flags"] == []
+    assert out["format_normalized"] == []
+    assert "defect_free" not in Q.JUDGE_V7_KEYS
+
+
+@pytest.mark.parametrize("reason,flags", [
+    ("가" * 40, []),
+    ("가" * 41, ["reason_long"]),
+    ("a" * 40, []),
+    ("a" * 41, ["reason_long"]),
+    ("가", []),
+    # 받은 글 그대로의 길이 — 앞뒤 공백도 센다
+    (" " + "가" * 38 + " ", []),
+    (" " + "가" * 39 + " ", ["reason_long"]),
+])
+def test_v7_reason_이_40_자를_넘으면_표지만_남기고_기각하지_않는다(reason, flags):
+    for task, base in ((DEFECT_TASK, D7_ANSWERS), (QA_TASK, json.loads(JUDGE_OK))):
+        out = parse_judge_v7(task, _row(v5(**{**base, "reason": reason})))
+        assert out["errors"] == [] and out["rejected"] == [] and out["flags"] == flags
+        assert out["verdict"]["reason"] == reason
+    # 기각과 표지는 따로 선다
+    out = parse_judge_v7(DEFECT_TASK, _row(v5(**{**D7_ANSWERS, "language_ok": False, "reason": reason})))
+    assert out["rejected"] == ["judge_language_ok_false"] and out["flags"] == flags
+    assert Q.JUDGE_V7_REASON_MAX_CHARS == 40
+
+
+@pytest.mark.parametrize("finish,errors", [
+    ("eos", []), ("json_closed", []),
+    ("length", ["judge_truncated"]), (None, ["judge_truncated"]), ("stop", ["judge_truncated"]),
+    ("JSON_CLOSED", ["judge_truncated"]), ("json_closed ", ["judge_truncated"]),
+])
+def test_v7_종료는_eos_와_json_closed_만_끝난_것으로_받는다(finish, errors):
+    assert parse_judge_v7(DEFECT_TASK, _row(D7_TEXT, finish))["errors"] == errors
+    assert Q.JUDGE_V7_FINISH_REASONS == ("eos", "json_closed")
+    # v6 는 그대로 eos 만
+    assert parse_judge_v6(DEFECT_TASK, _row(D6_TEXT, "json_closed"))["errors"] == ["judge_truncated"]
+
+
+@pytest.mark.parametrize("text,normalized", [
+    (_fence(D7_TEXT), ["code_fence"]),
+    ("\n " + _fence(D7_TEXT) + "\n\t", ["code_fence"]),
+    (_fence(json.dumps(D7_ANSWERS, ensure_ascii=False, indent=1)), ["code_fence"]),
+    (_worded(D7_TEXT, ("no_unsupported_relation", None)), ["string_boolean"]),
+    (_worded(D7_TEXT, *((k, None) for k in D7_QUESTIONS)), ["string_boolean"]),
+    (_fence(_worded(D7_TEXT, ("has_limitation", None), ("language_ok", None))), ["code_fence", "string_boolean"]),
+])
+def test_v7_는_v6_의_좁은_정규화_둘을_그대로_한다(text, normalized):
+    for finish in ("eos", "json_closed"):
+        out = parse_judge_v7(DEFECT_TASK, _row(text, finish))
+        assert out["errors"] == [] and out["format_normalized"] == normalized and normalized in NORMALIZED_FORMS
+        assert out["answers"] == out["verdict"] == D7_ANSWERS and out["rejected"] == [] and out["flags"] == []
+
+
+def test_v7_울타리_규칙은_v6_와_같은_글을_같게_벗긴다():
+    variants = [_fence(D7_TEXT), " \n" + _fence(D7_TEXT) + "\r\n", _fence(D7_TEXT, head=""), _fence(D7_TEXT, head="JSON"),
+                _fence(D7_TEXT, head="json "), _fence(D7_TEXT, nl="\r\n"), "설명\n" + _fence(D7_TEXT),
+                _fence(D7_TEXT) + "\n끝", _fence(_fence(D7_TEXT)), "```json\n" + D7_TEXT + "```",
+                "```json" + D7_TEXT + "\n```", "~~~json\n" + D7_TEXT + "\n~~~", "```json\n```", "```json\n" + D7_TEXT,
+                D7_TEXT]
+    for text in variants:
+        assert Q._unfence_judge_text_v7(text) == Q._unfence_judge_text_v6(text), text
+    assert (Q.JUDGE_V7_FENCE_OPEN, Q.JUDGE_V7_FENCE_CLOSE, Q.JUDGE_V7_BOOL_STRINGS, Q.JUDGE_V7_FORMAT_NORMALIZATIONS) == (
+        Q.JUDGE_V6_FENCE_OPEN, Q.JUDGE_V6_FENCE_CLOSE, Q.JUDGE_V6_BOOL_STRINGS, Q.JUDGE_V6_FORMAT_NORMALIZATIONS)
+
+
+@pytest.mark.parametrize("text,finish,code", [
+    # 잘림
+    (D7_TEXT[:-5], "eos", "judge_unparsable"),
+    (D7_TEXT[:-1], "json_closed", "judge_unparsable"),
+    (D7_TEXT, "length", "judge_truncated"),
+    # 중복 키 · NaN · 덧붙인 글 · 객체 아님
+    ('{"has_limitation":false,' + D7_TEXT[1:], "eos", "judge_unparsable"),
+    (D7_TEXT.replace("true", "NaN", 1), "eos", "judge_unparsable"),
+    (D7_TEXT + " {}", "eos", "judge_unparsable"),
+    (D7_TEXT + "\n끝", "json_closed", "judge_unparsable"),
+    ("[" + D7_TEXT + "]", "eos", "judge_not_object"),
+    # 여분 · 빠진 키 · 다른 판 · 다른 행 종류의 키
+    (v5(**{**D7_ANSWERS, "extra": True}), "eos", "judge_keys"),
+    *[(v5(**{k: v for k, v in D7_ANSWERS.items() if k != gone}), "eos", "judge_keys") for gone in D7_ANSWERS],
+    (v5(**{**D7_ANSWERS, "states_no_marked_defect": True}), "eos", "judge_keys"),
+    (D6_TEXT, "eos", "judge_keys"),
+    (v5(**N_ANSWERS), "eos", "judge_keys"),
+    (JUDGE_OK, "eos", "judge_keys"),
+    # 참거짓 칸의 값 — 정확한 "true" · "false" 밖은 뜻을 짐작하지 않는다
+    *[(v5(**{**D7_ANSWERS, "no_unannotated_attributes": value}), "eos", "judge_value_type")
+      for value in ("True", "FALSE", " true", "yes", "참", "1", 1, 0, None, [], {})],
+    # reason
+    (v5(**{**D7_ANSWERS, "reason": " "}), "eos", "judge_reason_missing"),
+    (v5(**{**D7_ANSWERS, "reason": ""}), "eos", "judge_reason_missing"),
+    (v5(**{**D7_ANSWERS, "reason": 40}), "eos", "judge_reason_missing"),
+    (v5(**{**D7_ANSWERS, "reason": None}), "eos", "judge_reason_missing"),
+])
+def test_v7_는_잘림_중복_여분_빠진_키_NaN_을_오류로_둔다(text, finish, code):
+    out = parse_judge_v7(DEFECT_TASK, _row(text, finish))
+    assert out["errors"] == [code]
+    assert out["verdict"] is None and out["answers"] is None and out["rejected"] == [] and out["flags"] == []
+
+
+def test_v7_첫_객체에서_멈춘_글은_좁은_정규화_밖이면_못_읽음이다():
+    """정지 조건은 첫 JSON 객체가 닫히는 토큰에서 멈추고 자르지 않는다. 그 토큰에 붙은 공백은 괜찮지만, 여는 울타리만 있고
+    닫는 울타리가 없는 글은 v6 의 좁은 정규화로 벗겨지지 않아 못 읽음이다 — 정규화를 넓히지 않는다."""
+    ok = parse_judge_v7(DEFECT_TASK, _row(D7_TEXT + "\n", "json_closed"))
+    assert ok["errors"] == [] and ok["format_normalized"] == []
+    for text in ("```json\n" + D7_TEXT, "```json\n" + D7_TEXT + "\n", D7_TEXT + "`", D7_TEXT + "\n```"):
+        out = parse_judge_v7(DEFECT_TASK, _row(text, "json_closed"))
+        assert out["errors"] == ["judge_unparsable"] and out["format_normalized"] == []
+
+
+def test_v7_와_v5_v6_는_서로의_출력을_대신_읽지_않는다():
+    assert parse_judge_v6(DEFECT_TASK, _row(D7_TEXT))["errors"] == ["judge_keys"]
+    assert parse_judge_v5(DEFECT_TASK, _row(D7_TEXT))["errors"] == ["judge_keys"]
+    assert parse_judge_v7(DEFECT_TASK, _row(D6_TEXT))["errors"] == ["judge_keys"]
+    # 정상 행 — v5 · v6 는 그대로 읽는다(v7 만 받지 않는다)
+    normal = _row(v5(**N_ANSWERS))
+    assert parse_judge_v5(NORMAL_TASK, normal)["errors"] == parse_judge_v6(NORMAL_TASK, normal)["errors"] == []
+    # 원문 QA 는 키가 같다 — 판정값 · 기각은 같고 표지(판 · 파서)는 각자의 것
+    old, new = parse_judge_v6(QA_TASK, _row(JUDGE_OK)), parse_judge_v7(QA_TASK, _row(JUDGE_OK))
+    assert new["errors"] == [] and (old["verdict"], old["rejected"]) == (new["verdict"], new["rejected"])
+    assert (new["schema"], new["parser"]) == ("judge_structured_v7", "parse_judge_v7")
+    # 집계의 읽기 — 꼴 → 파서를 하나씩 짝짓는다. v7 은 v7 파서로만, 짝이 없는 꼴은 다른 판의 파서로 읽지 않고 거부한다
+    got, want = Q._read_judge(DEFECT_TASK, _row(D7_TEXT), "judge_structured_v7"), parse_judge_v7(DEFECT_TASK, _row(D7_TEXT))
+    assert got == (want["errors"], want["rejected"], want["verdict"], want["flags"], want["answers"], want["format_normalized"])
+    assert Q._read_judge(DEFECT_TASK, _row(D6_TEXT), "judge_structured_v7")[0] == ["judge_keys"]
+    assert Q._read_judge(NORMAL_TASK, _row(v5(**N_ANSWERS)), "judge_structured_v7")[0] == ["judge_not_applicable"]
+    for schema in ("judge_structured_v9", None):
+        with pytest.raises(AuditRefused, match="^judge_schema_unsupported:"):
+            Q._read_judge(DEFECT_TASK, _row(D7_TEXT), schema)
+
+
+def test_v7_판독_결과의_꼴과_판_이름():
+    task = json.loads(json.dumps(DEFECT_TASK))
+    row = _row(_fence(_worded(D7_TEXT, ("language_ok", None))), "json_closed")
+    before = canonical_bytes([task, row])
+    out = parse_judge_v7(task, row)
+    assert canonical_bytes([task, row]) == before
+    assert set(out) == {"schema", "parser", "row_class", "errors", "rejected", "verdict", "flags", "answers",
+                        "format_normalized"}
+    assert out["schema"] == Q.JUDGE_V7_SCHEMA_VERSION == "judge_structured_v7"
+    assert out["parser"] == Q.JUDGE_V7_PARSER_VERSION == "parse_judge_v7"
+    assert out["row_class"] == "defect" and out["format_normalized"] == ["code_fence", "string_boolean"]
+    for bad in (None, "image_report", {"kind": "image_report", "locked_target": None}):
+        assert parse_judge_v7(bad, row)["errors"] == ["judge_task_unsupported"]
+    for bad in (None, [D7_TEXT], {"text": None, "finish_reason": "eos"}, {"text": b"{}", "finish_reason": "eos"}):
+        assert parse_judge_v7(task, bad)["errors"] == ["judge_row_invalid"]
+    # 집계가 읽는 꼴의 표 — v7 은 v7 파서의 판으로 든다
+    assert Q.JUDGE_PARSER_VERSIONS == {"judge_structured_v5": "parse_judge_v5_1", "judge_structured_v6": "parse_judge_v6",
+                                      "judge_structured_v7": "parse_judge_v7"}
+
+
+def test_v7_파서의_폐쇄는_v5_v6_의_것에_닿지_않는다():
+    """판정 정책 쪽의 v7 지문이 생기기 전 — 지문기의 폐쇄 걷기로 v7 의 선택 폐쇄를 보고, v5 · v6 의 파서 · 울타리 · 상수가
+    들지 않음과 상수가 글자 그대로의 값임(걷기가 거부하지 않음)을 본다."""
+    from corpus.production import common
+
+    report = F._Closure((Q, common)).result([(common, "parse_json"), (common, "canonical_bytes"),
+                                             (Q, "JUDGE_V7_SCHEMA_VERSION"), (Q, "parse_judge_v7")])
+    mine = {s.split(":", 1)[1] for s in report["symbols"] if s.startswith(Q.__name__ + ":")}
+    assert mine == {"JUDGE_V7_SCHEMA_VERSION", "JUDGE_V7_KEYS", "JUDGE_V7_PARSER_VERSION", "JUDGE_V7_FORMAT_NORMALIZATIONS",
+                    "JUDGE_V7_FENCE_OPEN", "JUDGE_V7_FENCE_CLOSE", "JUDGE_V7_BOOL_STRINGS", "JUDGE_V7_FINISH_REASONS",
+                    "JUDGE_V7_REASON_MAX_CHARS", "_judge_row_class", "_unfence_judge_text_v7", "parse_json",
+                    "parse_judge_v7"}
+
+
+def test_v7_출력_계약을_묶고도_출처가_v7_이라_적지_않으면_집계하지_않는다(tmp_path):
+    """v7 은 정상 행에 판정 행이 없고 결정적 영수증으로 가르는 계약이다 — 영수증 칸이 없는(v7 이라 적지 않은) 출처에
+    v7 출력 계약만 묶어 오면 정상 행을 판정 없음으로 두거나 결함 행을 다른 판의 파서로 읽게 되므로 거부한다."""
+    tasks, outputs = good_case()
+    run_dir, config = run_all(tmp_path, tasks, outputs)
+    src = _separate_judge(tmp_path, run_dir, config)
+    other = {**src["identity_basis"]["policy_identity"], "output_schema": "judge_structured_v7"}
+    src["identity_basis"] = {**src["identity_basis"], "policy_identity": other}
+    _rehash(src)
+    with pytest.raises(AuditRefused, match="^judge_schema_mixed:"):
+        audit_run(run_dir, config, tmp_path / "audit", judge_source=src, policy=StubPolicy(identity=other))
+    assert not (tmp_path / "audit" / "AUDIT.json").exists()
+
+
+# --------------------------------------------------------------------------- v7 판정 출처의 소비(정상 행은 결정적 영수증만)
+
+
+class V7Policy:
+    """v7 판정 출처에 거는 시험용 정책 — 판단 규칙은 판정 정책 쪽 몫이라 꼴만 흉내 낸다. 생성문에 `ban` 의 글이 있으면
+    그 묶음 · 사유로 기각한다(행 종류를 가리지 않는다). 행 종류는 명부의 잠긴 결함 목록으로 스스로 고른다."""
+
+    GROUPS = ("attribute", "contract", "grounded", "negative")
+
+    def __init__(self, ban=None, identity=None):
+        self.ban = dict(ban or {"합격이다": ("negative", "verdict_asserted"),
+                                "크고 둥근": ("attribute", "unannotated_attribute")})
+        self.identity = identity or {"version": "image_report_judge_v7_test", "output_schema": "judge_structured_v7"}
+
+    def policy_identity_v7(self):
+        return copy.deepcopy(self.identity)
+
+    def evaluate_v7(self, task, text, *, generation_contract=True):
+        kind = "source_qa" if task["kind"] == "source_qa" else (
+            "defect" if task["locked_target"]["defects"] else "defect_free")
+        codes = {g: sorted({c for w, (grp, c) in self.ban.items() if grp == g and w in text}) for g in self.GROUPS}
+        reasons = sorted({c for v in codes.values() for c in v})
+        applicable = kind != "defect_free"
+        return {"row_class": kind, "model_applicable": applicable,
+                "model_applicability": "applicable" if applicable else "not_applicable",
+                "deterministic_codes": codes, "deterministic_reasons": reasons, "deterministic_pass": not reasons,
+                "flags": ["n5_absent"] if kind == "defect_free" and "판단" not in text else [],
+                "generation_contract_applied": generation_contract}
+
+
+def _sha_text(text):
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _digest(value):
+    return hashlib.sha256(canonical_bytes(value)).hexdigest()
+
+
+def v7_case():
+    """결함 · 정상 · 정상 · 원문 QA — 샤드 둘(크기 2): [결함, 정상] [정상, 원문 QA]."""
+    tasks = [image_task(0), image_task(1, client="C2", target=locked()), image_task(2, client="C3", target=locked()),
+             qa_task(0)]
+    outputs = {"img-000": GOOD_DESC, "img-001": NONE_DESC, "img-002": NONE_DESC,
+               "qa-000": qa_json("기공은 무엇이 남긴 공동인가?", "용접금속 안에 갇힌 가스가 남긴 공동이다.")}
+    return tasks, outputs
+
+
+def _v7_source(run_dir, config, tasks, policy, *, done=None, judge=None, finish=None):
+    """v7 판정 신원 읽기(판정 정책 쪽 `read_judge_source`)가 내는 객체의 꼴 — 판정을 마친 샤드(명부의 앞부분)의 모든 행에
+    결정적 영수증, 모델 대상(정상이 아닌 행)에만 판정 행. 판정 신원 쓰기의 v7 판은 이 트리에 아직 없어 꼴을 직접 짓고,
+    다시 읽기는 시험에서 주어진 객체를 그대로 돌려준다(`_v7_reread`) — 집계 자신의 대조만 시험한다."""
+    gen = {r["id"]: r for r in I.read_stage_rows(run_dir, "generate", config)}
+    run = read_json(run_dir / "RUN.json")
+    pid = json.loads(canonical_bytes(policy.policy_identity_v7()))
+    by = {t["id"]: t for t in tasks}
+    done_ids = [t["id"] for t in tasks][:len(tasks) if done is None else done]
+    basis = {"policy_version": "v7", "output_schema": "judge_structured_v7", "run_identity_sha256": run["identity_sha256"],
+             "generate_shard_sha256": sorted({r["_shard_sha256"] for r in gen.values()}),
+             "judge_model": {"model_id": "local/judge-v7", "family": "phi"}, "policy_identity": pid}
+    ident = _digest(basis)
+    shard = {tid: _sha_text(f"judge-shard-{i // config['shard_size']}") for i, tid in enumerate(done_ids)}
+    receipts = [{"id": tid, "candidate_sha256": _sha_text(gen[tid]["text"]),
+                 "candidate_finish_reason": gen[tid]["finish_reason"], "policy_identity_sha256": _digest(pid),
+                 **policy.evaluate_v7(by[tid], gen[tid]["text"], generation_contract=True),
+                 "_shard_sha256": shard[tid], "_judge_identity_sha256": ident} for tid in done_ids]
+    model_ids = [tid for tid in done_ids if by[tid]["kind"] == "source_qa" or by[tid]["locked_target"]["defects"]]
+    judge, finish = dict(judge or {}), dict(finish or {})
+    rows = [{"id": tid, "text": judge.get(tid, JUDGE_OK if by[tid]["kind"] == "source_qa" else D7_TEXT),
+             "finish_reason": finish.get(tid, "eos"), "input_tokens": 10, "output_tokens": 10, "_stage": "judge",
+             "_backend": "fake", "_shard_sha256": shard[tid], "_judge_identity_sha256": ident} for tid in model_ids]
+    return {"identity_sha256": ident, "policy_version": "v7", "output_schema": "judge_structured_v7",
+            "all_task_ids": done_ids, "model_task_ids": model_ids, "deterministic_receipts": receipts,
+            "identity_basis": basis, "judge_dir": str(run_dir.parent / "judge-v7"), "probe_approval_sha256": None,
+            "gpu_model_verified": False, "caller_expected_pins": dict.fromkeys(Q.JUDGE_SOURCE_PIN_KEYS),
+            "pin_provenance": "unapproved-fake", "rows": rows}
+
+
+@pytest.fixture
+def _v7_reread(monkeypatch):
+    monkeypatch.setattr(Q, "_reread_judge_source", lambda run_dir, config, src: copy.deepcopy(dict(src)))
+
+
+def _v7_audit(tmp_path, outputs=None, *, policy=None, **source):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    tasks, base = v7_case()
+    run_dir, config = run_all(tmp_path, tasks, {**base, **(outputs or {})}, stages=("generate",))
+    policy = policy or V7Policy()
+    src = _v7_source(run_dir, config, tasks, policy, **source)
+    out = tmp_path / "audit"
+    result = audit_run(run_dir, config, out, judge_source=src, policy=policy)
+    return result, read_json(out / "AUDIT.json"), _status(out), {r["id"]: r for r in iter_jsonl(out / "dataset.jsonl")}, src
+
+
+def test_v7_정상_행은_판정_모델_없이_결정적_영수증으로_수락된다(tmp_path, _v7_reread):
+    result, a, st, rows, src = _v7_audit(tmp_path)
+    # 막는 사유는 시험용 판정 백엔드 하나뿐 — 정상 행 둘은 판정 행 없이 수락됐다(judge_missing 이 아니다)
+    assert result["status"] == "blocked" and a["blockers"] == ["non_transformers_backend"], a["blockers"]
+    assert a["counts"]["accepted"] == 4 and a["incomplete"] == 0 and a["complete"] is True
+    assert a["audit_version"] == "quality_v9" and a["judge_parser_version"] == "parse_judge_v7"
+    assert a["judge_identity"]["parser_schema"] == "judge_structured_v7" and a["stages"]["judge"]["rows"] == 2
+    for rid in ("img-001", "img-002"):
+        assert rows[rid]["provenance"]["judge"] == {"applicable": False, "identity_sha256": src["identity_sha256"]}
+        assert rows[rid]["provenance"]["policy"] == {"identity_sha256": _digest(V7Policy().policy_identity_v7()),
+                                                      "flags": ["n5_absent"]}
+        s = st[rid]
+        assert s["judge_applicable"] is False and s["judge_text_sha256"] is None and s["judge_verdict"] is None
+        assert s["deterministic_pass"] is True and s["deterministic_reasons"] == [] and s["policy_flags"] == ["n5_absent"]
+    judge = rows["img-000"]["provenance"]["judge"]
+    assert judge["verdict"] == D7_ANSWERS and judge["schema"] == "judge_structured_v7" and judge["parser"] == "parse_judge_v7"
+    assert judge["backend"] == "fake" and judge["identity_sha256"] == src["identity_sha256"] and "applicable" not in judge
+    assert rows["qa-000"]["provenance"]["judge"]["verdict"] == json.loads(JUDGE_OK)
+    assert st["img-000"]["judge_applicable"] is True is st["qa-000"]["judge_applicable"]
+    det = a["deterministic_receipts"]
+    assert det["rows"] == det["planned"] == 4 and det["model_task_ids"] == {"count": 2,
+                                                                             "ids_sha256": ids_sha256(["img-000", "qa-000"])}
+    assert det["normal"] == {"planned": 2, "receipts": 2, "deterministic_pass": 2, "deterministic_reject": 0,
+                             "status": {"accepted": 2}, "reasons": {}, "flags": {"n5_absent": 2},
+                             "codes": dict.fromkeys(V7Policy.GROUPS, {})}
+    assert det["model"]["planned"] == 2 and det["model"]["status"] == {"accepted": 2}
+    agree = a["policy"]["model_agreement"]
+    assert agree["denominator"] == 1 and agree["both_pass"] == 1 and agree["excluded"] == {"judge_not_applicable": 2}
+
+
+def test_v7_정상_행의_결정적_기각은_사유_코드_분포로_남는다(tmp_path, _v7_reread):
+    bad = "표시된 결함이 없다. 합격이다."
+    result, a, st, rows, _ = _v7_audit(tmp_path, {"img-001": bad, "img-002": "표시된 결함이 크고 둥근 모양이다."})
+    assert st["img-001"]["status"] == "rejected" and st["img-001"]["reasons"] == ["policy:verdict_asserted"]
+    assert st["img-002"]["reasons"] == ["policy:unannotated_attribute"] and st["img-002"]["deterministic_pass"] is False
+    assert "img-001" not in rows and "img-002" not in rows and "rejected_rows" in a["blockers"]
+    normal = a["deterministic_receipts"]["normal"]
+    assert normal["deterministic_reject"] == 2 and normal["status"] == {"rejected": 2}
+    assert normal["reasons"] == {"unannotated_attribute": 1, "verdict_asserted": 1}
+    assert normal["codes"]["negative"] == {"verdict_asserted": 1} and normal["codes"]["attribute"] == {"unannotated_attribute": 1}
+    assert a["counts"]["reasons"]["policy:verdict_asserted"] == 1
+
+
+def test_v7_결함_행은_결정적_통과와_물음_넷이_모두_참이어야_수락된다(tmp_path, _v7_reread):
+    """판정 모델이 통과로 답해도 결정적 기각이면 기각, 결정적 통과여도 물음 하나가 거짓이면 기각."""
+    false_one = v5(**{**D7_ANSWERS, "no_unsupported_relation": False})
+    _, a, st, _, _ = _v7_audit(tmp_path / "x", {"img-000": GOOD_DESC + " 합격이다."})
+    assert st["img-000"]["reasons"] == ["policy:verdict_asserted"]
+    assert a["policy"]["model_agreement"]["model_pass_policy_reject"] == 1
+    _, a, st, _, _ = _v7_audit(tmp_path / "y", judge={"img-000": false_one})
+    assert st["img-000"]["reasons"] == ["judge_no_unsupported_relation_false"]
+    assert a["policy"]["model_agreement"]["model_reject_policy_pass"] == 1
+
+
+def test_v7_reason_long_은_표지이고_json_closed_종료를_받는다(tmp_path, _v7_reread):
+    long = v5(**{**D7_ANSWERS, "reason": "가" * 41})
+    _, a, st, rows, _ = _v7_audit(tmp_path, judge={"img-000": long}, finish={"img-000": "json_closed"})
+    assert st["img-000"]["status"] == "accepted" and st["img-000"]["judge_flags"] == ["reason_long"]
+    assert rows["img-000"]["provenance"]["judge"]["flags"] == ["reason_long"]
+    assert a["counts"]["judge_model_flags"] == {"reason_long": 1}
+
+
+def test_v7_판정_전_샤드의_모델_대상_행만_judge_missing_이다(tmp_path, _v7_reread):
+    """판정을 마친 샤드는 첫째뿐 — 둘째 샤드의 원문 QA(모델 대상)는 judge_missing, 정상 행은 영수증 없음."""
+    result, a, st, _, _ = _v7_audit(tmp_path, done=2)
+    assert st["qa-000"]["status"] == "incomplete" and st["qa-000"]["reasons"] == ["judge_missing"]
+    assert st["img-002"]["status"] == "incomplete" and st["img-002"]["reasons"] == ["deterministic_receipt_missing"]
+    assert st["img-002"]["deterministic_pass"] is None and st["img-002"]["judge_applicable"] is False
+    assert st["img-001"]["status"] == "accepted" == st["img-000"]["status"]
+    assert a["complete"] is False and "incomplete_rows" in a["blockers"] and a["counts"]["reasons"] == {
+        "deterministic_receipt_missing": 1, "judge_missing": 1}
+    det = a["deterministic_receipts"]
+    assert det["rows"] == 2 and det["normal"]["receipts"] == 1 and det["normal"]["status"] == {"accepted": 1, "incomplete": 1}
+    assert a["policy"]["model_agreement"]["excluded"] == {"judge_not_applicable": 2}
+
+
+def _receipt(src, rid):
+    return next(r for r in src["deterministic_receipts"] if r["id"] == rid)
+
+
+def _v7_break(src, breaks):
+    normal = _receipt(src, "img-001")
+    if breaks == "candidate":
+        normal["candidate_sha256"] = _sha_text("다른 생성문")
+    elif breaks == "finish":
+        normal["candidate_finish_reason"] = "length"
+    elif breaks == "policy_sha":
+        normal["policy_identity_sha256"] = "0" * 64
+    elif breaks == "forged_pass":                       # 정책이 기각하는 정상 행(img-002)을 통과로 고쳐 쓴 영수증
+        banned = _receipt(src, "img-002")
+        assert banned["deterministic_pass"] is False
+        banned.update(deterministic_pass=True, deterministic_reasons=[],
+                      deterministic_codes=dict.fromkeys(V7Policy.GROUPS, []))
+    elif breaks == "diagnostic_view":                   # 생성 계약을 끈 진단용 판단은 운영 영수증이 아니다
+        normal["generation_contract_applied"] = False
+    elif breaks == "extra_key":
+        normal["approved"] = True
+    elif breaks == "identity":
+        normal["_judge_identity_sha256"] = "0" * 64
+    elif breaks == "shard":
+        normal["_shard_sha256"] = "not-a-hash"
+    elif breaks == "missing":
+        src["deterministic_receipts"].remove(normal)
+    elif breaks == "order":
+        src["deterministic_receipts"].reverse()
+    elif breaks == "not_prefix":
+        src["all_task_ids"] = src["all_task_ids"][1:]
+    elif breaks == "model_ids_drop":
+        src["model_task_ids"] = [x for x in src["model_task_ids"] if x != "img-000"]
+    elif breaks == "model_ids_normal":
+        src["model_task_ids"] = ["img-000", "img-001", "qa-000"]
+    elif breaks == "normal_judged":                     # 정상 행에 판정 모델의 행이 있다
+        src["rows"].append({**src["rows"][0], "id": "img-001"})
+    elif breaks == "no_receipts":
+        del src["deterministic_receipts"]
+    elif breaks == "policy_version":
+        src["policy_version"] = "v6"
+    elif breaks == "top_schema":
+        del src["output_schema"]
+
+
+@pytest.mark.parametrize("breaks,code", [
+    ("candidate", "judge_receipt_mismatch"), ("finish", "judge_receipt_mismatch"), ("policy_sha", "judge_receipt_mismatch"),
+    ("forged_pass", "judge_receipt_mismatch"), ("diagnostic_view", "judge_receipt_mismatch"),
+    ("extra_key", "judge_receipt_mismatch"), ("identity", "judge_receipt_identity"), ("shard", "judge_receipt_identity"),
+    ("missing", "judge_receipts"), ("order", "judge_receipts"), ("not_prefix", "judge_receipts"),
+    ("model_ids_drop", "judge_model_task_ids"), ("model_ids_normal", "judge_model_task_ids"),
+    ("normal_judged", "judge_row_not_applicable"), ("no_receipts", "judge_source_v7"),
+    ("policy_version", "judge_source_v7"), ("top_schema", "judge_source_v7"),
+])
+def test_v7_영수증이_생성문_정책_판정_신원과_어긋나면_집계하지_않는다(tmp_path, _v7_reread, breaks, code):
+    """둘째 정상 행(img-002)은 정책이 기각하는 생성문이다 — 그 영수증을 통과로 고쳐 쓰면 정상 행이 모델 없이 수락될 길이다."""
+    tasks, outputs = v7_case()
+    outputs["img-002"] = "표시된 결함이 없다. 합격이다."
+    run_dir, config = run_all(tmp_path, tasks, outputs, stages=("generate",))
+    policy = V7Policy()
+    src = _v7_source(run_dir, config, tasks, policy)
+    _v7_break(src, breaks)
+    with pytest.raises(AuditRefused, match=f"^{code}:"):
+        audit_run(run_dir, config, tmp_path / "audit", judge_source=src, policy=policy)
+    assert not (tmp_path / "audit" / "AUDIT.json").exists()
+
+
+def test_v7_판정_출처와_v7_정책은_함께만_건다(tmp_path, _v7_reread):
+    tasks, outputs = v7_case()
+    run_dir, config = run_all(tmp_path, tasks, outputs, stages=("generate",))
+    src = _v7_source(run_dir, config, tasks, V7Policy())
+    # v7 출처에 v6 의 정책 꼴(영수증을 다시 계산할 수 없다)
+    with pytest.raises(AuditRefused, match="^policy_interface:"):
+        audit_run(run_dir, config, tmp_path / "a1", judge_source=src, policy=StubPolicy())
+    # 판정 신원에 묶인 것과 다른 v7 정책
+    other = V7Policy(identity={"version": "image_report_judge_v7_other", "output_schema": "judge_structured_v7"})
+    with pytest.raises(AuditRefused, match="^judge_policy_mismatch:"):
+        audit_run(run_dir, config, tmp_path / "a2", judge_source=src, policy=other)
+    # 다른 판(출력 계약)의 지문을 내는 v7 정책
+    with pytest.raises(AuditRefused, match="^policy_identity:"):
+        audit_run(run_dir, config, tmp_path / "a3", judge_source=src,
+                  policy=V7Policy(identity={"version": "x", "output_schema": "judge_structured_v6"}))
+    assert not any((tmp_path / n / "AUDIT.json").exists() for n in ("a1", "a2", "a3"))

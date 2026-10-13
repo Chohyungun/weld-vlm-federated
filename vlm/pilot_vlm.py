@@ -13,7 +13,7 @@
 - 조기 종료 없음 · 손실 정규화는 감독 토큰 총합 분모(30번 명세 판정 2) ·
   LoRA dropout 0(판정 9) · micro=1/accum=32(판정 10) · 프롬프트 파일 고정.
 
-타깃은 30번 명세 4-1 의 단일 JSON 이다. 코퍼스 담당의 `target_text`(산문 판정문)는
+타깃은 30번 명세 4-1 의 단일 JSON 이다. 코퍼스의 `target_text`(산문 판정문)는
 파일럿 학습 타깃에 쓰지 않는다 — 명세가 타깃 형식을 JSON 하나로 확정했고, clause_only
 축에서 verdict 는 "판정불가"가 스키마 정합값이다.
 """
@@ -384,6 +384,64 @@ def _encode(proc, row: dict, prompt: str, *, chat_template_kwargs: Mapping[str, 
     return full, labels, prompt_len
 
 
+def _rng_snapshot(on_cuda: bool) -> dict[str, Any]:
+    """점검 재개 상태의 난수 — 파이썬 · numpy · torch(CPU) · CUDA. 학습 루프는 이것들을 쓰지 않지만 함께 되살린다."""
+    return {"python": random.getstate(), "numpy": np.random.get_state(), "torch": torch.get_rng_state(),
+            "cuda": torch.cuda.get_rng_state_all() if on_cuda else None}
+
+
+def _rng_restore(rng: Mapping[str, Any], on_cuda: bool) -> None:
+    random.setstate(rng["python"])
+    np.random.set_state(rng["numpy"])
+    torch.set_rng_state(rng["torch"])
+    if on_cuda and rng.get("cuda") is not None:
+        torch.cuda.set_rng_state_all(rng["cuda"])
+
+
+def _ecc_after_step(cs, *, steps: int, ep: int, cursor: int, order: list[int], rows: list[dict], seed: int, model, opt,
+                    keys: list[str], ident, on_cuda: bool, supervised_before_epoch: int, tok_cnt: int, ce_sum,
+                    grid_by_row: Mapping[int, str], wall_s: float, get_sd: Callable,
+                    metrics_view: Mapping[str, Any]) -> None:
+    """최적화 스텝 하나가 끝난 뒤(누적 창이 닫힌 자리) — 단계 시계 한 줄, 등록한 점검 step 이면 파일 넷을 쓰고 멈춘다.
+
+    난수를 쓰지 않고 모델 · 최적화기를 바꾸지 않는다(읽기만). 점검 step 은 언제나 누적 창의 경계라 누적 중인 기울기가 없다.
+    """
+    from vlm.ecc import CLOCK_FILE, CheckStepReached, perm_sha256, save_check_step
+
+    out = Path(cs.out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    clock = out / CLOCK_FILE
+    new = not clock.exists()
+    with clock.open("a", encoding="utf-8", newline="\n") as fh:
+        if new:
+            fh.write("optimizer_steps,epoch,cursor,process_wall_s\n")
+        fh.write(f"{int(steps)},{int(ep)},{int(cursor)},{float(wall_s):.6f}\n")
+    if int(steps) not in cs.steps:
+        return
+    extra: dict[str, Any] = {"tag": str(ident.cell), "derived_seed": int(seed),
+                             "train_rows_digest": train_rows_digest(rows), "n_train_rows": len(rows),
+                             "metrics_view": dict(metrics_view)}
+    if cs.train_config_args is not None:
+        # 학습 설정 원문 — 본실험 칸과 같은 함수 · 같은 인자로 낸다(칸과 무관한 원문, 12번 §7-1).
+        from vlm.train_cell import train_config_object
+
+        tc_text = canonical_json(train_config_object(**dict(cs.train_config_args), metrics=metrics_view))
+        extra.update({"train_config": tc_text, "train_config_sha256": sha256_text(tc_text)})
+    sd = get_sd(model)
+    arrays = serialize.state_dict_to_ndarrays(sd, keys)
+    state = {"adapter": {k: v.detach().cpu().clone() for k, v in sd.items()}, "optimizer": opt.state_dict(),
+             "rng": _rng_snapshot(on_cuda), "epoch": int(ep), "cursor": int(cursor), "perm_sha256": perm_sha256(order),
+             "optimizer_steps": int(steps), "supervised_before_epoch": int(supervised_before_epoch),
+             "tok_cnt": int(tok_cnt), "ce_sum": ce_sum.detach().cpu().clone(),
+             "grid_by_row": {str(k): str(v) for k, v in grid_by_row.items()}}
+    meta = save_check_step(cs, step=int(steps), epoch=int(ep), cursor=int(cursor), order=order, rows=rows, seed=int(seed),
+                           arrays=arrays, keys=keys, state=state, identity=asdict(ident),
+                           supervised_tokens=int(supervised_before_epoch) + int(tok_cnt), process_wall_s=float(wall_s),
+                           extra=extra)
+    if cs.stop:
+        raise CheckStepReached(int(steps), meta)
+
+
 def train_rounds(
     *,
     rows: list[dict],
@@ -418,6 +476,7 @@ def train_rounds(
     resume_extra: Mapping[str, Any] | None = None,
     pairs_digest: str | None = None,
     client_tag: str = "",
+    check_stop: Any = None,
 ) -> tuple[list[np.ndarray], list[str], dict[str, Any], dict]:
     """한 라운드(⑥은 라운드 1개 = 전체 epoch). 어댑터 fp32 ndarray 를 돌려준다.
 
@@ -455,10 +514,23 @@ def train_rounds(
         pairs_digest · client_tag: 재개 신원(`vlm/resume_uni.UniResumeIdentity`)에 싣는 페어 내용 지문과 참여자.
         resume_extra: 재개 파일에 함께 실을 값. **덮어쓰지 않고 합친다** — `supervised_tokens` 와
             관측 격자는 이 함수가 싣는다.
+        check_stop: 조기 좌표 점검의 멈춤 지정(`vlm.ecc.CheckStop`, 11번 §3-2). **`purpose="early_coord_check"` 에서만 받고,
+            그 목적은 이것 없이 돌지 않는다.** 최적화 스텝마다 단계 시계를 쓰고, 등록한 점검 step 이면 그 스텝의 최적화가
+            끝난 뒤 step 어댑터 · 재개 상태 · 소비 행 목록 · meta 를 쓴 다음 `stop` 이면 `vlm.ecc.CheckStepReached` 로 멈춘다.
+            `resume_from` 이 있으면 그 step 에서 **epoch 중간**으로 잇는다(커서 · 순열 지문 · 누적량 · 최적화기 · 난수).
+            점검 실행은 epoch 경계 재개(`resume_dir`)를 쓰지 않는다. 난수를 쓰지 않고 학습 계산에 끼어들지 않는다.
     """
     # 이음새 — 모델 적재기를 **부르기 전에** 목적과 맞댄다(리허설 2판 §1-4 의 순서 3). 본실험에
     # 대역이 오면 여기서 멈추고 대역은 한 번도 불리지 않는다.
     loader, impl_ids = resolve_model_loader(model_loader, purpose=purpose, standin_allowed=standin_allowed)
+    # 조기 좌표 점검의 멈춤은 그 목적에서만 — 본실험 · 리허설 · 진단에 점검 step 이 오면 모델을 올리기 전에 멈춘다(11번 T3).
+    if check_stop is not None and purpose != "early_coord_check":
+        raise ValueError(f"점검 step 멈춤은 early_coord_check 목적에서만 켠다 — purpose={purpose!r}")
+    if purpose == "early_coord_check":
+        if check_stop is None:
+            raise ValueError("early_coord_check 는 점검 step 목록(check_stop) 없이 돌지 않는다")
+        if resume_dir is not None:
+            raise ValueError("점검 실행은 epoch 경계 재개(resume_dir)를 쓰지 않는다 — 점검 step 의 재개 상태로 잇는다")
 
     from peft import get_peft_model_state_dict, set_peft_model_state_dict
 
@@ -603,6 +675,24 @@ def train_rounds(
         # 재개 경로가 꺼져 있으면 대조할 재개 신원이 없다 — 같은 자리(적재 뒤 · 학습 전)에서 부른다.
         on_identity_ok(0, None, asdict(ident))
 
+    # -- 조기 좌표 점검의 epoch 중간 재개(11번 §3-2) ------------------------------
+    # 적용 **전에** 신원 · 착수 고정 · 파일 지문 · 등록 step 목록을 맞댄다(`vlm.ecc.load_step_state`). 순열 지문은 그 epoch 의
+    # 순열을 만든 뒤 맞댄다(아래 루프). 수치 궤적의 동치는 주장하지 않는다 — 표본 순서 · 학습량 · 비용만 같아야 한다.
+    ecc_state = None
+    if check_stop is not None and check_stop.resume_from is not None:
+        from vlm.ecc import load_step_state
+
+        _, ecc_state = load_step_state(check_stop.resume_from, identity=asdict(ident),
+                                       pin_sha256=check_stop.pin_sha256, steps=check_stop.steps)
+        print(f"[ecc] 점검 step {ecc_state['optimizer_steps']} 의 상태를 적용한다 → epoch {ecc_state['epoch']} 의 "
+              f"표본 {ecc_state['cursor']} 부터 이어 간다", file=sys.stderr, flush=True)
+        set_peft_model_state_dict(model, ecc_state["adapter"])
+        opt.load_state_dict(ecc_state["optimizer"])
+        _rng_restore(ecc_state["rng"], on_cuda)
+        start_ep = int(ecc_state["epoch"])
+        steps = int(ecc_state["optimizer_steps"])
+        supervised_total = int(ecc_state["supervised_before_epoch"])
+
     # -- 누적 창·학습률 상태 -------------------------------------------------
     # `steps_per_round` 는 이 클라이언트가 한 라운드에 밟는 옵티마이저 스텝 수다.
     # `math.ceil` 인 이유: 마지막 부분 창도 step 한다(`(j+1) == len(order)` 분기).
@@ -617,6 +707,11 @@ def train_rounds(
     lr_trace: list[tuple[int, float]] = []
 
     epochs_done = int(start_ep)          # 이 라운드에서 완료한 epoch 누적 수(재개분 포함)
+    # 점검 step 의 meta 에 실을, 학습이 실제로 쓴 값 — 학습 설정 원문의 대조 칸(12번 §7-1)과 같다.
+    ecc_view = None if check_stop is None else {
+        "processor_config_sha256": proc_sha, "prompt_sha256": prompt_sha256, "template_mode": template_mode_of(kwargs),
+        "coord_cfg_hash": coord_cfg_hash(cfg_coord), "target_contract_sha256": TARGET_CONTRACT_SHA256,
+        "config_blocks": _config_blocks(model, opt, supervised_logits_only=supervised_logits_only)}
     for ep in range(start_ep, epochs):
         order = list(range(len(rows)))
         # 문자열 시드다. `seed + ep` 로 더하면 **등록 시드가 연속 정수여서 인접 시드가 순열을
@@ -632,7 +727,19 @@ def train_rounds(
         ce_sum = torch.zeros((), device=dev, dtype=torch.float32)
         tok_cnt = 0
         grid_by_row: dict[int, str] = {}
+        cursor0 = 0
+        if ecc_state is not None and ep == start_ep:
+            from vlm.ecc import EccRefused, perm_sha256
+
+            if perm_sha256(order) != ecc_state["perm_sha256"]:
+                raise EccRefused("perm_mismatch", "재개할 epoch 의 순열 지문이 저장한 것과 다르다 — 이어 가지 않는다")
+            cursor0 = int(ecc_state["cursor"])
+            ce_sum = ce_sum + ecc_state["ce_sum"].to(dev)
+            tok_cnt = int(ecc_state["tok_cnt"])
+            grid_by_row = {int(k): str(v) for k, v in ecc_state["grid_by_row"].items()}
         for j, idx in enumerate(order):
+            if j < cursor0:
+                continue                         # 점검 재개 — 이 epoch 의 앞 표본은 앞 프로세스가 학습했다
             enc, labels, prompt_len = _encode(proc, rows[idx], prompt,
                                               chat_template_kwargs=kwargs, coord_cfg=cfg_coord)
             grid_by_row[idx] = _grid_key(enc)
@@ -670,6 +777,12 @@ def train_rounds(
                 opt.step(); opt.zero_grad()
                 steps += 1; steps_in_round += 1
                 lr_trace.append((steps, round(lr_now, 10)))
+                if check_stop is not None:
+                    _ecc_after_step(check_stop, steps=steps, ep=ep, cursor=j + 1, order=order, rows=rows, seed=seed,
+                                    model=model, opt=opt, keys=keys, ident=ident, on_cuda=on_cuda,
+                                    supervised_before_epoch=supervised_total, tok_cnt=tok_cnt, ce_sum=ce_sum,
+                                    grid_by_row=grid_by_row, wall_s=time.perf_counter() - t0,
+                                    get_sd=get_peft_model_state_dict, metrics_view=ecc_view)
         supervised_total += tok_cnt
         epochs_done += 1
         if len(grid_by_row) == len(rows):

@@ -5,7 +5,8 @@
 
 | 인자 | 뜻 |
 |---|---|
-| `--purpose` · `--mode` · `--tag` · `--seed-index` | 목적(`main` · `rehearsal` · `frame_diag`) · 모드(`model` · `echo`) · 칸 · 시드 번째 |
+| `--purpose` · `--mode` · `--tag` · `--seed-index` | 목적(`main` · `rehearsal` · `frame_diag` · `early_coord_check`) · 모드(`model` · `echo`) · 칸 · 시드 번째 |
+| `--check-step` | 조기 좌표 점검의 점검 step — 그 목적의 모델 모드에서만, 그때는 반드시. 그 step 의 어댑터를 읽는다(11번 §3-3) |
 | `--receipt` · `--list` · `--snapshot` | 영수증 · 생성(모델) 또는 에코 목록 파일 · 동결 스냅샷. 목록은 **바이트 해시로** 등록에 묶인다 |
 | `--run-root` · `--plan` | 리허설 · 진단의 루트와 계획 파일. 본실험은 둘 다 받지 않는다 |
 | `--adapter-dir` | 모델 모드의 학습 폴더(`adapter_last.npz` · meta · 원장) |
@@ -42,7 +43,10 @@ __all__ = ["EXIT_OK", "EXIT_REFUSED", "main", "pair_image_paths"]
 
 
 def pair_image_paths(gen_cfg: Any, *, purpose: str) -> dict[str, Path]:
-    """페어 val 행의 `image_id` → 이미지 경로. 본실험 모델 모드는 거부한다(머리말의 이미지 경로)."""
+    """페어 val 행의 `image_id` → 이미지 경로. 본실험 모델 모드는 거부한다(머리말의 이미지 경로).
+
+    조기 좌표 점검은 학습 분할의 결함 장을 점검하므로(평가 쪽 10번 §2 — 목적의 분할 `train`) train 행에서 낸다.
+    """
     from vlm.export_writer import ExportRefused
     from vlm.pilot_vlm import load_pairs
 
@@ -51,7 +55,7 @@ def pair_image_paths(gen_cfg: Any, *, purpose: str) -> dict[str, Path]:
     if not gen_cfg.pairs_path:
         raise ExportRefused("pairs_path_missing", "이미지 경로를 낼 페어 경로가 설정에 없다(uni_pairs.path)")
     out: dict[str, Path] = {}
-    for r in load_pairs("val", None, pairs_path=gen_cfg.pairs_path):
+    for r in load_pairs("train" if purpose == "early_coord_check" else "val", None, pairs_path=gen_cfg.pairs_path):
         p = Path(r["image_path"])
         out[str(r["image_id"])] = p if p.is_absolute() else REPO_ROOT / p
     return out
@@ -59,7 +63,8 @@ def pair_image_paths(gen_cfg: Any, *, purpose: str) -> dict[str, Path]:
 
 def _parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--purpose", required=True, choices=("main", "rehearsal", "frame_diag"))
+    ap.add_argument("--purpose", required=True, choices=("main", "rehearsal", "frame_diag", "early_coord_check"))
+    ap.add_argument("--check-step", type=int, default=None)
     ap.add_argument("--mode", required=True, choices=("model", "echo"))
     ap.add_argument("--tag", required=True)
     ap.add_argument("--seed-index", required=True, type=int)
@@ -106,7 +111,7 @@ def main(argv: list[str] | None = None, *, measure_env: Callable | None = None,
                          run_root=a.run_root, non_main_parent=non_main_parent, adapter_dir=a.adapter_dir,
                          plan_path=a.plan, with_tokens=a.with_tokens, stop_after_lines=a.stop_after_lines,
                          abort_mismatched=a.abort_mismatched, clock=clock, standin_allowed=standin_allowed,
-                         repo=repo, code_repo=code_repo, exposure_ledger=exposure_ledger)
+                         repo=repo, code_repo=code_repo, exposure_ledger=exposure_ledger, check_step=a.check_step)
     except (ExportRefused, FaultRefused, SeamRejected) as exc:
         code = getattr(exc, "code", type(exc).__name__)
         print(f"[{code}] {exc}", file=sys.stderr)

@@ -129,7 +129,7 @@ def build_cases(nplus_path) -> dict:
         )
         cases.append(make_case("D-ungrounded", i, wrong[i % len(wrong)] + " " + limit, False,
                            deterministic=i % len(wrong) != 4))
-    # D16 §8-2/§9-2에 명시된 반례도 원문 그대로 넣고 같은 묶음 크기를 유지한다.
+    # 명세16 §8-2/§9-2에 명시된 반례도 원문 그대로 넣고 같은 묶음 크기를 유지한다.
     replacements = {
         "synthetic-N-invented-000": "표시된 결함이 없다는 말은 거짓이다.",
         "synthetic-N-assertion-001": "표시된 결함이 없으므로 이 용접부는 안전하다.",
@@ -174,6 +174,17 @@ V6_EVALUATION_SCOPE = {
     "prior_model_output_exposed": True,
     "new_independent_discrimination_claimed": False,
     "role": "fixed-source regression and preregistered operational gate",
+}
+V7_PROTOCOL = "judge_v7_g150"
+V7_EVALUATION_SCOPE = {
+    "previous_model_protocol": V6_PROTOCOL,
+    "prior_model_output_exposed": True,
+    "new_independent_discrimination_claimed": False,
+    "role": "exposed adjustment and regression set; not sealed final approval",
+    "generation_contract_applied_to_probe_gate": False,
+    "full_generation_contract_reported_separately": True,
+    "final_approval_eligible": False,
+    "adjustment_operational_approval_eligible": True,
 }
 _V5_SOURCE_SETS = {"N+": "judge_nplus_g1", "D+": "judge_dplus_g1",
                    "ADV1": "judge_adv_negative_g1", "ADV2": "judge_adv_negative_g2"}
@@ -335,3 +346,32 @@ def write_v6_cases(sources: Mapping, output_path, *, expected_source_sha256: Map
     write_json_new(output, result)
     return {"path": str(output), "sha256": sha256_file(output), "cases": len(result["cases"]),
             "protocol": V6_PROTOCOL}
+
+
+def build_v7_cases(sources: Mapping, *, expected_source_sha256: Mapping) -> dict:
+    """Preserve the exposed G150 sources; never read or substitute the sealed set.
+
+    These old positive texts predate the generation contract. Record that full
+    contract separately; do not rewrite text/expectations to manufacture a pass.
+    Normal rows retain their source expectations but have no model response.
+    """
+    result = build_v5_cases(sources, expected_source_sha256=expected_source_sha256)
+    result["schema_version"] = 4
+    result["protocol"] = V7_PROTOCOL
+    result["provenance"]["evaluation_scope"] = deepcopy(V7_EVALUATION_SCOPE)
+    for case in result["cases"]:
+        case["protocol"] = V7_PROTOCOL
+    return result
+
+
+def write_v7_cases(sources: Mapping, output_path, *, expected_source_sha256: Mapping, repo_root=None) -> dict:
+    """Write a fresh v7 adjustment bundle without overwriting any source/receipt."""
+    assert_gate_closed(repo_root)
+    output = Path(output_path)
+    if output.exists() or output.is_symlink():
+        raise ValueError("v7 output must be a new path")
+    result = build_v7_cases(sources, expected_source_sha256=expected_source_sha256)
+    assert_gate_closed(repo_root)
+    write_json_new(output, result)
+    return {"path": str(output), "sha256": sha256_file(output), "cases": len(result["cases"]),
+            "protocol": V7_PROTOCOL, "final_blinded_approval": False}

@@ -69,7 +69,7 @@ def load(kind: str, model_id: str, adapter: Path | None):
         arrays = [npz[k] for k in npz.files]
         sd = serialize.ndarrays_to_state_dict(arrays, keys, ref)
 
-        # 로드 **전** lora_B 의 노름. peft 는 lora_B 를 0 으로 놓으므로 0 이어야 한다.
+        # 로드 **전** lora_노름. peft 는 lora_B 를 0 으로 놓으므로 0 이어야 한다.
         before = _lora_b_norm(model)
         res = set_peft_model_state_dict(model, sd)
         after = _lora_b_norm(model)

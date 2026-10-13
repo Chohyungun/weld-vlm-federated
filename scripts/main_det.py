@@ -225,7 +225,7 @@ def _num_examples(sn) -> dict[int, int]:
 
 
 def _assert_gates_recorded(meta_path: Path) -> None:
-    """첫 칸 완료 직후 게이트 평가 기록을 확인하고서만 진행한다(지시서 요구)."""
+    """첫 칸 완료 직후 게이트 평가 기록을 확인하고서만 진행한다(작업 명세 요구)."""
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     ge = meta.get("gates_evaluated") or []
     gr = meta.get("gate_results") or {}

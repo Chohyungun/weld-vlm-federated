@@ -77,7 +77,7 @@ def test_빈_필수_키는_전부_이름으로_낸다():
 
 def test_저장소의_설정은_빈_키만_이름으로_낸다():
     """`configs/base.yaml` 의 **지금 값**과 무관한 규칙을 본다 — 값이 있는 키는 열거되지 않고 빈 키만 열거된다.
-    데이터 쪽이 키를 채울 때마다 이 시험을 고치지 않는다(게이트 13회차 실패 — 채워진 두 키를 빈 키로 기대했다)."""
+    데이터 쪽이 키를 채울 때마다 이 시험을 고치지 않는다(전체 검증 13회차 실패 — 채워진 두 키를 빈 키로 기대했다)."""
     from vlm.uni_config import UniConfig
 
     cfg = load_uni_config(ROOT / "configs/base.yaml")
@@ -224,7 +224,7 @@ def test_연합_키의_선언이_목록과_기본값까지_같다():
     for k, d in UNI_RUN_DEFAULTS.items():
         assert k in decl, f"pyproject 가 {k} 를 선언하지 않았다 — flwr run 이 덮어쓰기를 거부한다"
         assert decl[k] == d, f"{k} 의 선언 기본값 {decl[k]!r} ≠ 목록 {d!r}"
-    assert set(PURPOSES) == {"main", "rehearsal", "frame_diag"}
+    assert set(PURPOSES) == {"main", "rehearsal", "frame_diag", "early_coord_check"}
 
 
 def test_서버와_인프로세스_서버가_같은_통합형_키를_내려보낸다(tmp_path):

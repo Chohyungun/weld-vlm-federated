@@ -22,8 +22,8 @@ from typing import Any, Callable, Mapping
 __all__ = ["UNI_RUN_KEYS", "PURPOSES", "UNI_RUN_DEFAULTS", "UNI_SERVER_DEFAULTS", "MAIN_REQUIRED", "UniMainIncomplete",
            "down_config", "client_run_cfg"]
 
-#: 목적의 값 공간. 판정 07 의 25 가 셋째 값을 받았다.
-PURPOSES = ("main", "rehearsal", "frame_diag")
+#: 목적의 값 공간. 판정 07 의 25 가 셋째 값을 받았다. 넷째 `early_coord_check` 는 조기 좌표 점검(11번) — 중앙 칸에서만 돈다.
+PURPOSES = ("main", "rehearsal", "frame_diag", "early_coord_check")
 
 #: 통합형 연합이 run-config 로 받는 키와 선언 기본값.
 UNI_RUN_DEFAULTS: dict[str, str] = {
@@ -116,6 +116,8 @@ def _check(raw: Mapping[str, str]) -> None:
     """목적과 템플릿 인자의 꼴. 틀리면 학습 전에 멈춘다."""
     if raw["purpose"] not in PURPOSES:
         raise ValueError(f"purpose 가 {list(PURPOSES)} 가운데 하나가 아니다: {raw['purpose']!r}")
+    if raw["purpose"] == "early_coord_check":
+        raise ValueError("조기 좌표 점검은 중앙 칸 자체로만 돈다 — 연합은 이 목적을 받지 않는다(11번 §1)")
     if raw["purpose"] == "main" and raw.get("uni-train-lists"):
         raise ValueError("본실험은 학습 행 목록(uni-train-lists)을 받지 않는다 — 참여자 행 전체로 학습한다")
     si = raw["uni-seed-index"]

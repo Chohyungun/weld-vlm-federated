@@ -20,6 +20,7 @@ from pathlib import Path
 from . import infer as I
 
 _SCHEMA = 1
+_SCHEMA_V7 = 2
 _SHARD = re.compile(r"[0-9]{6}\.json")
 
 
@@ -193,7 +194,7 @@ def _decoding(spec: dict) -> dict:
             "truncation": False, "add_special_tokens": False}
 
 
-def _runtime(model, spec: dict) -> dict:
+def _runtime(model, spec: dict, *, policy_version="v6") -> dict:
     """Bind loaded defaults and effective EOS/PAD without altering legacy identity."""
     result = _clone(model.identity)
     I._check_model(result, spec)
@@ -218,16 +219,42 @@ def _runtime(model, spec: dict) -> dict:
             "actual_chat_template_sha256": _sha_text(template),
             "decoding": _decoding(spec),
         }
+    if policy_version == "v7":
+        from . import judge_stopping as stop
+        if spec["max_new_tokens"] != stop.JUDGE_MAX_NEW_TOKENS:
+            raise I.StageRefused("judge_runtime", "v7 requires exactly 160 tokens")
+        if result["backend"] != "fake" and (
+                getattr(model, "json_object_stopping", False) is not True or
+                result.get("json_stop_protocol") != stop.JSON_STOP_PROTOCOL or
+                result.get("json_stop_implementation_sha256") != I._file_sha(Path(stop.__file__))):
+            raise I.StageRefused("judge_runtime", "v7 backend JSON stopper was not explicitly enabled")
+        result["judge_runtime"].update(policy_version="v7", decoding=_decoding_v7(spec),
+            json_stop_protocol=stop.JSON_STOP_PROTOCOL,
+            json_stop_implementation_sha256=I._file_sha(Path(stop.__file__)))
+    elif policy_version != "v6":
+        raise I.StageRefused("judge_policy", "unknown judge policy version")
     return result
 
 
 def _check_runtime(runtime: dict, spec: dict):
     I._check_model(runtime, spec)
     details = runtime.get("judge_runtime")
-    if not isinstance(details, dict) or details.get("decoding") != _decoding(spec):
+    v7 = isinstance(details, dict) and details.get("policy_version") == "v7"
+    decoding = _decoding_v7(spec) if v7 else _decoding(spec)
+    if not isinstance(details, dict) or details.get("decoding") != decoding:
         raise I.StageRefused("judge_runtime", "missing effective decoding identity")
+    v7_extra = {}
+    if v7:
+        from . import judge_stopping as stop
+        v7_extra = {"policy_version": "v7", "json_stop_protocol": stop.JSON_STOP_PROTOCOL,
+                    "json_stop_implementation_sha256": I._file_sha(Path(stop.__file__))}
+        if spec["max_new_tokens"] != 160 or any(details.get(k) != v for k, v in v7_extra.items()):
+            raise I.StageRefused("judge_runtime", "v7 decoding/stopping implementation differs")
+        if runtime["backend"] != "fake" and any(runtime.get(k) != v7_extra[k] for k in
+                ("json_stop_protocol", "json_stop_implementation_sha256")):
+            raise I.StageRefused("judge_runtime", "v7 runtime lacks the enabled stopping identity")
     if runtime["backend"] == "fake":
-        if details != {"test_only": True, "decoding": _decoding(spec)}:
+        if details != {"test_only": True, "decoding": decoding, **v7_extra}:
             raise I.StageRefused("judge_runtime", "invalid fake identity")
     else:
         if details.get("test_only") is not False or not isinstance(details.get("generation_config"), dict):
@@ -243,13 +270,13 @@ def _check_runtime(runtime: dict, spec: dict):
                 raise I.StageRefused("judge_runtime", "missing effective token identity")
 
 
-def judge_runtime_identity(model, spec: dict) -> dict:
+def judge_runtime_identity(model, spec: dict, *, policy_version="v6") -> dict:
     """Bind an already loaded judge for an independent probe; no model loading.
 
     Use with the same ``infer.TransformersBackend`` as ``run_judge``. This is
     evidence of runtime settings only, not a quality or production approval.
     """
-    runtime = _runtime(model, spec)
+    runtime = _runtime(model, spec, policy_version=policy_version)
     _check_runtime(runtime, spec)
     return runtime
 
@@ -400,7 +427,8 @@ def _inspect(root, target, config, judge_config=None, *, owned_locks=False,
 
 
 def _unchanged(context, model=None):
-    require_v6_parser()
+    version = context.get("policy_version", "v6")
+    (require_v7_parser if version == "v7" else require_v6_parser)()
     for path, token in context.get("lock_tokens", []):
         _safe_path(path)
         if not path.is_file() or path.is_symlink() or path.read_bytes() != token:
@@ -408,7 +436,7 @@ def _unchanged(context, model=None):
     if (_source_pins(context["root"]) != context["source_pins"] or
             _output_pins(context["target"]) != context["output_pins"]):
         raise I.StageRefused("judge_snapshot_changed", "input or completed output bytes changed")
-    _, system, policy = _policy()
+    _, system, policy = (_policy_v7() if version == "v7" else _policy())
     if system != context["system"] or policy != context["basis"]["policy_identity"]:
         raise I.StageRefused("judge_policy_changed", "new policy requires a new identity")
     from .judge_probe import approval_files, _code_pins
@@ -419,7 +447,7 @@ def _unchanged(context, model=None):
             context["approval"]["identity_basis"]["input_basis"]["implementation_sha256"]):
         raise I.StageRefused("probe_approval_identity", "approved probe implementation changed during writer/read")
     if (model is not None and context.get("record") is not None and
-            _runtime(model, context["spec"]) != context["record"]["identity_basis"]["runtime_model"]):
+            _runtime(model, context["spec"], policy_version=version) != context["record"]["identity_basis"]["runtime_model"]):
         raise I.StageRefused("runtime_changed", "loaded model/tokenizer/defaults changed")
 
 
@@ -455,7 +483,8 @@ def _write_genesis(target, basis):
 
 
 def read_judge_source(run_dir, config: dict, judge_dir, *, judge_config=None,
-                      expected_judge_identity_sha256=None, expected_probe_approval_sha256=None) -> dict:
+                      expected_judge_identity_sha256=None, expected_probe_approval_sha256=None,
+                      policy_version=None) -> dict:
     """Return the verified 05h source object, without model loading or writes.
 
     ``judge_dir`` is a locator, not authority. Production reads require at least
@@ -463,6 +492,21 @@ def read_judge_source(run_dir, config: dict, judge_dir, *, judge_config=None,
     Consumers must forward ``caller_expected_pins`` unchanged on every reread.
     Only an unapproved, exact fake runtime permits legacy unpinned test reads.
     """
+    if policy_version is None:
+        _, selected_target = _paths(run_dir, judge_dir)
+        selected_genesis = selected_target / "JUDGE.json"
+        if selected_genesis.exists():
+            I._plain_file(selected_genesis)
+            selected = I._json(selected_genesis.read_bytes())
+            policy_version = "v7" if isinstance(selected, dict) and selected.get("schema_version") == _SCHEMA_V7 else "v6"
+        else:
+            policy_version = "v6"
+    if policy_version == "v7":
+        return _read_judge_source_v7(run_dir, config, judge_dir, judge_config=judge_config,
+            expected_judge_identity_sha256=expected_judge_identity_sha256,
+            expected_probe_approval_sha256=expected_probe_approval_sha256)
+    if policy_version != "v6":
+        raise I.StageRefused("judge_policy", "unknown judge policy version")
     caller_pins = {"expected_judge_identity_sha256": expected_judge_identity_sha256,
                    "expected_probe_approval_sha256": expected_probe_approval_sha256}
     for name, value in caller_pins.items():
@@ -502,8 +546,14 @@ def read_judge_source(run_dir, config: dict, judge_dir, *, judge_config=None,
 
 def run_judge(run_dir, config: dict, judge_dir, *, judge_config=None,
               max_shards=None, backend_factory=None, probe_approval=None,
-              probe_approval_sha256=None) -> dict:
+              probe_approval_sha256=None, policy_version="v6") -> dict:
     """Append only to one separate identity; legacy run_stage remains unchanged."""
+    if policy_version == "v7":
+        return _run_judge_v7(run_dir, config, judge_dir, judge_config=judge_config,
+            max_shards=max_shards, backend_factory=backend_factory, probe_approval=probe_approval,
+            probe_approval_sha256=probe_approval_sha256)
+    if policy_version != "v6":
+        raise I.StageRefused("judge_policy", "unknown judge policy version")
     if max_shards is not None and (type(max_shards) is not int or max_shards < 0):
         raise I.StageRefused("invalid_max_shards", "must be a nonnegative integer")
     require_v6_parser()
@@ -620,6 +670,439 @@ def run_judge(run_dir, config: dict, judge_dir, *, judge_config=None,
                                "model": _clone(record["identity_basis"]["runtime_model"]), "rows": rows,
                                "metrics": {"wall_seconds": round(time.monotonic() - shard_started, 6),
                                            "model_load_seconds": round(model_load_seconds if newly_done == 0 else 0, 6),
+                                           **memory, "input_tokens": sum(r["input_tokens"] for r in rows),
+                                           "output_tokens": sum(r["output_tokens"] for r in rows)},
+                               "created_at": datetime.now(UTC).isoformat()}
+                    folder = target / "judged"
+                    folder.mkdir(exist_ok=True)
+                    _safe_path(folder)
+                    path = folder / f"{index:06d}.json"
+                    I._write_shard(path, payload)
+                    context["done"][index] = {**payload, "payload_sha256": I._digest(payload)}
+                    # Add only the expected new file; never adopt changes to old files.
+                    context["output_pins"]["judged"][path.name] = hashlib.sha256(
+                        I._canonical(context["done"][index]) + b"\n").hexdigest()
+                    _unchanged(context, model)
+                    newly_done += 1
+                return result("complete", 0)
+            except I.StageTimeLimit:
+                _unchanged(context, model)
+                return result("time_limit", 3)
+            except RuntimeError as exc:
+                if "out of memory" in str(exc).lower():
+                    _unchanged(context, model)
+                    return {**result("out_of_memory", 5), "retry_policy": "explicit resume; unchanged identity only"}
+                raise
+            finally:
+                if model is not None:
+                    model.close()
+
+def _decoding_v7(spec: dict) -> dict:
+    from .judge_stopping import JSON_STOP_PROTOCOL
+    return {**_decoding(spec), "json_stop_protocol": JSON_STOP_PROTOCOL,
+            "clean_up_tokenization_spaces": False, "num_return_sequences": 1,
+            "return_dict_in_generate": False}
+
+
+def _policy_v7():
+    from . import judge_policy as policy
+    system, identity = policy.JUDGE_SYSTEM_V7, _clone(policy.policy_identity_v7())
+    if not isinstance(system, str) or not system or identity.get("output_schema") != "judge_structured_v7":
+        raise I.StageRefused("judge_policy", "v7 system/policy schema is unavailable")
+    return policy, system, identity
+
+
+def require_v7_parser():
+    from . import judge_policy as policy, judge_fingerprints as fingerprints, quality
+    parser = getattr(quality, "parse_judge_v7", None)
+    if (getattr(quality, "JUDGE_V7_SCHEMA_VERSION", None) != "judge_structured_v7" or
+            not callable(parser)):
+        raise I.StageRefused("parser_missing", "B structured-v7 parser must be explicitly connected")
+    try:
+        identity = fingerprints.require_v7_parser()
+        bound = policy.policy_identity_v7()
+        if (identity.get("selected_schema") != "judge_structured_v7" or
+                identity.get("capabilities", {}).get("judge_structured_v7") is not True or
+                bound.get("output_schema") != "judge_structured_v7" or
+                bound.get("structured_parser_ready") is not True or bound.get("parser_implementation") != identity):
+            raise ValueError("policy does not bind the active structured-v7 parser closure")
+    except Exception as exc:
+        raise I.StageRefused("parser_missing", str(exc)) from exc
+    return parser
+
+
+def _check_runtime_v7(runtime, spec):
+    _check_runtime(runtime, spec)
+    if runtime["judge_runtime"].get("policy_version") != "v7":
+        raise I.StageRefused("judge_runtime", "v7 cannot reuse a legacy runtime")
+
+
+def _v7_row_receipt(policy, task, generated, identity):
+    return {"id": task["id"], "candidate_sha256": _sha_text(generated["text"]),
+            "candidate_finish_reason": generated["finish_reason"],
+            "policy_identity_sha256": I._digest(identity),
+            **policy.evaluate_v7(task, generated["text"], generation_contract=True)}
+
+
+def _read_done_v7(target, record, tasks, generated, spec, config, deterministic, model_ids):
+    result = {}
+    names = _files(target / "judged", absent_ok=True)
+    if names and record is None:
+        raise I.StageRefused("judge_genesis_missing", "orphan judged shards are not adopted")
+    total = math.ceil(len(tasks) / config["shard_size"])
+    for name in names:
+        index = int(name[:-5])
+        shard = I._json((target / "judged" / name).read_bytes())
+        if not isinstance(shard, dict):
+            raise I.StageRefused("shard_schema", name)
+        payload = {k: v for k, v in shard.items() if k != "payload_sha256"}
+        if shard.get("payload_sha256") != I._digest(payload):
+            raise I.StageRefused("shard_digest", name)
+        if index >= total or shard.get("index") != index or shard.get("stage") != "judge":
+            raise I.StageRefused("shard_position", name)
+        chunk = tasks[index * config["shard_size"]:(index + 1) * config["shard_size"]]
+        ids = [t["id"] for t in chunk]
+        basis = record["identity_basis"]
+        if (shard.get("schema_version") != _SCHEMA_V7 or
+                shard.get("judge_identity_sha256") != record["identity_sha256"] or
+                shard.get("identity_sha256") != basis["run_identity_sha256"] or
+                shard.get("config_sha256") != basis["run_config_sha256"]):
+            raise I.StageRefused("judge_shard_identity", name)
+        if shard.get("task_ids") != ids or shard.get("input_sha256") != I._input_digest(chunk, generated[index]):
+            raise I.StageRefused("shard_inputs", name)
+        if shard.get("rendered_input_sha256") != basis["rendered_shard_sha256"][index]:
+            raise I.StageRefused("judge_render_changed", name)
+        if shard.get("system_prompt_sha256") != basis["system_prompt_sha256"]:
+            raise I.StageRefused("system_prompt_changed", name)
+        if shard.get("model_config_sha256") != I._digest(spec):
+            raise I.StageRefused("model_config_changed", name)
+        if shard.get("model") != basis["runtime_model"]:
+            raise I.StageRefused("runtime_changed", name)
+        if shard.get("model_task_ids") != model_ids[index]:
+            raise I.StageRefused("judge_model_task_ids", name)
+        if shard.get("deterministic_receipts") != deterministic[index]:
+            raise I.StageRefused("judge_deterministic_receipts", name)
+        I._check_rows(shard.get("rows"), model_ids[index], spec, allow_json_closed=True)
+        result[index] = shard
+    if sorted(result) != list(range(len(result))):
+        raise I.StageRefused("shard_gap", "completed shards must be a contiguous prefix")
+    return result
+
+def _inspect_v7(root, target, config, judge_config=None, *, owned_locks=False,
+             probe_approval=None, probe_approval_sha256=None):
+    require_v7_parser()
+    root, target = _paths(root, target)
+    if not owned_locks:
+        _unlocked(root, target)
+    before, output_before = _source_pins(root), _output_pins(target)
+    run, tasks = I._read_inputs(root, config)
+    generation_spec = I._model_config(config, "generate")
+    generated = I._read_shards(root, "generate", run, tasks, config)
+    total = math.ceil(len(tasks) / config["shard_size"])
+    if len(generated) != total:
+        raise I.StageRefused("generation_incomplete", "separate judge requires every generated shard")
+    record = None
+    if output_before["JUDGE.json"] is not None:
+        record = I._json((target / "JUDGE.json").read_bytes())
+        if (not isinstance(record, dict) or record.get("schema_version") != _SCHEMA_V7 or
+                not isinstance(record.get("identity_basis"), dict) or
+                record.get("identity_sha256") != I._digest(record["identity_basis"])):
+            raise I.StageRefused("judge_genesis", "invalid JUDGE identity")
+    stored_spec = None if record is None else record["identity_basis"].get("judge_model_config")
+    selected = judge_config if judge_config is not None else (stored_spec if record else config.get("judge"))
+    spec = _clone(I._model_config({"judge": selected}, "judge"))
+    if spec["max_new_tokens"] != 160:
+        raise I.StageRefused("judge_config", "v7 requires exactly 160 output tokens")
+    if record and spec != stored_spec:
+        raise I.StageRefused("judge_config_changed", "new settings require a new judge directory")
+    if (I._family(spec["family"]) == I._family(generation_spec["family"]) or
+            spec["model_id"] == generation_spec["model_id"]):
+        raise I.StageRefused("self_judging", "judge must have a different model family")
+    policy, system, policy_identity = _policy_v7()
+    from .judge_probe import read_probe_approval
+    approval, approval_paths = None, []
+    stored_approval = record["identity_basis"].get("probe_approval") if record else None
+    if (probe_approval is None) != (probe_approval_sha256 is None):
+        raise I.StageRefused("probe_approval_pin", "supply both approval directory and its independent SHA256")
+    if probe_approval is not None:
+        path = _safe_path(Path(probe_approval))
+        approval = read_probe_approval(path, probe_approval_sha256)
+        approval_paths.append((path, approval["files_sha256"]))
+    if output_before["probe_approval"] is not None:
+        sha = stored_approval.get("receipt_sha256") if isinstance(stored_approval, dict) else probe_approval_sha256
+        local = read_probe_approval(target / "probe_approval", sha)
+        if approval is not None and local != approval:
+            raise I.StageRefused("probe_approval_changed", "selected approval differs from the writer's sealed evidence")
+        approval = local
+        approval_paths.append((target / "probe_approval", local["files_sha256"]))
+    elif stored_approval is not None:
+        raise I.StageRefused("probe_approval_missing", "writer's portable approval is missing")
+    binding = (_approval_binding(approval, run, spec, policy_identity, before["implementation"])
+               if approval is not None else None)
+    prompts, rendered, deterministic, model_ids = {}, [], {}, {}
+    for index, shard in generated.items():
+        chunk = tasks[index * config["shard_size"]:(index + 1) * config["shard_size"]]
+        decisions = [_v7_row_receipt(policy, t, r, policy_identity) for t, r in zip(chunk, shard["rows"])]
+        deterministic[index] = decisions
+        applicable = [(t, r) for t, r, d in zip(chunk, shard["rows"], decisions) if d["model_applicable"]]
+        model_ids[index] = [t["id"] for t, _ in applicable]
+        values = [policy.render_judge_v7(t, r) for t, r in applicable]
+        if not all(isinstance(value, str) and value for value in values):
+            raise I.StageRefused("judge_render", "renderer must produce nonempty strings")
+        prompts[index] = values
+        rendered.append(I._digest([{"system": system, "user": value} for value in values]))
+    basis = {
+        "policy_version": "v7", "output_schema": "judge_structured_v7",
+        "run_identity_sha256": run["identity_sha256"], "run_config_sha256": run["config_sha256"],
+        "run_file_sha256": before["RUN.json"], "tasks_sha256": run["tasks_sha256"],
+        "generate_shard_sha256": sorted(s["payload_sha256"] for s in generated.values()),
+        "generated_files": [{"index": i, "payload_sha256": s["payload_sha256"],
+                             "file_sha256": before["generated"][f"{i:06d}.json"]}
+                            for i, s in generated.items()],
+        "judge_model": {"model_id": spec["model_id"], "family": I._family(spec["family"])},
+        "judge_model_config": spec, "system_prompt_sha256": _sha_text(system),
+        "rendered_shard_sha256": rendered, "policy_identity": policy_identity,
+        "implementation_sha256": before["implementation"], "decoding": _decoding_v7(spec),
+        "probe_approval": binding,
+    }
+    if record:
+        runtime = record["identity_basis"].get("runtime_model")
+        _check_runtime_v7(runtime, spec)
+        _check_approved_runtime(approval, runtime, backend_injected=False)
+        if I._family(runtime["model_type"]) == I._family(generated[0]["model"]["model_type"]):
+            raise I.StageRefused("self_judging", "actual model families are equal")
+        if record["identity_basis"] != {**basis, "runtime_model": runtime}:
+            raise I.StageRefused("judge_identity_changed", "source, render, policy or implementation differs")
+    done = _read_done_v7(target, record, tasks, generated, spec, config, deterministic, model_ids)
+    context = dict(policy_version="v7", deterministic=deterministic, model_ids=model_ids,
+                   root=root, target=target, config=config, run=run, tasks=tasks,
+                   generated=generated, spec=spec, system=system, prompts=prompts,
+                   basis=basis, record=record, done=done,
+                   approval=approval, approval_paths=approval_paths,
+                   source_pins=before, output_pins=output_before)
+    _unchanged(context)
+    if not owned_locks:
+        _unlocked(root, target)
+    return context
+
+def _write_genesis_v7(target, basis):
+    record = {"schema_version": _SCHEMA_V7, "identity_basis": basis,
+              "identity_sha256": I._digest(basis), "created_at": datetime.now(UTC).isoformat()}
+    final, temp = target / "JUDGE.json", target / "JUDGE.json.tmp"
+    if final.exists():
+        raise I.StageRefused("output_exists", str(final))
+    try:
+        with temp.open("xb") as stream:
+            stream.write(I._canonical(record) + b"\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+    except FileExistsError as exc:
+        raise I.StageRefused("partial_or_unknown_output", f"preserve and inspect {temp}") from exc
+    if final.exists():
+        raise I.StageRefused("output_exists", str(final))
+    os.replace(temp, final)
+    return record
+
+def _read_judge_source_v7(run_dir, config: dict, judge_dir, *, judge_config=None,
+                      expected_judge_identity_sha256=None, expected_probe_approval_sha256=None) -> dict:
+    """Return the verified 05h source object, without model loading or writes.
+
+    ``judge_dir`` is a locator, not authority. Production reads require at least
+    one independently recorded expected pin; neither is inferred from JUDGE.
+    Consumers must forward ``caller_expected_pins`` unchanged on every reread.
+    Only an unapproved, exact fake runtime permits legacy unpinned test reads.
+    """
+    caller_pins = {"expected_judge_identity_sha256": expected_judge_identity_sha256,
+                   "expected_probe_approval_sha256": expected_probe_approval_sha256}
+    for name, value in caller_pins.items():
+        if value is not None and (not isinstance(value, str) or not I._HEX64.fullmatch(value)):
+            raise I.StageRefused("judge_source_pin", f"invalid external SHA256: {name}")
+    context = _inspect_v7(run_dir, judge_dir, _clone(config), judge_config)
+    record = context["record"]
+    if record is None:
+        raise I.StageRefused("judge_genesis_missing", "JUDGE.json is required")
+    runtime = record["identity_basis"]["runtime_model"]
+    fake = (runtime["backend"] == "fake" and runtime["judge_runtime"].get("test_only") is True
+            and context["approval"] is None)
+    explicit = any(value is not None for value in caller_pins.values())
+    if not fake and not explicit:
+        raise I.StageRefused("judge_source_pin_required", "production source needs an independent expected identity or approval SHA")
+    approval_sha = (context["basis"]["probe_approval"] or {}).get("receipt_sha256")
+    if (expected_judge_identity_sha256 is not None and
+            expected_judge_identity_sha256 != record["identity_sha256"]):
+        raise I.StageRefused("judge_source_pin", "selected judge differs from the caller's expected identity")
+    if expected_probe_approval_sha256 is not None and expected_probe_approval_sha256 != approval_sha:
+        raise I.StageRefused("judge_source_pin", "selected approval differs from the caller's expected approval")
+    result = {"identity_sha256": record["identity_sha256"],
+              "policy_version": "v7", "output_schema": "judge_structured_v7",
+              "all_task_ids": [tid for shard in context["done"].values() for tid in shard["task_ids"]],
+              "model_task_ids": [tid for shard in context["done"].values() for tid in shard["model_task_ids"]],
+              "deterministic_receipts": [{**r, "_shard_sha256": shard["payload_sha256"],
+                  "_judge_identity_sha256": record["identity_sha256"]}
+                  for shard in context["done"].values() for r in shard["deterministic_receipts"]],
+              "identity_basis": _clone(record["identity_basis"]),
+              "judge_dir": str(context["target"]),
+              "probe_approval_sha256": approval_sha,
+              "gpu_model_verified": context["approval"] is not None,
+              "caller_expected_pins": caller_pins,
+              "pin_provenance": "explicit-caller" if explicit else "unapproved-fake",
+              "rows": [{**row, "_stage": "judge", "_backend": shard["model"]["backend"],
+                        "_shard_sha256": shard["payload_sha256"],
+                        "_judge_identity_sha256": record["identity_sha256"]}
+                       for shard in context["done"].values() for row in shard["rows"]]}
+    _unchanged(context)
+    _unlocked(context["root"], context["target"])
+    return result
+
+def _run_judge_v7(run_dir, config: dict, judge_dir, *, judge_config=None,
+              max_shards=None, backend_factory=None, probe_approval=None,
+              probe_approval_sha256=None) -> dict:
+    """Append only to one separate identity; legacy run_stage remains unchanged."""
+    if max_shards is not None and (type(max_shards) is not int or max_shards < 0):
+        raise I.StageRefused("invalid_max_shards", "must be a nonnegative integer")
+    require_v7_parser()
+    config = _clone(config)
+    context = _inspect_v7(run_dir, judge_dir, config, judge_config,
+                       probe_approval=probe_approval, probe_approval_sha256=probe_approval_sha256)
+    started, newly_done = time.monotonic(), 0
+
+    def result(status, exit_code):
+        count = sum(len(s["task_ids"]) for s in context["done"].values())
+        record = context["record"]
+        return {"stage": "judge", "policy_version": "v7", "status": status, "exit_code": exit_code,
+                "planned_tasks": len(context["tasks"]), "completed_tasks": count,
+                "pending_tasks": len(context["tasks"]) - count,
+                "completed_shards": len(context["done"]), "new_shards": newly_done,
+                "judge_identity_sha256": None if record is None else record["identity_sha256"],
+                "runtime_identity_available": record is not None,
+                "probe_approval_sha256": (context["basis"]["probe_approval"] or {}).get("receipt_sha256"),
+                "gpu_model_verified": context["approval"] is not None and record is not None,
+                "ready_for_training": False,
+                "judge_dir": str(context["target"]),
+                "wall_seconds": round(time.monotonic() - started, 3)}
+
+    total = len(context["generated"])
+    if len(context["done"]) == total:
+        return result("complete", 0)
+    if max_shards == 0:
+        return result("shard_limit", 4)
+    if backend_factory is None and context["approval"] is None:
+        raise I.StageRefused("probe_approval_required", "explicit two-probe approval is required before model load")
+    if backend_factory is None and (probe_approval is None or probe_approval_sha256 is None):
+        raise I.StageRefused("probe_approval_pin", "production execution/resume requires an explicit approval SHA")
+    if (context["record"] is None and context["approval"] is None
+            and not context["model_ids"][len(context["done"])]):
+        raise I.StageRefused("unapproved_normal_prefix",
+            "normal-only prefix needs an approved runtime; never load a fake or real model for normal rows")
+    if backend_factory is not None and context["approval"] is not None:
+        raise I.StageRefused("probe_approval_backend", "an approved runtime cannot use an injected backend")
+    root, target = context["root"], context["target"]
+    deadline = started + context["spec"]["wall_seconds"]
+    with I._writer_lock(root):
+        require_v7_parser()
+        root_lock = (root / ".inference.lock", (root / ".inference.lock").read_bytes())
+        context["lock_tokens"] = [root_lock]
+        _unchanged(context)
+        target.mkdir(parents=True, exist_ok=True)
+        _safe_path(target)
+        with I._writer_lock(target):
+            target_lock = (target / ".inference.lock", (target / ".inference.lock").read_bytes())
+            fresh = _inspect_v7(root, target, config, judge_config, owned_locks=True,
+                             probe_approval=probe_approval, probe_approval_sha256=probe_approval_sha256)
+            if (fresh["source_pins"] != context["source_pins"] or
+                    fresh["output_pins"] != context["output_pins"] or fresh["basis"] != context["basis"]):
+                raise I.StageRefused("judge_snapshot_changed", "changed while acquiring writer locks")
+            context = fresh
+            context["lock_tokens"] = [root_lock, target_lock]
+            _unchanged(context)
+            if context["approval"] is not None and context["output_pins"]["probe_approval"] is None:
+                from .judge_probe import copy_probe_approval
+                copied = copy_probe_approval(probe_approval, target / "probe_approval", probe_approval_sha256)
+                context["output_pins"]["probe_approval"] = context["approval"]["files_sha256"]
+                context["approval_paths"].append((target / "probe_approval", copied["files_sha256"]))
+                _unchanged(context)
+            spec, model = context["spec"], None
+            try:
+                for index in range(len(context["done"]), total):
+                    if max_shards is not None and newly_done >= max_shards:
+                        return result("shard_limit", 4)
+                    if time.monotonic() >= deadline:
+                        return result("time_limit", 3)
+                    _unchanged(context, model)
+                    require_v7_parser()
+                    model_load_seconds = 0.0
+                    size = config["shard_size"]
+                    chunk = context["tasks"][index * size:(index + 1) * size]
+                    ids = [task["id"] for task in chunk]
+                    model_ids = context["model_ids"][index]
+                    if context["record"] is None and not model_ids:
+                        runtime = _clone(context["approval"]["identity_basis"]["runtime_model"])
+                        _check_runtime_v7(runtime, spec)
+                        _check_approved_runtime(context["approval"], runtime, backend_injected=False)
+                        if I._family(runtime["model_type"]) == I._family(context["generated"][0]["model"]["model_type"]):
+                            raise I.StageRefused("self_judging", "actual architecture families are equal")
+                        context["record"] = _write_genesis_v7(target, {**context["basis"], "runtime_model": runtime})
+                        context["output_pins"]["JUDGE.json"] = hashlib.sha256(
+                            I._canonical(context["record"]) + b"\n").hexdigest()
+                        _unchanged(context)
+                    if model is None and model_ids:
+                        load_started = time.monotonic()
+                        model = (backend_factory or I.TransformersBackend)(dict(spec), "judge")
+                        model_load_seconds = time.monotonic() - load_started
+                        enable = getattr(model, "enable_json_object_stopping", None)
+                        if callable(enable):
+                            enable()
+                        elif getattr(model, "identity", {}).get("backend") != "fake":
+                            raise I.StageRefused("judge_json_stopping", "v7 backend requires explicit JSON stopper")
+                        runtime = judge_runtime_identity(model, spec, policy_version="v7")
+                        _check_approved_runtime(context["approval"], runtime,
+                                                backend_injected=backend_factory is not None)
+                        if I._family(runtime["model_type"]) == I._family(context["generated"][0]["model"]["model_type"]):
+                            raise I.StageRefused("self_judging", "actual architecture families are equal")
+                        _unchanged(context)
+                        if context["record"] is None:
+                            context["record"] = _write_genesis_v7(target, {**context["basis"], "runtime_model": runtime})
+                            context["output_pins"]["JUDGE.json"] = hashlib.sha256(
+                                I._canonical(context["record"]) + b"\n").hexdigest()
+                        elif runtime != context["record"]["identity_basis"]["runtime_model"]:
+                            raise I.StageRefused("runtime_changed", "resume requires identical loaded runtime")
+                        _unchanged(context, model)
+                    size = config["shard_size"]
+                    chunk = context["tasks"][index * size:(index + 1) * size]
+                    ids = [task["id"] for task in chunk]
+                    prompts, rows = context["prompts"][index], []
+                    memory = {"peak_allocated_bytes": 0, "peak_reserved_bytes": 0}
+                    shard_started = time.monotonic()
+                    for offset in range(0, len(model_ids), spec["batch_size"]):
+                        if time.monotonic() >= deadline:
+                            return result("time_limit", 3)
+                        batch = prompts[offset:offset + spec["batch_size"]]
+                        output = model.generate_batch(batch, context["system"], deadline)
+                        if not isinstance(output, list) or len(output) != len(batch):
+                            raise I.StageRefused("backend_row_count", "batch returned wrong row count")
+                        for tid, row in zip(model_ids[offset:offset + spec["batch_size"]], output):
+                            if not isinstance(row, dict):
+                                raise I.StageRefused("row_content", tid)
+                            if "id" in row and row["id"] != tid:
+                                raise I.StageRefused("backend_task_id", "v7 backend returned a different task id")
+                            rows.append({**row, "id": tid})
+                        for key in memory:
+                            memory[key] = max(memory[key], getattr(model, "last_metrics", {}).get(key, 0))
+                    I._check_rows(rows, model_ids, spec, allow_json_closed=True)
+                    _unchanged(context, model)
+                    basis, record = context["basis"], context["record"]
+                    payload = {"schema_version": _SCHEMA_V7, "stage": "judge", "index": index,
+                               "identity_sha256": context["run"]["identity_sha256"],
+                               "config_sha256": context["run"]["config_sha256"],
+                               "judge_identity_sha256": record["identity_sha256"],
+                               "task_ids": ids, "model_task_ids": model_ids,
+                               "deterministic_receipts": context["deterministic"][index], "input_sha256": I._input_digest(chunk, context["generated"][index]),
+                               "rendered_input_sha256": basis["rendered_shard_sha256"][index],
+                               "system_prompt_sha256": basis["system_prompt_sha256"],
+                               "model_config_sha256": I._digest(spec),
+                               "model": _clone(record["identity_basis"]["runtime_model"]), "rows": rows,
+                               "metrics": {"wall_seconds": round(time.monotonic() - shard_started, 6),
+                                           "model_load_seconds": round(model_load_seconds, 6),
                                            **memory, "input_tokens": sum(r["input_tokens"] for r in rows),
                                            "output_tokens": sum(r["output_tokens"] for r in rows)},
                                "created_at": datetime.now(UTC).isoformat()}

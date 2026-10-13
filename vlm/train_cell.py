@@ -136,6 +136,10 @@ class UniRunSpec:
     run_root: Path | None = None
     #: 비본실험 부모 — 이음새처럼 **파이썬 인자로만** 바꾼다(합성 시험이 임시 폴더를 준다). 없으면 `outputs/rehearsal_u`.
     non_main_parent: Path | None = None
+    #: 착수 고정(`PIN.json`, 11번 §4) — 본실험은 비워 둘 수 없고, 시작 · 재개마다 지금 값과 맞댄다(`main_start_gate`).
+    pin_path: Path | None = None
+    #: 조기 좌표 점검의 통과 파일(평가 쪽 `early_coord_check.json`, 10번 §14-3) — 본실험 칸의 착수 허가 키. 비워 둘 수 없다.
+    ecc_permit_path: Path | None = None
 
     def __post_init__(self) -> None:
         if self.purpose not in PURPOSES:
@@ -550,6 +554,10 @@ def _run_cell(spec: UniRunSpec, tag: str, *, client_idx: int, rows: list[dict],
 
     expected_resume = _expected_resume(spec, tag, client_idx=client_idx, prompt_sha256=prompt_sha256,
                                        init_digest=init_info["init_adapter_digest"])
+    gate = None
+    if spec.purpose == "main":
+        # 시작 · 재개마다(이 함수는 프로세스마다 지난다) — 착수 고정과 조기 좌표 점검의 착수 허가.
+        gate = main_start_gate(spec, init_digest=init_info["init_adapter_digest"])
     prior = _idempotence(d, identity, expected_resume)
     if prior is not None:
         return UniCellResult(tag=tag, status="skipped", cell_dir=d, adapter_sha256=prior["adapter_sha256"],
@@ -678,6 +686,8 @@ def _run_cell(spec: UniRunSpec, tag: str, *, client_idx: int, rows: list[dict],
         "metrics": m,
         "impl_ids": m["impl_ids"],
         # 이 학습에서 켜진 고의 중단의 활성화 · 발화 기록과 그 뒤의 복구 세그먼트. 본실험은 언제나 빈 목록이다.
+        # 이 프로세스가 지난 착수 고정 · 착수 허가의 지문(본실험). 신원 해시에는 넣지 않는다 — 신원은 학습 입력이다.
+        "start_gate": gate,
         "fault_events": ([] if spec.purpose == "main" else
                          fault_events(spec.run_root, stage="train", tags=[tag], segments=segs)),
     }
@@ -687,6 +697,53 @@ def _run_cell(spec: UniRunSpec, tag: str, *, client_idx: int, rows: list[dict],
     ledger.close(client_id=client, step=int(m["optimizer_steps"]), n_train_samples=len(rows))
     return UniCellResult(tag=tag, status="trained", cell_dir=d, adapter_sha256=files["adapter_sha256"],
                          adapter_step=int(m["optimizer_steps"]), metrics=m)
+
+
+#: 본실험 칸이 착수 허가 대조에 넘기는 칸 — 평가 쪽 3판 `verify_permit` 의 `expected` 넷(평가 쪽 `PERMIT_EXPECTED_KEYS`, 그 밖의
+#: 칸은 거부된다). 규칙 · 대상의 지문은 `rules` 인자로, 통과 파일의 sha256 은 `expected_sha256` 으로 간다(20b 의 I-1). 프로세서
+#: 설정은 착수 고정(`pin_sha256`)의 `common` 칸이 묶는다.
+PERMIT_EXPECTED_KEYS = ("start_adapter_digest", "pin_sha256", "check_run_id", "seed")
+
+
+def main_start_gate(spec: UniRunSpec, *, init_digest: str,
+                    pin_probes: Mapping[str, Callable[[], dict[str, Any]]] | None = None,
+                    rule_path: Path | None = None) -> dict[str, Any]:
+    """본실험 칸의 시작 · 재개 문 — (1) 착수 고정을 지금 값으로 다시 내 맞대고, (2) 조기 좌표 점검의 통과 파일을 평가 쪽
+    `verify_permit`(2판)으로 대조한다(10번 §14-3 — 검증은 평가 쪽, 부르는 자리는 학습 쪽). 하나라도 어긋나면 `CellRejected`.
+
+    넘기는 것: 통과 파일 **밖**의 키 기록(`ECC_PERMIT_KEY.json`, 점검 통과 때 `ecc-accept` 가 쓴다)의 sha256 과 점검 실행 신원,
+    평가 쪽 규칙 객체, 그리고 이 칸이 잰 출발 어댑터(`init_digest` — 실제로 읽은 공통 초기 어댑터) · 착수 고정 · 시드 번호.
+    `pin_probes` 는 시험의 이음새다. 연합 실행기도 같은 함수를 부른다.
+    """
+    from vlm.ecc import EccRefused, check_permit, load_check_rules, read_permit_key
+    from vlm.pin import PinMismatch, build_pin, check_pin
+
+    if spec.pin_path is None or not Path(spec.pin_path).is_file():
+        raise CellRejected("pin_missing", f"착수 고정 파일이 없다: {spec.pin_path}")
+    try:
+        current = build_pin(init_adapter_path=spec.init_adapter_path, config_path=spec.config_path, probes=pin_probes)
+        pin_sha = check_pin(Path(spec.pin_path), current)
+    except PinMismatch as exc:
+        raise CellRejected("pin_mismatch", str(exc)) from None
+    if (current.get("init_adapter") or {}).get("init_adapter_digest") != init_digest:
+        raise CellRejected("pin_mismatch", "이 칸이 읽은 공통 초기 어댑터가 착수 고정의 것과 다르다")
+    if spec.ecc_permit_path is None or not Path(spec.ecc_permit_path).is_file():
+        raise CellRejected("ecc_permit_missing", f"조기 좌표 점검의 통과 파일이 없다: {spec.ecc_permit_path}")
+    try:
+        key = read_permit_key(Path(spec.ecc_permit_path).parent)
+        mine = {"pin_sha256": pin_sha, "seed": int(spec.seed_index), "start_adapter_digest": init_digest}
+        differ = sorted(k for k, v in mine.items() if key.get(k) != v)
+        if differ:
+            raise CellRejected("ecc_permit_key_mismatch", f"착수 허가의 키 기록이 이 칸과 다르다 — {differ}")
+        rules = load_check_rules(rule_path)
+        expected = {"start_adapter_digest": init_digest, "pin_sha256": pin_sha, "check_run_id": key["check_run_id"],
+                    "seed": int(spec.seed_index)}
+        permit_sha = check_permit(spec.ecc_permit_path, expected_sha256=key["permit_sha256"], rules=rules["rules"],
+                                  expected=expected)
+    except EccRefused as exc:
+        raise CellRejected(exc.code, str(exc)) from None
+    return {"pin_sha256": pin_sha, "ecc_permit_sha256": permit_sha, "permit_expected": expected,
+            "rules_sha256": rules["rules_sha256"]}
 
 
 def _expected_tokens(spec: UniRunSpec, client: str) -> int | None:
@@ -761,6 +818,12 @@ def _preflight(spec: UniRunSpec, *, model_loader: Callable | None, rows_given: b
             + ([Path(spec.resume_root)] if spec.resume_root is not None else []))
         if bad:
             raise CellRejected("main_config_mismatch", "본실험 설정과 다르다: " + " · ".join(bad))
+        # 착수 고정 · 착수 허가의 자리 — 값의 대조는 초기 어댑터를 읽은 뒤 `main_start_gate` 가 한다(시작 · 재개마다).
+        if spec.pin_path is None:
+            raise CellRejected("main_pin_missing", "본실험은 착수 고정(PIN.json)의 자리가 있어야 한다 — 11번 §4")
+        if spec.ecc_permit_path is None:
+            raise CellRejected("main_permit_missing",
+                               "본실험 칸은 조기 좌표 점검의 통과 파일 자리가 있어야 한다 — 의사결정로그 10-07 · 10번 §14-3")
     elif not spec.plan_sha256:
         raise CellRejected("plan_missing", f"{spec.purpose} 는 계획 파일의 해시가 있어야 한다")
     return armed
