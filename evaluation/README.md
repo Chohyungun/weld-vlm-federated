@@ -22,7 +22,7 @@
 | # | 명령 | 보증하는 것 |
 |---|---|---|
 | 1 | `uv run python scripts/probe/score_cells.py predict --profile main --pilot <C 산출> --out <채점 dir>` | 검출 3칸 하한(0.01) 추론 → 계약 #4 레코드. 내부 256장 청킹. `--at-conf` 는 운용 임계 레코드 |
-| 2 | `uv run python scripts/probe/score_cells.py score --profile main --pilot <학습 산출> --out <채점 dir>` | **본채점.** 전역 지표(운용점 예시) + **곡선 전 구간** + **임계 독립 헤드라인 지표** + id 구간 층화 블록 + 규격 지름길 각주 + 게이트 전수 + prereg 상수 선배치. 종료 코드가 판정이다(§2) |
+| 2 | `uv run python scripts/probe/score_cells.py score --profile main --pilot <C 산출> --out <채점 dir>` | **본채점.** 전역 지표(운용점 예시) + **곡선 전 구간** + **임계 독립 헤드라인 지표** + id 구간 층화 블록 + 규격 지름길 각주 + 게이트 전수 + prereg 상수 선배치. 종료 코드가 판정이다(§2) |
 | 3 | `uv run python scripts/probe/score_cells.py sweep --profile main ...` | conf 스윕 — 단일 임계 결론 금지. 하한 1회 추론 + 사후 필터의 동치는 `--verify-parity` 로 실측 |
 | 4 | `uv run python scripts/probe/stratified_compare.py --k 64 --ladder --pilot <C 산출> --out <채점 dir>` | 층화 **상세** 산출물(구간별 행 포함, `stratified_compare_v1.json`). 판정 6 의 대조표가 이 파일이다 |
 | 5 | `uv run python scripts/probe/score_cells.py gate --gate <값>` | (선택) 게이트 상수만 갈아 끼워 재판정. 채점은 건드리지 않는다 |
@@ -74,7 +74,7 @@
 | `metrics` | 운용점 예시(`conf`)의 전 지표 | 기록. **확증 기준 아님** |
 
 **격자는 사전등록 대상이고 단일 임계는 아니다.** 격자는 결과와 무관하게 정할 수 있어
-사후 선택이 아니다. 정본은 `configs/base.yaml`의 `conf_sweep_grid` 이고 채점기는
+사후 선택이 아니다. 정본은 `configs/base.yaml`(A 소관)의 `conf_sweep_grid` 이고 채점기는
 읽기만 한다 — 미등록이면 `evaluation.params.CONF_SWEEP` 폴백이며 산출물의
 `conf_sweep_source` 가 그 사실을 밝힌다.
 
@@ -96,7 +96,7 @@
 
 **점수 구성은 산출 전에 못박는다**(17번 §11, 커밋 `3f8d5cb`). 대조선 규칙은 `train+val`
 정답만으로 적합하고 평가셋을 열지 않는다 — 열면 대조선이 오라클이 되어 게이트가 무의미해진다.
-구간 배정은 기존 절단점(`evaluation/strata.bins_for`)을 그대로 쓰고 채점기가 분위를 다시 만들지 않는다.
+구간 배정은 A 의 절단점(`evaluation/strata.bins_for`)을 그대로 쓰고 D 가 분위를 다시 만들지 않는다.
 
 **판별력**(`evaluation/discrimination.py`)은 출처(`N-crop`)를 상수로 묶은 구간에서 잰다.
 `Δ` 는 임계 한 점의 발화율 차라 **임계에 의존한다**(격자 안에서 칸 순위가 뒤집힌다 —
@@ -150,7 +150,7 @@
 회복률 CI ②③④, 대표 채택(별도 판정). 집계 산출물 `aggregate_v{1,2}.json` 의
 `recovery.map_50.denominator_gate` 가 그 세 줄을 담는다.
 
-**`recovery_reportable` 은 세 값이다. 소비자(결과표 생성 등)는 셋을 구분해야 한다.**
+**`recovery_reportable` 은 세 값이다. 소비자(E 의 표 생성 등)는 셋을 구분해야 한다.**
 
 | 값 | 뜻 | 언제 |
 |---|---|---|
@@ -159,7 +159,7 @@
 | `false` | 게재 불가 — ①~④ 중 미달 | CI 가 결속됐고 하나라도 미달 |
 
 `null` 을 "게재 불가" 로 읽으면 안 되고, `tripwire_only_reportable: true` 를 게재 가능으로
-읽어도 안 된다(34번 M17). 두 필드는 `recovery_reportable_policy` 가 산출물 안에서 설명한다.
+읽어도 안 된다(C 34번 M17). 두 필드는 `recovery_reportable_policy` 가 산출물 안에서 설명한다.
 `true` 도 대표 채택이 아니다 — 집계본 최상위 `public_status` 가 "CI 산출 완료, 코드·출처 최종 검수
 및 대표 채택 대기" 로 그 상태를 적는다.
 
@@ -173,13 +173,13 @@
 
 기록된 `ci_pass` 는 쓰지 않는다. 집계기가 구간·반폭·미정의 수에서 ②③④를 다시 판정한다
 (`evaluation/recovery_ci.py` `rejudge_ci_rules`). 재표집 횟수·난수 시드·**신뢰수준(0.05)·구간 방식
-(백분위)** 도 등록 조건이라, 기록이 `evaluation/prereg.py` 의 값과 다르면 쓰지 않는다(42번 I-1).
+(백분위)** 도 등록 조건이라, 기록이 `evaluation/prereg.py` 의 값과 다르면 쓰지 않는다(C 42번 I-1).
 원시 레코드 해시(CI 가 캐시를 만들며 잰 값)도 채점 산출물의 `input_records` 와 맞댄다(m-2).
 
 공개 상태(`public_status`)는 다섯으로 가른다 — 통과 "CI 산출 완료, 코드·출처 최종 검수 및 대표 채택 대기",
 규칙 미달, 결속 실패(`ci_unbound`), 기록 검사 실패(`ci_invalid` — 항등·점추정·등록 조건·자기모순), 미산출.
 
-**판 번호와 보존(42번 I-2).** 집계본·CI 이름은 입력 산출물 파일명의 판(`_v<n>.json`)에서 뽑는다 —
+**판 번호와 보존(C 42번 I-2).** 집계본·CI 이름은 입력 산출물 파일명의 판(`_v<n>.json`)에서 뽑는다 —
 `score_cells_v3.json` → `aggregate_v3.json`·`recovery_ci_v3.json`. **대상 파일이 이미 있으면 계산 전에
 멈추고**, 쓸 때도 배타 생성이라 덮지 않는다. 채점기도 v2 부터 같다. 기존 `seed3set/recovery_ci_v1.json`
 은 이 규칙 이전에 **v2 산출물로** 만든 CI 다 — 이름은 그대로 보존하고, 기본 경로로는 읽히지 않는다.

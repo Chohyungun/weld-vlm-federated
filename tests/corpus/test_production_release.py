@@ -387,7 +387,7 @@ def test_영상_설명만이면_원문_QA_하한_0_에서_릴리스된다(tmp_pa
     assert verify_release(c.out)["verified"] is True
 
 
-# --------------------------------------------------------------------------- 판정 신원(검토 05h)
+# --------------------------------------------------------------------------- 판정 신원(B 05h)
 
 
 def test_따로_둔_판정은_폴더_다시_읽기까지_지나고_시험용_판정이라_릴리스되지_않는다(tmp_path):
@@ -467,7 +467,7 @@ def test_실행_설정_판정인데_따로_둔_판정을_섞으면_거부(case, 
 
 
 def test_기본으로는_따로_둔_판정만_받는다(case):
-    case.release_kw = {}                                        # 기본값 — 실행 안의 구판정은 명시 인자로만(결정 10-12)
+    case.release_kw = {}                                        # 기본값 — 실행 안의 구판정은 명시 인자로만(총괄 결정 10-12)
     case.refused("judge_source_not_allowed")
 
 
@@ -513,7 +513,7 @@ def operational_judge(monkeypatch):
 
 
 def test_구조화_꼴과_파서의_짝은_B_의_판_표를_덮고_v5_v6_를_보존한다():
-    assert set(quality.JUDGE_PARSER_VERSIONS) <= set(STRUCTURED_PARSERS)       # 집계가 읽는 꼴은 모두 릴리스도 읽는다
+    assert set(quality.JUDGE_PARSER_VERSIONS) <= set(STRUCTURED_PARSERS)       # B 의 집계가 읽는 꼴은 모두 릴리스도 읽는다
     assert JUDGE_SCHEMAS == ("legacy_four_keys", *STRUCTURED_PARSERS)
     probe = {"text": "{}", "finish_reason": "eos"}
     for jschema in quality.JUDGE_PARSER_VERSIONS:
@@ -614,11 +614,11 @@ def test_실행_안의_구판정_집계에_파서_판이_있으면_거부(case):
 
 
 
-# --------------------------------------------------------------------------- 판정 v7 자리(검토 05n R-12 ~ R-18) — 집계가 v7 을 읽기 전이라 단위로
+# --------------------------------------------------------------------------- 판정 v7 자리(B 05n R-12 ~ R-18) — 집계가 v7 을 읽기 전이라 단위로
 
 
 def test_v7_은_B_의_판_표에_들어_열렸고_표에서_빠지면_닫힌다(monkeypatch):
-    parse, version = _structured_parser("judge_structured_v7")                 # 집계 v7 소비(quality_v9)와 함께 열렸다
+    parse, version = _structured_parser("judge_structured_v7")                 # B 의 집계 v7 소비(quality_v9)와 함께 열렸다
     assert parse is quality.parse_judge_v7 and version == "parse_judge_v7" == quality.JUDGE_PARSER_VERSIONS["judge_structured_v7"]
     monkeypatch.setattr(quality, "JUDGE_PARSER_VERSIONS", {k: v for k, v in quality.JUDGE_PARSER_VERSIONS.items()
                                                           if k != "judge_structured_v7"})
@@ -678,7 +678,7 @@ def test_v7_결함_행의_판정값은_물음_넷이_모두_참이어야_받는�
 
 @pytest.fixture
 def v7_reader(monkeypatch):
-    """릴리스의 판정 폴더 다시 읽기를 주어진 v7 출처의 사본으로 갈아 끼운다 — v7 판정 신원 읽기가 이 트리에
+    """릴리스의 판정 폴더 다시 읽기를 주어진 v7 출처의 사본으로 갈아 끼운다 — 외부 검토 도구의 v7 판정 신원 읽기가 이 트리에
     없어서다(시험 전용). 출처 객체와 다시 읽은 것의 대조 · 그 뒤의 v7 검사는 그대로 돈다."""
     import copy
 

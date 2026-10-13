@@ -11,7 +11,7 @@
 
     uv run python scripts/measure_clamp_feasibility.py
 
-**사다리를 추월하지 않는다.** 이 스크립트는 재료만 만든다. 적용 여부는 별도 승인을 받아 정한다.
+**사다리를 추월하지 않는다.** 이 스크립트는 재료만 만든다. 적용 여부는 총괄이 정한다.
 """
 
 from __future__ import annotations

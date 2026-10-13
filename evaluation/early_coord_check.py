@@ -78,7 +78,7 @@ class EarlyRules:
     sequential_rule: str | None
     """`single` · `two_consecutive` — 합성 순차 판별력으로 고른다. `None` 이면 미확정이고 점검을 시작하지 않는다."""
     max_attempts: int | None
-    """첫 점검 실행 전에 적는다. `None` 이면 점검을 시작하지 않는다."""
+    """총괄이 첫 점검 실행 전에 적는다. `None` 이면 점검을 시작하지 않는다."""
     min_parse_rate: float
     target_sha256: str
     target_n: int

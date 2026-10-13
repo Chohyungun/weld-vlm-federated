@@ -311,7 +311,7 @@ def test_all_axis_row_survives_every_consumption_layer(axis):
 
 
 def test_rows_for_clause_narrows_then_applicable_row_reselects(load):
-    """§1-4 평가 판정 정합성 재계산 경로: 조항으로 좁힌 뒤 축 포함 applicable_row 재사용."""
+    """§1-4 D 판정 정합성 재계산 경로: 조항으로 좁힌 뒤 축 포함 applicable_row 재사용."""
     table = load([ROW_RT, ROW_VT])
     candidates = LE.rows_for_clause(table, "KR-3.2.2")
     assert [r.rule_id for r in candidates] == ["KR-VT-9"]
@@ -436,7 +436,7 @@ def test_write_counts_returned_hash_matches_file_bytes(tmp_path):
 
     예전에는 write_text 의 플랫폼 개행 변환 때문에 Windows 에서 파일에 CRLF 가 들어가고
     반환값은 LF 텍스트 해시였다. 그 해시를 SNAPSHOT.sha256·논문에 실으면 §8 의 소비처
-    해시 대조가 항상 불일치해 학습·추론 측의 n_k 로드가 통째로 중단된다.
+    해시 대조가 항상 불일치해 C 의 n_k 로드가 통째로 중단된다.
     """
     path = tmp_path / "counts.json"
     returned = write_counts(path, _counts())

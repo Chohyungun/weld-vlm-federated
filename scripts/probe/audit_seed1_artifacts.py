@@ -3,7 +3,7 @@
     uv run python scripts/probe/audit_seed1_artifacts.py --run outputs/main_c/seed1
 
 13번 §4 가 "첫 산출물에서 확인하라"고 지목한 학습 쪽 7항을 기계로 센다. 이 스크립트는 채점 쪽이고
-이 파일들은 학습·추론 측의 산출물이라 **아무것도 쓰지 않는다** — 결과만 낸다.
+이 파일들은 C 의 산출물이라 **아무것도 쓰지 않는다** — 결과만 낸다.
 
 1. ②③ meta.json 의 회계 필드(`epochs_ran`·`optimizer_steps`·stopper·`seed`·cudnn)
 2. ② c1 재개 흔적과 원자 로그 (round, client, metric) 중복

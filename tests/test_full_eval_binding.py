@@ -146,7 +146,7 @@ def test_전량_관문의_거부(gen_ids, pop_ids, code: str) -> None:
 # ---------------------------------------------------------------- 등록
 
 def test_본실험_등록은_두_목록_해시가_같아야_한다() -> None:
-    from tests.test_prereg_unified import filled  # 같은 작성 계통의 시험 도우미
+    from tests.test_prereg_unified import filled  # 같은 트랙의 시험 도우미
     r = filled(purpose="main")
     r.population.eval_list_file_sha256 = "a" * 64
     r.population.eval_list_set_sha256 = "b" * 64

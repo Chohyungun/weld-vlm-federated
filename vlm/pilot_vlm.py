@@ -13,7 +13,7 @@
 - 조기 종료 없음 · 손실 정규화는 감독 토큰 총합 분모(30번 명세 판정 2) ·
   LoRA dropout 0(판정 9) · micro=1/accum=32(판정 10) · 프롬프트 파일 고정.
 
-타깃은 30번 명세 4-1 의 단일 JSON 이다. 코퍼스의 `target_text`(산문 판정문)는
+타깃은 30번 명세 4-1 의 단일 JSON 이다. 코퍼스 담당의 `target_text`(산문 판정문)는
 파일럿 학습 타깃에 쓰지 않는다 — 명세가 타깃 형식을 JSON 하나로 확정했고, clause_only
 축에서 verdict 는 "판정불가"가 스키마 정합값이다.
 """
@@ -47,7 +47,7 @@ MODEL_ID = "Qwen/Qwen3.5-0.8B"
 PROMPT_PATH = Path("vlm/prompts/unified_v2_absorig.txt")
 PAIRS_PATH = Path("data/processed/pairs_pilot_v1/pairs.jsonl")
 #: **ABS_ORIG** — 카나리아-1 실측(75번 §5)에서 0.8B·4B 두 모델이 판별 가능한 3장 전부에서
-#: 절대 원본 픽셀로 답했다. 판정 1(2026-09-02)로 전환 확정. 개발규약 3-8("학습 타깃은
+#: 절대 원본 픽셀로 답했다. 총괄 판정 1(2026-09-02)로 전환 확정. 개발규약 3-8("학습 타깃은
 #: 채택 모델의 네이티브 좌표계를 따른다")의 이행이며, 라벨측 왕복 IoU 손실도 사라진다
 #: (NORM_1000 은 실페어 4,560 박스에서 median 0.98119·IoU<0.95 가 379건, ABS_ORIG 는 전부 1.0).
 COORD_CFG = CoordCfg(coord_space="ABS_ORIG")

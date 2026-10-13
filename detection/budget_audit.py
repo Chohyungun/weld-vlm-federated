@@ -97,7 +97,7 @@ _CSV_COLUMNS = [
     "loader_reseed_per_epoch",
     "loader_seed",
     "profile",
-    # FedAvg 가 실제로 쓴 가중과 그 단위. 판정 2(2026-09-02)로 통합형은 감독 토큰
+    # FedAvg 가 실제로 쓴 가중과 그 단위. 총괄 판정 2(2026-09-02)로 통합형은 감독 토큰
     # 총합이 됐고, 검출은 표본 수다. **어느 단위로 잰 값인지 산출물이 말해야** RQ3 을
     # 해석할 수 있다 — 단위가 바뀌면 C3 비중이 1.52배 움직인다.
     "fedavg_weight",
@@ -144,7 +144,7 @@ class AccountingCell:
     #: FedAvg 가 실제로 쓴 가중. **`None` 은 "0" 이 아니라 "미기록" 이다** — 0 을 기본값으로
     #: 두면 아무도 기록하지 않은 셀이 "가중 0" 으로 읽히고, 그것이 P9 와 같은 종류의 혼동이다.
     fedavg_weight: float | None = None
-    #: "num_examples"(검출) | "supervised_tokens"(통합형, 판정 2). 빈 문자열은 미기록.
+    #: "num_examples"(검출) | "supervised_tokens"(통합형, 총괄 판정 2). 빈 문자열은 미기록.
     fedavg_weight_unit: str = ""
     #: 감독 토큰 총합. 통합형에서는 가중 그 자체이고, 검출에서는 0 이다.
     supervised_tokens: int = 0
@@ -308,7 +308,7 @@ class AccountingMatrix:
             )
 
         # (4'') 가중 단위 일관성 — 같은 run 안에서 단위가 갈리면 집계가 두 목적함수를
-        #      섞은 것이다. 판정 2 가 통합형을 감독 토큰으로 옮겼으므로 **칸 안에서**
+        #      섞은 것이다. 총괄 판정 2 가 통합형을 감독 토큰으로 옮겼으므로 **칸 안에서**
         #      단위가 하나인지 여기서 지킨다.
         units = {c.fedavg_weight_unit for c in self.cells.values() if c.fedavg_weight_unit}
         if len(units) > 1:

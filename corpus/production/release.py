@@ -1,8 +1,8 @@
 """학습 릴리스 — 품질 집계 · 사람 승인 · 자료 이용 확인을 모두 다시 검사한 뒤에만 `RELEASE.json` 을 발행한다.
 
-파일 계약은 검토 기록 01번(실행분담) 의 "파일 계약" 이 정본이다. 그 문서가 정하지 않은
+파일 계약은 `docs/dev_log/2026-10-07-본실험코퍼스/01_Claude_실행분담.md` 의 "파일 계약" 이 정본이다. 그 문서가 정하지 않은
 `AUDIT.json` · 검수용 `dataset.jsonl` · 검수 파일 · 이용 확인 파일의 필드는 보고 `05_prepare_release_A.md` 의 "공유 계약(안)" 에 적었다
-(코퍼스 측의 `quality.audit_run` 과 파일로 맞춘다).
+(B 의 `quality.audit_run` 과 파일로 맞춘다).
 
 두 겹으로 검사한다.
 
@@ -39,23 +39,23 @@ RIGHTS_USE = "sft_training"
 _LEAK = re.compile(r"[0-9{}\[\]]")
 #: 릴리스 디렉터리의 증빙 사본
 EVIDENCE = {"audit": "AUDIT.json", "review": "REVIEW.json", "rights": "RIGHTS.json"}
-#: 생성 QA 의 JSON 객체 하나를 담은 울타리 하나 — 코퍼스 측의 quality 와 같은 허용(render_v1)
+#: 생성 QA 의 JSON 객체 하나를 담은 울타리 하나 — B 의 quality 와 같은 허용(render_v1)
 _FENCE = re.compile(r"```(?:json)?\s*(\{.*\})\s*```", re.DOTALL)
-#: 판정 출처(검토 05h) — run_config: RUN.json 의 판정 칸으로 돈 첫 판정, separate: 판정 신원을 따로 둔 새 판정. 한 릴리스 안에서 섞지 않는다
+#: 판정 출처(B 05h) — run_config: RUN.json 의 판정 칸으로 돈 첫 판정, separate: 판정 신원을 따로 둔 새 판정. 한 릴리스 안에서 섞지 않는다
 JUDGE_SOURCES = ("run_config", "separate")
-#: 판정 출력의 꼴(코퍼스 측의 quality `parser_schema`) — 옛 네 키 · 구조화 v5 · 구조화 v6. 칸이 없으면 옛 네 키(이전 집계).
+#: 판정 출력의 꼴(B 의 quality `parser_schema`) — 옛 네 키 · 구조화 v5 · 구조화 v6. 칸이 없으면 옛 네 키(이전 집계).
 #: v6 는 v5 를 대체하지 않는다 — 판 표지로 갈리고, 한 꼴을 다른 파서로 다시 읽지 않는다(B 05l)
 JUDGE_SCHEMAS = ("legacy_four_keys", "judge_structured_v5", "judge_structured_v6", "judge_structured_v7")
-#: 구조화 꼴 → 파서(`quality` 의 이름). 파서 판은 `quality.JUDGE_PARSER_VERSIONS` 의 같은 짝에서 읽는다(R-11 · R-13) —
-#: v7 은 집계가 v7 을 읽게 되어(`quality_v9`) 그 표에 들 때 열린다. 그 전에는 `judge_parser` 로 닫혀 있다
+#: 구조화 꼴 → B 의 파서(`quality` 의 이름). 파서 판은 `quality.JUDGE_PARSER_VERSIONS` 의 같은 짝에서 읽는다(R-11 · R-13) —
+#: v7 은 B 의 집계가 v7 을 읽게 되어(`quality_v9`) 그 표에 들 때 열린다. 그 전에는 `judge_parser` 로 닫혀 있다
 STRUCTURED_PARSERS = {"judge_structured_v5": "parse_judge_v5", "judge_structured_v6": "parse_judge_v6",
                       "judge_structured_v7": "parse_judge_v7"}
 #: 판정 모델을 부르지 않는 행이 있을 수 있는 꼴 — v7 정상 행(B 05m · 05n R-15). 그 행의 판정 칸은 '적용 안 됨' 꼴
-#: `{"applicable": false, "identity_sha256": <판정 신원>}` 두 칸뿐이다(05n 의 제안 꼴 — 집계 v7 소비와 함께 확정)
+#: `{"applicable": false, "identity_sha256": <판정 신원>}` 두 칸뿐이다(05n 의 제안 꼴 — B 의 집계 v7 소비와 함께 확정)
 MODEL_OPTIONAL_SCHEMAS = ("judge_structured_v7",)
 #: 구조화 판정의 행 출처에서 판정 샤드를 다시 읽은 값과 맞대는 칸(B 05k · 05j R-9 · 05l)
 STRUCTURED_FIELDS = ("schema", "parser", "answers", "flags", "format_normalized")
-#: 판정 신원 읽기에 넘기는 외부 기대 핀(최종 API) — 운영 원천은 하나 이상 필요하다
+#: 판정 신원 읽기에 넘기는 외부 기대 핀(Codex 최종 API) — 운영 원천은 하나 이상 필요하다
 JUDGE_PINS = ("expected_judge_identity_sha256", "expected_probe_approval_sha256")
 #: 데이터셋 행이 작업 행과 같아야 하는 필드
 TASK_FIELDS = ("kind", "split", "client", "lineage_group_id", "image_path", "source_ids")
@@ -120,7 +120,7 @@ def _image_path_ok(value: Any) -> bool:
 
 
 def _verdict_keys(jschema: str, kind: str) -> tuple[str, ...]:
-    """행 판정값의 물음 키(검토 05n R-14b) — v7 영상 행(결함 행)은 v7 결함 물음 넷(참 = 문제 없음), 그 밖은 옛 셋."""
+    """행 판정값의 물음 키(B 05n R-14b) — v7 영상 행(결함 행)은 B 의 v7 결함 물음 넷(참 = 문제 없음), 그 밖은 옛 셋."""
     if jschema == "judge_structured_v7" and kind == "image_report":
         from . import quality
 
@@ -184,7 +184,7 @@ def check_row(row: Any, audit: dict) -> dict:
 
 
 def render_messages(task: dict, generated_text: str) -> list[dict]:
-    """정규 렌더러 render_v1 — 판정받은 생성문에서 학습 메시지를 정확히 만든다. 코퍼스 측의 `quality._content` · `_dataset_row`(4733fe9)와 같은 규칙:
+    """정규 렌더러 render_v1 — 판정받은 생성문에서 학습 메시지를 정확히 만든다. B 의 `quality._content` · `_dataset_row`(4733fe9)와 같은 규칙:
     영상 설명은 user = [이미지, 작업의 train_user_text], assistant = [생성문의 앞뒤 공백만 뗀 것].
     원문 QA 는 생성 JSON(울타리 하나 허용)의 question · answer 앞뒤 공백만 떼어 user · assistant 하나씩. 다른 글을 덧붙이면 다르다."""
     if task["kind"] == "image_report":
@@ -408,7 +408,7 @@ def _check_all(audit: dict, dataset_path: Path, review: dict, rights: dict) -> t
 # 실행 디렉터리 대조 — release_run 만
 # ------------------------------------------------------------------------------------------
 def _reread_judge_source(run_dir: Path, config: dict, judge_source: dict, pins: dict) -> dict:
-    """판정 객체의 `judge_dir` 를 판정 신원 읽기(`infer.read_judge_source`)로 다시 읽는다 — 샤드 바이트 · 신원 ·
+    """판정 객체의 `judge_dir` 를 Codex 의 판정 신원 읽기(`infer.read_judge_source`)로 다시 읽는다 — 샤드 바이트 · 신원 ·
     생성 샤드 목록 · 실제 판정 모델은 그 읽기가 검사한다. 경로는 신원이 아니라 찾는 자리다(B 05i I-1, 05h 6-2 R-3b)."""
     from . import infer
 
@@ -437,7 +437,7 @@ def _structured_parser(schema: str):
 
 
 def _no_model_ids(parse, tasks: list[dict]) -> set[str]:
-    """판정 모델을 부르지 않는 작업 행의 id(검토 05n R-15 · R-16) — 파서가 판정 행 없이 그 작업을 '적용 안 됨'
+    """판정 모델을 부르지 않는 작업 행의 id(B 05n R-15 · R-16) — B 의 파서가 판정 행 없이 그 작업을 '적용 안 됨'
     (`judge_not_applicable`)으로 고르는 행. 한 정의(파서)를 따르고, 옛 네 키 · v5 · v6 에는 없다."""
     if parse is None:
         return set()
@@ -471,9 +471,9 @@ def _v7_source_receipts(audit: dict, ji: dict, verified: dict, tasks: list[dict]
 
 def check_against_run(audit: dict, audit_dir: Path, rows: list[dict], texts: list[dict], judge_source: dict | None = None,
                       pins: dict | None = None) -> None:
-    """AUDIT 가 가리키는 실행 디렉터리를 검증 읽기로 다시 읽어 행마다 대조한다.
+    """AUDIT 가 가리키는 실행 디렉터리를 Codex 의 검증 읽기로 다시 읽어 행마다 대조한다.
 
-    판정 행은 AUDIT 의 판정 출처에서만 읽는다(검토 05h R-3). separate 이면 `judge_source`(코퍼스 측의 `audit_run` 과 같은 꼴 —
+    판정 행은 AUDIT 의 판정 출처에서만 읽는다(B 05h R-3). separate 이면 `judge_source`(B 의 `audit_run` 과 같은 꼴 —
     `identity_sha256` · `identity_basis` · `rows`)의 행만 쓰고 실행 디렉터리의 옛 판정은 읽지 않는다."""
     from . import infer
 
@@ -571,7 +571,7 @@ def check_against_run(audit: dict, audit_dir: Path, rows: list[dict], texts: lis
             if row["kind"] == "image_report":
                 _need((prov.get("policy") or {}).get("identity_sha256") == policy_sha, "row_policy_identity",
                       f"{rid}: 행의 정책 지문이 AUDIT 의 정책 지문과 다르다")
-        if j is None:     # 판정 모델을 부르지 않은 행 — 판정 칸은 '적용 안 됨' 꼴 두 칸뿐(검토 05n R-15)
+        if j is None:     # 판정 모델을 부르지 않은 행 — 판정 칸은 '적용 안 됨' 꼴 두 칸뿐(B 05n R-15)
             _need(prov["judge"] == {"applicable": False, "identity_sha256": ji["identity_sha256"]}, "judge_mismatch",
                   f"{rid}: 판정을 부르지 않은 행의 판정 칸이 '적용 안 됨' 꼴이 아니다")
         else:
@@ -611,9 +611,9 @@ def release_run(audit_dir, review_path, rights_path, output_dir, *, judge_source
                 allowed_judge_sources: tuple[str, ...] = ("separate",), expected_judge_identity_sha256: str | None = None,
                 expected_probe_approval_sha256: str | None = None) -> dict:
     """`judge_source` — separate 판정의 객체(`infer.read_judge_source` 의 꼴, `judge_dir` 필수 — 릴리스가 폴더를 다시 읽는다).
-    `allowed_judge_sources` — 받을 판정 출처. 기본은 separate 만(결정 10-12, R-5): 실행 안의 구판정(run_config)은 명시 인자로만.
+    `allowed_judge_sources` — 받을 판정 출처. 기본은 separate 만(총괄 결정 10-12, R-5): 실행 안의 구판정(run_config)은 명시 인자로만.
     `expected_judge_identity_sha256` · `expected_probe_approval_sha256` — 릴리스 호출자가 따로 기록한 기대 핀. separate 이면 하나 이상이
-    필요하고, release 가 그대로 판정 신원 읽기에 넘긴다(최종 API — 핀은 JUDGE.json 에서 추정하지 않는다)."""
+    필요하고, release 가 그대로 판정 신원 읽기에 넘긴다(Codex 최종 API — 핀은 JUDGE.json 에서 추정하지 않는다)."""
     pins = {"expected_judge_identity_sha256": expected_judge_identity_sha256,
             "expected_probe_approval_sha256": expected_probe_approval_sha256}
     audit_dir, output_dir = Path(audit_dir), Path(output_dir)

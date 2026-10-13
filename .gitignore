@@ -101,5 +101,6 @@ configs/*.local.yaml
 # 그대로 색인에 오른다. 09-25 검수에서 나왔다.
 _workspace/
 
-# 로컬 대시보드 실행 상태(30초 수집값) — 추적하지 않는다
+# 외부 검토 도구의 로컬 대시보드 실행 상태(30초 수집값) — 추적하지 않는다
 dashboard/runtime/
+docs/dev_log/**/review_*_findings.md

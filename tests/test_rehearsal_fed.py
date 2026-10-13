@@ -81,7 +81,7 @@ def test_연합_클라이언트는_목록_단계의_그_참여자_행만_받는�
 
 
 def test_연합_클라이언트는_실행_루트_밖의_목록을_읽지_않는다(tmp_path):
-    """서버가 내려보낸 실행 루트 아래가 아닌 목록 폴더 — 바이트 · 행이 다 맞아도 읽지 않는다(검토 기록 `rehearsal_blockers` 의 3)."""
+    """서버가 내려보낸 실행 루트 아래가 아닌 목록 폴더 — 바이트 · 행이 다 맞아도 읽지 않는다(외부 검토 회신 `rehearsal_blockers` 의 3)."""
     from vlm.rehearsal_run import fed_client_rows
 
     w = _lists(tmp_path)
@@ -130,7 +130,7 @@ def _link(case: str, src: Path, dst: Path) -> None:
 @pytest.mark.parametrize("which", ["list", "record"])
 @pytest.mark.parametrize("case", ["symlink", "hardlink"])
 def test_연합_클라이언트는_다른_루트의_파일로_가는_링크를_읽지_않는다(tmp_path, case, which):
-    """루트 안의 목록 폴더에 다른 실행 루트의 정상 파일로 가는 링크를 둔다 — 폴더 검사 · 바이트 · 행 대조를 다 지나는 꼴이다(검토 기록
+    """루트 안의 목록 폴더에 다른 실행 루트의 정상 파일로 가는 링크를 둔다 — 폴더 검사 · 바이트 · 행 대조를 다 지나는 꼴이다(외부 검토 회신
     `rehearsal_blockers2` 의 3). 링크는 이 시험의 임시 폴더 안에서만 만든다."""
     from vlm.rehearsal_run import fed_client_rows
 
@@ -224,7 +224,7 @@ def test_리허설_서버는_루트_아래의_초기_어댑터만_받는다(root
 
 
 def test_리허설_서버는_루트_아래의_학습_행_목록만_받는다(root):
-    """`uni-train-lists` 도 실행 루트 검사에 든다(2판 §1-4 입력 경로 격리, 검토 기록 `rehearsal_blockers` 의 3)."""
+    """`uni-train-lists` 도 실행 루트 검사에 든다(2판 §1-4 입력 경로 격리, 외부 검토 회신 `rehearsal_blockers` 의 3)."""
     _uni_fed(root, _server_get(root, **{"uni-train-lists": str(reh(root) / "lists")}))   # 루트 아래 — 받는다
     with pytest.raises(UniFedRejected) as exc:
         _uni_fed(root, _server_get(root, **{"uni-train-lists": str(root / "elsewhere" / "lists")}))

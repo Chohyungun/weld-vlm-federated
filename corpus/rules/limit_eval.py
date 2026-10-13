@@ -146,7 +146,7 @@ def aggregate_verdicts(verdicts: Sequence[str]) -> str:
     """이미지 수준 verdict 합성 — 보수 규칙 (게이트 #6 결정 F, §1-4).
 
     한 결함이라도 불합격이면 불합격. 빈 목록(정상 이미지) ⇒ 합격.
-    코퍼스 측의 assemble_pair 와 평가 측의 다결함 판정 정합성 재계산이 이 한 함수를 공유한다.
+    B 의 assemble_pair 와 D 의 다결함 판정 정합성 재계산이 이 한 함수를 공유한다.
     """
     for v in verdicts:
         if v not in (PASS, FAIL):
@@ -180,7 +180,7 @@ def applicable_row(
     복수 매칭 시에는 limit_type 을 명시해야 한다 — 임의 선택은 fail-closed 로 거부한다.
 
     table 은 LimitsTable 또는 행 시퀀스다. rows_for_clause 로 조항 후보를 좁힌 결과를
-    그대로 넘겨 재선택하는 경로(§1-4 평가 판정 정합성 재계산)를 위해서다.
+    그대로 넘겨 재선택하는 경로(§1-4 D 판정 정합성 재계산)를 위해서다.
     """
     material = Material(material)
     method = InspectionMethod(inspection_method)
@@ -223,7 +223,7 @@ def applicable_row(
 # ---------------------------------------------------------------------------
 # D 소비용 파생 함수 3종 (§1-4) — 계약은 여기까지다
 #
-# 평가 측이 limits.csv 를 직접 순회해 청크 메타·정답 조항 목록을 만들면, 파일 하나를 공유해도
+# D 가 limits.csv 를 직접 순회해 청크 메타·정답 조항 목록을 만들면, 파일 하나를 공유해도
 # 해석 코드가 두 벌이 되어 단일 소스가 파생 계층에서 붕괴한다. 세 함수가 그 경로를 대신한다.
 # 파생물(corpus/derived/)은 수기 수정 금지이며, 오류는 원천 limits.csv 를 고쳐 재파생한다.
 # ---------------------------------------------------------------------------
@@ -237,7 +237,7 @@ def _dec_str(v: Optional[Decimal]) -> Optional[str]:
 def rows_for_clause(table: RowSource, clause_id: str) -> tuple[LimitRow, ...]:
     """조항으로 후보 축소 (§1-4). rule_id 정렬 고정.
 
-    평가 판정 정합성 재계산의 행 선택 규칙: 판정문이 인용한 clause_id 로 후보를 좁힌 뒤,
+    D 판정 정합성 재계산의 행 선택 규칙: 판정문이 인용한 clause_id 로 후보를 좁힌 뒤,
     골격에 내장된 (defect_code, material, inspection_method, quality_level, t) 로
     applicable_row 를 재사용한다. 반환값을 applicable_row 의 첫 인자로 그대로 넘길 수 있다.
     scope·canonical 로 거르지 않는다 — 인용된 조항이 배제 행이라는 사실 자체가

@@ -53,7 +53,7 @@ def test_명부_수와_RUN_계약(world):
     assert basis["pairs_sha256"] == world.config["inputs"]["pairs_sha256"]
     assert basis["manifest_snapshot_digest"] == world.manifest_digest
     assert run["counts"]["image_report"] == {"train": 4, "val": 2}
-    # 소비자가 그대로 받는다
+    # Codex 의 소비자가 그대로 받는다
     got_run, got_tasks = infer._read_inputs(run_dir, world.config)
     assert got_run == run and got_tasks == tasks
 

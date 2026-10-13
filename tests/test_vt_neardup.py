@@ -354,7 +354,7 @@ def test_겹친_창의_검증은_덮는_범위와_이동량을_낸다():
     r = nd.verify_pair(a["orb_xy"], a["orb_desc"], a["orb_f"], b["orb_xy"], b["orb_desc"], b["orb_f"],
                        ratio=float(v["ratio"]), reproj=float(v["ransac_reproj_px"]),
                        wh_a=a["frame_wh"], wh_b=b["frame_wh"])
-    assert abs(r["tx"] + 100) < 4 and abs(r["ty"] + 60) < 4          # 좌표 = A 의 좌표 − (100, 60)
+    assert abs(r["tx"] + 100) < 4 and abs(r["ty"] + 60) < 4          # B 의 좌표 = A 의 좌표 − (100, 60)
     assert r["cover_a"] > 0.4 and r["cover_b"] > 0.4
     # 겹친 범위(1180 × 660 / 1280 × 720 ≈ 0.845)를 넘지 못하고, 두 장에서 비슷하다
     assert r["cover_a"] < 0.86 and r["cover_b"] < 0.86 and abs(r["cover_a"] - r["cover_b"]) < 0.1

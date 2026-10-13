@@ -461,7 +461,7 @@ CI_ADOPTED: dict[str, object] = {f"ci.{k}": v for k, v in _REGISTERED_CI.items()
 UNDEFINED_DENOMINATOR_POLICIES = ("drop_undefined", "signed_infinity", "no_interval_if_any")
 """규약안 축 A 의 A1 · A2 · A3. `drop_undefined` 는 사전실험 구간이 쓴 규약의 이름이다(`recovery_ci.recovery_from`)."""
 INFINITY_HANDLINGS = ("drop_nonfinite", "include_as_extreme", "clamp_to_outermost_finite")
-"""규약안 축 B1 · B2 · B3."""
+"""규약안 축 B 의 B1 · B2 · B3."""
 PERCENTILE_METHODS = ("linear", "nearest", "lower", "higher", "lower_lo_higher_hi",
                       "inverted_cdf", "closest_observation", "hazen", "weibull", "median_unbiased")
 """규약안 축 C 의 C1 · C2 · C3-가·나 · C3-다 · C4-가(둘) · C4-나(셋). `lower_lo_higher_hi` 는 하한 내림 · 상한 올림이다."""

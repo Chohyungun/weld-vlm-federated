@@ -13,7 +13,7 @@ eval 의 어노테이션은 색인에 넣지 않는다(개발규약 1-4).
 | F 격리·귀속·회계 | eval 과의 이미지·묶음 교차 0(직접 재집계), 참여자·분할·재질·경로·크기 = 매니페스트, counts·메타의 건수 = 재집계, 폐기 = 투입 − 채택 |
 | G 결정론·바이트 | 계약서의 해시 = 파일, CR 0, 레코드마다 키 순서 고정, 줄 = 재직렬화 |
 
-관점 C(빌더를 import 하지 않는 독립 재구현)는 별도 작성 계통이 맡는다 — 이 스크립트는 빌더와 같은 작성 계통의 검사다.
+관점 C(빌더를 import 하지 않는 독립 재구현)는 E 가 맡는다 — 이 스크립트는 빌더와 같은 트랙의 검사다.
 
 실행: uv run python -m corpus.validate.verify_pairs_main --build <빌드 디렉터리>
 결과는 표준 출력의 JSON 하나다. 종료 코드는 공개 검수기와 같은 규약이다 —
@@ -267,7 +267,7 @@ def verify(build: Path, snap: Path = SNAP, root: Path = REPO) -> dict:
                 fail("F_meta_input_digest", src["snapshot_digest"])
     # 검수 주체. **`rule` 만 받는다.** 파일이 있다는 것은 아무것도 뒷받침하지 않는다 — `README.md` 를 가리켜도
     # 지나갔다(교차 검수 I-3). 사람 검수라는 이름은 규약(대상 빌드 digest·표본 수·서명)이 선 뒤에 코드가 받는다.
-    # 개발규약 3-4 와 봉인 절차 §7 이 그 이름을 함부로 쓰지 말라고 한 자리다. 판정으로 독립 재구현안에 맞춘다.
+    # 개발규약 3-4 와 봉인 절차 §7 이 그 이름을 함부로 쓰지 말라고 한 자리다. 총괄 판정으로 E 안에 맞춘다.
     if meta.get("validated_by") != "rule":
         fail("F_meta_validated_by_unsupported", meta.get("validated_by"))
     if meta.get("eval_isolation", {}).get("n_eval_groups") != len(eval_groups):

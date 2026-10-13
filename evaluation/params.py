@@ -7,7 +7,7 @@
 
 `configs/rag.yaml`(D 소관)에는 두지 않는다. 검출 설정이지 RAG 설정이 아니다.
 
-게이트 상수도 같은 규칙이다. 데이터 처리 측이 content-free 천장을 재산출해 `preregistered:` 에
+게이트 상수도 같은 규칙이다. A 가 content-free 천장을 재산출해 `preregistered:` 에
 올리면 `--gate` 플래그 없이도 그 값으로 채점된다. 도착 전에는 `prereg.py` 의 사전등록
 자명하한이 폴백이고, 산출물의 `source` 가 "A 미도착"임을 스스로 밝힌다.
 """
@@ -64,7 +64,7 @@ COORD_SPACE = "ABS_ORIG"
 0.98119, IoU<0.95 379건 / ABS_ORIG 는 4,560건 전부 1.000000).
 
 **D 는 좌표를 변환하지 않는다.** 계약 #4 의 `bbox_px` 는 이미 원본 픽셀이고, `coord_space`
-는 그 값이 **어느 규약의 모델에서 나왔는지**를 기록한다. 그래서 평가 측이 할 일은 변환이 아니라
+는 그 값이 **어느 규약의 모델에서 나왔는지**를 기록한다. 그래서 D 가 할 일은 변환이 아니라
 **대조**다 — 칸마다 선언된 규약이 이 상수와 같은지 보고, 다르면 표에 싣기 전에 드러낸다.
 규약이 갈린 채로 한 표에 실리는 것이 함정 #4 가 IoU 0.938 → 0.055 를 만든 경로다.
 """
@@ -87,7 +87,7 @@ DETECTION_MODEL_BY_PROFILE: dict[str, str] = {
     "main": "yolo11s.pt",
     "pilot": "yolo11n.pt",
 }
-"""프로파일 → 검출 모델. 모델 규모는 학습·추론 측의 `PROFILES` 에 **없다** — 거기는 학습
+"""프로파일 → 검출 모델. 모델 규모는 C 의 `PROFILES` 에 **없다** — 거기는 학습
 하이퍼파라미터뿐이고 모델 이름은 run cfg(`fl/server_app.py` 의 `cfg["model"]`, 기본
 yolo11s.pt)와 스크립트 상수(`scripts/pilot_c.py` yolo11n.pt · `scripts/gate_reduced_pilot.py`
 yolo11s.pt)에서 온다. 그래서 규모는 여기 두되, **npz 형상 대조가 최종 방어선**이다 —
@@ -113,9 +113,9 @@ PREDICT_CHUNK = 256
 def detection_profiles() -> dict[str, dict]:
     """프로파일 → `{imgsz, model, model_cfg}`.
 
-    **imgsz 는 학습·추론 측의 `detection.round_runner.PROFILES` 를 실행 시점에 읽는다.** `configs/gpu/*.yaml`
+    **imgsz 는 C 의 `detection.round_runner.PROFILES` 를 실행 시점에 읽는다.** `configs/gpu/*.yaml`
     의 `detection` 블록은 `wired: false` 고 정본은 그 파일이 스스로 가리키는 `PROFILES` 다.
-    값을 여기 베껴 두면 학습·추론 측이 바꿨을 때 채점만 옛 해상도로 남는다 — 640 으로 학습한 모델을
+    값을 여기 베껴 두면 C 가 바꿨을 때 채점만 옛 해상도로 남는다 — 640 으로 학습한 모델을
     416 으로 추론하면 그 차이가 판정 오차가 된다(82번 결함 3).
 
     `detection.round_runner` 는 torch 를 끌므로 지연 import 한다.
@@ -140,7 +140,7 @@ PILOT_SNAPSHOT = "data/processed/aihub71761_rt_v1_pilot3000"
 FROZEN_SNAPSHOT = "data/interim/manifest_v1"
 
 CLASS_NAMES: tuple[str, ...] = ("crack", "porosity", "lack_of_fusion", "slag_inclusion")
-"""검출 4클래스. 원본 라벨 문자열이 아니라 학습·추론 측의 학습 클래스 순서다(nc=4 주입 순서)."""
+"""검출 4클래스. 원본 라벨 문자열이 아니라 C 의 학습 클래스 순서다(nc=4 주입 순서)."""
 
 # configs 에서 먼저 찾아볼 키. 앞에서부터 처음 발견된 것을 쓴다.
 CONF_KEYS: tuple[str, ...] = (
@@ -156,7 +156,7 @@ GATE_KEYS: tuple[str, ...] = (
 )
 """**실재하는 키를 앞에 둔다.** 이전 판의 후보 4개는 `configs/base.yaml` 의 어떤 키와도
 겹치지 않아 "configs 에 키가 생기면 그쪽이 이긴다"는 계약이 게이트에 대해 **한 번도
-발화하지 않았다**(80번 D15). 데이터 처리 측이 76번에서 등록한 실제 경로가 첫 줄이다.
+발화하지 않았다**(80번 D15). A 가 76번에서 등록한 실제 경로가 첫 줄이다.
 
 키 이름 규약은 `<계열>__sel_<족선택>__fit_<적합>__score_<채점>` 이다. `fit_eval`·`sel_eval`
 이 붙은 값은 평가셋 유도라 게이트 재료가 아니므로 **후보에 넣지 않는다.**
@@ -171,7 +171,7 @@ CONF_SWEEP_KEYS: tuple[str, ...] = (
 
 단일 임계는 사전등록하지 않는다 — 결과를 본 뒤 한 점을 고르면 사후 선택이다. 대신
 **격자를 등록한다**: 격자는 결과와 무관하게 정할 수 있으므로 사후 선택이 아니고, 시드·칸이
-같은 격자를 쓰는 것이 비교 가능성의 조건이다. 등록 소관은 데이터 설정(`configs/base.yaml`)이고 평가 측은
+같은 격자를 쓰는 것이 비교 가능성의 조건이다. 등록 소관은 A(`configs/base.yaml`)이고 D 는
 읽기만 한다 — 값을 코드에 박으면 "configs 가 정본"이 문면으로만 남는다.
 """
 
@@ -183,7 +183,7 @@ GATE_TOLERANCE_KEYS: tuple[str, ...] = (
 GATE_STATUS_KEYS: tuple[str, ...] = (
     "fixed_before_main_runs.gate_status",
 )
-"""`판정_대기` | `적용` | `대체지표`. 데이터 처리 측이 "값은 등록하되 자동 차단에는 쓰지 않는다"로
+"""`판정_대기` | `적용` | `대체지표`. A 가 "값은 등록하되 자동 차단에는 쓰지 않는다"로
 박아 둔 스위치다(76번 §1-4). 채점기는 이 값을 **읽어서 산출물에 싣는다** — 게이트가
 왜 발동하지 않았는지가 표에 남아야 한다."""
 
@@ -231,7 +231,7 @@ def resolve_conf(cfg: dict | None = None) -> Resolved:
 
     **여기서 configs 를 찾지 못하는 것이 정상이다**(판정 1, 22번 §1-2-2). 단일 임계를
     사전등록하면 결과를 본 뒤 한 점을 고른 것이 되므로 등록 대상은 격자(`conf_sweep_grid`)
-    이고 단일 임계 키는 `configs/base.yaml` 에 일부러 두지 않았다. 데이터 처리 측이 그 부재를 시험으로
+    이고 단일 임계 키는 `configs/base.yaml` 에 일부러 두지 않았다. A 가 그 부재를 시험으로
     고정했다(`tests/test_conf_sweep_grid.py`). 이 값은 65·66번 재현·운용점 표기에만 쓴다.
     """
     return _resolve(
@@ -246,7 +246,7 @@ def resolve_conf(cfg: dict | None = None) -> Resolved:
 def resolve_conf_sweep(cfg: dict | None = None) -> tuple[tuple[float, ...], str]:
     """스윕 격자와 그 출처. **configs 에 있으면 그쪽이 이긴다.**
 
-    데이터 처리 측이 `conf_sweep_grid` 를 등록하기 전에는 `CONF_SWEEP` 폴백이고, 산출물의 출처 문자열이
+    A 가 `conf_sweep_grid` 를 등록하기 전에는 `CONF_SWEEP` 폴백이고, 산출물의 출처 문자열이
     "미등록"임을 스스로 밝힌다. 등록된 값은 정렬·중복 제거해 받는다 — 격자의 순서는 의미가
     없고 중복은 같은 점을 두 번 채점하게 만든다.
     """
@@ -275,7 +275,7 @@ def resolve_gate_status(cfg: dict | None = None) -> str:
 
 
 def resolve_gate(cfg: dict | None = None) -> Resolved:
-    """게이트 선. 데이터 처리 측의 content-free 천장 재산출이 도착하면 자동으로 그 값을 쓴다."""
+    """게이트 선. A 의 content-free 천장 재산출이 도착하면 자동으로 그 값을 쓴다."""
     from evaluation.prereg import PREREG
 
     return _resolve(

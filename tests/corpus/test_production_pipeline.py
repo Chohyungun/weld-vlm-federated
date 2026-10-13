@@ -174,7 +174,7 @@ def _release(world, audit_dir, out):
     audit = json.loads((audit_dir / "AUDIT.json").read_bytes())
     write_json_new(world.tmp / "REVIEW.json", _fill_review(audit_dir))
     write_json_new(world.tmp / "RIGHTS.json", fixtures.rights_for(audit))
-    # 이 시험의 판정은 실행 안의 구판정(run_config)이다 — 릴리스 기본은 따로 둔 판정만이라 허용 출처를 명시한다(결정 10-12)
+    # 이 시험의 판정은 실행 안의 구판정(run_config)이다 — 릴리스 기본은 따로 둔 판정만이라 허용 출처를 명시한다(총괄 결정 10-12)
     return release.release_run(audit_dir, world.tmp / "REVIEW.json", world.tmp / "RIGHTS.json", out,
                                allowed_judge_sources=("run_config",))
 

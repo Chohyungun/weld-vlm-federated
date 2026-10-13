@@ -249,7 +249,7 @@ def test_all_axis_row_answers_any_image():
 
 
 def test_row_selection_goes_through_b_functions():
-    """행 선택 단일 경로 — 평가 측이 자체 순회로 고르지 않는다. 축이 키에 들어간다."""
+    """행 선택 단일 경로 — D가 자체 순회로 고르지 않는다. 축이 키에 들어간다."""
     rt = row("R-RT", "3.0", method=InspectionMethod.RT)
     vt = row("R-VT", "9.0", method=InspectionMethod.VT)
     picked = select_row(

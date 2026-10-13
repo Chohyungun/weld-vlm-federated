@@ -1,6 +1,6 @@
 """작업 명부 — 봉인 페어와 구절 은행을 검사해 생성 · 판정의 작업 명부(`tasks.jsonl`)와 `RUN.json` 을 만든다(CPU).
 
-파일 계약은 검토 기록 01번(실행분담) 의 "파일 계약" 이 정본이다.
+파일 계약은 `docs/dev_log/2026-10-07-본실험코퍼스/01_Claude_실행분담.md` 의 "파일 계약" 이 정본이다.
 
 - 봉인 페어(`pairs.jsonl` · `SNAPSHOT.sha256`)의 지문을 config 의 값과 대조하고, 페어가 가리키는 봉인 매니페스트의 스냅샷을 검증한다.
 - 페어를 **스트리밍**하며 행마다 매니페스트와 대조한다 — split · client 가 다르면(재배정) 거부, eval 영상 · eval 묶음이 섞이면 거부.
@@ -41,7 +41,7 @@ _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 #: 마지막 계보부터 뺀다. 계보는 한 split 에만 속한다(분담 문서의 조건).
 SOURCE_VAL_FRACTION = 0.1
 SOURCE_VAL_DOC_CAP = 0.5
-#: 같은 바이트 영상(06b I-1)의 정책 — 정책은 코퍼스 측이 낸다. 데이터 처리 측은 받을 자리만 둔다: 같은 계보 안은 허용하고 수를 세며, 다른 계보면 거부.
+#: 같은 바이트 영상(06b I-1)의 정책 — 정책은 B 가 낸다. A 는 받을 자리만 둔다: 같은 계보 안은 허용하고 수를 세며, 다른 계보면 거부.
 DUPLICATE_IMAGE_POLICY = "same_lineage_allowed"
 #: 원문 QA 의 질문 관점(구절당 최대 3 — config 의 maximum_questions_per_passage 와 함께 쓴다)
 SOURCE_PERSPECTIVES = (

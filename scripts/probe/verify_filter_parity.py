@@ -8,7 +8,7 @@
 곡선 전 구간(판정 1)은 **하한 레코드를 사후 필터해서** 만든다. 임계마다 다시 추론하지
 않는 근거는 NMS 의 성질이다 — 더 높은 점수의 박스만이 억제자가 되므로, 하한을 낮춰도
 `점수 ≥ t` 인 생존 집합은 변하지 않는다. 파일럿에서 이 동치를 비트 대조로 실측했지만
-(65번 산출물과 대조), **본실험 규모에서는 확인한 적이 없다** — 학습·추론 측이 하한으로만 내보냈기
+(65번 산출물과 대조), **본실험 규모에서는 확인한 적이 없다** — C 가 하한으로만 내보냈기
 때문이다(17번 §1-2). 곡선이 헤드라인이 된 이상 그 전제를 규모에서 한 번은 밟아야 한다.
 
 ## 무엇을 하나
@@ -19,12 +19,12 @@
     A. 직접 추론:  load_yolo_from_npz → predict_cell(conf=운용임계)
     B. 하한 + 필터: sweep/{tag}_raw_s{seed}.jsonl 되읽기 → filter_by_conf(운용임계)
 
-같은 이미지에 대해 `(iso_code, bbox 4개, score)` 다중집합이 같은지 본다. **좌표는 학습·추론 측이
+같은 이미지에 대해 `(iso_code, bbox 4개, score)` 다중집합이 같은지 본다. **좌표는 C 가
 소수 2자리, 점수는 4자리로 반올림해 내보냈으므로**(13_spec_D §2-3) A 쪽도 같은 자리로
 맞춰 비교한다 — 반올림 차이를 동치 위반으로 오독하지 않으려는 것이다. 그 반올림이 곧
 저장 계약이고, 채점은 저장본으로 한다.
 
-GPU 를 쓰지 않는다(`device=cpu`). 학습 중인 run 에 닿지 않는다 — 읽는 것은 학습·추론 측의 npz 와
+GPU 를 쓰지 않는다(`device=cpu`). 학습 중인 run 에 닿지 않는다 — 읽는 것은 C 의 npz 와
 동결 스냅샷뿐이다.
 """
 
@@ -45,14 +45,14 @@ from evaluation.cells import load_population
 from evaluation.detect_infer import cell_tag, filter_by_conf, load_yolo_from_npz, predict_cell
 from evaluation.params import add_common_args, params_from_args
 
-#: 학습·추론 측의 export 반올림 자리 (13_spec_D §2-3 · `scripts/main_det.py:cmd_export`).
+#: C 의 export 반올림 자리 (13_spec_D §2-3 · `scripts/main_det.py:cmd_export`).
 BOX_NDIGITS = 2
 SCORE_NDIGITS = 4
 
 #: 표본 추출 시드. 값 자체는 임의지만 **고정**이라 재실행이 같은 표본을 본다.
 SAMPLE_SEED = 20260908
 
-#: 칸 → 학습·추론 측이 낸 가중치 상대경로. `_export_targets` 와 같은 자리를 본다.
+#: 칸 → C 가 낸 가중치 상대경로. `_export_targets` 와 같은 자리를 본다.
 NPZ_BY_TAG: dict[str, str] = {
     "sep_local_C1": "sep_local/sep_local_c0.npz",
     "sep_local_C2": "sep_local/sep_local_c1.npz",

@@ -11,7 +11,7 @@
                             정합을 포기하고 `ov` 가 1.0 으로 되돌아간다.** 겹침이 좋아서가 아니라 재지 않았다는 뜻이다.
                             그 범위에서는 `ov`·`reg_*` 를 증거로 쓸 수 없다. 규칙에 쓰려면 이동 상한을 함께 걸어라.
   reg_corr                  정합 뒤 밝기 상관(선형 밝기 변환에 불변)
-  reg_mad_tone              밝기 분포를 A 에 맞춘 뒤(단조 변환 제거)의 평균 절대차 — 그레이 레벨
+  reg_mad_tone              B 의 밝기 분포를 A 에 맞춘 뒤(단조 변환 제거)의 평균 절대차 — 그레이 레벨
   reg_fine·reg_mid·reg_coarse  정합 뒤 세 규모(약 1.5~3px · 3~16px · 16~64px)의 대역 통과 상관
 
 `prepare()` 와 `compare()` 는 파일을 읽지 않는 순수 함수다 — 합성 영상으로 시험한다(tests/test_neardup_features.py).
@@ -113,7 +113,7 @@ def compare(pa: Prepared, pb: Prepared) -> list:
     dx_r, dy_r = (0, 0) if abs(dx) > ww // 3 or abs(dy) > hh // 3 else (dx, dy)
     a, b = _overlap(pa.half, pb.half, dx_r, dy_r)
     ov = a.size / pa.half.size
-    q = np.linspace(0, 100, 257)                       # 단조 밝기 변환 제거: 분위를 A 의 분위에 맞춘다
+    q = np.linspace(0, 100, 257)                       # 단조 밝기 변환 제거: B 의 분위를 A 의 분위에 맞춘다
     bm = np.interp(b, np.percentile(b, q), np.percentile(a, q))
     out = [round(peak, 5), dx * 2, dy * 2, round(side, 5), round(peak - side, 5), round(ov, 4),
            round(_corr(a, b), 5), round(float(np.abs(a - bm).mean()), 3)]

@@ -129,7 +129,7 @@ def build_cases(nplus_path) -> dict:
         )
         cases.append(make_case("D-ungrounded", i, wrong[i % len(wrong)] + " " + limit, False,
                            deterministic=i % len(wrong) != 4))
-    # 명세16 §8-2/§9-2에 명시된 반례도 원문 그대로 넣고 같은 묶음 크기를 유지한다.
+    # D16 §8-2/§9-2에 명시된 반례도 원문 그대로 넣고 같은 묶음 크기를 유지한다.
     replacements = {
         "synthetic-N-invented-000": "표시된 결함이 없다는 말은 거짓이다.",
         "synthetic-N-assertion-001": "표시된 결함이 없으므로 이 용접부는 안전하다.",
@@ -235,7 +235,7 @@ def task_from_v5_source(source: dict, case: dict, *, label_names: dict[str, str]
 
 
 def build_v5_cases(sources: Mapping, *, expected_source_sha256: Mapping) -> dict:
-    """독립 작성된 네 원본을 새 v5 입력으로 변환한다. 500개 구판 생성기는 그대로 둔다.
+    """G의 네 원본을 새 v5 입력으로 변환한다. 500개 구판 생성기는 그대로 둔다.
 
     호출자가 별도로 기록한 원파일 지문 네 개가 필수다. 원문 문자열과 expected는
     고치지 않으며 source_case_sha256은 원객체의 canonical_bytes SHA256이다.

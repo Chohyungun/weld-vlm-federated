@@ -17,7 +17,7 @@ greedy(`do_sample=False`, 빔 1)는 결정적이다. 같은 어댑터·같은 �
 
 ## 이 프로브는 경합에 무관하다
 
-시간을 재지 않는다. 다른 시험이 동시에 돌아도 토큰 수열은 달라지지 않으므로 단독 창이 필요 없다.
+시간을 재지 않는다. 다른 트랙이 시험을 돌려도 토큰 수열은 달라지지 않으므로 단독 창이 필요 없다.
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ def load(kind: str, model_id: str, adapter: Path | None):
         arrays = [npz[k] for k in npz.files]
         sd = serialize.ndarrays_to_state_dict(arrays, keys, ref)
 
-        # 로드 **전** lora_노름. peft 는 lora_B 를 0 으로 놓으므로 0 이어야 한다.
+        # 로드 **전** lora_B 의 노름. peft 는 lora_B 를 0 으로 놓으므로 0 이어야 한다.
         before = _lora_b_norm(model)
         res = set_peft_model_state_dict(model, sd)
         after = _lora_b_norm(model)

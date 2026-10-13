@@ -5,7 +5,7 @@
 
 | # | 무엇 | 통과 조건 |
 |---|---|---|
-| 1 | `corpus.validate.verify_pairs_main` (같은 작성 계통) | 종료 0 · `ok` · `coverage: full` · `not_checked: []` · `verdict: 일치` |
+| 1 | `corpus.validate.verify_pairs_main` (같은 트랙) | 종료 0 · `ok` · `coverage: full` · `not_checked: []` · `verdict: 일치` |
 | 2 | `scripts/probe/pairs_independent.py` (독립 재구현) | `mismatch: {}` · `coverage: full` · `sealable: true` · 종료 0 |
 
 **종료 코드만 보지 않는다.** 2번은 `--pairs` 를 주지 않으면 대조 없이 끝나고, `--allow` 를 주면
@@ -187,7 +187,7 @@ def check(build: Path, snap: Path, root: Path, out_dir: Path) -> dict:
 
     results: list[dict] = []
 
-    # ── 1. 같은 작성 계통의 산출물 검사
+    # ── 1. 같은 트랙의 산출물 검사
     code, rep, err = _run(["-m", "corpus.validate.verify_pairs_main", "--build", str(build),
                            "--snapshot", str(snap), "--root", str(root)])
     if rep is None:

@@ -1,10 +1,10 @@
-"""본실험 규모 결함 3건 — 82번 §10-3-1 (학습·추론 측이 §4-6 게이트에서 실측, 평가 구현 범위).
+"""본실험 규모 결함 3건 — 82번 §10-3-1 (C 가 §4-6 게이트에서 실측, D 몫).
 
 | # | 결함 | 여기서 고정하는 것 |
 |---|---|---|
 | 1 | `load_yolo_from_npz` 가 `yolo11n.yaml` 하드코딩 | `model_cfg` 인자. 규모가 틀리면 어느 프로파일인지 말하며 실패 |
 | 2 | `predict_cell` 청킹 부재 (12,461장 → 36.7GB 단일 할당) | 내부 청킹. 호출 크기 ≤ 청크, 순서 보존 |
-| 3 | `IMGSZ = 416` 고정 | 프로파일에서 받는다. 학습·추론 측의 `PROFILES` 와 같은 값 |
+| 3 | `IMGSZ = 416` 고정 | 프로파일에서 받는다. C 의 `PROFILES` 와 같은 값 |
 
 셋 다 파일럿 규모(653장·YOLO11n·416)에서는 보이지 않던 결함이라, 시험도 파일럿 값이
 아니라 **본실험 값(YOLO11s·640·12,461장)** 으로 건다.
@@ -44,7 +44,7 @@ def _params(**kw) -> ScoringParams:
 # --------------------------------------------------------------------------------------
 
 def test_profile_imgsz_is_read_from_track_c_profiles() -> None:
-    """평가 측의 프로파일 표가 학습·추론 측의 `PROFILES` 와 같은 해상도를 낸다 — 베낀 값이 아니라 읽은 값."""
+    """D 의 프로파일 표가 C 의 `PROFILES` 와 같은 해상도를 낸다 — 베낀 값이 아니라 읽은 값."""
     from detection.round_runner import PROFILES
 
     profiles = detection_profiles()
@@ -175,7 +175,7 @@ def test_chunk_must_be_positive() -> None:
 # --------------------------------------------------------------------------------------
 
 def _npz_from(model_cfg: str, tmp_path: Path) -> Path:
-    """`model_cfg` 규모의 초기 상태를 학습·추론 측의 serialize 규약으로 npz 에 쓴다."""
+    """`model_cfg` 규모의 초기 상태를 C 의 serialize 규약으로 npz 에 쓴다."""
     from ultralytics.nn.tasks import DetectionModel
 
     from detection import serialize
@@ -205,7 +205,7 @@ def test_load_respects_model_cfg_and_names_the_mismatch(tmp_path: Path) -> None:
 
 
 def test_loader_leaves_no_temp_file_beside_the_checkpoint(tmp_path: Path) -> None:
-    """임시 `.pt` 를 npz 옆에 두지 않는다 — 그곳은 학습·추론 측의 산출 폴더다."""
+    """임시 `.pt` 를 npz 옆에 두지 않는다 — 그곳은 C 의 산출 폴더다."""
     from evaluation.detect_infer import load_yolo_from_npz
 
     npz = _npz_from("yolo11n.yaml", tmp_path)

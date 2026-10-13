@@ -186,7 +186,7 @@ def regression_diffs(stored: dict, fresh: dict, tags: Sequence[str]) -> list[dic
 def gate_check(metrics: dict, params: ScoringParams) -> dict:
     """게이트 대조 — 칸이 사전등록 통과선을 넘는가.
 
-    게이트 값의 출처를 함께 싣는다. 데이터 처리 측의 content-free 천장 재산출이 도착하기 전이면
+    게이트 값의 출처를 함께 싣는다. A 의 content-free 천장 재산출이 도착하기 전이면
     `source` 가 그 사실을 밝힌다(74번 A-1). **넘지 못한 것도 결과다** — 사진을 안 보고
     도달 가능한 상한을 제대로 재 보니 어떤 칸도 넘지 못했다는 것은 방법 절에 실린다.
     """

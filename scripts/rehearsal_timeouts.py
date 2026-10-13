@@ -3,7 +3,7 @@
     python -X utf8 scripts/rehearsal_timeouts.py measure-load --out <JSON> [--repeats 2]      # GPU 창 — 모델 적재 시간을 잰다
     python -X utf8 scripts/rehearsal_timeouts.py propose --plan configs/rehearsal_uni.yaml (--load-json <JSON> | --load-s <초>) [--out <JSON>]
 
-**제안이다 — 설정 파일을 쓰지 않는다.** 계획 파일(`configs/`)은 데이터 쪽 소관이고 값은 별도 승인을 받는다. `propose` 는 단계마다 상한과
+**제안이다 — 설정 파일을 쓰지 않는다.** 계획 파일(`configs/`)은 데이터 쪽 소관이고 값은 총괄이 승인한다. `propose` 는 단계마다 상한과
 그것을 낸 식 · 입력을 JSON 으로 내고, 계획에 옮길 `timeouts_s` 블록을 함께 적는다. 시한은 넘으면 그 단계를 프로세스 트리째 끊는
 상한이다(2판 §1-3) — 너무 짧으면 정상 실행을 끊고, 넉넉하면 멈춘 실행을 늦게 잡을 뿐이다. 그래서 모르는 값은 **넉넉한 쪽**으로 둔다.
 

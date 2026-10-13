@@ -7,11 +7,11 @@
 - **임계를 인자로 받아야 스윕이 가능하다.** 65번은 `CONF = 0.25` 를 모듈 상수로 박아
   분리형만 잘린 뒤 채점됐다(감사 D-1).
 
-가중치 로드는 학습·추론 측의 `detection.serialize` 를 그대로 쓴다 — 재구현 금지. 좌표는
+가중치 로드는 C 의 `detection.serialize` 를 그대로 쓴다 — 재구현 금지. 좌표는
 Ultralytics 표준 predict 의 원본 픽셀 복원(Q20 실측 봉인)을 그대로 받는다.
-평가 측은 좌표를 변환하지 않는다.
+D 는 좌표를 변환하지 않는다.
 
-**본실험 규모에서 죽던 결함 둘을 여기서 고쳤다**(82번 §10-3-1, 학습·추론 측이 §4-6 게이트에서 실측).
+**본실험 규모에서 죽던 결함 둘을 여기서 고쳤다**(82번 §10-3-1, C 가 §4-6 게이트에서 실측).
 - 모델 규모가 `yolo11n.yaml` 로 박혀 있어 본실험 프로파일(YOLO11s) 가중치를 못 읽었다
   → `model_cfg` 인자. 프로파일이 틀리면 npz 가 어느 규모인지 말하며 실패한다.
 - 평가셋 전량의 경로를 한 번에 넘겨 전처리가 36.7GB 단일 텐서가 됐다 → 내부 청킹.
@@ -56,7 +56,7 @@ CHECKPOINTS: tuple[tuple[str, str | None, str], ...] = (
     ("sep_local", "C3", "sep_local/sep_local_c2.npz"),
     ("sep_fed", None, "sep_fed/global_r003.npz"),
 )
-"""칸 → last 체크포인트. **best 는 없다**(불변조건 3-2). 경로는 학습·추론 측의 **파일럿** 산출 규약이다."""
+"""칸 → last 체크포인트. **best 는 없다**(불변조건 3-2). 경로는 C 의 **파일럿** 산출 규약이다."""
 
 CHECKPOINT_LAYOUT_PROFILES: frozenset[str] = frozenset({"pilot"})
 """`CHECKPOINTS` 표가 맞는 채점 프로파일(49번 §7-4).
@@ -65,11 +65,11 @@ CHECKPOINT_LAYOUT_PROFILES: frozenset[str] = frozenset({"pilot"})
 있어서, 이 표로 찾으면 파일럿 경로(`sep_fed/global_r003.npz`)를 쓴다 — 그런 파일이 있으면 조용히
 다른 가중치로 추론하게 된다. **본실험 경로로 맞추지 않고 멈추는 이유:**
 
-1. 본실험 레코드는 학습·추론 측의 export 를 `adapt_main_detections.py` 로 옮긴 것이고, 그 체크포인트 경로·
-   sha256 이 adapt 기록(`export_meta`)에 있다. 평가 측이 다시 추론하면 같은 칸의 레코드 출처가 둘이 된다.
+1. 본실험 레코드는 C 의 export 를 `adapt_main_detections.py` 로 옮긴 것이고, 그 체크포인트 경로·
+   sha256 이 adapt 기록(`export_meta`)에 있다. D 가 다시 추론하면 같은 칸의 레코드 출처가 둘이 된다.
 2. 본실험 `predict` 는 `outputs/main_d/seed<n>/` 의 레코드 자리에 쓴다. 그 레코드는 v1~v3 산출물의
    `input_records` 가 해시로 묶은 입력이다.
-3. 연합 마지막 라운드 번호(50)를 여기 베끼면 `configs` 와 학습·추론 측의 산출 배치에 두 번째 사본이 생긴다.
+3. 연합 마지막 라운드 번호(50)를 여기 베끼면 `configs` 와 C 의 산출 배치에 두 번째 사본이 생긴다.
 """
 
 
@@ -92,7 +92,7 @@ def load_yolo_from_npz(
 ):
     """C 의 npz 상태를 **`model_cfg` 가 지정한 규모**의 YOLO11(nc=4) 에 주입한다.
 
-    전부 학습·추론 측의 serialize 경유다. `model_cfg` 는 호출부가 `ScoringParams.model_cfg`
+    전부 C 의 serialize 경유다. `model_cfg` 는 호출부가 `ScoringParams.model_cfg`
     (프로파일에서 유도)로 준다 — 이전 판은 `yolo11n.yaml` 을 박아 두어 본실험 프로파일
     가중치에서 `shape 불일치 (32,3,3,3) != (16,3,3,3)` 로 죽었다(82번 §10-3-1 결함 1).
     """
@@ -117,7 +117,7 @@ def load_yolo_from_npz(
     dm.load_state_dict(serialize.ndarrays_to_state_dict(arrays, keys, ref), strict=True)
     dm.names = dict(enumerate(class_names))
     # ultralytics 체크포인트 형태로 감싸 YOLO 의 정식 로드 경로를 태운다. 임시 파일은
-    # npz 옆이 아니라 임시 디렉터리에 둔다 — npz 가 있는 곳은 학습·추론 측의 산출 폴더다.
+    # npz 옆이 아니라 임시 디렉터리에 둔다 — npz 가 있는 곳은 C 의 산출 폴더다.
     tmp_dir = Path(tempfile.mkdtemp(prefix="weld_yolo_"))
     try:
         tmp = tmp_dir / (npz_path.stem + ".pt")

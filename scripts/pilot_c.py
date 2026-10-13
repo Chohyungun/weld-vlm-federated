@@ -230,7 +230,7 @@ def cmd_cell7() -> None:
     예외를 올리지 않고 `audit.json` 도 쓰지 않았다(80번 F6 — `sep_fed/audit.json` 은
     있는데 `uni_fed/` 에는 없었다). 이제 ④와 같은 배선을 탄다.
 
-    가중은 **감독 토큰 총합**이다(판정 2). 클라이언트가 `WEIGHT_KEY` 에 그 값을
+    가중은 **감독 토큰 총합**이다(총괄 판정 2). 클라이언트가 `WEIGHT_KEY` 에 그 값을
     싣고, 회계가 페어 수와 함께 남긴다.
     """
     import json as _json

@@ -11,7 +11,7 @@
    `vlm.export_generator.load_generator` 다(모드별 구현 결속 — 등록의 구현 식별자가 한 칸이다).
    **모델 생성기의 실제 구현은 아직 없다** — 그래서 본실험의 모델 export 는 아직 시작하지 않는다.
 4. 루트와 경로 — 리허설 · 진단은 출력 · 영수증 · 목록 · 어댑터 · 계획이 모두 루트 아래, 본실험은 어느 것도 비본실험 부모 아래가 아니다.
-5. 적합성 벡터 — 이 프로세스 안에서 예측 파서를 평가 쪽 벡터에 태우고, 모든 사례에서 줄의 두 필드가 짝을 지키는지 본다.
+5. 적합성 벡터 — 이 프로세스 안에서 C 파서를 평가 쪽 벡터에 태우고, 모든 사례에서 줄의 두 필드가 짝을 지키는지 본다.
 6. 사전 점검(`vlm.export_preflight`) — 평가 쪽 실제 함수로 영수증 · 등록 · 닻 · 목록 · 분할 · 노출 기록 · 실측값 · 학습 출처 · 청결.
    진단의 커밋된 영수증이면 대역 이음새를 거부한다(2판 §1-4 의 순서 3, 진단 열).
 
@@ -107,7 +107,7 @@ def grid_key(g: Sequence[int]) -> str:
 
 
 def conformance_problems() -> list[str]:
-    """평가 쪽 적합성 벡터에 예측 파서를 태운다. 어긋난 사례 이름 목록 — 비어야 시작한다(2판 §2-4 의 1)."""
+    """평가 쪽 적합성 벡터에 C 파서를 태운다. 어긋난 사례 이름 목록 — 비어야 시작한다(2판 §2-4 의 1)."""
     from evaluation.conformance_v14 import KNOWN_CODES, SCORING_CODES, all_cases, check_case
     from vlm.coords import CoordCfg, ImageGeom
     from vlm.gen_parse import conformance_tuple, line_fields, pair_ok, parse_generation

@@ -587,7 +587,7 @@ def test_에코_전용도_계획_파일의_바이트가_등록과_다르면_종�
 
 
 def test_진단도_score_가_밖으로_이어지면_시도_전에_종료_3(tmp_path, capsys) -> None:
-    """진단 산출의 경로는 원장의 판정 줄에도 적힌다 — 밖을 가리키면 판정 줄 · call 줄 전에 멈춘다(검토 기록 §57)."""
+    """진단 산출의 경로는 원장의 판정 줄에도 적힌다 — 밖을 가리키면 판정 줄 · call 줄 전에 멈춘다(공유 회신 §57)."""
     from tests.test_score_unified import _dir_link, _unlink_dir
     w = build(tmp_path)
     outside = tmp_path / "outside"

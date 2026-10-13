@@ -340,7 +340,7 @@ def score_m1(table: CountTable, weights: np.ndarray | None = None, *,
         fixed_classes: 평균 대상을 **미리 고정**한다. 재표집이 쓰는 모드다.
 
     재표집에서 대상을 매번 다시 정하면 계약이 깨진다. 정답이 각각 A·B 인 이미지 둘에서 A 만
-    맞춘 표는 비가중 macro 가 0.5 인데, 가중 `[1, 0]` 을 주면 지지량이 0 이 되어 B 가
+    맞춘 표는 비가중 macro 가 0.5 인데, 가중 `[1, 0]` 을 주면 B 의 지지량이 0 이 되어 B 가
     빠지고 macro 가 1 로 **올라간다.** 그 추첨은 점수가 좋아진 것이 아니라 **잴 수 없는** 것이다.
     고정 대상 모드는 그런 추첨을 `undefined_reason="support"` 로 돌려준다.
 

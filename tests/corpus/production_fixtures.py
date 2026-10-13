@@ -136,7 +136,7 @@ class World:
 
     @staticmethod
     def passage(p: dict) -> dict:
-        """본문 은행 행(코퍼스 측의 행 꼴 2판). 포인터 행은 이것에서 본문만 null 로."""
+        """본문 은행 행(B 의 행 꼴 2판). 포인터 행은 이것에서 본문만 null 로."""
         from corpus.parse.passage_bank import text_sha256
 
         row = {"schema_version": 2, "doc_id": p["doc_id"], "edition": "test edition", "source_file_sha256": sha(p["doc_id"].encode()),
@@ -207,7 +207,7 @@ class FakeBackend:
 
     def __init__(self, cfg, stage):
         self.stage = stage
-        # 따로 둔 판정(`infer.run_judge`)이 적재된 모델에서 읽는 실행 조건의 흉내 — 시험 전용(코퍼스 측의 품질 시험과 같은 꼴)
+        # 따로 둔 판정(`infer.run_judge`)이 적재된 모델에서 읽는 실행 조건의 흉내 — 시험 전용(B 의 품질 시험과 같은 꼴)
         self.model = SimpleNamespace(generation_config=SimpleNamespace(to_dict=lambda: {"eos_token_id": 2}, eos_token_id=2))
         self.tokenizer = SimpleNamespace(pad_token_id=0, eos_token_id=2, chat_template="{{ messages }}")
         self.identity = {"backend": self.backend, "model_id": cfg["model_id"], "revision": cfg["revision"],
@@ -233,7 +233,7 @@ class FakeBackend:
 
 
 def make_judge_source(run_dir: Path, config: dict, judge_dir: Path, *, model_id: str = "local/judge-v2") -> dict:
-    """따로 둔 판정을 판정 신원 쓰기(`infer.run_judge`, 가짜 백엔드)로 실제 폴더에 돌리고, 판정 신원 읽기로 객체를 받는다(시험 전용)."""
+    """따로 둔 판정을 Codex 의 판정 신원 쓰기(`infer.run_judge`, 가짜 백엔드)로 실제 폴더에 돌리고, 판정 신원 읽기로 객체를 받는다(시험 전용)."""
     from corpus.production import infer
 
     # 판정 신원 쓰기는 주입한 백엔드로 시험용(fake)만 받는다 — 그래서 이 판정의 행은 릴리스되지 않는다(릴리스는 transformers 만)
@@ -248,7 +248,7 @@ def make_judge_source(run_dir: Path, config: dict, judge_dir: Path, *, model_id:
 
 
 def make_v7_judge_source(run_dir: Path, config: dict, judge_dir: Path, *, mutate=None) -> dict:
-    """v7 판정 출처의 흉내(시험 전용) — v7 판정 신원 읽기가 이 트리에 없어 그 꼴(검토 05o · 05p)을 손으로 짓는다.
+    """v7 판정 출처의 흉내(시험 전용) — 외부 검토 도구의 v7 판정 신원 읽기가 이 트리에 없어 그 꼴(B 05o · 05p)을 손으로 짓는다.
 
     모델 대상(정상 행이 아닌 행)에만 판정 행, 모든 작업에 결정적 영수증(통과). 판정 신원 = 근거의 정규 JSON 지문.
     `mutate(source)` 는 신원을 만든 뒤 출처를 고친다(영수증 · 모델 대상 위조 시험). 릴리스의 폴더 다시 읽기는 시험에서 이 객체의
@@ -295,7 +295,7 @@ def make_v7_judge_source(run_dir: Path, config: dict, judge_dir: Path, *, mutate
 
 
 def build_audit(run_dir: Path, config: dict, audit_dir: Path, *, mutate_rows=None, judge_source=None) -> dict:
-    """`audit_run` 이 낼 꼴(보고 05 공유 계약 안)을 흉내 낸다 — 시험 전용 참조 구현."""
+    """B 의 `audit_run` 이 낼 꼴(보고 05 공유 계약 안)을 흉내 낸다 — 시험 전용 참조 구현."""
     from corpus.production import infer, quality
     from corpus.production.common import read_json, write_json_new
     from corpus.production.release import counts_of, ids_sha256
@@ -343,7 +343,7 @@ def build_audit(run_dir: Path, config: dict, audit_dir: Path, *, mutate_rows=Non
             if judge_source is None:
                 prov["judge"]["verdict"] = json.loads(j["text"])
             else:
-                # 집계와 같은 짝 — 출력 계약의 꼴의 파서(한 꼴을 다른 파서로 읽지 않는다)
+                # B 의 집계와 같은 짝 — 출력 계약의 꼴의 파서(한 꼴을 다른 파서로 읽지 않는다)
                 parsed = parsers[judge_identity["parser_schema"]](t, j)
                 prov["judge"].update(verdict=parsed["verdict"], schema=parsed["schema"], parser=parsed["parser"],
                                      answers=parsed["answers"], flags=list(parsed["flags"]),
@@ -379,7 +379,7 @@ def build_audit(run_dir: Path, config: dict, audit_dir: Path, *, mutate_rows=Non
         "user_templates": {"image_report": sorted({t["train_user_text"] for t in tasks if t["kind"] == "image_report"})},
         "source_documents": [{"source_id": s, "source_sha256": h} for s, h in docs],
         "judge_identity": judge_identity,
-        # 코퍼스 측의 집계(quality_v7 ~)가 싣는 파서 판 — 구조화 꼴이면 그 꼴의 판, 옛 네 키면 None
+        # B 의 집계(quality_v7 ~)가 싣는 파서 판 — 구조화 꼴이면 그 꼴의 판, 옛 네 키면 None
         "judge_parser_version": quality.JUDGE_PARSER_VERSIONS.get(judge_identity.get("parser_schema", "legacy_four_keys")),
         "review": {"strata": strata, "stratum_sizes": sizes},
         # v7 판정 출처의 결정적 영수증 요약(B quality_v9) — 다른 꼴이면 None

@@ -1,6 +1,6 @@
-"""색인 구축 · 임베딩 하네스 · 판정부 배선 테스트. 작업 명세 과제 1~3.
+"""색인 구축 · 임베딩 하네스 · 판정부 배선 테스트. 지시서 과제 1~3.
 
-전부 CPU·스텁으로 돈다. GPU 는 실행 승인 대기.
+전부 CPU·스텁으로 돈다. GPU 는 총괄 신호 대기.
 """
 
 from __future__ import annotations
@@ -80,7 +80,7 @@ def test_duplicate_clause_ids_rejected(tmp_path):
 
 
 def test_single_candidate_needs_no_embedding(tmp_path):
-    """후보 0~1개 경로는 임베딩 모델 없이 돌아야 한다 — 작업 명세 요구."""
+    """후보 0~1개 경로는 임베딩 모델 없이 돌아야 한다 — 지시서 요구."""
     p = write_chunk_meta(tmp_path, [meta("KRA27-T15")])
     idx = build_index(p)
     r = idx.search(q())

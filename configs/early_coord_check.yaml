@@ -8,7 +8,7 @@
 #   - `sequential_rule` · `discrimination`: 합성 순차 판별력(scripts/probe/early_coord_check_discrimination.py)을
 #     이 파일로 돌려 고른다 — 한 번 통과의 거짓 통과가 0 이면 `single`, 아니면 두 step 연속의 거짓 통과가 0 일 때
 #     `two_consecutive`, 둘 다 아니면 null 로 남기고 첫 점검 학습을 시작하지 않는다(14-2)
-#   - `max_attempts`: 허용 시도 수 — 첫 점검 실행 전에 적는다
+#   - `max_attempts`: 허용 시도 수 — 총괄이 첫 점검 실행 전에 적는다
 #
 # 한 번 커밋한 규칙은 고치지 않는다 — 고치면 새 판이다(`version`).
 kind: early_coord_check
@@ -44,7 +44,7 @@ max_attempts: null
 #   - 학습 쪽은 상한과 단가를 **여기서만** 읽는다. 실행 인자(--max-hours · --max-won)는 이보다 **좁히기만** 한다 — 넓히면
 #     거부한다(`evaluation.early_coord_check.effective_limits`). 단가를 실행 인자 · 코드 기본값으로 두지 않는다.
 #   - 금액 대조는 시간 × 단가 × 계수로 센다(`effective_limits` 의 `cost_krw_of_hour`).
-#   - max_hours · max_cost_krw 는 학습 쪽 비용표에서 골라 첫 점검 실행 전에 적는다.
+#   - max_hours · max_cost_krw 는 학습 쪽 비용표에서 골라 첫 점검 실행 전에 총괄이 적는다.
 limits:
   max_hours: null
   max_cost_krw: null
@@ -53,7 +53,7 @@ limits:
   safety_factor: 1.2
 
 # 형식 관문 — step 마다 점검 생성의 파싱률이 이 값 아래면 그 step 은 판정 불가(사유: 형식). **제안 값**이다 — 파싱된 장에만
-# 기댄 판정이 선택 효과를 받지 않게 높게 둔다. 첫 점검 실행 전에 확인한다.
+# 기댄 판정이 선택 효과를 받지 않게 높게 둔다. 첫 점검 실행 전에 총괄이 확인한다.
 format_gate:
   min_parse_rate: 0.95
 

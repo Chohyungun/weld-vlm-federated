@@ -34,7 +34,7 @@ UNDECIDABLE = "판정불가"
 class GoldPair:
     """(이미지 × 결함코드) 하나에 대응하는 정답. `corpus/derived/gold_clauses.csv`에서 온다.
 
-    평가 측이 `limits.csv`를 직접 순회해 만들지 않는다 — 코퍼스 측의 `derive_gold_clauses` 산출물을
+    D가 `limits.csv`를 직접 순회해 만들지 않는다 — B의 `derive_gold_clauses` 산출물을
     읽기만 한다(개발규약 불변조건 1-7, B 스펙 §1-4 금지 규칙 ④).
     """
 
@@ -272,7 +272,7 @@ def score_consistency(
     규칙 기반 재계산이라 LLM 심판이 개입하지 않는다.
 
     이미지 합성은 `aggregate_verdicts`(B 소유)를 호출한다 — 보수 규칙(한 결함이라도
-    불합격이면 불합격)을 평가 측이 재구현하지 않는다.
+    불합격이면 불합격)을 D가 재구현하지 않는다.
     """
     ok = 0
     scored = 0

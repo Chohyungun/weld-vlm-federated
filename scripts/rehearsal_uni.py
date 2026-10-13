@@ -1,4 +1,4 @@
-"""통합형 배관 리허설의 오케스트레이터 — 리허설 2판 §1-2 의 단계 표(줄 A · 줄 로컬 칸) · §1-3 · §1-4 · §5-4 · §3 의 판정기.
+"""통합형 배관 리허설의 오케스트레이터 — 리허설 2판 §1-2 의 단계 표(줄 A · 줄 B 의 로컬 칸) · §1-3 · §1-4 · §5-4 · §3 의 판정기.
 
     python -X utf8 scripts/rehearsal_uni.py run --plan configs/rehearsal_uni.yaml --snapshot <동결 스냅샷> --device <장비>
     python -X utf8 scripts/rehearsal_uni.py judge --run-root outputs/rehearsal_u/reh-YYYYMMDDTHHMMSS
@@ -18,7 +18,7 @@
 **이음새는 파이썬 인자로만**(2판 §1-4). 명령줄에는 구현을 고르는 인자가 없다 — `main(argv, measure_env=..., model_loader=..., ...)`.
 기본값은 승인된 실제 구현이다. **모델 생성기의 실제 구현이 아직 없다** — 등록 단계(구현 식별자를 적는다)가 그 이음새 없이 시작하지 않는다.
 
-**줄 연합 칸(`uni_fed`)** 은 본실험과 같은 `flwr run` 경로로 돈다(2판 §1-1 · §1-3 의 연합 행). 중단을 넣지 않는다. 학습 단계
+**줄 B 의 연합 칸(`uni_fed`)** 은 본실험과 같은 `flwr run` 경로로 돈다(2판 §1-1 · §1-3 의 연합 행). 중단을 넣지 않는다. 학습 단계
 (`train --tag uni_fed`)가 상주 SuperLink · 시뮬레이션 프로세스를 앞뒤로 내리고 남은 것이 없는지 본다. 출력은 `<루트>/train/uni_fed_s<n>/`
 (2판 §13-4), 초기 어댑터는 등록 단계가 만든 `<루트>/init/initial.npz`, 학습 행은 로컬 칸의 목록이다.
 계획의 `exclude.near_dup_edges` · `timeouts_s` 가 `null` 이면 시작하지 않는다.
@@ -492,7 +492,7 @@ BINDINGS_DIR = "fdiag_bindings"
 
 ECHO_GATE_FILE = "score/echo_gate.json"
 #: 묶음 생성 파일의 이름 — 평가 쪽이 묶음을 고르는 꼴(`scripts/probe/score_unified.py` 의 `_NAME`)과 같다. 쓰는 쪽도 이 꼴의 파일만 고른다 —
-#: 꼴 밖의 파일(예 `backup.echo.generations.jsonl`)은 평가 쪽이 보지 않으므로 이 쪽도 읽지 않는다(검토 기록 `echowire` 의 1). 시험이 두 꼴을 맞댄다.
+#: 꼴 밖의 파일(예 `backup.echo.generations.jsonl`)은 평가 쪽이 보지 않으므로 이 쪽도 읽지 않는다(외부 검토 회신 `echowire` 의 1). 시험이 두 꼴을 맞댄다.
 GEN_NAME = re.compile(r"^(?P<tag>[A-Za-z0-9_]+)_s(?P<seed>\d+)(?P<echo>\.echo)?\.generations\.jsonl$")
 
 
@@ -520,7 +520,7 @@ def _sha_under(q: Path, root: Path, *, code: str) -> str:
 
 def _diag_out_rel(root: Path, checkout: Path) -> str:
     """평가 쪽 판정 산출의 자리(체크아웃 상대) — **파일 자체는 풀지 않는다**(푼 루트 + 이름). 그 파일이 밖으로 가는 링크여도 여기서 예외로 끝나지
-    않고, 뒤의 보호된 읽기(`read_under`)가 사유 코드로 거부한다. 루트가 체크아웃 밖이면 `fdiag_output_path`(검토 기록 `echorule` 의 4 · §59)."""
+    않고, 뒤의 보호된 읽기(`read_under`)가 사유 코드로 거부한다. 루트가 체크아웃 밖이면 `fdiag_output_path`(외부 검토 회신 `echorule` 의 4 · §59)."""
     from vlm.rehearsal_run import StageRefused
 
     try:
@@ -531,7 +531,7 @@ def _diag_out_rel(root: Path, checkout: Path) -> str:
 
 def _score_dir_ok(root: Path) -> None:
     """`<루트>/score` 가 있으면 루트 아래의 보통 폴더여야 한다 — 밖으로 가는 정션 · 링크면 평가 쪽을 부르기 전에 사유 코드로 거부한다
-    (검토 기록 `echowire` 의 2 — 경로를 풀다가 예외로 끝나지 않게)."""
+    (외부 검토 회신 `echowire` 의 2 — 경로를 풀다가 예외로 끝나지 않게)."""
     from vlm.rehearsal_run import StageRefused
 
     s = Path(root) / "score"
@@ -648,7 +648,7 @@ def _bind_root(parent: Path, gen_sha: str, root: Path, receipt_sha: str) -> bool
 
 
 def _d_output(root: Path, d_out: Path, *, gen_sha: str, ledger: Path, checkout: Path) -> tuple[dict, bytes]:
-    """평가 쪽 산출물이 **이 진단의 것인지** — 이름만 보고 받지 않는다(검토 기록 `fdiag` 의 1).
+    """평가 쪽 산출물이 **이 진단의 것인지** — 이름만 보고 받지 않는다(외부 검토 회신 `fdiag` 의 1).
 
     1. 최종 경로가 이 루트 아래인 보통 파일이다(`read_under`).
     2. 본문의 `generation_sha256` 이 이 등록이다.

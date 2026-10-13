@@ -377,7 +377,7 @@ def test_v5_loaded_function_replacement_is_refused(modules):
         identity(pair)
 
 
-# v6 지문 연결의 합성 API. 코퍼스 측의 실제 판독·형식 정규화 의미 시험은 아니다.
+# v6 지문 연결의 합성 API. B의 실제 판독·형식 정규화 의미 시험은 아니다.
 V6 = '''
 JUDGE_V6_SCHEMA_VERSION = "judge_structured_v6"
 V6_KEYS = ("names_match", "counts_match", "positions_match")

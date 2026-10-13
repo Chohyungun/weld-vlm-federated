@@ -466,8 +466,8 @@ def test_finding_float_size_px_is_quarantined_not_fatal() -> None:
 def test_finding_ratio_basis_a_is_held_in_shared_evaluator_too() -> None:
     """N6 수정 확인: ratio_basis=a 보류가 공유 평가기에도 있다.
 
-    코퍼스 측은 enumerate_combos·_basis_value·D4 세 곳에서 a 행을 막았는데, §1-4 가 D 소비 경로로
-    지정한 limit_eval 에는 가드가 없어 같은 행에서 코퍼스 측은 "평가 보류", 평가 측은 "합격 margin 0.50"
+    B 는 enumerate_combos·_basis_value·D4 세 곳에서 a 행을 막았는데, §1-4 가 D 소비 경로로
+    지정한 limit_eval 에는 가드가 없어 같은 행에서 B 는 "평가 보류", D 는 "합격 margin 0.50"
     이 나왔다. 가드를 공유 평가기로 옮겨 두 경로가 같은 답을 낸다.
     """
     a_row = make_row(

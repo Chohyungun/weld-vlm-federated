@@ -50,14 +50,14 @@ _V1 = Path(__file__).resolve().parents[1] / "data/interim/manifest_v1"
 # ======================================================================================
 # 봉인처 명부 — 저장소 전체의 **단일 명부** (2026-09-16, 32번 과제 6)
 #
-# 코퍼스 측의 `corpus/generate/frozen_out.EXPECTED_SEALED` 에서 옮겨 왔다. 계약서가 있는 디렉터리만
+# B 의 `corpus/generate/frozen_out.EXPECTED_SEALED` 에서 옮겨 왔다. 계약서가 있는 디렉터리만
 # 찾으면 디렉터리째 사라진 봉인본은 목록에서 같이 사라진다 — 09-11 에 data/processed 가 비었을 때
 # 대조기가 "깨짐 0" 을 냈다(30번 §8-4 나). 그래서 "무엇이 있어야 하는지"를 따로 들고 대조한다.
 # 두 곳에 살면 한쪽만 고쳐진다 — 09-13 에 백업 목록이 소실된 v2 를 계속 들고 있었다. 대조기
 # (`frozen_out.check_registry`)·백업 목록(`verify_backup.SEALED_DIRS`)은 여기서 import 한다.
 #
 # 키: 저장소 루트 기준 **POSIX 상대경로**. 드라이브 문자·역슬래시·선행 슬래시 금지(규약 2-6).
-# 항목: `status`(아래 어휘) · `owner`(소유 구분자) · `record`(lost·restored 는 필수 — 언제 왜 그런지)
+# 항목: `status`(아래 어휘) · `owner`(트랙 문자) · `record`(lost·restored 는 필수 — 언제 왜 그런지)
 #       · `evidence`(restored 만 — 근거 등급).
 #
 # 상태 어휘 (`SEALED_STATUSES`):
@@ -70,7 +70,7 @@ _V1 = Path(__file__).resolve().parents[1] / "data/interim/manifest_v1"
 #              원 경로에 실물이 돌아온 **뒤에만** 붙인다 — 그 전에 붙이면 대조기가 missing_contract
 #              로 실패한다. 대조기의 restored 분기는 B 소관(import 전환 때 expected 와 같게).
 #
-# 상태 갱신은 판정을 따른다. pilot3000 계열 3개는 09-16 복원 판정(의사결정로그 17ca38b) →
+# 상태 갱신은 총괄 판정을 따른다. pilot3000 계열 3개는 09-16 복원 판정(의사결정로그 17ca38b) →
 # 09-16 00:58 원 경로 복사·파일별 해시 4/4×3·계약서 3장 동일 확인(32번 §1-4 추기) → `restored`.
 # 이 세 자리는 git 밖 단일 사본으로 돌아온 것이라 백업 목록(B `verify_backup`)에 들어야 한다.
 # ======================================================================================

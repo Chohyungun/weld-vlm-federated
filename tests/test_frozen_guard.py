@@ -192,8 +192,8 @@ def test_expected_항목은_실물이_있으면_계약서를_가진다():
             assert is_frozen(d), f"{rel}: 디렉터리는 있는데 {CONTRACT_NAME} 가 없다"
 
 
-# (`test_B_명부와_어긋나지_않는다` 는 전환기 전용이었다. 코퍼스 측이 598cd47 로 이 명부를 같은 객체로
-#  import 하면서 코퍼스 측 `test_명부는_data_frozen_guard_의_단일_명부다` 가 동일성·재정의 없음을
+# (`test_B_명부와_어긋나지_않는다` 는 전환기 전용이었다. B 가 598cd47 로 이 명부를 같은 객체로
+#  import 하면서 B 쪽 `test_명부는_data_frozen_guard_의_단일_명부다` 가 동일성·재정의 없음을
 #  단언한다 — 45번 m-2·41번 m-1 에 따라 지웠다.)
 
 

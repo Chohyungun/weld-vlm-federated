@@ -81,7 +81,7 @@ def test_all_method_chunk_answers_both_axes():
 
 
 def test_chunk_from_derive_chunk_meta_carries_axis():
-    """derive_chunk_meta 출력을 그대로 받는다 — 필드명이 어긋나면 축 필터가
+    """B 의 derive_chunk_meta 출력을 그대로 받는다 — 필드명이 어긋나면 축 필터가
     조용히 통과해 버리므로 이 변환이 유일한 지점이다."""
     meta = {
         "clause_id": "IACS47-3.2.1",

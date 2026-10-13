@@ -13,7 +13,7 @@
 2. **평가셋 적합판(`__shortcut__`)** — 같은 규칙을 평가셋 정답으로 적합. **상한이지 게이트가
    아니다.** 두 값의 간격이 "평가셋 유도가 얼마나 부풀리는가" 의 실측이다.
 3. **자기 검사** — H 구성 `idq512` 의 Macro-F1 이 등록 상수 0.9149 를 재현하는가. 재현하지
-   못하면 내 재구성이 데이터 처리 측의 규칙과 다른 것이고, 그러면 AP 값도 다른 규칙의 값이다.
+   못하면 내 재구성이 A 의 규칙과 다른 것이고, 그러면 AP 값도 다른 규칙의 값이다.
 4. **위치 축(mAP@50)** — 등록 상수 박스(0.0015)와 **id 구간별 중앙 박스**(train+val 적합)를
    비교한다. 분류 축과 같은 강도의 대조선이 위치 축에도 있는지 보는 것이다.
 """
@@ -48,7 +48,7 @@ REGISTERED = {
     "source": "configs/base.yaml:fixed_before_main_runs."
               "content_free__sel_val__fit_trainval__score_eval12461",
 }
-"""데이터 처리 측이 등록한 대조값. **재현 여부를 자기 검사로 본다.**"""
+"""A 가 등록한 대조값. **재현 여부를 자기 검사로 본다.**"""
 
 PRIMARY_K = 512
 """등록된 `best_family: idq512`. 여기서 족을 다시 고르지 않는다(§11-3)."""
@@ -86,7 +86,7 @@ def _score_rule(rule, eval_ids, gold_eval, classes, snapshot) -> dict:
 
 
 def _median_box(boxes) -> list[float]:
-    """좌표별 독립 중앙값 — 데이터 처리 측의 등록 상수 박스와 **같은 구성**이다(configs 주석 M8)."""
+    """좌표별 독립 중앙값 — A 의 등록 상수 박스와 **같은 구성**이다(configs 주석 M8)."""
     return [statistics.median([b[j] for b in boxes]) for j in range(4)]
 
 

@@ -7,7 +7,7 @@
 - **실행 식별(`RUN.json`)** — 행 · 열 id 목록(순서 포함) · 기술자 바이트 · 바닥 · 덩어리 크기 · P 탐색 설정 · 스레드 · 계산 코드의
   해시를 묶는다. 다시 돌릴 때 같은 폴더의 `RUN.json` 이 다르거나, 실행 식별 없는 덩어리 · 이 실행의 목록 밖 덩어리가 있으면
   **기존 산출을 그대로 두고 멈춘다**(`RunMismatch`). 이어 하기는 실행 해시와 CSV 해시가 맞는 덩어리만 건너뛴다.
-- 요약 · 짝 읽기는 그 실행의 덩어리 목록(0 … n−1)만, 실행 해시 · CSV 해시를 확인하며 읽는다(검토 기록 §63-1).
+- 요약 · 짝 읽기는 그 실행의 덩어리 목록(0 … n−1)만, 실행 해시 · CSV 해시를 확인하며 읽는다(공유 회신 §63-1).
 - **판정하지 않는다.** 바닥(`floors`)은 기록 바닥이다 — 후보 문턱은 등록(3.5)에서 정하고, 분포가 있으니 다시 스캔하지 않는다.
 - 짝은 `a_id < b_id`(문자열). 뒤집을 때 이동의 부호를 바꾼다(이동은 a 기준 b 의 위치).
 """
@@ -106,7 +106,7 @@ def _block_done(d: Path, k: int, run: str) -> bool:
     if not meta_p.exists():
         return False
     m = json.loads(meta_p.read_text(encoding="utf-8"))
-    if m.get("block") != k:                              # 번호가 다른 메타는 다른 CSV 를 가리킨다(검토 기록 §63 재검토)
+    if m.get("block") != k:                              # 번호가 다른 메타는 다른 CSV 를 가리킨다(공유 회신 §63 재검토)
         raise RunMismatch(f"{meta_p} 의 block 이 {m.get('block')!r} 다(파일 번호 {k}) — 보존하고 멈춘다")
     if m.get("run") != run or not csv_p.exists() or _sha_file(csv_p) != m.get("csv_sha256"):
         raise RunMismatch(f"{meta_p} 가 이 실행의 것이 아니거나 CSV 해시가 다르다 — 보존하고 멈춘다")
@@ -219,7 +219,7 @@ def _run_metas(d: Path, expect_run: str | None = None) -> tuple[dict, list[dict]
     """그 실행의 덩어리 목록(0 … n−1)만 — 실행 해시와 CSV 해시를 확인한다. 빠진 덩어리는 건너뛰지 않고 멈춘다.
 
     `expect_run` 을 주면 **읽기 전에** 디스크의 실행 해시가 지금 기대하는 실행(`run_identity(...)["run"]`)과 같은지 본다 —
-    자기 일관성만으로는 옛 입력의 온전한 스캔이 통과한다(검토 기록 §64-2).
+    자기 일관성만으로는 옛 입력의 온전한 스캔이 통과한다(공유 회신 §64-2).
     """
     rid = d / "RUN.json"
     if not rid.exists():

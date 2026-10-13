@@ -3,7 +3,7 @@
     uv run python -X utf8 scripts/neardup/nd_stage16_edges_v1.py --src _workspace/2026-09-21-neardup \\
         --out data/interim/neardup_edges_v1
 
-규칙 재설계안(검토 기록 08번(규칙재설계 설계안))의 단계 4 · 5 와 §5 의 2 를 따른다.
+규칙 재설계안(`docs/dev_log/2026-09-24-후속정리/08_규칙재설계_설계안_A.md`)의 단계 4 · 5 와 §5 의 2 를 따른다.
 - **간선 = 자동 제외를 지난 짝**이다. 얼린 식(`stage12_frozen_rule.json` 의 `고른_자동제외.식`, 식 문자열의 sha256 이
   같은 파일의 `식의_sha256` 과 같아야 한다)을 짝마다 평가한다. 식을 그대로 평가한 값과 같은 식을 비교문으로 풀어 쓴
   값이 한 짝이라도 다르면 멈춘다.

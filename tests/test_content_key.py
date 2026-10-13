@@ -184,7 +184,7 @@ _TEXTS = (
 def _written_row_keys(tmp, mode: str, monkeypatch) -> list[set[str]]:
     """쓰는 쪽 생성 경로의 **공개 진입점** `vlm.export_run.run_export` 를 대역 생성기로 실제로 한 번 돌려 쓴 줄의 키 집합을 읽는다.
 
-    대역 적재기 · 생성기는 이 시험 안에 둔다 — 다른 작성 계통의 시험 파일을 가져오지 않는다. 진입점의 인자 계약은 판마다 다르다:
+    대역 적재기 · 생성기는 이 시험 안에 둔다 — 다른 트랙의 시험 파일을 가져오지 않는다. 진입점의 인자 계약은 판마다 다르다:
     사전 점검을 인자로 받는 판(`preflight` · `stamp_fields`)과 안에서 부르는 판(`receipt_path` · `measure_env`). 뒤의 판은
     사전 점검 함수(`vlm.export_preflight.export_preflight`)만 실행 중에 대역으로 바꾼다 — 등록 · 동결본 · 계획의 세계를 짓지 않는다.
     목록을 하나 더 두고 `stop_after_lines` 로 멈춰 **봉인 전에** 돌아온다(곁 파일 · 노출 원장을 쓰지 않는다). 생성 줄은 그 전에 다 쓰였다.
@@ -259,7 +259,7 @@ def test_쓰는_쪽이_실제로_쓴_줄의_키가_분류와_맞다(tmp_path, mo
 
 
 def test_다른_트랙의_시험_파일을_가져오지_않는다() -> None:
-    """공개 진입점만 부른다 — 다른 작성 계통의 시험 도우미가 옮겨지거나 이름이 바뀌어도 이 시험이 깨지지 않게."""
+    """공개 진입점만 부른다 — 다른 트랙의 시험 도우미가 옮겨지거나 이름이 바뀌어도 이 시험이 깨지지 않게."""
     import ast
     src = Path(__file__).read_text(encoding="utf-8")
     mods = {n.module or "" for n in ast.walk(ast.parse(src)) if isinstance(n, ast.ImportFrom)}

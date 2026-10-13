@@ -1,6 +1,6 @@
 """두 D4 페어 생성기의 판정 논리 대조 — 74번 감사 P4 소급 검토의 측정 스크립트.
 
-작업 명세는 `corpus/rules/skeleton_gen.py` 사용을 명시했는데 `corpus/generate/make_pairs_pilot.py`
+지시서는 `corpus/rules/skeleton_gen.py` 사용을 명시했는데 `corpus/generate/make_pairs_pilot.py`
 는 그것을 import 하지 않고 신규 생성기를 썼다. 이 스크립트가 그 둘을 실물 표본에서
 대조한다. **수치를 보고서에만 적고 산출 스크립트를 커밋하지 않으면 나중에 재현이 안 된다**
 (채점 쪽에도 같은 지적이 있었다).

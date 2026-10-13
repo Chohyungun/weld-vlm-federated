@@ -630,14 +630,14 @@ def stage_train(*, root: Path, plan: Any, config: Any, tag: str, snapshot: Path,
     return res
 
 
-# ---------------------------------------------------------------- 줄 연합 칸
+# ---------------------------------------------------------------- 줄 B 의 연합 칸
 FED_TAG = "uni_fed"
 FED_CLIENT_TAGS = ("C1", "C2", "C3")
 
 
 def _read_under(path: Path, root: Path) -> bytes:
     """`path` 의 바이트 — 최종 경로(링크 · 정션을 푼 것)가 `root` 아래이고 다른 이름의 하드 링크가 없는 보통 파일일 때만.
-    하드 링크는 경로를 풀어도 드러나지 않는다 — 목록 단계가 만든 파일은 이름이 하나다(검토 기록 `rehearsal_blockers2` 의 3)."""
+    하드 링크는 경로를 풀어도 드러나지 않는다 — 목록 단계가 만든 파일은 이름이 하나다(외부 검토 회신 `rehearsal_blockers2` 의 3)."""
     real = Path(path).resolve()
     if not real.is_relative_to(Path(root).resolve()):
         raise ValueError(f"{Path(path).name} 의 최종 경로 {real} 가 실행 루트 {root} 아래가 아니다 — 읽지 않는다")
@@ -724,7 +724,7 @@ def stage_train_fed(*, root: Path, plan: Any, plan_path: Path, config: Any, snap
                     runner: Callable | None = None, procs: Callable | None = None, stop: Callable | None = None,
                     standin_allowed: bool = False, non_main_parent: Path | None = None,
                     config_path: Path | None = None) -> Any:
-    """줄 연합 칸 — 본실험과 같은 **`flwr run` 경로**(2판 §1-1 · §1-3 의 연합 행). 중단을 넣지 않는다.
+    """줄 B 의 연합 칸 — 본실험과 같은 **`flwr run` 경로**(2판 §1-1 · §1-3 의 연합 행). 중단을 넣지 않는다.
 
     순서: 등록 대조(학습량 · 계획 바이트 · 초기 어댑터) → 참여자 셋의 학습 행 목록을 동결 매니페스트 · 페어와 맞댐(`check_train_list`) →
     **상주 SuperLink · 시뮬레이션 프로세스를 내리고 남은 것이 없는지 본다** → 실행 → 다시 내리고 남은 것이 없는지 본다 → 출력이 닫혔는가 ·

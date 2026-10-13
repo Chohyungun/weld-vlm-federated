@@ -5,8 +5,8 @@
         --pilot outputs/main_c/seed1 --out outputs/main_d/seed1 \
         --seed 20260828 --profile main
 
-학습·추론 측은 시드·칸 완주마다 `outputs/main_c/seed{k}/predictions/{tag}.detections.jsonl` 을 낸다
-(13_spec_D §2-3 · 10번 §4). 파일럿에서는 평가 측이 직접 추론해 계약 #4 레코드를 만들었지만
+C 는 시드·칸 완주마다 `outputs/main_c/seed{k}/predictions/{tag}.detections.jsonl` 을 낸다
+(13_spec_D §2-3 · 10번 §4). 파일럿에서는 D 가 직접 추론해 계약 #4 레코드를 만들었지만
 (`score_cells.py predict`), 본실험에서는 **C 가 이미 CPU 추론을 끝냈다** — 평가셋 12,461장
 × 5칸을 다시 돌리는 것은 같은 수를 17분×5 들여 다시 만드는 일이고, 그 사이 학습이 GPU 를
 쓰고 있다.
@@ -21,8 +21,8 @@
 
 ## 두 벌을 쓴다 — 하한과 운용 임계
 
-학습·추론 측의 export 는 `conf = 0.01`(하한) 이다. 채점 임계를 학습·추론 측이 선점하지 않으려는 설계이므로
-(13_spec_D §2-3), **임계를 거는 것은 평가 측의 일이다.** 파일럿에서 `predict` 가 하던 두 갈래를
+C 의 export 는 `conf = 0.01`(하한) 이다. 채점 임계를 C 가 선점하지 않으려는 설계이므로
+(13_spec_D §2-3), **임계를 거는 것은 D 의 일이다.** 파일럿에서 `predict` 가 하던 두 갈래를
 그대로 재현한다.
 
     outputs/…/sweep/{tag}_raw_s{seed}.jsonl   하한 0.01 전량 — 스윕 입력

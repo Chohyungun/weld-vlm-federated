@@ -841,7 +841,7 @@ def test_필수_파일이_없으면_미대조_목록에_넣는다(world, tmp_pat
 
 
 def test_정상_빈_폐기_목록은_통과시킨다(world, tmp_path):
-    """검토 §27-19 — 폐기가 0건인 빌드에서 빈 파일을 거부하면 안 된다. 그때 독립 검증 측은 통과시켰고 그 판정을 고정한다."""
+    """검토 §27-19 — 폐기가 0건인 빌드에서 빈 파일을 거부하면 안 된다. 그때 E 는 통과시켰고 그 판정을 고정한다."""
     rows = _read_csv(world / "manifest.csv")
     rows = [r for r in rows if r["image_id"] != "g_discard"]  # 폐기 대상이 없는 세계
     anns = [a for a in _read_csv(world / "annotations.csv") if a["image_id"] != "g_discard"]

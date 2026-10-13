@@ -6,7 +6,7 @@
 파일럿 일곱 모델을 **다시 채점하지 않는다** — 저장된 계약 #4 레코드의 코드 집합을
 그대로 쓰고, 같은 `score_detection` 을 구간 안에서 부른다. GPU 불필요.
 
-절단점은 **동결본 train+val 에서만** 뽑는다 — 데이터 처리 측의 `data.id_strata` 가 만들고 평가 측은
+절단점은 **동결본 train+val 에서만** 뽑는다 — A 의 `data.id_strata` 가 만들고 D 는
 부른다(`evaluation.strata.bins_for`). 파일럿 평가셋 653장은 동결 평가셋의 부분집합이므로
 같은 절단점을 그대로 받는다.
 
@@ -61,7 +61,7 @@ def main() -> int:
     pop = load_population(params)
     classes = pop.classes
 
-    # 절단점은 동결본 train+val 에서만 — 데이터 처리 측의 `data.id_strata` 가 그 모집단을 스스로 고른다.
+    # 절단점은 동결본 train+val 에서만 — A 의 `data.id_strata` 가 그 모집단을 스스로 고른다.
     # 여기서 매니페스트를 읽는 것은 구조 모드의 평가셋 id 와 보고용 건수 때문이다.
     frozen_dir = Path(args.frozen)
     frozen = read_manifest(args.frozen)

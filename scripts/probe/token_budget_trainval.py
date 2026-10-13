@@ -9,7 +9,7 @@
 그래서 여기서는 **동결본의 train+val 어노테이션만** 읽어 학습 타깃 JSON 을 그대로 만들고
 실토크나이저로 센다. 평가셋 행은 한 줄도 읽지 않는다(코드가 그것을 강제한다).
 
-좌표는 학습·추론 측의 `vlm/coords.py` 를 그대로 통과시킨다 — 자릿수가 토큰 수를 바꾸므로 규약이
+좌표는 C 의 `vlm/coords.py` 를 그대로 통과시킨다 — 자릿수가 토큰 수를 바꾸므로 규약이
 다르면 예산도 달라진다.
 """
 
@@ -33,13 +33,13 @@ from vlm.coords import CoordCfg, ImageGeom, quantize, to_model
 FROZEN = Path("data/interim/manifest_v1")
 OUT = Path("outputs/pilot_d")
 MODEL_ID = "Qwen/Qwen3.5-0.8B"
-# **ABS_ORIG.** 판정 1 (2026-09-02) · 학습·추론 측의 전환 커밋 main 47c4dbc.
+# **ABS_ORIG.** 판정 1 (2026-09-02) · C 의 전환 커밋 main 47c4dbc.
 # 자릿수가 토큰 수를 바꾸므로 규약이 바뀌면 예산도 다시 재야 한다 — 절대 픽셀은
 # 0~1000 정규화보다 자릿수가 길어 타깃 토큰이 늘어난다(C 추정 +0.52개/박스).
 # 이 상수는 `evaluation.params.COORD_SPACE` 와 같아야 하고 시험이 그것을 고정한다.
 COORD_CFG = CoordCfg(coord_space=COORD_SPACE)
 SAFETY = 1.5
-CURRENT = 256          # 학습·추론 측이 쓴 값 (고장 7)
+CURRENT = 256          # C 가 쓴 값 (고장 7)
 PREV_RECOMMEND = 1536  # 66번 §8 권고 (평가셋 포함 관측에서 유도)
 
 

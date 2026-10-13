@@ -1,6 +1,6 @@
 """계약 #1 로더 — `configs/label_map.yaml`.
 
-라벨 문자열을 코드에 하드코딩하지 않는다(docs/개발규약.md 불변조건 1-8). 모든 모듈이 이 모듈로
+라벨 문자열을 코드에 하드코딩하지 않는다(docs/개발규약.md 불변조건 1-8). 모든 트랙이 이 모듈로
 사상표를 읽는다. 직접 yaml.safe_load 하지 말 것 — 검증이 빠진다.
 
     from data.label_map import load_label_map
@@ -113,7 +113,7 @@ class LabelMap:
         **별칭 코드(2012 등)를 포함할지가 갈린다.** 그 판단은 이 계약에서 한 번만 한다.
 
         `include_alt=True` 가 기본이다 — 기공의 2012(균일 분포 기공)는 사상표가 인정하는
-        코드이고, 어느 자산 경로에서 쓰는지는 소비 모듈의 결정 사항이지 유효성 문제가 아니다.
+        코드이고, 어느 자산 경로에서 쓰는지는 소비 트랙의 결정 사항이지 유효성 문제가 아니다.
         """
         codes: set[str] = set()
         for dt in self.defect_types.values():

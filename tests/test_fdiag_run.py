@@ -337,7 +337,7 @@ def prepared3(tmp_path_factory):
 
 @pytest.mark.parametrize("case", ["other_registration", "not_in_ledger", "link_outside"])
 def test_루트에_남은_평가_쪽_산출물은_출처를_본_뒤에만_옮긴다(prepared3, capsys, case):
-    """이름만 보고 받지 않는다 — 다른 등록의 결과 · 원장에 없는 결과 · 루트 밖으로 가는 링크(검토 기록 `fdiag` 의 1)."""
+    """이름만 보고 받지 않는다 — 다른 등록의 결과 · 원장에 없는 결과 · 루트 밖으로 가는 링크(외부 검토 회신 `fdiag` 의 1)."""
     import os
 
     w, root, rp, _rel, _head = prepared3
@@ -370,7 +370,7 @@ def test_루트에_남은_평가_쪽_산출물은_출처를_본_뒤에만_옮긴
 
 
 def test_에코_관문이_통과가_아니면_학습을_시작하지_않는다(prepared3):
-    """2판 §3-1 — "통과가 아니면 학습을 시작하지 않는다". 에코 생성 뒤 관문에서 멈추고 학습 단계는 0 번이다(검토 기록 `fdiag` 의 2)."""
+    """2판 §3-1 — "통과가 아니면 학습을 시작하지 않는다". 에코 생성 뒤 관문에서 멈추고 학습 단계는 0 번이다(외부 검토 회신 `fdiag` 의 2)."""
     w, root, rp, _rel, _head = prepared3
     gate = _gate(False)
     assert _run(w, root, rp, gate=gate) == RU.EXIT_HALT
@@ -380,7 +380,7 @@ def test_에코_관문이_통과가_아니면_학습을_시작하지_않는다(p
 
 
 def test_평가_쪽_호출_전에_죽으면_같은_루트에서만_재개한다(prepared3, capsys):
-    """에코 관문에서 멈춘 실행(앞 시험)으로 이 등록은 이 루트에 결속됐다 — 다른 루트는 거부, 같은 루트는 이어서 돈다(검토 기록 `fdiag` 의 3)."""
+    """에코 관문에서 멈춘 실행(앞 시험)으로 이 등록은 이 루트에 결속됐다 — 다른 루트는 거부, 같은 루트는 이어서 돈다(외부 검토 회신 `fdiag` 의 3)."""
     w, root, rp, _rel, _head = prepared3
     other = _copy_root(w, root, "fdiag-20261001T121500")
     assert _run(w, other, other / "registration" / rp.name) == RU.EXIT_REFUSED
@@ -405,7 +405,7 @@ def prepared4(tmp_path_factory):
 
 def test_판정_줄만_남고_산출물이_없으면_평가_쪽이_그_줄에서_다시_만든다(prepared4):
     """평가 쪽은 판정 줄을 산출물보다 먼저 쓴다 — 그 사이에 죽으면 시도 수는 닿았고 산출물은 없다. 학습 · 생성 · 판정 계산을 다시 하지 않고
-    평가 쪽 호출 하나로 그 줄에서 산출물을 되살린다(평가 쪽은 `call` 줄을 쓰지 않는다 — 검토 기록 `fdiag` 의 4).
+    평가 쪽 호출 하나로 그 줄에서 산출물을 되살린다(평가 쪽은 `call` 줄을 쓰지 않는다 — 외부 검토 회신 `fdiag` 의 4).
     판정 줄의 값은 시험이 지어낸 것이다(대역 묶음은 평가 쪽이 판정하지 않는다)."""
     from evaluation.scoring_ledger import read_ledger
 
@@ -470,7 +470,7 @@ def _alias(w, name: str, target: Path) -> Path:
 
 def test_끝_이름이_같은_별칭으로_다른_준비_사본을_넘기면_결속이_거부한다(prepared5, capsys):
     """처음 돌린 루트 A 와 **끝 이름이 같고** 실제로는 준비 사본 B 를 가리키는 정션 — 이름으로 견주면 지난다. 푼 경로로 견주어 거부한다
-    (검토 기록 `fdiag2` 의 3)."""
+    (외부 검토 회신 `fdiag2` 의 3)."""
     import os
 
     w, root, rp, _rel, _head = prepared5
@@ -680,7 +680,7 @@ def test_에코_관문_산출이_밖으로_가는_링크면_읽지_않는다(pre
 
 # ================================================================ 에코 입력을 고르는 규칙 · 그 읽기 · 밖으로 가는 score(지시 20261005m)
 def test_묶음을_고르는_규칙이_평가_쪽과_같다():
-    """쓰는 쪽의 `GEN_NAME` 은 평가 쪽 `_NAME` 과 같은 꼴이다 — 한쪽만 바뀌면 이 시험이 떨어진다(검토 기록 `echowire` 의 1)."""
+    """쓰는 쪽의 `GEN_NAME` 은 평가 쪽 `_NAME` 과 같은 꼴이다 — 한쪽만 바뀌면 이 시험이 떨어진다(외부 검토 회신 `echowire` 의 1)."""
     import scripts.probe.score_unified as SU
 
     assert RU.GEN_NAME.pattern == SU._NAME.pattern

@@ -39,7 +39,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 # 계약·예외형·봉인처 명부의 정본은 `data.frozen_guard` 하나다 — 여기서는 가져다 쓰기만 한다.
-# 명부(EXPECTED_SEALED)는 09-16 데이터 처리 측이 옮겼다(62f660b). 이 모듈의 속성으로 다시 내보내므로
+# 명부(EXPECTED_SEALED)는 09-16 A 가 옮겼다(62f660b). 이 모듈의 속성으로 다시 내보내므로
 # `frozen_out.EXPECTED_SEALED` 를 읽던 코드·시험은 그대로 돈다.
 from data.frozen_guard import (
     CONTRACT_NAME,

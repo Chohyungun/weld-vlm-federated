@@ -7,8 +7,8 @@ D 소비분 둘을 실체화한다:
   corpus/derived/clause_texts.json  조항 본문만 뽑은 사전 {clause_id: text}
   corpus/derived/gold_clauses.csv   채점 정답 조항 목록 (evaluation/gold.py)
 
-`clause_texts.json` 을 따로 내는 이유: 평가 측의 `rag.index.load_chunks(path, texts=...)` 는
-본문을 **별도 매핑으로** 받는 시그니처라, 이 파일을 그대로 넘기면 평가 측 코드 변경 없이
+`clause_texts.json` 을 따로 내는 이유: D 의 `rag.index.load_chunks(path, texts=...)` 는
+본문을 **별도 매핑으로** 받는 시그니처라, 이 파일을 그대로 넘기면 D 쪽 코드 변경 없이
 본문이 색인에 실린다. `chunk_meta.jsonl` 의 `text` 필드는 같은 내용의 자족 사본이다.
 
 규칙:
