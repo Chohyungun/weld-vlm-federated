@@ -11,6 +11,9 @@
 6. 계획 파일 — 등록에 `plan_sha256` 이 있으면 그 바이트여야 하고 `kind` 가 목적이다. 본실험은 계획을 받지 않는다.
 7. 목록(`validate_eval_list`) — 파일 **바이트**로 읽고, 모델 묶음은 생성 목록 칸 · 에코 묶음은 에코 목록 칸의 두 해시와 같다.
    그 뒤 동결 매니페스트의 분할(`read_manifest_meta` · `check_list_split`) — 모델은 목적의 분할, 에코는 언제나 val.
+   **본실험의 모델 묶음은 전량이다** — 목록의 집합이 검증한 동결 매니페스트의 `split == eval` 전체와 같다(평가 쪽 07번 §40 ·
+   검토 12번 "예측 생성 · 본채점 전에 실패"). 파일 해시는 앞의 등록 대조가 묶는다. 리허설 · 진단 · 에코는 부분집합 그대로다.
+   셋 다 `check_generation_list` 가 한다.
 8. 노출 기록(리허설 · 진단) — 이미지를 열기 전에 같은 실행 id · 목록 종류 · 목록 해시의 `planned` 줄이 있어야 한다(§5-4).
 9. 실측값 — 설정(닻과 같은 리비전)의 모델 · 템플릿 · 좌표 규약 · 프롬프트 파일과 프로세서에서 잰 값(이음새 `measure_env`)으로
    곁 파일에 실을 값을 모으고 `check_actuals` 로 등록과 맞댄다. 리허설은 구현 식별자의 어긋남을 "대역 실행" 으로 적고 지나간다.
@@ -35,7 +38,8 @@ from typing import Any
 
 from vlm.export_writer import ExportRefused
 
-__all__ = ["FED_CLIENTS", "GenerationConfig", "PreflightResult", "code_commit", "export_preflight"]
+__all__ = ["FED_CLIENTS", "GenerationConfig", "PreflightResult", "check_full_eval_set", "check_generation_list", "code_commit",
+           "export_preflight"]
 
 FED_CLIENTS = 3
 _CODE_DIRS = ("vlm", "fl", "scripts", "evaluation", "detection", "data", "corpus", "rag", "tracking")
@@ -251,6 +255,42 @@ def _echo_train_config(rc, root: Path) -> str:
     return p.read_bytes().decode("utf-8")
 
 
+def check_full_eval_set(el, meta) -> None:
+    """본실험 모델 묶음의 전량 — 목록의 집합이 검증한 동결 매니페스트의 `split == eval` 전체와 같다. 어긋나면 `ExportRefused`.
+
+    평가 쪽 채점 진입점의 관문(`evaluation.entry_gate.check_main_full_eval`)의 집합 판정과 같은 식이다 — 두 쪽이 같은 시험 벡터
+    (`evaluation/full_eval_vectors.json` 의 생성 쪽 경우)를 같은 판정으로 지난다(`tests/test_export_full_eval.py`). 그 함수를 부르지는 않는다
+    (소관을 나눈다). 같은 파일의 판정은 생성 쪽에 없다 — 생성 쪽은 목록이 하나다. 사유에는 건수만 싣는다.
+    """
+    full = {i for i, s in meta.split_of.items() if s == "eval"}
+    missing, extra = len(full - el.id_set), len(el.id_set - full)
+    if missing or extra:
+        raise ExportRefused("main_list_not_full_eval", f"본실험 생성 목록이 동결 매니페스트의 평가 행 전체가 아니다 — 빠짐 {missing}개 · "
+                                                       f"평가 행 밖 {extra}개 · 목록 {len(el)}개 · 평가 행 {len(full)}개")
+
+
+def check_generation_list(el, g, *, mode: str, purpose: str, meta_of: Callable[[], Any]) -> None:
+    """7 의 목록 검사 — 등록의 칸 → 동결 매니페스트의 분할 → 본실험 모델 묶음의 전량. 어긋나면 `ExportRefused`.
+
+    `el` 은 `validate_eval_list` 가 만든 목록, `g` 는 등록의 생성 쪽, `meta_of` 는 검증한 동결 매니페스트를 읽는 함수다(등록 대조가
+    먼저 거부하면 읽지 않는다). 전량의 기준 집합은 호출자의 목록이 아니라 매니페스트에서 만든다 — 평가 쪽 채점 진입점의 전량 관문
+    (`check_main_full_eval`)과 같은 식이다. 사유에는 건수만 싣고 id 는 싣지 않는다.
+    """
+    from evaluation.entry_gate import EntryRejected, check_list_split
+
+    want = ((g.echo_list_file_sha256, g.echo_list_set_sha256) if mode == "echo"
+            else (g.eval_list_file_sha256, g.eval_list_set_sha256))
+    if (el.file_sha256, el.set_sha256) != want:
+        raise ExportRefused("list_binding", f"목록의 두 해시가 등록의 {'에코' if mode == 'echo' else '생성'} 목록 칸과 다르다")
+    try:
+        meta = meta_of()
+        check_list_split(el.ids, meta, purpose, where="export 목록", echo=(mode == "echo"))
+    except EntryRejected as exc:
+        raise _refuse_from(exc) from None
+    if purpose == "main" and mode == "model":
+        check_full_eval_set(el, meta)
+
+
 def export_preflight(*, purpose: str, mode: str, tag: str, seed_index: int, receipt_path: Path, list_path: Path,
                      snapshot_root: Path, adapter_dir: Path | None, plan_path: Path | None, run_root: Path | None,
                      measure_env: Callable, impl_ids: Mapping[str, Any], parser_sha256: str,
@@ -264,7 +304,6 @@ def export_preflight(*, purpose: str, mode: str, tag: str, seed_index: int, rece
         anchor_rev,
         blob_at,
         check_anchor,
-        check_list_split,
         check_processor,
         check_receipt_kind,
         check_snapshot,
@@ -335,15 +374,7 @@ def export_preflight(*, purpose: str, mode: str, tag: str, seed_index: int, rece
         el = validate_eval_list(Path(list_path).read_bytes(), where=Path(list_path).name)
     except BundleRejected as exc:
         raise ExportRefused("list_form", str(exc)) from None
-    want = ((g.echo_list_file_sha256, g.echo_list_set_sha256) if mode == "echo"
-            else (g.eval_list_file_sha256, g.eval_list_set_sha256))
-    if (el.file_sha256, el.set_sha256) != want:
-        raise ExportRefused("list_binding", f"목록의 두 해시가 등록의 {'에코' if mode == 'echo' else '생성'} 목록 칸과 다르다")
-    try:
-        meta_m = read_manifest_meta(Path(snapshot_root))
-        check_list_split(el.ids, meta_m, purpose, where="export 목록", echo=(mode == "echo"))
-    except EntryRejected as exc:
-        raise _refuse_from(exc) from None
+    check_generation_list(el, g, mode=mode, purpose=purpose, meta_of=lambda: read_manifest_meta(Path(snapshot_root)))
 
     # 8 노출 기록 — 이미지를 열기 전에
     if purpose != "main":

@@ -1,0 +1,330 @@
+{
+ "bank_sha256": "0d0be6a28aece5e3c9003446c55c0f6cebd55436acfedc2d805b0f2d3165120f",
+ "full_bank_sha256": "abca3bbe6737aa5de8b5d27b023e4f2db9ae422900c62dbb682ba0a207bfd593",
+ "gate_reasons_now": {
+  "n_rejected": 1256,
+  "review:none": 1256,
+  "rights:no_decision": 1256
+ },
+ "passing_generation_gate_now": 0,
+ "qa": {
+  "all_tiers": {
+   "by_doc": {
+    "ABS-PUB87-2007": 35,
+    "FHWA-HIF-19-088": 755,
+    "IACS-URW33-R1C1": 74,
+    "IACS47": 87,
+    "KR-RULES-P2": 291,
+    "MDPI-APPLSCI-2020-10-1878": 8,
+    "US-WAR-DEPT-TM-1-430-1942": 6
+   },
+   "pool": {
+    "distinct_passages_short_of_minimum": 2078,
+    "passages": 1256,
+    "qa_upper": 3768,
+    "qa_upper_facet_bounded": 2246,
+    "short_of_minimum_10000": 6232,
+    "short_of_target_20000": 16232
+   },
+   "train_if_val_is": {
+    "LG-FHWA-HIF-19-088": {
+     "distinct_passages_short_of_minimum": 2833,
+     "passages": 501,
+     "qa_upper": 1503,
+     "qa_upper_facet_bounded": 1060,
+     "short_of_minimum_10000": 8497,
+     "short_of_target_20000": 18497
+    },
+    "LG-IACS-REC47": {
+     "distinct_passages_short_of_minimum": 2200,
+     "passages": 1134,
+     "qa_upper": 3402,
+     "qa_upper_facet_bounded": 2059,
+     "short_of_minimum_10000": 6598,
+     "short_of_target_20000": 16598
+    },
+    "LG-IACS-URW33": {
+     "distinct_passages_short_of_minimum": 2152,
+     "passages": 1182,
+     "qa_upper": 3546,
+     "qa_upper_facet_bounded": 2119,
+     "short_of_minimum_10000": 6454,
+     "short_of_target_20000": 16454
+    },
+    "LG-KR-RULES-P2": {
+     "distinct_passages_short_of_minimum": 2369,
+     "passages": 965,
+     "qa_upper": 2895,
+     "qa_upper_facet_bounded": 1512,
+     "short_of_minimum_10000": 7105,
+     "short_of_target_20000": 17105
+    },
+    "LG-MDPI-APPLSCI-2020-1878": {
+     "distinct_passages_short_of_minimum": 2086,
+     "passages": 1248,
+     "qa_upper": 3744,
+     "qa_upper_facet_bounded": 2237,
+     "short_of_minimum_10000": 6256,
+     "short_of_target_20000": 16256
+    },
+    "LG-US-TM-1-430-1942": {
+     "distinct_passages_short_of_minimum": 2084,
+     "passages": 1250,
+     "qa_upper": 3750,
+     "qa_upper_facet_bounded": 2243,
+     "short_of_minimum_10000": 6250,
+     "short_of_target_20000": 16250
+    }
+   }
+  },
+  "defect_specific_only": {
+   "by_doc": {
+    "ABS-PUB87-2007": 2,
+    "FHWA-HIF-19-088": 136,
+    "IACS-URW33-R1C1": 5,
+    "IACS47": 6,
+    "KR-RULES-P2": 64,
+    "US-WAR-DEPT-TM-1-430-1942": 4
+   },
+   "pool": {
+    "distinct_passages_short_of_minimum": 3117,
+    "passages": 217,
+    "qa_upper": 651,
+    "qa_upper_facet_bounded": 443,
+    "short_of_minimum_10000": 9349,
+    "short_of_target_20000": 19349
+   },
+   "train_if_val_is": {
+    "LG-FHWA-HIF-19-088": {
+     "distinct_passages_short_of_minimum": 3253,
+     "passages": 81,
+     "qa_upper": 243,
+     "qa_upper_facet_bounded": 202,
+     "short_of_minimum_10000": 9757,
+     "short_of_target_20000": 19757
+    },
+    "LG-IACS-REC47": {
+     "distinct_passages_short_of_minimum": 3125,
+     "passages": 209,
+     "qa_upper": 627,
+     "qa_upper_facet_bounded": 426,
+     "short_of_minimum_10000": 9373,
+     "short_of_target_20000": 19373
+    },
+    "LG-IACS-URW33": {
+     "distinct_passages_short_of_minimum": 3122,
+     "passages": 212,
+     "qa_upper": 636,
+     "qa_upper_facet_bounded": 432,
+     "short_of_minimum_10000": 9364,
+     "short_of_target_20000": 19364
+    },
+    "LG-KR-RULES-P2": {
+     "distinct_passages_short_of_minimum": 3181,
+     "passages": 153,
+     "qa_upper": 459,
+     "qa_upper_facet_bounded": 271,
+     "short_of_minimum_10000": 9541,
+     "short_of_target_20000": 19541
+    },
+    "LG-MDPI-APPLSCI-2020-1878": {
+     "distinct_passages_short_of_minimum": 3117,
+     "passages": 217,
+     "qa_upper": 651,
+     "qa_upper_facet_bounded": 443,
+     "short_of_minimum_10000": 9349,
+     "short_of_target_20000": 19349
+    },
+    "LG-US-TM-1-430-1942": {
+     "distinct_passages_short_of_minimum": 3121,
+     "passages": 213,
+     "qa_upper": 639,
+     "qa_upper_facet_bounded": 441,
+     "short_of_minimum_10000": 9361,
+     "short_of_target_20000": 19361
+    }
+   }
+  },
+  "excluding_historical_only": {
+   "by_doc": {
+    "ABS-PUB87-2007": 35,
+    "FHWA-HIF-19-088": 755,
+    "IACS-URW33-R1C1": 74,
+    "IACS47": 87,
+    "KR-RULES-P2": 291,
+    "MDPI-APPLSCI-2020-10-1878": 8
+   },
+   "pool": {
+    "distinct_passages_short_of_minimum": 2084,
+    "passages": 1250,
+    "qa_upper": 3750,
+    "qa_upper_facet_bounded": 2243,
+    "short_of_minimum_10000": 6250,
+    "short_of_target_20000": 16250
+   },
+   "train_if_val_is": {
+    "LG-FHWA-HIF-19-088": {
+     "distinct_passages_short_of_minimum": 2839,
+     "passages": 495,
+     "qa_upper": 1485,
+     "qa_upper_facet_bounded": 1057,
+     "short_of_minimum_10000": 8515,
+     "short_of_target_20000": 18515
+    },
+    "LG-IACS-REC47": {
+     "distinct_passages_short_of_minimum": 2206,
+     "passages": 1128,
+     "qa_upper": 3384,
+     "qa_upper_facet_bounded": 2056,
+     "short_of_minimum_10000": 6616,
+     "short_of_target_20000": 16616
+    },
+    "LG-IACS-URW33": {
+     "distinct_passages_short_of_minimum": 2158,
+     "passages": 1176,
+     "qa_upper": 3528,
+     "qa_upper_facet_bounded": 2116,
+     "short_of_minimum_10000": 6472,
+     "short_of_target_20000": 16472
+    },
+    "LG-KR-RULES-P2": {
+     "distinct_passages_short_of_minimum": 2375,
+     "passages": 959,
+     "qa_upper": 2877,
+     "qa_upper_facet_bounded": 1509,
+     "short_of_minimum_10000": 7123,
+     "short_of_target_20000": 17123
+    },
+    "LG-MDPI-APPLSCI-2020-1878": {
+     "distinct_passages_short_of_minimum": 2092,
+     "passages": 1242,
+     "qa_upper": 3726,
+     "qa_upper_facet_bounded": 2234,
+     "short_of_minimum_10000": 6274,
+     "short_of_target_20000": 16274
+    },
+    "LG-US-TM-1-430-1942": {
+     "distinct_passages_short_of_minimum": 2084,
+     "passages": 1250,
+     "qa_upper": 3750,
+     "qa_upper_facet_bounded": 2243,
+     "short_of_minimum_10000": 6250,
+     "short_of_target_20000": 16250
+    }
+   }
+  },
+  "excluding_welding_general": {
+   "by_doc": {
+    "ABS-PUB87-2007": 20,
+    "FHWA-HIF-19-088": 392,
+    "IACS-URW33-R1C1": 69,
+    "IACS47": 49,
+    "KR-RULES-P2": 216,
+    "MDPI-APPLSCI-2020-10-1878": 7,
+    "US-WAR-DEPT-TM-1-430-1942": 4
+   },
+   "pool": {
+    "distinct_passages_short_of_minimum": 2577,
+    "passages": 757,
+    "qa_upper": 2271,
+    "qa_upper_facet_bounded": 1584,
+    "short_of_minimum_10000": 7729,
+    "short_of_target_20000": 17729
+   },
+   "train_if_val_is": {
+    "LG-FHWA-HIF-19-088": {
+     "distinct_passages_short_of_minimum": 2969,
+     "passages": 365,
+     "qa_upper": 1095,
+     "qa_upper_facet_bounded": 851,
+     "short_of_minimum_10000": 8905,
+     "short_of_target_20000": 18905
+    },
+    "LG-IACS-REC47": {
+     "distinct_passages_short_of_minimum": 2646,
+     "passages": 688,
+     "qa_upper": 2064,
+     "qa_upper_facet_bounded": 1456,
+     "short_of_minimum_10000": 7936,
+     "short_of_target_20000": 17936
+    },
+    "LG-IACS-URW33": {
+     "distinct_passages_short_of_minimum": 2646,
+     "passages": 688,
+     "qa_upper": 2064,
+     "qa_upper_facet_bounded": 1462,
+     "short_of_minimum_10000": 7936,
+     "short_of_target_20000": 17936
+    },
+    "LG-KR-RULES-P2": {
+     "distinct_passages_short_of_minimum": 2793,
+     "passages": 541,
+     "qa_upper": 1623,
+     "qa_upper_facet_bounded": 994,
+     "short_of_minimum_10000": 8377,
+     "short_of_target_20000": 18377
+    },
+    "LG-MDPI-APPLSCI-2020-1878": {
+     "distinct_passages_short_of_minimum": 2584,
+     "passages": 750,
+     "qa_upper": 2250,
+     "qa_upper_facet_bounded": 1575,
+     "short_of_minimum_10000": 7750,
+     "short_of_target_20000": 17750
+    },
+    "LG-US-TM-1-430-1942": {
+     "distinct_passages_short_of_minimum": 2581,
+     "passages": 753,
+     "qa_upper": 2259,
+     "qa_upper_facet_bounded": 1582,
+     "short_of_minimum_10000": 7741,
+     "short_of_target_20000": 17741
+    }
+   }
+  },
+  "lineage_groups": {
+   "LG-FHWA-HIF-19-088": 755,
+   "LG-IACS-REC47": 122,
+   "LG-IACS-URW33": 74,
+   "LG-KR-RULES-P2": 291,
+   "LG-MDPI-APPLSCI-2020-1878": 8,
+   "LG-US-TM-1-430-1942": 6
+  },
+  "minimum_distinct_train_passages": 3334,
+  "note": "상한이다. 권리 결정 · 사람 검수 기록이 없어 지금 생성기로 넘어가는 구절은 0 이다. 면 표지는 키워드 후보라 qa_upper_facet_bounded 도 검수 전 값이다.",
+  "per_passage": 3
+ },
+ "reasoning": {
+  "by_method": {
+   "RT": {
+    "combos": 11,
+    "short_of_target_10000": 9560,
+    "skeleton_upper": 440,
+    "source_pages": [
+     "328"
+    ],
+    "source_tables": {
+     "KR-RULES-P2:본문(d)": 1,
+     "KR-RULES-P2:표15": 4,
+     "KR-RULES-P2:표16": 6
+    }
+   },
+   "VT": {
+    "combos": 1,
+    "short_of_target_10000": 9960,
+    "skeleton_upper": 40,
+    "source_pages": [
+     "327"
+    ],
+    "source_tables": {
+     "KR-RULES-P2:표면결함표": 1
+    }
+   }
+  },
+  "combo_cap": 40,
+  "combos_needed_for_10000_at_cap": 250,
+  "limits_csv_sha256": "334c78811677accb86a2ec14dad24716e16add3b6a14b47abe33ca6fe9e0cccb",
+  "note": "조합 하나의 골격 40 건은 측정값 · 두께만 다른 같은 규칙이다. 상한을 올려 1만을 채우면 반복으로 채운 수다. 서로 다른 규칙 단위는 combos 다.",
+  "skeleton_upper_total": 480
+ }
+}

@@ -9,7 +9,7 @@ tiles_v1 에 적용해 도출한다.
     uv run python scripts/run_dedup_v1.py --stage apply --threshold N
 
 **원본을 고치지 않는다.** tiles_v1 은 읽기만 한다.
-**잠그지 않는다.** SNAPSHOT 잠금은 프로브 판정 뒤 총괄이 연다.
+**잠그지 않는다.** SNAPSHOT 잠금은 프로브 판정 뒤 연다.
 """
 
 from __future__ import annotations

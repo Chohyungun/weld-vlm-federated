@@ -56,8 +56,10 @@ from typing import get_type_hints
 
 from evaluation.recovery_interval import REGISTERED_CI as _REGISTERED_CI
 
-REGISTRATION_VERSION = "4"
-"""판 4(2026-10-01): 구간 규약의 채택(의사결정로그 10-01 · 결정표 11행). `ci` 의 규약 칸은 **채택값만** 받는다 —
+REGISTRATION_VERSION = "5"
+"""판 5(2026-10-05): 본실험 평가는 동결 분할의 평가 행 전량이다 — 부표본이 없다. 모집단의 표본 설계 칸
+(`subsample_design`)과 총계 오차표 칸(`totals_error_table`)을 뺐다. 가중은 `"none"` 하나다. 07번 §39.
+판 4(2026-10-01): 구간 규약의 채택(의사결정로그 10-01 · 결정표 11행). `ci` 의 규약 칸은 **채택값만** 받는다 —
 `CI_ADOPTED`. 칸 여덟을 더했다(끝점 · 반폭의 상태 어휘 · 동률 규칙 · 분자 0 의 판정 · `n` 의 정의 · 점추정의 분모 실패 ·
 적용 범위 · 규약 id). 07번 §33.
 판 3(2026-10-01): 목적 `frame_diag` · 생성 쪽 칸 일곱(에코 목록 해시 둘 · `impl_ids` · `train_rows_digest` ·
@@ -188,15 +190,13 @@ class PopulationSpec:
     cluster_unit: str | None = None
     eval_list_file_sha256: str | None = None
     eval_list_set_sha256: str | None = None
-    """**채점 모집단**의 목록 해시. 생성 쪽 목록과 같거나 그 부분집합이다(§13-2 가) — `check_list_binding`."""
+    """**채점 모집단**의 목록 해시. 생성 쪽 목록과 같거나 그 부분집합이다(§13-2 가) — `check_list_binding`. **본실험은 같은 파일이다**(07번 §40)."""
     n_images: int | None = None
     n_clusters: int | None = None
     weighting: str | None = None
-    """`"none"` 이 주 보고다(§18-2). 가중 추정값은 병기이고 그 설계는 `subsample_design` 에 적는다."""
-    subsample_design: dict | None = None
+    """`"none"` 하나다. 평가가 전량이라 설계 가중이 없다(§39). 판 4 까지 있던 표본 설계 칸과 총계 오차표 칸은
+    부표본을 전제한 것이라 판 5 에서 뺐다."""
     class_support: dict | None = None
-    totals_error_table: dict | None = None
-    """목록별 총계 오차표. 총계 보정을 하지 않는 대신 그 크기를 공개하는 조건이다(§16-3)."""
 
 
 @dataclass
@@ -380,15 +380,13 @@ DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "population.exclusion_list_sha256": ("population.eval_list_file_sha256",
                                          "population.eval_list_set_sha256",
                                          "population.n_images", "population.n_clusters",
-                                         "baseline.full_population_m1", "population.class_support",
-                                         "population.totals_error_table"),
+                                         "baseline.full_population_m1", "population.class_support"),
     "population.duplicate_pairs_sha256": ("population.n_clusters",),
     "population.population_id": ("population.exclusion_list_id", "population.exclusion_list_sha256",
                                  "population.eval_list_file_sha256", "population.eval_list_set_sha256",
                                  "population.n_images", "population.n_clusters",
                                  "population.cluster_unit", "population.class_support",
-                                 "population.totals_error_table", "baseline.prediction_sha256",
-                                 "baseline.full_population_m1", "population.subsample_design"),
+                                 "baseline.prediction_sha256", "baseline.full_population_m1"),
 }
 """**무엇이 바뀌면 무엇을 다시 봐야 하는가.** 왼쪽을 고치고 오른쪽을 그대로 두면 등록이 스스로와 어긋난다.
 
@@ -783,6 +781,10 @@ class UnifiedRegistration:
         g, p = self.generation, self.population
         out += _list_pair_problem("population", g.eval_list_file_sha256, g.eval_list_set_sha256,
                                   p.eval_list_file_sha256, p.eval_list_set_sha256)
+        if g.purpose == "main" and None not in (g.eval_list_file_sha256, p.eval_list_file_sha256) \
+                and (p.eval_list_file_sha256, p.eval_list_set_sha256) != (g.eval_list_file_sha256, g.eval_list_set_sha256):
+            out.append("population.eval_list_file_sha256: 본실험의 주채점 목록은 생성 목록과 같은 파일이다 — "
+                       "두 해시가 생성 쪽과 같아야 한다(07번 §40)")
         return out
 
     def require_complete(self, *, side: str = "all") -> None:
@@ -836,7 +838,7 @@ def check_list_binding(registration: UnifiedRegistration, generation_list, popul
     """등록의 **목록 해시 두 벌**을 실제 목록과 맞대고, 채점 목록이 생성 목록의 부분집합인지 본다.
 
     두 목록은 `evaluation.eval_list.validate_eval_list` 가 만든 객체다(해시를 id 에서 다시 계산해 둔 것).
-    생성 쪽과 채점 쪽이 같은 목록이면 두 벌이 같고, 부분집합 재채점이면 채점 쪽이 생성 쪽의 부분집합이다.
+    생성 쪽과 채점 쪽이 같은 목록이면 두 벌이 같고, 부분집합 재채점이면 채점 쪽이 생성 쪽의 부분집합이다. 본실험(`main`)은 부분집합을 받지 않는다 — 같은 파일이어야 한다(07번 §40).
 
     Raises:
         ListBindingError: 어느 한 쌍이라도 어긋나면. 사유를 전부 모아서 낸다.
@@ -852,6 +854,8 @@ def check_list_binding(registration: UnifiedRegistration, generation_list, popul
     extra = population_list.id_set - generation_list.id_set
     if extra:
         reasons.append(f"채점 목록이 생성 목록의 부분집합이 아니다 — 생성 목록 밖 {len(extra)}개")
+    if g.purpose == "main" and population_list.file_sha256 != generation_list.file_sha256:
+        reasons.append("본실험의 주채점 목록은 생성 목록과 같은 파일이어야 한다(07번 §40)")
     if reasons:
         raise ListBindingError(" · ".join(reasons))
 

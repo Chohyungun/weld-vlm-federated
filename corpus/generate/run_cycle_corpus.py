@@ -65,16 +65,19 @@ PILOT_CSV = REPO / "corpus/rules/limits_v0_pilot.csv"
 LEGACY_OUT_DIRS = (REPO / "corpus/generate/cycle_pilot",
                    REPO / "corpus/generate/cycle_pilot_v2")
 CONFIG_PATH = REPO / "configs/corpus_validation.yaml"
-PASSAGE_DOCS = [
-    ("KR-RULES-P2", REPO / "corpus/parse/survey/KR-RULES-P2/KR-RULES-P2_p316-336.md"),
-    ("IACS47", REPO / "corpus/parse/survey/IACS47/IACS47_full.md"),
-]
+#: QA 구절의 정본. 추적 포인터 은행과 등록부다(`corpus/parse/passage_bank_v1.md`).
+#: 본문 은행은 미추적이라 `--passage-bank-full` 로만 받는다. 기본값이 없다.
+PASSAGE_BANK = REPO / "corpus/parse/passage_bank_v3.jsonl"
+#: 포인터 · 본문 은행의 지문을 고정한 빌드 보고(추적). 두 파일이 이 보고와 다르면 구절을 넘기지 않는다.
+PASSAGE_BANK_REPORT = REPO / "corpus/parse/passage_bank_v3.build_report.json"
+SOURCES_REGISTRY = REPO / "corpus/parse/sources.yaml"
 #: 골격 표집 시드. 같은 (limits sha, seed, config)면 골격 jsonl 이 바이트 동일하다.
 SKELETON_SEED = 0
 
-# 유료 표준 전재 스크린 (§3-6) — 이 식별자가 있는 구절은 QA 원문으로 쓰지 않는다.
+# 유료 표준 전재 스크린 (§3-6). 공개 게시 검사(`screen_public_release`)가 가져다 쓴다.
+# QA 구절 선별은 이것이 아니라 구절 은행 소비 경계(`passage_bank.select_for_generation`)다.
 # 수치·판정 정규식이 아니라 문서 식별자 스크린이라 정본 위임 대상이 아니다.
-PAID_STD = re.compile(r"ISO\s*5817|ISO\s*10042|ISO\s*10675|AWS\s+Welding\s+Handbook")
+PAID_STD =re.compile(r"ISO\s*5817|ISO\s*10042|ISO\s*10675|AWS\s+Welding\s+Handbook")
 
 # 표현 헬퍼의 정본은 `corpus.rules.clause_text` 하나다 — 여기서는 가져다 쓰기만 한다.
 from corpus.generate.basis import (  # noqa: E402
@@ -488,20 +491,42 @@ def validate_qa(recs: list[dict], passage_ids) -> Any:
 
 # ------------------------------------------------------------------ QA 구절
 
-def load_passages(n: int) -> list[dict]:
-    out = []
-    for doc_id, path in PASSAGE_DOCS:
-        if not path.exists():
-            continue
-        blocks = [b.strip() for b in path.read_text(encoding="utf-8").split("\n\n")]
-        for k, b in enumerate(blocks):
-            if not (200 <= len(b) <= 800) or b.lstrip().startswith(("|", "#", "<!--")):
-                continue
-            if PAID_STD.search(b):
-                continue
-            out.append({"passage_id": f"{doc_id}#b{k:04d}", "doc": doc_id, "text": b})
-    out.sort(key=lambda r: r["passage_id"])
-    return out[:n]
+def load_passages(
+    n: int,
+    *,
+    full_bank: Path | None,
+    pointer_bank: Path = PASSAGE_BANK,
+    registry: Path = SOURCES_REGISTRY,
+    rights_path: Path | None = None,
+    review_path: Path | None = None,
+    build_report: Path = PASSAGE_BANK_REPORT,
+) -> tuple[list[dict], dict]:
+    """QA 생성기에 넘길 구절. 구절 은행 소비 경계를 지난 것만 돌려준다(검토 §82).
+
+    원문 지문 · 판본 · 근거 위치 · 권리 결정 · 사람 승인 가운데 하나라도 없는 구절은 넘기지 않는다.
+    넘길 구절이 없으면 빈 목록이다 — 옛 조사 마크다운으로 되돌아가지 않는다.
+    두 번째 값은 보고용 집계(넘긴 수 · 사유별 건수)다.
+    """
+    from corpus.parse.passage_bank import BankRefused, select_bank_for_generation
+
+    # 거름은 은행 모듈의 진입점 하나다 — 작업 명부(prepare)도 같은 것을 부른다. 지문 고정도 그 안에서 한다(검토 M3).
+    try:
+        selected, summary = select_bank_for_generation(
+            pointer_bank, full_bank, build_report=build_report, registry=registry,
+            rights_path=rights_path, review_path=review_path, use="qa_generation")
+    except BankRefused as exc:
+        return [], {"n_bank": 0, "n_selected": 0, "reasons": {exc.code: 1}}
+    out = [{"passage_id": r["passage_id"], "doc": r["doc_id"], "text": r["text"],
+            "source": {"doc_id": r["doc_id"], "edition": r["edition"],
+                       "source_file_sha256": r["source_file_sha256"], "locator": r["locator"],
+                       "text_sha256": r["text_sha256"], "lineage_group_id": r["lineage_group_id"],
+                       "scope": r["scope"], "flags": r["flags"], "use_boundary": r.get("use_boundary"),
+                       # 필수 문맥은 은행 경계가 강제한다(문맥 구절도 같은 목록에 넘어온다). 이 실행기는 문맥 본문을 생성 지시에 붙이지 않는다.
+                       "generation_constraints": r.get("generation_constraints", []),
+                       "required_context_passage_ids": r.get("required_context_passage_ids", [])}}
+           for r in selected[:n]]
+    return out, {"n_bank": summary["bank_rows"], "n_selected": summary["selected"], "reasons": summary["reasons"],
+                 "inputs_sha256": summary["inputs_sha256"]}
 
 
 # ------------------------------------------------------------------ 보고
@@ -574,6 +599,13 @@ def main() -> None:
     ap.add_argument("--out", required=True,
                     help="산출 디렉터리. **기본값 없음** — 봉인본을 겨누는 사고를 막는다."
                          " 관례대로 판본 접미를 붙여라 (cycle_pilot_v3 …)")
+    ap.add_argument("--passage-bank-full", type=Path, default=None,
+                    help="본문 은행(미추적). 없으면 QA 구절이 0 이다")
+    ap.add_argument("--passage-bank", type=Path, default=PASSAGE_BANK, help="추적 포인터 은행")
+    ap.add_argument("--rights-record", type=Path, default=None,
+                    help="사용자의 권리 결정 기록(JSONL). 없으면 모든 구절이 걸린다")
+    ap.add_argument("--review-record", type=Path, default=None,
+                    help="사람 검수 기록(JSONL). 없으면 모든 구절이 걸린다")
     args = ap.parse_args()
 
     cfg = load_config()
@@ -591,7 +623,11 @@ def main() -> None:
         print(f"[1/5] 골격: (c) {n_clause} + 조치 {n_remedy}  (verdict_mode={args.verdict_mode})")
         recs = build_clause_records(n_clause, args.verdict_mode) + build_remedy_records(n_remedy)
 
-        base = load_passages(args.n_qa)
+        base, bank_gate = load_passages(
+            args.n_qa, full_bank=args.passage_bank_full, pointer_bank=args.passage_bank,
+            rights_path=args.rights_record, review_path=args.review_record)
+        print(f"      구절 은행: {bank_gate['n_bank']} 중 {bank_gate['n_selected']} 통과 "
+              f"(거른 사유 {bank_gate['reasons']})")
         passages = []
         for asp, ask in QA_ASPECTS:
             for pp in base:
@@ -626,7 +662,8 @@ def main() -> None:
             qa_recs.append({"sample_id": p["qa_id"], "passage_id": p["passage_id"],
                             "aspect": p["aspect"], "doc": p["doc"], "question": q,
                             "answer": a, "text": t,
-                            "evidence_passage_ids": [p["passage_id"]]})
+                            "evidence_passage_ids": [p["passage_id"]],
+                            "source": p["source"]})
         st1b = validate_qa(qa_recs, {p["passage_id"] for p in base}) if qa_recs else None
         if st1b is not None:
             for r, res in zip(qa_recs, st1b.results):
@@ -635,7 +672,7 @@ def main() -> None:
 
         payload = {"recs": recs, "qa_recs": qa_recs, "n_base_passages": len(base),
                    "capacity": capacity, "verdict_mode": args.verdict_mode,
-                   "batch": batch}
+                   "batch": batch, "passage_bank_gate": bank_gate}
         write_json(mid, payload)
         if args.stage == "generate":
             print(f"생성분 저장: {mid}")
@@ -745,7 +782,9 @@ def write_report(recs, qa_recs, cands, cfg, payload, out_dir: Path) -> None:
                "capacity": payload.get("capacity"),
                "note": ("근거성·사실성 검증 없음 — 형식(질문/답 두 줄 + 중복 제거)만 잰 값이다."
                         " pass_rate 로 읽으면 안 된다 (B8)."),
-               "passage_screen": "유료 표준 전재 의심 구절 제외"})
+               "passage_screen": ("구절 은행 소비 경계 — 등록 · 원문 지문 · 판본 · 위치 · 권리 결정 · "
+                                  "사람 검수 · 유료 표준 문장 규칙"),
+               "passage_bank_gate": payload.get("passage_bank_gate")})
 
     report = {
         "purpose": "합성 corpus 사이클 — 정본 검사기 배선 후 재실행 (체크리스트 19)",

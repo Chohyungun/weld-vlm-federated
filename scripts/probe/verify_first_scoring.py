@@ -14,14 +14,14 @@
 | 정답 | `evaluation.eval_set.read_gold` | `annotations.csv` 를 직접 읽어 image_id → iso_code 집합 |
 | 예측 | `PredictionRecord` (pydantic) 되읽기 | `json.loads` 로 `defects[].iso_code` 만 |
 | Macro-F1·놓침 | `evaluation.metrics.detection.score_detection` | 이 파일의 `_macro_f1`·`_recall`(순수 파이썬 카운터) |
-| 층 배정 | `evaluation.strata.bins_for` → A 의 `stratum_of`(런타임 분위) | A 가 실체화한 `id_strata_k{K}.csv` 를 읽는다 |
+| 층 배정 | `evaluation.strata.bins_for` → 데이터 처리 측의 `stratum_of`(런타임 분위) | 데이터 처리 측이 실체화한 `id_strata_k{K}.csv` 를 읽는다 |
 | 층화 평균 | `evaluation.strata.stratified_score`(numpy) | 이 파일의 순수 파이썬 평균 |
 
 `evaluation.*` 를 하나도 import 하지 않는다 — 그것이 이 스크립트의 존재 이유다. 두 경로가
 같은 상수를 공유하면 대조가 자기 자신과의 대조가 된다.
 
 **층 배정의 독립성이 특히 중요하다.** 채점기는 실행 시점에 동결본 train+val 의 분위를
-다시 계산하고, 여기서는 A 가 그 계산으로 미리 써 둔 표(`id_strata_k64.csv`, 62,308행)를
+다시 계산하고, 여기서는 데이터 처리 측이 그 계산으로 미리 써 둔 표(`id_strata_k64.csv`, 62,308행)를
 읽는다. 둘이 어긋나면 층화 수치 전체가 다른 축 위에 서 있는 것이다.
 """
 

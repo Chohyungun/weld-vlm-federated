@@ -539,7 +539,7 @@ def test_실제_트리에서_소실이_조용히_사라지지_않는다(capsys):
 
 
 def test_명부는_data_frozen_guard_의_단일_명부다():
-    """두 곳에 살면 한쪽만 고쳐진다. 이 모듈은 A 의 명부를 **같은 객체로** 내보내기만 한다."""
+    """두 곳에 살면 한쪽만 고쳐진다. 이 모듈은 데이터 처리 측의 명부를 **같은 객체로** 내보내기만 한다."""
     import ast
 
     from corpus.validate import verify_backup as VB
@@ -557,7 +557,7 @@ def test_명부는_data_frozen_guard_의_단일_명부다():
 
 
 def test_상태_어휘를_빠짐없이_판정한다():
-    """A 가 어휘에 단어를 더하면 여기서 멈춘다 — 그 단어가 "있어야 하는지" 를 B 가 정해야
+    """데이터 처리 측이 어휘에 단어를 더하면 여기서 멈춘다 — 그 단어가 "있어야 하는지" 를 코퍼스 측이 정해야
     대조기와 백업 목록이 함께 선다. 모르는 단어를 조용히 expected 로 읽지 않는다."""
     from data.frozen_guard import SEALED_STATUSES
 
@@ -602,7 +602,7 @@ def test_restored_는_expected_와_같게_판정하고_근거를_옮긴다(tmp_p
 def test_실물_트리에서_명부_전체_대조가_실패_0이다():
     """명부 **전체**를 실물에 대조한다 — A 소유 자리(`manifest_v1`·복원된 pilot3000 계열)까지.
 
-    `FROZEN_REAL` 은 B 네 곳만 채점하고, A 의 `test_restored_자리에_실물과_계약서가_있다` 는
+    `FROZEN_REAL` 은 B 네 곳만 채점하고, 데이터 처리 측의 `test_restored_자리에_실물과_계약서가_있다` 는
     세 자리 중 **하나라도 없으면 skip** 한다. 둘을 합쳐도 복원 자리 하나가 사라지면 스위트는
     초록이다 — 09-11 과 같은 모양이다(45번 I-1). 여기서는 저장 뿌리가 있는데 봉인본이 없으면
     `missing_contract` 로 실패한다. 뿌리 자체가 없는 트리(정션 없는 clone)는 `absent_tree` 라

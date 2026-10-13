@@ -174,7 +174,7 @@ def test_구간_최빈_규칙이_상수_예측기보다_F1_이_높다(half_bins)
 
 
 def test_구간_배정은_A_의_절단점을_쓴다():
-    """주입 없이는 `evaluation.strata.bins_for` 를 그대로 부른다 — 절단점을 D 가 다시
+    """주입 없이는 `evaluation.strata.bins_for` 를 그대로 부른다 — 절단점을 평가 측이 다시
     만들지 않는다(동결본 train+val 분위 단일 출처)."""
     import inspect
 

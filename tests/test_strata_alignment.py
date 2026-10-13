@@ -2,9 +2,9 @@
 
 두 가지를 시험이 강제한다.
 
-1. **층은 A 의 `data.id_strata` 에서 온다.** 절단점을 만드는 곳은 한 군데여야 한다(84번
-   §1-3). 채점 경로가 실제로 그 모듈을 거치는지, D 쪽에 우회 산식이 다시 생기지 않았는지를
-   **기계가** 잡는다. 그 모듈과 `recompute_baselines.py` 의 정합은 A 의
+1. **층은 데이터 처리 측의 `data.id_strata` 에서 온다.** 절단점을 만드는 곳은 한 군데여야 한다(84번
+   §1-3). 채점 경로가 실제로 그 모듈을 거치는지, 평가 측에 우회 산식이 다시 생기지 않았는지를
+   **기계가** 잡는다. 그 모듈과 `recompute_baselines.py` 의 정합은 데이터 처리 측의
    `tests/test_id_strata.py` 가 맡는다.
 2. **판별력.** 지름길 규칙(구간→최빈 라벨)이 층화 지표에서 0 으로 떨어지는가.
    이것이 완료 기준이고, 동시에 이 지표가 무이빨이 아니라는 증거다.
@@ -44,11 +44,11 @@ def frozen_eval_ids() -> list[str]:
 
 
 # --------------------------------------------------------------------------------------
-# 1. 층은 A 의 모듈에서 온다 — 배선 시험
+# 1. 층은 데이터 처리 측의 모듈에서 온다 — 배선 시험
 # --------------------------------------------------------------------------------------
 
 def test_granularity_ladder_matches_track_a() -> None:
-    """`ID_GRANULARITY` 가 A 의 `GRANULARITY["idq"]` 에서 None 뺀 것과 같은가."""
+    """`ID_GRANULARITY` 가 데이터 처리 측의 `GRANULARITY["idq"]` 에서 None 뺀 것과 같은가."""
     sys.path.insert(0, str(REPO))
     from scripts.recompute_baselines import GRANULARITY
 
@@ -61,7 +61,7 @@ def test_granularity_ladder_matches_track_a() -> None:
 
 
 def test_bins_come_from_track_a_module(frozen_eval_ids) -> None:
-    """채점 경로의 층 번호가 A 의 `stratum_of` 와 **전 이미지에서** 같다."""
+    """채점 경로의 층 번호가 데이터 처리 측의 `stratum_of` 와 **전 이미지에서** 같다."""
     from data.id_strata import stratum_of
 
     for k in (16, DEFAULT_K):
@@ -75,7 +75,7 @@ def test_bins_come_from_track_a_module(frozen_eval_ids) -> None:
 def test_bins_match_track_a_materialized_table(frozen_eval_ids) -> None:
     """A 가 실체화한 `id_strata_k{K}.csv` 와 같은 층 번호.
 
-    함수 호출 결과뿐 아니라 **디스크에 남은 A 의 산출표**와도 맞아야 한다 — 어느 판을
+    함수 호출 결과뿐 아니라 **디스크에 남은 데이터 처리 측의 산출표**와도 맞아야 한다 — 어느 판을
     썼는지가 파일 하나로 고정되는 것이 그 표의 존재 이유다.
     """
     checked = 0
@@ -100,7 +100,7 @@ def test_no_local_cut_formula_in_scoring_module() -> None:
     """**우회 금지.** `evaluation/strata.py` 가 분위 절단점을 스스로 만들지 않는다 (AST).
 
     산식이 두 벌이면 언젠가 갈린다. 처음 판이 정확히 그 상태였다 — 시험으로 정합을
-    대조했지만 산식 자체는 두 벌이었다. 이제 D 쪽에는 산식이 없어야 하고, A 의 모듈을
+    대조했지만 산식 자체는 두 벌이었다. 이제 평가 측에는 산식이 없어야 하고, 데이터 처리 측의 모듈을
     실제로 import 해야 한다.
     """
     src = (REPO / "evaluation" / "strata.py").read_text(encoding="utf-8")

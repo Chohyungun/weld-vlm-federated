@@ -24,15 +24,8 @@ from typing import Optional, Sequence
 
 REPO = Path(__file__).resolve().parents[2]
 PILOT_CSV = REPO / "corpus/rules/limits_v0_pilot.csv"
-PASSAGE_DOCS = [
-    ("KR-RULES-P2", REPO / "corpus/parse/survey/KR-RULES-P2/KR-RULES-P2_p316-336.md"),
-    ("IACS47", REPO / "corpus/parse/survey/IACS47/IACS47_full.md"),
-]
 GEN_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 MAX_NEW = 200
-
-# 유료 표준 전재 스크린 (§3-6) — 이 식별자가 있는 구절은 QA 원문으로 쓰지 않는다
-PAID_STD = re.compile(r"ISO\s*5817|ISO\s*10042|ISO\s*10675|AWS\s+Welding\s+Handbook")
 
 
 # ---------------------------------------------------------------- 프롬프트
@@ -124,23 +117,18 @@ def generate(prompts: Sequence[str], batch: int) -> list[str]:
 
 # ---------------------------------------------------------------- 구절
 
-def load_passages(n: int) -> list[dict]:
-    """파싱 산출물에서 QA 원문 구절을 뽑는다. 유료 표준 전재분은 스크린한다 (§3-6)."""
-    out: list[dict] = []
-    for doc_id, path in PASSAGE_DOCS:
-        if not path.exists():
-            continue
-        blocks = [b.strip() for b in path.read_text(encoding="utf-8").split("\n\n")]
-        for k, b in enumerate(blocks):
-            if not (200 <= len(b) <= 800):
-                continue
-            if b.lstrip().startswith(("|", "#", "<!--")):
-                continue
-            if PAID_STD.search(b):
-                continue  # 유료 표준 전재 의심 — 반입 제외
-            out.append({"passage_id": f"{doc_id}#b{k:04d}", "doc": doc_id, "text": b})
-    out.sort(key=lambda r: r["passage_id"])
-    return out[:n]
+def load_passages(n: int, **bank_kwargs) -> list[dict]:
+    """QA 원문 구절 — 구절 은행 소비 경계(`run_cycle_corpus.load_passages`)를 지난 것만.
+
+    예전에는 조사 마크다운을 길이 · 표제로 골랐다. 그 길은 원문 지문 · 권리 · 사람 검수를 보지 않아 막았다
+    (검토 §82). 본문 은행 · 권리 · 검수 기록을 주지 않으면 0 구절이다.
+    """
+    from corpus.generate.run_cycle_corpus import load_passages as _bank_passages
+
+    full_bank = bank_kwargs.pop("full_bank", None)
+    passages, gate = _bank_passages(n, full_bank=full_bank, **bank_kwargs)
+    print(f"[구절] 은행 경계 통과 {gate['n_selected']} (거른 사유 {gate['reasons']})")
+    return passages
 
 
 # ---------------------------------------------------------------- 교차표

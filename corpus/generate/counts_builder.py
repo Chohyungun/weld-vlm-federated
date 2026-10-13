@@ -76,7 +76,7 @@ def build_counts(
     """최종 채택 레코드에서 counts.json 내용을 기계 산출한다 (§7-5).
 
     adopted: 3단계 검증 통과·최종 채택 페어 레코드 (PairGold | {"image_id", "defects"}).
-    client_of: image_id → 클라이언트 (manifest 계약 #2 상속 — B 는 분할을 재계산하지 않는다).
+    client_of: image_id → 클라이언트 (manifest 계약 #2 상속 — 코퍼스 측은 분할을 재계산하지 않는다).
     n_generated: 생성량 (오버샘플 포함 투입 건수). 본문에 그대로 기록해 validate 가
     파일만으로 정합 3항을 재검산하게 한다.
     정합 검증 (스냅샷 확정 조건): clients 합계 = 채택 행수, n_defect + n_normal = n_total,

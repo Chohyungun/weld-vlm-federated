@@ -27,16 +27,16 @@
 따라서 두 수를 함께 싣는다 — 층화 Macro-F1(지시 문면)과 lift(완료 기준). 어느 쪽도
 단독으로는 부족하다.
 
-## 층은 D 가 만들지 않는다 — A 의 `data.id_strata` 를 부른다
+## 층은 평가 측이 만들지 않는다 — 데이터 처리 측의 `data.id_strata` 를 부른다
 
 절단점을 만드는 곳은 한 군데여야 한다(84번 §1-3, A). 처음 판은 여기서 같은 산식을
-한 벌 더 갖고 시험으로 정합을 대조했는데, A 가 `data/id_strata.py` 를 **소비 지점**으로
+한 벌 더 갖고 시험으로 정합을 대조했는데, 데이터 처리 측이 `data/id_strata.py` 를 **소비 지점**으로
 올렸으므로 산식을 지우고 위임한다. 절단점은 **train+val 분위**에서만 나오고
 (`load_cut_points` 가 평가셋을 열지 않는다), 배정은 `stratum_of` 가 한다.
 
-**정합은 시험이 강제한다**(`tests/test_strata_alignment.py`): 채점 경로의 층 번호가 A 의
-`stratum_of` 및 A 가 실체화한 `id_strata_k{K}.csv` 와 같고, 이 모듈 안에 분위·searchsorted
-산식이 다시 생기지 않는다(AST). A 의 `tests/test_id_strata.py` 가 그 모듈과
+**정합은 시험이 강제한다**(`tests/test_strata_alignment.py`): 채점 경로의 층 번호가 데이터 처리 측의
+`stratum_of` 및 데이터 처리 측이 실체화한 `id_strata_k{K}.csv` 와 같고, 이 모듈 안에 분위·searchsorted
+산식이 다시 생기지 않는다(AST). 데이터 처리 측의 `tests/test_id_strata.py` 가 그 모듈과
 `recompute_baselines.py` 의 정합을 맡는다.
 """
 
@@ -57,7 +57,7 @@ ID_GRANULARITY: tuple[int, ...] = (2, 4, 8, 16, 32, 64, 128, 256, 512)
 DEFAULT_K = 64
 """파일럿 대조의 기본 구간 수.
 
-A 의 게이트 족은 `idq512` 지만 그것은 **적합 모집단이 train+val 49,847장**일 때의
+데이터 처리 측의 게이트 족은 `idq512` 지만 그것은 **적합 모집단이 train+val 49,847장**일 때의
 선택이다. 채점 쪽은 사정이 다르다 — 동결 평가셋 12,461장을 512 로 쪼개면 구간당 24장,
 파일럿 653장이면 구간당 1.3장이라 층 안 Macro-F1 이 성립하지 않는다. 진단
 (`diagnose_id_axis.py`)이 쓴 64 를 기본으로 두고 **사다리를 함께 낸다** — K 선택이
@@ -68,9 +68,9 @@ A 의 게이트 족은 `idq512` 지만 그것은 **적합 모집단이 train+val
 def bins_for(
     image_ids: Sequence[str], k: int, snapshot: Path | None = None
 ) -> dict[str, int]:
-    """이미지 → 층 번호(0..K-1). **절단점은 A 의 `data.id_strata` 가 만든다.**
+    """이미지 → 층 번호(0..K-1). **절단점은 데이터 처리 측의 `data.id_strata` 가 만든다.**
 
-    `snapshot` 은 절단점을 뽑을 동결본 경로(None 이면 A 의 기본 `manifest_v1`). 어느
+    `snapshot` 은 절단점을 뽑을 동결본 경로(None 이면 데이터 처리 측의 기본 `manifest_v1`). 어느
     모집단을 채점하든 절단점은 그 동결본의 train+val 에서 온다 — 파일럿 653장은 동결
     평가셋의 부분집합이라 같은 절단점을 그대로 받는다. 축 이름은 `STRATUM_AXIS`("idq").
     """

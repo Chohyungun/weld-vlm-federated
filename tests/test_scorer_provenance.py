@@ -185,7 +185,7 @@ def test_줄끝만_다르면_같은_지문이다(tmp_path):
     """`core.autocrlf` 가 다른 체크아웃에서 같은 커밋이 다른 지문을 내면, 지문이 커밋이 아니라
     **체크아웃**을 가리킨다 — "같은 코드로 채점됐는가" 에 답하지 못한다(검토 09-16).
 
-    실측 배경: wt/D 는 `core.autocrlf=true` 라 작업 트리가 CRLF 인데 git blob 은 LF 여서,
+    실측 배경: 측정 작업 트리는 `core.autocrlf=true` 라 작업 트리가 CRLF 인데 git blob 은 LF 여서,
     지문 39파일 중 7개가 줄끝만으로 달랐다(37번 §3-4).
     """
     root = _repo(tmp_path)

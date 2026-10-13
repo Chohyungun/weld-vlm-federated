@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "recipe": "grounded_explanation_v1_draft_not_preregistered_image_report_only",
+  "shard_size": 64,
+  "inputs": {
+    "pairs_sha256": "f4e44131fee61a6f09912b5f74bc0622f680d6775d28101eb0777f896cc3e229",
+    "pairs_snapshot_digest": "456ea6151d502b3d44113f983f412d71a92c3db12383a93a5c4ce33ee3c0ff9d",
+    "expected_image_train": 44845,
+    "expected_image_val": 5000,
+    "source_bank_sha256": "09bca3be0b15df902442a68eb7d38ef18a1fd8bb2f224014df8c1501be403039"
+  },
+  "quality": {
+    "minimum_source_qa_train": 0,
+    "target_source_qa_train": 0,
+    "minimum_distinct_train_passages": 0,
+    "maximum_questions_per_passage": 3,
+    "minimum_review_per_stratum": 5,
+    "review_fraction": 0.02,
+    "human_review_required": true,
+    "no_partial_release": true
+  },
+  "generation": {
+    "model_id": "Qwen/Qwen2.5-7B-Instruct",
+    "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+    "family": "qwen",
+    "local_files_only": true,
+    "quantization": "bf16",
+    "batch_size": 4,
+    "max_new_tokens": 384,
+    "max_input_tokens": 4096,
+    "seed": 20261007,
+    "wall_seconds": 1800,
+    "enable_thinking": false
+  },
+  "judge": {
+    "model_id": "microsoft/Phi-4-mini-instruct",
+    "revision": "cfbefacb99257ffa30c83adab238a50856ac3083",
+    "family": "phi",
+    "local_files_only": true,
+    "quantization": "bf16",
+    "batch_size": 4,
+    "max_new_tokens": 384,
+    "max_input_tokens": 8192,
+    "seed": 20261007,
+    "wall_seconds": 1800,
+    "enable_thinking": false
+  },
+  "training": {
+    "model_id": "Qwen/Qwen3.5-4B",
+    "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+    "model_kind": "image_text",
+    "local_files_only": true,
+    "quantization": "4bit",
+    "epochs": 1,
+    "batch_size": 1,
+    "gradient_accumulation_steps": 8,
+    "learning_rate": 0.0001,
+    "max_length": 4096,
+    "save_steps": 100,
+    "seed": 20261007,
+    "lora_r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.0,
+    "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj", "in_proj_qkv", "in_proj_a", "in_proj_b", "in_proj_z", "out_proj"],
+    "enable_thinking": false,
+    "processor_kwargs": {"min_pixels": 65536, "max_pixels": 16777216},
+    "export_merged_bf16": false
+  }
+}

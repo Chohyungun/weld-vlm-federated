@@ -492,7 +492,7 @@ BINDINGS_DIR = "fdiag_bindings"
 
 ECHO_GATE_FILE = "score/echo_gate.json"
 #: 묶음 생성 파일의 이름 — 평가 쪽이 묶음을 고르는 꼴(`scripts/probe/score_unified.py` 의 `_NAME`)과 같다. 쓰는 쪽도 이 꼴의 파일만 고른다 —
-#: 꼴 밖의 파일(예 `backup.echo.generations.jsonl`)은 평가 쪽이 보지 않으므로 이 쪽도 읽지 않는다(외부 검토 회신 `echowire` 의 1). 시험이 두 꼴을 맞댄다.
+#: 꼴 밖의 파일(예 `backup.echo.generations.jsonl`)은 평가 쪽이 보지 않으므로 이 쪽도 읽지 않는다(검토 기록 `echowire` 의 1). 시험이 두 꼴을 맞댄다.
 GEN_NAME = re.compile(r"^(?P<tag>[A-Za-z0-9_]+)_s(?P<seed>\d+)(?P<echo>\.echo)?\.generations\.jsonl$")
 
 
@@ -520,7 +520,7 @@ def _sha_under(q: Path, root: Path, *, code: str) -> str:
 
 def _diag_out_rel(root: Path, checkout: Path) -> str:
     """평가 쪽 판정 산출의 자리(체크아웃 상대) — **파일 자체는 풀지 않는다**(푼 루트 + 이름). 그 파일이 밖으로 가는 링크여도 여기서 예외로 끝나지
-    않고, 뒤의 보호된 읽기(`read_under`)가 사유 코드로 거부한다. 루트가 체크아웃 밖이면 `fdiag_output_path`(외부 검토 회신 `echorule` 의 4 · §59)."""
+    않고, 뒤의 보호된 읽기(`read_under`)가 사유 코드로 거부한다. 루트가 체크아웃 밖이면 `fdiag_output_path`(검토 기록 `echorule` 의 4 · §59)."""
     from vlm.rehearsal_run import StageRefused
 
     try:
@@ -531,7 +531,7 @@ def _diag_out_rel(root: Path, checkout: Path) -> str:
 
 def _score_dir_ok(root: Path) -> None:
     """`<루트>/score` 가 있으면 루트 아래의 보통 폴더여야 한다 — 밖으로 가는 정션 · 링크면 평가 쪽을 부르기 전에 사유 코드로 거부한다
-    (외부 검토 회신 `echowire` 의 2 — 경로를 풀다가 예외로 끝나지 않게)."""
+    (검토 기록 `echowire` 의 2 — 경로를 풀다가 예외로 끝나지 않게)."""
     from vlm.rehearsal_run import StageRefused
 
     s = Path(root) / "score"
@@ -648,7 +648,7 @@ def _bind_root(parent: Path, gen_sha: str, root: Path, receipt_sha: str) -> bool
 
 
 def _d_output(root: Path, d_out: Path, *, gen_sha: str, ledger: Path, checkout: Path) -> tuple[dict, bytes]:
-    """평가 쪽 산출물이 **이 진단의 것인지** — 이름만 보고 받지 않는다(외부 검토 회신 `fdiag` 의 1).
+    """평가 쪽 산출물이 **이 진단의 것인지** — 이름만 보고 받지 않는다(검토 기록 `fdiag` 의 1).
 
     1. 최종 경로가 이 루트 아래인 보통 파일이다(`read_under`).
     2. 본문의 `generation_sha256` 이 이 등록이다.

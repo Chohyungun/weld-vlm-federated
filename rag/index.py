@@ -1,7 +1,7 @@
 """색인 구축 진입점 — `chunk_meta.jsonl` → 검색 가능한 색인. 스펙 §5-2·§5-5.
 
 청킹은 **조항 단위**다. 고정 길이 분할을 쓰지 않는다 — 조항 경계가 깨지면 인용 단위가
-무너진다. 메타데이터는 B 의 `derive_chunk_meta` 산출물을 그대로 소비하며, D 가
+무너진다. 메타데이터는 코퍼스 측의 `derive_chunk_meta` 산출물을 그대로 소비하며, 평가 측이
 `limits.csv` 를 직접 순회하지 않는다.
 
 검색 설정은 `configs/rag.yaml` 이 단일 소스다(다섯 칸 공통 고정). 후보가 0~1개인 질의는
@@ -61,7 +61,7 @@ def load_chunks(
     `texts` 는 명시적 본문 override다. 지정하지 않은 조항은 파생 메타의 `text`를
     보존한다. 본문이 없는 레거시 메타는 검색 진단에 쓸 수 있지만 생성 입력은 못 된다.
 
-    **첫 줄 `_meta` 헤더 레코드는 건너뛴다.** B 의 파생물은 원천 sha256·재파생 명령을
+    **첫 줄 `_meta` 헤더 레코드는 건너뛴다.** 코퍼스 측의 파생물은 원천 sha256·재파생 명령을
     담은 헤더 한 줄로 시작한다(62번). 조항 레코드가 아니므로 청크로 만들지 않는다 —
     그대로 넣으면 `clause_id` 부재로 죽거나, 최악의 경우 빈 조항이 색인에 실린다.
     """
@@ -130,13 +130,18 @@ class Index:
         return probe
 
     def snapshot_digest(self) -> str:
-        """색인 내용의 결정론적 해시. 스냅샷 고정(불변조건 1-6)의 재료다."""
+        """색인 내용의 결정론적 해시. 스냅샷 고정(불변조건 1-6)의 재료다.
+
+        출처 문서 · 쪽 · 조항(`doc` · `source_page` · `clause_id`)을 담는다 — 같은 본문이라도 출처가 다르면 다른 색인이다
+        (07번 §40 의 4). 앞 판의 지문은 이 셋을 넣지 않았고, 그 값을 기록한 산출물은 없다(이 함수를 부르는 제품 코드가 없었다).
+        """
         h = hashlib.sha256()
         for c in sorted(self.chunks, key=lambda x: x.chunk_id):
             h.update(repr((
                 c.chunk_id, c.inspection_methods, c.defect_codes, c.materials,
                 str(c.thickness_min), str(c.thickness_max),
                 c.quality_scheme, c.quality_levels, c.scope, c.text,
+                c.doc, c.source_page, c.clause_id,
             )).encode("utf-8"))
         return h.hexdigest()
 

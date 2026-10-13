@@ -100,7 +100,7 @@ def test_mapping_and_lookup(lm: LabelMap) -> None:
 
 
 def test_iso_codes_accessor(lm: LabelMap) -> None:
-    """계약 소비 트랙(B의 limits.csv V1)이 참조하는 코드 집합 접근자."""
+    """계약 소비 모듈(limits.csv V1)이 참조하는 코드 집합 접근자."""
     with_alt = lm.iso_codes()
     without = lm.iso_codes(include_alt=False)
     assert without == {"100", "2011", "301", "401", "402"}

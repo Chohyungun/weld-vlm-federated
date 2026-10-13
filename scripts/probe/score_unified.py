@@ -1,4 +1,4 @@
-"""통합형 **본채점 진입점** — 진입점 미니스펙 3판(wt/D `d22c7bf`) · 계약 07번 §32.
+"""통합형 **본채점 진입점** — 진입점 미니스펙 3판(`d22c7bf`) · 계약 07번 §32.
 
     python -m scripts.probe.score_unified --registration probe --purpose rehearsal --receipt R --snapshot S \\
         --bundles B --generation-list G --scoring-list P --echo-list E --train-root T --out O --device cpu:0
@@ -15,7 +15,7 @@
 | 7 | 산출물 — 고정 이름 · 배타 생성 | 있으면 거부 |
 
 **산출 경로.** `--out` 아래 산출 경로의 조각(`score` · 파일)이 정션 · 기호 링크로 밖을 가리키면 `[OUT_PATH_LINK]`, 산출 파일에 하드 링크가 있으면
-`[OUT_FILE_HARDLINK]` 로 거부한다 — 0 단계(원장 줄 전)에서 미리 보고, 읽기 · 생성 직전에 다시 본다(공유 회신 §57).
+`[OUT_FILE_HARDLINK]` 로 거부한다 — 0 단계(원장 줄 전)에서 미리 보고, 읽기 · 생성 직전에 다시 본다(검토 기록 §57).
 
 **에코 전용(`--echo-only`) — 학습 전 관문.** 탐색(`probe`)의 리허설 · 진단 목적만 받는다(본실험 · 엄격은 진입 전 종료 3). 0 · 1 은 위와 같고
 (진단의 재생성 분기와 규칙 파일 읽기는 하지 않는다), **2 를 하지 않는다 — 정본 원장에 아무것도 쓰지 않으므로 시도로 세지 않는다.**
@@ -52,7 +52,7 @@ from evaluation.bundle_v14 import (MODE_ECHO, MODE_MODEL, BundleFiles, Registrat
 from evaluation.content_key import ContentKeyError, generations_content_sha256
 from evaluation.coord_check import coord_fixture_digest
 from evaluation.entry_gate import (COMMITTED_KINDS, STRICT_OUT_REL, EntryRejected, blob_at, check_anchor, check_list_split,
-                                   check_mode, check_processor, check_receipt_kind, check_snapshot, guard_seam,
+                                   check_main_full_eval, check_mode, check_processor, check_receipt_kind, check_snapshot, guard_seam,
                                    canonical_ledger, load_anchor, load_processor_kwargs, load_registration_for,
                                    main_checkout, read_manifest_meta)
 from evaluation.eval_list import validate_eval_list
@@ -168,7 +168,7 @@ def _out_file(ctx: Ctx, rel: str) -> Path:
     """산출 파일의 자리 — `--out` 에서 그 파일까지 **있는 조각마다 해석한 최종 경로가 그 자리 그대로**여야 한다.
 
     `--out` 자체는 0 단계가 본다. 그 아래 `score` 가 정션 · 기호 링크로 밖을 가리키면 `mkdir(exist_ok)` 와 배타 생성이 그 연결을
-    따라가 허용 영역 밖에 산출을 만든다(공유 회신 §57) — 읽기 · 생성 전에 거부한다. 산출 파일이 이미 있으면 다른 이름(하드 링크)이
+    따라가 허용 영역 밖에 산출을 만든다(검토 기록 §57) — 읽기 · 생성 전에 거부한다. 산출 파일이 이미 있으면 다른 이름(하드 링크)이
     없어야 한다 — 같은 바이트를 비교하려고 읽는 것도 밖의 파일을 읽는 일이다.
     """
     out = ctx.args.out
@@ -331,6 +331,8 @@ def _read_lists(ctx: Ctx):
     check_list_split(gen.ids, meta, a.purpose, where="생성 목록")
     check_list_split(pop.ids, meta, a.purpose, where="채점 목록")
     check_list_split(echo.ids, meta, a.purpose, where="에코 목록", echo=True)
+    if a.purpose == "main":
+        check_main_full_eval(gen, pop, meta)
     return gen, pop, echo, meta
 
 

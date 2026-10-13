@@ -825,7 +825,7 @@ def _denied(found):
 
 
 def test_연합_실행이_죽고_뒤의_정리가_권한_거부여도_원래_실패가_올라온다(lap):
-    """뒤의 정리(`stop()`)가 `AccessDenied` 를 내도 실행의 실패를 덮지 않는다(외부 검토 회신 `rehearsal_blockers` 의 1)."""
+    """뒤의 정리(`stop()`)가 `AccessDenied` 를 내도 실행의 실패를 덮지 않는다(검토 기록 `rehearsal_blockers` 의 1)."""
     w, dst = _fed_copy(lap, "reh-20261001T130006")
     seen = {"n": 0}
     left = [{"pid": 4245, "name": "flower-superlink.exe", "cmdline": "flower-superlink", "kind": "target"}]
@@ -896,7 +896,7 @@ LINK_CASES = ["normal", "list_hardlink", "record_hardlink", "list_symlink", "rec
 @pytest.mark.parametrize("case", LINK_CASES)
 def test_연합_앞단은_다른_루트의_목록_파일로_가는_링크를_읽지_않는다(lap, capsys, case):
     """앞단의 목록 검사(`check_train_list`)도 두 파일의 최종 경로를 본다 — 해시 · 원본 행이 다 맞는 다른 루트의 정상 파일이다
-    (외부 검토 회신 `rehearsal_blockers3` 의 3)."""
+    (검토 기록 `rehearsal_blockers3` 의 3)."""
     import os
 
     w, root, _ = lap

@@ -1,12 +1,15 @@
 # 문서 등록부 — 스펙 §3-1 (11_spec_B_코퍼스합성.md)
 # 파싱 착수 전 등록 필수. 미등록 문서 유래 행은 limits.csv 반입 금지.
-# license_class: OPEN | VIEW_ONLY | PAID | CITED_FACT
+# license_class: OPEN | VIEW_ONLY | PAID | CITED_FACT | PENDING_DECISION
+#   PENDING_DECISION = 이용 조건을 사용자가 아직 정하지 않은 문서(10-07 추가). allowed_use 는 비운다.
+#   ※ 이 칸은 권리 승인이 아니다. 구절 은행 소비 경계(passage_bank.select_for_generation)는 이 칸을 보지 않고
+#     사용자의 권리 결정 기록만 본다. KR-RULES-P2 · IACS47 의 OPEN 은 약관 확인(2026-10-04)보다 먼저 적힌 값이다.
 # allowed_use: [table_extract, corpus_text, rag_index] 의 부분집합
 #   ※ OPEN 문서의 corpus_text·rag_index 는 콘텐츠 수준 스크린(§3-6) 통과분에 한함
 # canonical_priority: 교차 문서 충돌(V9) 정본 서열. 낮을수록 우선 (열린 질문 #2 기본값)
 
 meta:
-  updated: 2026-08-17
+  updated: 2026-10-07
   spec: 코퍼스 합성 스펙 §3-1
   note: >
     raw/ 원본 PDF는 재배포 조건 미확인으로 git 미추적 (.gitignore).
@@ -93,6 +96,169 @@ documents:
     initial_route: D
     status: pending                # W2 수집. 스캔본은 폐기·대체 논문 선택
     notes: 콘텐츠 수준 스크린 필수 — 유료 표준 전재·블록 인용 청크 반입 제외 (§3-6).
+
+  # --- 구절 은행 대상 — 이용 조건 결정 대기 (2026-10-07) ---
+  # 원문은 저장소 밖 작업 폴더에만 있다(재배포 조건 미정). 공유 드라이브에 올리지 않았다.
+  - doc_id: ABS-PUB87-2007
+    title: ABS Guide for Shipbuilding and Repair Quality Standard for Hull Structures During Construction (Pub 87)
+    publisher: American Bureau of Shipping
+    edition_year: 2007
+    url: https://ww2.eagle.org/content/dam/eagle/rules-and-guides/archives/conventional_ocean_service/87_shipbuildingandrepairqualstand_hullstruct_const_2007/pub87_srqs_guide.pdf
+    access_date: 2026-10-04
+    license_class: PENDING_DECISION   # ABS 약관: 내부 복사 · 사용 허용, 제3자 게시 · 자동 수집 금지
+    sha256: be55985fd3afe993c86125d27dc81c8039f82db40fb029282bf556ea3bd30565
+    file_local: null
+    allowed_use: []
+    canonical_priority: null
+    status: candidate
+    notes: >
+      ABS 누리집 보관(archives) 판. 서문이 IACS Rec.47 Rev.3 을 바탕으로 했다고 적는다 — 구절 은행에서 IACS47 과 같은
+      계보 묶음(LG-IACS-REC47)으로 둔다. ABS NDI 지침(abs_ndihw)은 이 항목이 아니다(그 4절은 AWS D1.1 참고문헌 때문에 제외).
+
+  - doc_id: IACS-URW33-R1C1
+    title: IACS UR W33 Non-destructive testing of ship hull steel welds, Rev.1 Corr.1
+    publisher: IACS
+    edition_year: 2021
+    url: https://iacs.s3.af-south-1.amazonaws.com/wp-content/uploads/2022/05/18145127/ur-w33rev1corr1.pdf
+    access_date: 2026-10-02
+    license_class: PENDING_DECISION   # IACS 누리집 약관은 개인 참조용 내려받기만 허용
+    sha256: 1edc750fd91c1d8605e5bc605cc2b87b1846c612b003dad0a56c2b8e1629fee3
+    file_local: null
+    allowed_use: []
+    canonical_priority: null
+    status: candidate
+    notes: >
+      2021-07-01 이후 건조계약 선박 대상. Rev.2(2028-01-01 이후 건조계약, sha256 443bbdef…6655)가 누리집의 현행 판이지만
+      지금 건조되는 선박에 적용되는 판은 Rev.1 Corr.1 이라 이것을 은행에 넣었다. 두 판을 함께 넣으면 거의 같은 구절이 겹친다.
+
+  - doc_id: FHWA-HIF-19-088
+    title: Bridge Welding Reference Manual (FHWA-HIF-19-088)
+    publisher: U.S. Federal Highway Administration
+    edition_year: 2019
+    url: https://www.fhwa.dot.gov/bridge/steel/pubs/hif19088.pdf
+    access_date: 2026-10-05
+    license_class: PENDING_DECISION   # 미국 연방 간행물이나 용역 저작 · 제3자 그림 · AWS 인용이 섞여 있다
+    sha256: d317b8e9ebb50290b5648a9a7b7876579538caaade41a8b551bb7229cc064046
+    file_local: null
+    allowed_use: []
+    canonical_priority: null
+    status: candidate
+    notes: >
+      2019-09 판, 2020-09 정오표 반영. 공식 배포처에서 2026-10-05 에 받은 파일.
+      부록 B(D1.1 과 D1.5 의 차이)는 유료 표준 비교라 구절 은행에서 뺐다. AWS 출처 인용 문장도 문장 단위로 덜어 낸다.
+
+  - doc_id: US-WAR-DEPT-TM-1-430-1942
+    title: War Department TM 1-430 Welding (U.S. Army Air Forces)
+    publisher: U.S. War Department
+    edition_year: 1942
+    url: https://www.govinfo.gov/content/pkg/GOVPUB-W-b3e351426539374f2ac0bd77dc787936/pdf/GOVPUB-W-b3e351426539374f2ac0bd77dc787936.pdf
+    landing_page: https://www.govinfo.gov/app/details/GOVPUB-W-b3e351426539374f2ac0bd77dc787936
+    access_date: 2026-10-07
+    license_class: PENDING_DECISION   # GovInfo 서지: 미국 정부 저작물(17 USC 105). 미국 밖 지위 · 제3자 그림은 따로 판단
+    sha256: 7742fb0bde76c3f94d03b46d242b1bd3705250c9fffdbb9d3ac6039e096978ee
+    file_local: null
+    allowed_use: []
+    canonical_priority: null
+    status: candidate
+    notes: >
+      1942-04-24 판(1943-03-06 Change 1 포함 스캔본). 역사적 명칭 · 개념에만 쓴다 — 현대 원인 · 예방 · 보수 ·
+      합격 기준을 채우지 않는다. 쪽 화면과 대조해 옮긴 6구절만 은행에 있다. 그림 37(인쇄 64쪽)은 제3자 제공 표시가 있다.
+
+  - doc_id: MDPI-APPLSCI-2020-10-1878
+    title: Review on Computer Aided Weld Defect Detection from Radiography Images (Applied Sciences 2020, 10, 1878)
+    publisher: MDPI
+    edition_year: 2020
+    url: https://mdpi-res.com/d_attachment/applsci/applsci-10-01878/article_deploy/applsci-10-01878.pdf
+    landing_page: https://www.mdpi.com/2076-3417/10/5/1878
+    access_date: 2026-10-07
+    license_class: PENDING_DECISION   # PDF 16쪽 표시: CC BY 4.0. 파생 QA 에 저자 · DOI · 라이선스 · 변경 사실 표시가 필요하다
+    sha256: 2ff799fa9fdea0690f739524b4dbcd1a4153947ba276068295be0977a3a1288b
+    file_local: null
+    allowed_use: []
+    canonical_priority: null
+    status: candidate
+    notes: >
+      doi:10.3390/app10051878. 저자 서술(RT 판독 · 전처리 · 자료 한계)만 — 합격 기준 · 영상별 정답이 아니다.
+      쪽 화면과 대조해 옮긴 8구절만 은행에 있다.
+
+  # --- 구절 은행 v3 에 합친 원문 보강분 — 이용 조건 결정 대기 (2026-10-07) ---
+  # 다섯 편 모두 출판사 표시 CC BY 4.0. 파생 QA 에 저자 · DOI · 라이선스 · 변경 사실 표시가 필요하다.
+  # 그림 · 표 · 제3자 자료는 구절에 넣지 않았다. 원문은 저장소 밖 작업 폴더에만 있다.
+  - doc_id: mdpi_met11060904_2021
+    title: "Hydrogen-Assisted Cracking in GMA Welding of High-Strength Structural Steel—A New Look into This Issue at Narrow Groove (Metals 2021, 11, 904)"
+    publisher: MDPI
+    edition_year: 2021
+    url: https://mdpi-res.com/d_attachment/metals/metals-11-00904/article_deploy/metals-11-00904.pdf
+    landing_page: https://doi.org/10.3390/met11060904
+    access_date: 2026-10-07
+    license_class: PENDING_DECISION   # CC BY 4.0(PDF 1쪽 · JATS permissions)
+    sha256: 9d438c3610116de1572983227baaf24058bb32618ba137c3369d6c8eb43311d2
+    xml_sha256: 115d923789280eaa2d46f07378f0e8f4dad6de2d77b97c48f4fded22b2441529
+    file_local: null
+    allowed_use: []
+    canonical_priority: null
+    status: candidate
+    notes: >
+      S960QL 협개선 GMAW 의 수소 유발 균열 연구. 구절 11 은 출판사 XML 의 연속 구간이다.
+      p03 은 유료 표준 수치 규칙에 걸려 생성에서 빠지고, 그 문맥에 기대는 HAC 11구절도 해소 전까지 빠진다.
+
+  - doc_id: mdpi_met11020293_2021
+    title: Fatigue Performance of High- and Low-Strength Repaired Welded Steel Joints (Metals 2021, 11, 293)
+    publisher: MDPI
+    edition_year: 2021
+    url: https://mdpi-res.com/d_attachment/metals/metals-11-00293/article_deploy/metals-11-00293.pdf
+    landing_page: https://doi.org/10.3390/met11020293
+    access_date: 2026-10-07
+    license_class: PENDING_DECISION   # CC BY 4.0(PDF 1쪽 · JATS permissions)
+    sha256: 81cf4b75d87311e59881207eda9862033e2a4bd5548837e45fe675e2f526e82b
+    xml_sha256: aceb6e4ed43042d5b62203fdb80f67c8a8fd24a0b15d57588c3cdb8356f8e9d8
+    file_local: null
+    allowed_use: []
+    canonical_priority: null
+    status: candidate
+    notes: S355J2+N · S960QL 필릿 용접부의 보수와 피로 실험. 구절 12 는 출판사 XML 의 연속 구간이다.
+
+  - doc_id: MDPI-CRYSTALS-2022-12-832
+    title: Narrow Gap Welding of X80 Steel Using Laser-CMT Hybrid Welding with Misaligned Laser and Arc (Crystals 2022, 12, 832)
+    publisher: MDPI
+    edition_year: 2022
+    url: https://doi.org/10.3390/cryst12060832
+    access_date: 2026-10-07
+    license_class: PENDING_DECISION   # CC BY 4.0(PDF 1쪽)
+    sha256: 5c6c66351cc16bc53ab4f753151df20eccf913c2487ba1b587b1891cc59f58b8
+    file_local: null
+    allowed_use: []
+    canonical_priority: null
+    status: candidate
+    notes: X80 강 협개선 레이저-CMT 용접의 측벽 융합 불량. 구절 10 은 PDF 텍스트 층.
+
+  - doc_id: MDPI-METALS-2024-14-857
+    title: Reduction in Porosity in GMAW-P Welds of CP780 Galvanized Steel with ER70S-3 Electrode Using the Taguchi Methodology (Metals 2024, 14, 857)
+    publisher: MDPI
+    edition_year: 2024
+    url: https://doi.org/10.3390/met14080857
+    access_date: 2026-10-07
+    license_class: PENDING_DECISION   # CC BY 4.0(PDF 1쪽)
+    sha256: 91be027846a270982c82c4d4b5f001f692d750c3097c6d32a7cad35b9695ab8b
+    file_local: null
+    allowed_use: []
+    canonical_priority: null
+    status: candidate
+    notes: CP780 아연도금강 GMAW-P 의 기공 · 용입 · 균열 비교. 실험 수치는 합격 기준이 아니다. 구절 10 은 PDF 텍스트 층.
+
+  - doc_id: MDPI-METALS-2020-10-1121
+    title: Mechanism to Reduce the Porosity during Argon Arc Welding of Aluminum Alloys by Changing the Arc Angle (Metals 2020, 10, 1121)
+    publisher: MDPI
+    edition_year: 2020
+    url: https://doi.org/10.3390/met10091121
+    access_date: 2026-10-07
+    license_class: PENDING_DECISION   # CC BY 4.0(PDF 14쪽)
+    sha256: 54367653eda1c35b863f8bbaf1b6d13e802210a5ab5e01f3d7ce99c25fe124c1
+    file_local: null
+    allowed_use: []
+    canonical_priority: null
+    status: candidate
+    notes: 6061 알루미늄의 아크 각도와 기공. 와이어식 CMT/GMAW 장비다 — 제목만 보고 TIG 자료로 분류하지 않는다. 구절 15 는 PDF 텍스트 층.
 
   # --- 사실 정보 (파일 아님) ---
   - doc_id: ISO6520-1

@@ -1,7 +1,7 @@
 """정답 조항 목록 — 계약 #3의 세 소비처 중 두 번째. 스펙 §6.
 
-`corpus/derived/gold_clauses.csv`(B의 `derive_gold_clauses` 산출물)를 읽어 이미지별
-정답 쌍으로 사영한다. **D가 `limits.csv` 를 직접 순회해 만들지 않는다**(B 스펙 §1-4
+`corpus/derived/gold_clauses.csv`(코퍼스 측의 `derive_gold_clauses` 산출물)를 읽어 이미지별
+정답 쌍으로 사영한다. **평가 측이 `limits.csv` 를 직접 순회해 만들지 않는다**(코퍼스 스펙 §1-4
 금지 규칙 ④). 파생물을 직접 수정하지도 않는다 — 전문가가 조항 오류를 찾으면 원천을
 고치고 전체를 다시 파생한다.
 
@@ -83,7 +83,7 @@ def read_derived_csv(path: str | Path) -> tuple[dict[str, str], ...]:
 
 
 def entries_from_derived(rows: Iterable[Mapping[str, object]]) -> tuple[GoldEntry, ...]:
-    """B의 `derive_gold_clauses()` 출력을 그대로 받는다. 이 변환이 유일한 진입 지점이다."""
+    """코퍼스 측의 `derive_gold_clauses()` 출력을 그대로 받는다. 이 변환이 유일한 진입 지점이다."""
     return tuple(
         GoldEntry(
             defect_code=str(r["defect_code"]),

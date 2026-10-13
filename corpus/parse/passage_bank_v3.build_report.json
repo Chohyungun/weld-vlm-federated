@@ -1,0 +1,298 @@
+{
+ "builder": "build_passage_bank_v3",
+ "cross_doc_duplicate_text_dropped": 0,
+ "curated": {
+  "docs": {
+   "MDPI-APPLSCI-2020-10-1878": {
+    "edition": "Applied Sciences 10(5):1878, 출판본 PDF",
+    "lineage_group_id": "LG-MDPI-APPLSCI-2020-1878",
+    "passages": 8,
+    "physical_pages": 16,
+    "source_file_sha256": "2ff799fa9fdea0690f739524b4dbcd1a4153947ba276068295be0977a3a1288b"
+   },
+   "US-WAR-DEPT-TM-1-430-1942": {
+    "edition": "1942-04-24 판, 1943-03-06 Change 1 포함(스캔본)",
+    "lineage_group_id": "LG-US-TM-1-430-1942",
+    "passages": 6,
+    "physical_pages": 186,
+    "source_file_sha256": "7742fb0bde76c3f94d03b46d242b1bd3705250c9fffdbb9d3ac6039e096978ee"
+   }
+  },
+  "excluded": {},
+  "input_rows": 14,
+  "input_sha256": "0c0b6d808b4de87d64482d2a773d61664a7b72b2d7e5a1514fded582f5038017",
+  "passages": 14,
+  "text_layer_check": {
+   "alnum": 1,
+   "exact": 13
+  }
+ },
+ "defects": {
+  "crack": 161,
+  "lack_of_fusion": 28,
+  "lack_of_penetration": 12,
+  "overlap": 7,
+  "porosity": 56,
+  "slag_inclusion": 55,
+  "undercut": 29
+ },
+ "docs": {
+  "ABS-PUB87-2007": {
+   "char_stats": {
+    "dropped_lines": 37,
+    "pages_without_printed_number": 1
+   },
+   "edition": "March 2007 (2nd ed., Pub 87)",
+   "excluded": {
+    "passage:off_topic": 12
+   },
+   "lineage_group_id": "LG-IACS-REC47",
+   "page_ranges": [
+    [
+     7,
+     44
+    ]
+   ],
+   "pages_scanned": 38,
+   "passages": 35,
+   "physical_pages": 44,
+   "relevance": {
+    "defect_specific": 2,
+    "weld_quality_general": 18,
+    "welding_general": 15
+   },
+   "source_file_sha256": "be55985fd3afe993c86125d27dc81c8039f82db40fb029282bf556ea3bd30565",
+   "table_passages": 28
+  },
+  "FHWA-HIF-19-088": {
+   "char_stats": {
+    "dropped_lines": 709,
+    "pages_without_printed_number": 0,
+    "pua_unmapped": 2,
+    "soft_hyphen_joined": 56
+   },
+   "edition": "September 2019, with September 2020 errata",
+   "excluded": {
+    "passage:off_topic": 70,
+    "sentence:paid_standard_numeric": 41,
+    "sentence:third_party_quote_aws": 101
+   },
+   "lineage_group_id": "LG-FHWA-HIF-19-088",
+   "page_ranges": [
+    [
+     25,
+     321
+    ]
+   ],
+   "pages_scanned": 297,
+   "passages": 755,
+   "physical_pages": 348,
+   "relevance": {
+    "defect_specific": 136,
+    "weld_quality_general": 256,
+    "welding_general": 363
+   },
+   "source_file_sha256": "d317b8e9ebb50290b5648a9a7b7876579538caaade41a8b551bb7229cc064046",
+   "table_passages": 18
+  },
+  "IACS-URW33-R1C1": {
+   "char_stats": {
+    "dropped_lines": 57,
+    "pages_without_printed_number": 0,
+    "soft_hyphen_joined": 4
+   },
+   "edition": "2019 / Rev.1 2020 / Corr.1 2021",
+   "excluded": {
+    "passage:off_topic": 7,
+    "passage:revision_history": 3,
+    "sentence:paid_standard_numeric": 1
+   },
+   "lineage_group_id": "LG-IACS-URW33",
+   "page_ranges": [
+    [
+     1,
+     14
+    ]
+   ],
+   "pages_scanned": 14,
+   "passages": 74,
+   "physical_pages": 14,
+   "relevance": {
+    "defect_specific": 5,
+    "weld_quality_general": 64,
+    "welding_general": 5
+   },
+   "source_file_sha256": "1edc750fd91c1d8605e5bc605cc2b87b1846c612b003dad0a56c2b8e1629fee3",
+   "table_passages": 7
+  },
+  "IACS47": {
+   "char_stats": {
+    "dropped_lines": 312,
+    "pages_without_printed_number": 0,
+    "pua_symbol_mapped": 162,
+    "soft_hyphen_joined": 7
+   },
+   "edition": "Rev.10 2021 / Corr.1 2025",
+   "excluded": {
+    "passage:off_topic": 30,
+    "passage:toc_or_list": 2,
+    "sentence:paid_standard_numeric": 1
+   },
+   "lineage_group_id": "LG-IACS-REC47",
+   "page_ranges": [
+    [
+     4,
+     48
+    ],
+    [
+     51,
+     67
+    ]
+   ],
+   "pages_scanned": 62,
+   "passages": 87,
+   "physical_pages": 67,
+   "relevance": {
+    "defect_specific": 6,
+    "weld_quality_general": 43,
+    "welding_general": 38
+   },
+   "source_file_sha256": "ac54b7904b3f27d8af830ef2f4ff0ca18967a407aeead67c481b136b542f15a6",
+   "table_passages": 30
+  },
+  "KR-RULES-P2": {
+   "char_stats": {
+    "dropped_lines": 510,
+    "pages_without_printed_number": 0,
+    "pua_unmapped": 573
+   },
+   "edition": "2025",
+   "excluded": {
+    "passage:off_topic": 8,
+    "passage:too_short": 5,
+    "sentence:paid_standard_numeric": 3
+   },
+   "lineage_group_id": "LG-KR-RULES-P2",
+   "page_ranges": [
+    [
+     123,
+     220
+    ],
+    [
+     264,
+     276
+    ],
+    [
+     291,
+     293
+    ],
+    [
+     307,
+     331
+    ],
+    [
+     351,
+     361
+    ]
+   ],
+   "pages_scanned": 150,
+   "passages": 291,
+   "physical_pages": 362,
+   "relevance": {
+    "defect_specific": 64,
+    "weld_quality_general": 152,
+    "welding_general": 75
+   },
+   "source_file_sha256": "46c4ee189f4adef29e42320f9301d8db577946ec96f893be9ff2f1683879552b",
+   "table_passages": 61
+  }
+ },
+ "facets": {
+  "appearance": 211,
+  "applicability": 446,
+  "cause": 265,
+  "criteria": 451,
+  "definition": 124,
+  "measurement": 727,
+  "prevention": 147,
+  "repair": 217
+ },
+ "flags": {
+  "L2_lineage_unverified": 4,
+  "UT_lineage_unverified": 3,
+  "archived_edition": 35,
+  "cc_by_4_0_attribution_required": 66,
+  "contractor_authored": 755,
+  "document_lineage_not_independent_weld_groups": 58,
+  "experimental_parameters_not_acceptance_limits": 10,
+  "experimental_scope_review_pending": 58,
+  "figure_references_text_only": 10,
+  "hard_split_mid_sentence": 20,
+  "historical_only": 6,
+  "human_scope_review_pending": 10,
+  "kr_angle_glyph_means_lt": 2,
+  "kr_lt_glyph_is_angle": 291,
+  "paid_clause_reference_without_numeric": 128,
+  "paid_standard_name_without_numeric": 295,
+  "pua_symbol_mapped": 34,
+  "pua_unmapped": 83,
+  "sentences_omitted_in_section": 256,
+  "table_text_layer": 144,
+  "text_layer_match_alnum_only": 1,
+  "third_party_figures_present": 755
+ },
+ "lineage_groups": {
+  "LG-FHWA-HIF-19-088": 755,
+  "LG-IACS-REC47": 122,
+  "LG-IACS-URW33": 74,
+  "LG-KR-RULES-P2": 291,
+  "LG-MDPI-APPLSCI-2020-1878": 8,
+  "LG-MDPI-CRYSTALS-2022-12-832": 10,
+  "LG-MDPI-METALS-2020-10-1121": 15,
+  "LG-MDPI-METALS-2024-14-857": 10,
+  "LG-US-TM-1-430-1942": 6,
+  "doi:10.3390/met11020293": 12,
+  "doi:10.3390/met11060904": 11
+ },
+ "max_chars": 900,
+ "max_chars_effective": 1020,
+ "merged": {
+  "docs": {
+   "MDPI-CRYSTALS-2022-12-832": 10,
+   "MDPI-METALS-2020-10-1121": 15,
+   "MDPI-METALS-2024-14-857": 10,
+   "mdpi_met11020293_2021": 12,
+   "mdpi_met11060904_2021": 11
+  },
+  "excluded": {
+   "merged:paid_sentence_rows_kept_for_gate": 1
+  },
+  "input_rows": 58,
+  "input_sha256": "319ee08505507514fb584f5b8bed733c1d48adb8efcc92b5c9ded5161d170d4c",
+  "passages": 58,
+  "rows_with_context_dependency_holds": 11,
+  "rows_with_required_context": 56,
+  "rows_with_source_policy_holds": 1,
+  "source_check": {
+   "pdf_alnum": 6,
+   "pdf_exact": 29,
+   "xml_alnum": 16,
+   "xml_exact": 7
+  }
+ },
+ "min_chars": 120,
+ "outputs": {
+  "full_bank_sha256": "dd01981ae40bc5cce3413ae6faf6ce39808274e9dce7f01ac3307a11f6c6ece6",
+  "pointer_bank_sha256": "09bca3be0b15df902442a68eb7d38ef18a1fd8bb2f224014df8c1501be403039",
+  "rows": 1314
+ },
+ "pdfium_version": "153.0.7999.0",
+ "pypdfium2_version": "5.13.0",
+ "relevance": {
+  "curated_context": 1,
+  "defect_specific": 271,
+  "weld_quality_general": 540,
+  "welding_general": 502
+ },
+ "schema_version": 2
+}

@@ -32,7 +32,7 @@
 2. **FAR@정상 < 0.5** (정상 이미지에서 결함을 1건 이상 주장한 비율)
 3. `|FPR(크롭 출신 정상) − FPR(타일 출신 정상)|` — 이 시점에서는 **판정하지 않고 값만 기록**
 
-미달 시 본실험 착수 중지 + 총괄 판단 요청(40번 §4-9 차선안 분기).
+미달 시 본실험 착수 중지 + 판단 요청(40번 §4-9 차선안 분기).
 
 ## 사용
 
@@ -231,7 +231,7 @@ def _load_yolo(npz_path: Path, class_names, imgsz: int):
     **채점(`score_detection`·`cluster_bootstrap`)과 추론(`predict_cell`)은 전부 기존
     구현을 그대로 부른다** — 두 번째 채점기를 만들지 않는다.
 
-    본실험 착수 전에 D 가 `load_yolo_from_npz` 에 모델 cfg 를 인자로 열어야 한다.
+    본실험 착수 전에 평가 측이 `load_yolo_from_npz` 에 모델 cfg 를 인자로 열어야 한다.
     지금 상태로는 **다섯 칸 중 어느 것도 본실험 프로파일로 채점할 수 없다.** 82번에 보고.
     """
     import numpy as np
@@ -329,7 +329,7 @@ def cmd_score() -> None:
     #                   you tried to allocate 36748984320 bytes
     #
     # `evaluation/` 는 D 소관이라 함수를 고치지 않고 **같은 함수를 나눠 부른다** —
-    # 추론 경로는 여전히 하나다. D 가 본실험 전에 내부 청킹을 넣어야 한다(82번 보고).
+    # 추론 경로는 여전히 하나다. 평가 측이 본실험 전에 내부 청킹을 넣어야 한다(82번 보고).
     preds = []
     for i in range(0, len(rows), PREDICT_CHUNK):
         part = rows[i:i + PREDICT_CHUNK]
@@ -359,7 +359,7 @@ def _verdict_from(preds, rows, gold, eval_ids, params, classes, gates) -> None:
 
     by_id = {r["image_id"]: r for r in rows}
     # `PredictionRecord.defects` 는 pydantic `Defect` 객체다(dict 아님).
-    # D 의 `evaluation/score.py:32` 와 같은 추출을 쓴다.
+    # 평가 측의 `evaluation/score.py:32` 와 같은 추출을 쓴다.
     pred_codes = {p.image_id: sorted(p.iso_codes) for p in preds}
     # D9 대응 — 정상 이미지도 모집단에 남는다. `gold` 는 결함 있는 이미지만 키를 갖는
     # 경우가 있으므로 평가셋 전량으로 back-fill 한다(빈 집합 = 정상).

@@ -226,7 +226,7 @@ def test_parse_record_returns_reason_on_bad_json():
 # --- JSON Schema 동기화 -------------------------------------------------------------
 
 def test_committed_json_schema_matches_model():
-    """스키마 파일을 손으로 고치는 경로를 막는다. 두 곳이 갈리면 C와 D가 다른 계약을 본다."""
+    """스키마 파일을 손으로 고치는 경로를 막는다. 두 곳이 갈리면 학습·추론 측과 평가 측이 다른 계약을 본다."""
     assert SCHEMA_PATH.exists(), f"{SCHEMA_PATH} 가 없다 — 생성 스크립트를 돌려라"
     committed = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     assert committed == json_schema()

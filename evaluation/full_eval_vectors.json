@@ -1,0 +1,13 @@
+{
+ "about": "본실험 전량 목록 결속(07번 §40-1)의 시험 벡터 — 합성 id 다. 채점 쪽은 evaluation.entry_gate.check_main_full_eval(gen, pop, meta) 로, 생성 쪽 관문은 같은 식으로 맞댄다. meta 는 eval_ids 를 split=eval, other_ids 를 split=val 로 둔 매니페스트다. 생성 쪽(목록 하나)은 export_side 가 true 인 경우만 쓰고 pop 을 gen 과 같게 둔다. expect 는 관문 함수만의 판정이다 — 진입점은 그 앞에서 분할 검사(LIST_SPLIT)가 먼저 걸 수 있다.",
+ "eval_ids": ["e01", "e02", "e03", "e04", "e05"],
+ "other_ids": ["v01", "v02"],
+ "cases": [
+  {"name": "정상 — 평가 행 전체 · 같은 파일", "gen": ["e01", "e02", "e03", "e04", "e05"], "pop": ["e01", "e02", "e03", "e04", "e05"], "expect": "pass", "export_side": true},
+  {"name": "정상 — 정렬하지 않은 순서도 같은 파일이면 받는다", "gen": ["e05", "e01", "e04", "e02", "e03"], "pop": ["e05", "e01", "e04", "e02", "e03"], "expect": "pass", "export_side": true},
+  {"name": "한 장 빠짐", "gen": ["e01", "e02", "e03", "e04"], "pop": ["e01", "e02", "e03", "e04"], "expect": "MAIN_LIST_NOT_FULL_EVAL", "export_side": true},
+  {"name": "평가 행 밖의 id 하나 더", "gen": ["e01", "e02", "e03", "e04", "e05", "v01"], "pop": ["e01", "e02", "e03", "e04", "e05", "v01"], "expect": "MAIN_LIST_NOT_FULL_EVAL", "export_side": true},
+  {"name": "생성과 채점이 같은 집합의 다른 순서", "gen": ["e01", "e02", "e03", "e04", "e05"], "pop": ["e05", "e04", "e03", "e02", "e01"], "expect": "MAIN_LIST_NOT_IDENTICAL", "export_side": false},
+  {"name": "채점이 생성보다 한 장 적다", "gen": ["e01", "e02", "e03", "e04", "e05"], "pop": ["e01", "e02", "e03", "e04"], "expect": "MAIN_LIST_NOT_IDENTICAL", "export_side": false}
+ ]
+}

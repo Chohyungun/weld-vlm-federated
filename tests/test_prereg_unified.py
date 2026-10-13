@@ -132,6 +132,9 @@ def filled(*, generation_only: bool = False, purpose: str = "main") -> UnifiedRe
     for name in P.PURPOSE_NULL[purpose]:
         setattr(r.generation, name.split(".", 1)[1], None)
     if not generation_only:
+        if purpose == "main":   # 본실험의 주채점 목록은 생성 목록과 같은 파일이다(07번 §40)
+            r.population.eval_list_file_sha256 = r.generation.eval_list_file_sha256
+            r.population.eval_list_set_sha256 = r.generation.eval_list_set_sha256
         r.canary.coord_cfg = cfg()
         r.seeds = {"1": 20260828, "2": 20260829, "3": 20260830}
         r.planned_seed_count = 3
@@ -411,9 +414,12 @@ def test_같은_목록이면_두_벌이_묶인다() -> None:
 
 
 def test_부분집합_재채점은_받는다() -> None:
-    """§13-2 가 — 채점 모집단은 생성 목록의 부분집합이면 된다. 두 벌이 늘 같아야 한다고 하면 이 길이 막힌다."""
+    """§13-2 가 — 채점 모집단은 생성 목록의 부분집합이면 된다. 두 벌이 늘 같아야 한다고 하면 이 길이 막힌다.
+
+    판 5 의 §40 부터 본실험(`main`)은 같은 파일만 받는다 — 이 길은 리허설 · 진단의 것이다(본실험의 거부는
+    `tests/test_full_eval_binding.py`)."""
     sub = validate_eval_list(canonical_bytes(["a1", "a2"]))
-    r = filled()
+    r = filled(purpose="rehearsal")
     r.population.eval_list_file_sha256, r.population.eval_list_set_sha256 = sub.file_sha256, sub.set_sha256
     r.require_complete()
     check_list_binding(r, GEN_LIST, sub)
@@ -494,8 +500,7 @@ def test_좌표_규약을_바꾸면_카나리아를_다시_정해야_한다() ->
 def test_제외_목록을_바꾸면_모집단_상수가_끌려온다() -> None:
     gaps = UnifiedRegistration().dependency_gaps(["population.exclusion_list_sha256"])
     for name in ("population.n_images", "population.n_clusters", "population.class_support",
-                 "population.totals_error_table", "baseline.full_population_m1",
-                 "population.eval_list_file_sha256"):
+                 "baseline.full_population_m1", "population.eval_list_file_sha256"):
         assert name in gaps
 
 
@@ -817,8 +822,8 @@ def test_기록이_채워지면_빈_항목이_아니다() -> None:
 # 목적 셋 · 목적별 완결 · 진단 규칙의 자리 · 영수증의 파일 해시 · 리허설·진단의 채점 쪽.
 
 def test_판_3_이다() -> None:
-    """판 3 의 목적 셋은 판 4 에서도 그대로다. 판 4 는 구간 규약 칸만 바꿨다."""
-    assert P.REGISTRATION_VERSION == "4"
+    """판 3 의 목적 셋은 판 4 · 5 에서도 그대로다. 판 4 는 구간 규약 칸만, 판 5 는 모집단의 부표본 칸만 바꿨다."""
+    assert P.REGISTRATION_VERSION == "5"
     assert P.PURPOSES == ("main", "rehearsal", "frame_diag")
     assert P.SPLIT_OF_PURPOSE["frame_diag"] == "val"
     assert P.VOCAB["generation.list_split"] == ("eval", "val"), "어휘에 같은 값이 두 번 들지 않는다"
@@ -999,3 +1004,36 @@ def test_리허설_채점_쪽_검사도_영수증_종류를_본다() -> None:
     r = probe_registration("frame_diag")
     with pytest.raises(ReceiptMissing, match="종류"):
         P.require_probe_scoring(r, receipt_for(r, kind="rehearsal"))
+
+
+# ================================================================ 판 5 (07번 §39 — 평가는 전량)
+#
+# 부표본이 없어졌다. 표본 설계 칸과 총계 오차표 칸이 빠지고, 가중은 "none" 하나다.
+
+def test_판_5_다() -> None:
+    assert P.REGISTRATION_VERSION == "5"
+
+
+@pytest.mark.parametrize("name", ["population.subsample_design", "population.totals_error_table"])
+def test_전량_평가의_등록에는_부표본_칸이_없다(name: str) -> None:
+    assert name not in leaf_names()
+    assert name not in P._kinds()
+
+
+@pytest.mark.parametrize("changed", ["population.population_id", "population.exclusion_list_sha256"])
+def test_모집단을_바꿔도_부표본_칸을_끌고_가지_않는다(changed: str) -> None:
+    gaps = UnifiedRegistration().dependency_gaps([changed])
+    assert "population.subsample_design" not in gaps
+    assert "population.totals_error_table" not in gaps
+
+
+def test_부표본_칸을_든_등록_파일은_받지_않는다() -> None:
+    body = json.loads(dump_registration(filled()))
+    body["population"]["subsample_design"] = {"design": "full"}
+    raw = (json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+    with pytest.raises(RegistrationFileError, match="칸이 등록 판과 다르다"):
+        load_registration(raw)
+
+
+def test_가중은_none_하나다() -> None:
+    assert P.VOCAB["population.weighting"] == ("none",)

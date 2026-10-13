@@ -6,7 +6,7 @@
   입력 해시 · 입력 · 사슬 설정이 지금과 같음)가 있어야 시작한다. 그다음 여유 메모리가 `start_min_gb` 이상이어야 하고, 덩어리마다
   `chunk_min_gb` 아래거나 본체 게이트 락이 있으면 기다린다. 작업자 하나.
 - 이어 하기는 **실행 식별이 같을 때만** 한다 — 스캔은 폴더마다 `RUN.json`(`scan.bind_run`), 규칙 입력 · 보정은 `*_RUN.json`,
-  표본은 같은 바이트일 때만. 다르면 기존 산출을 그대로 두고 멈춘다(종료 코드 4). 메타 대조 실패는 종료 코드 3(공유 회신 §63).
+  표본은 같은 바이트일 때만. 다르면 기존 산출을 그대로 두고 멈춘다(종료 코드 4). 메타 대조 실패는 종료 코드 3(검토 기록 §63).
 - **소비 쪽도 대조한다** — 규칙 입력은 스캔을, 홉 · 규칙 입력은 보정을 읽기 전에 지금 설정 · 입력에서 기대하는 실행 식별과 남은 산출의
   식별을 맞춘다(다르면 종료 코드 4). 메타 대조의 재사용 식별에 `configs/base.yaml` 해시를 넣는다. 출력 경로는 `_workspace/` · `outputs/`
   아래만(동결 자리 · 그 밖은 종료 코드 5, 만들기 전에).
@@ -89,7 +89,7 @@ INPUT_KEYS = ("manifest", "tiles", "encode_progress", "manifest_v0", "histmatch_
               "desc", "desc_ids")
 
 
-#: 메타 대조가 읽는 설정 파일 — 입력과 함께 해시를 묶는다(공유 회신 §63-2 재검토: `base.yaml` 변경을 못 잡았다)
+#: 메타 대조가 읽는 설정 파일 — 입력과 함께 해시를 묶는다(검토 기록 §63-2 재검토: `base.yaml` 변경을 못 잡았다)
 BASE_CFG = Path("configs") / "base.yaml"
 
 
@@ -133,7 +133,7 @@ def require_current(run_json: Path, ident: dict, what: str) -> str:
 
 
 def require_metacheck(cfg: dict, out: Path, step: str) -> None:
-    """실물 단계의 공통 관문 — 같은 입력 · 같은 설정에 대한 성공한 메타 대조가 있어야 한다(공유 회신 §63-2)."""
+    """실물 단계의 공통 관문 — 같은 입력 · 같은 설정에 대한 성공한 메타 대조가 있어야 한다(검토 기록 §63-2)."""
     p = out / "metacheck.json"
     if not p.exists():
         raise MetaCheckFailed(f"[{step}] 메타 대조 기록이 없다 — metacheck 를 먼저 돌려라")
@@ -337,7 +337,7 @@ def scan_expected(cfg: dict, out: Path) -> dict[str, dict]:
 
 
 def require_scan_current(cfg: dict, out: Path) -> dict[str, str]:
-    """스캔 산출을 소비하기 전에(공유 회신 §63-1 재검토) — 셋마다 `RUN.json` 이 지금 기대와 같아야 한다."""
+    """스캔 산출을 소비하기 전에(검토 기록 §63-1 재검토) — 셋마다 `RUN.json` 이 지금 기대와 같아야 한다."""
     return {n: require_current(out / "scan" / n / "RUN.json", ident, f"스캔 {n}") for n, ident in scan_expected(cfg, out).items()}
 
 
@@ -374,7 +374,7 @@ def hop_g3_taus(cfg: dict, out: Path) -> tuple[list[float], list[float]]:
     summ = json.loads((out / "calib_summary.json").read_text(encoding="utf-8"))
     if summ.get("runs") != runs:
         raise SC.RunMismatch("calib_summary.json 이 지금 보정 실행의 요약이 아니다 — 소비하지 않는다")
-    if summ.get("sources") != calib_sources(out):       # 요약을 낸 원천 CSV 가 그대로인가(공유 회신 §64-2)
+    if summ.get("sources") != calib_sources(out):       # 요약을 낸 원천 CSV 가 그대로인가(검토 기록 §64-2)
         raise SC.RunMismatch("calib_summary.json 을 낸 원천 CSV 가 지금 파일과 다르다 — 소비하지 않는다")
     s = summ["g3_synthetic_positive"]
     tau = float(np.floor(100 * min(v["p5_small"] for v in s.values())) / 100)
@@ -383,7 +383,7 @@ def hop_g3_taus(cfg: dict, out: Path) -> tuple[list[float], list[float]]:
 
 
 def hop_sets(h1: set, expand, with_groups) -> dict[str, set]:
-    """변형마다 출발 집합을 나눈다(공유 회신 §63-3) — 묶음 제외는 h1 에서, 묶음 포함은 h1 + 묶음 동료에서 넓힌다."""
+    """변형마다 출발 집합을 나눈다(검토 기록 §63-3) — 묶음 제외는 h1 에서, 묶음 포함은 h1 + 묶음 동료에서 넓힌다."""
     h1g = with_groups(h1)
     return {"h1": set(h1), "h1_with_groups": h1g, "h2": set(h1) | expand(set(h1)),
             "h2_with_groups": with_groups(h1g | expand(h1g))}
@@ -725,7 +725,7 @@ def calib_sources(out: Path) -> dict[str, str | None]:
 
 
 def require_calib_current(cfg: dict, out: Path) -> dict[str, str]:
-    """보정 산출을 소비하기 전에(공유 회신 §63-1 재검토) — 두 실행 식별이 지금 설정 · 입력에서 기대하는 것과 같아야 한다."""
+    """보정 산출을 소비하기 전에(검토 기록 §63-1 재검토) — 두 실행 식별이 지금 설정 · 입력에서 기대하는 것과 같아야 한다."""
     plan = calib_plan(cfg, out)
     return {"g3": require_current(out / "calib_g3_RUN.json", plan["g3_ident"], "보정(G3 합성 양성)"),
             "overlap": require_current(out / "calib_overlap_RUN.json", plan["ov_ident"], "보정(겹침 곡선)")}

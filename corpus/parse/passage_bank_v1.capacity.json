@@ -1,0 +1,201 @@
+{
+ "bank_sha256": "0bec22811c5f2d27128d67b63486cb5928488087800c78f032a462c71a4c4292",
+ "passing_generation_gate_now": 0,
+ "qa": {
+  "all_tiers": {
+   "by_doc": {
+    "ABS-PUB87-2007": 40,
+    "FHWA-HIF-19-088": 761,
+    "IACS-URW33-R1C1": 74,
+    "IACS47": 87,
+    "KR-RULES-P2": 291
+   },
+   "pool": {
+    "distinct_passages_short_of_minimum": 2081,
+    "passages": 1253,
+    "qa_upper": 3759,
+    "qa_upper_facet_bounded": 2245,
+    "short_of_minimum_10000": 6241,
+    "short_of_target_20000": 16241
+   },
+   "train_if_val_is": {
+    "LG-FHWA-HIF-19-088": {
+     "distinct_passages_short_of_minimum": 2842,
+     "passages": 492,
+     "qa_upper": 1476,
+     "qa_upper_facet_bounded": 1048,
+     "short_of_minimum_10000": 8524,
+     "short_of_target_20000": 18524
+    },
+    "LG-IACS-REC47": {
+     "distinct_passages_short_of_minimum": 2208,
+     "passages": 1126,
+     "qa_upper": 3378,
+     "qa_upper_facet_bounded": 2058,
+     "short_of_minimum_10000": 6622,
+     "short_of_target_20000": 16622
+    },
+    "LG-IACS-URW33": {
+     "distinct_passages_short_of_minimum": 2155,
+     "passages": 1179,
+     "qa_upper": 3537,
+     "qa_upper_facet_bounded": 2118,
+     "short_of_minimum_10000": 6463,
+     "short_of_target_20000": 16463
+    },
+    "LG-KR-RULES-P2": {
+     "distinct_passages_short_of_minimum": 2372,
+     "passages": 962,
+     "qa_upper": 2886,
+     "qa_upper_facet_bounded": 1511,
+     "short_of_minimum_10000": 7114,
+     "short_of_target_20000": 17114
+    }
+   }
+  },
+  "defect_specific_only": {
+   "by_doc": {
+    "ABS-PUB87-2007": 2,
+    "FHWA-HIF-19-088": 137,
+    "IACS-URW33-R1C1": 5,
+    "IACS47": 6,
+    "KR-RULES-P2": 64
+   },
+   "pool": {
+    "distinct_passages_short_of_minimum": 3120,
+    "passages": 214,
+    "qa_upper": 642,
+    "qa_upper_facet_bounded": 443,
+    "short_of_minimum_10000": 9358,
+    "short_of_target_20000": 19358
+   },
+   "train_if_val_is": {
+    "LG-FHWA-HIF-19-088": {
+     "distinct_passages_short_of_minimum": 3257,
+     "passages": 77,
+     "qa_upper": 231,
+     "qa_upper_facet_bounded": 200,
+     "short_of_minimum_10000": 9769,
+     "short_of_target_20000": 19769
+    },
+    "LG-IACS-REC47": {
+     "distinct_passages_short_of_minimum": 3128,
+     "passages": 206,
+     "qa_upper": 618,
+     "qa_upper_facet_bounded": 426,
+     "short_of_minimum_10000": 9382,
+     "short_of_target_20000": 19382
+    },
+    "LG-IACS-URW33": {
+     "distinct_passages_short_of_minimum": 3125,
+     "passages": 209,
+     "qa_upper": 627,
+     "qa_upper_facet_bounded": 432,
+     "short_of_minimum_10000": 9373,
+     "short_of_target_20000": 19373
+    },
+    "LG-KR-RULES-P2": {
+     "distinct_passages_short_of_minimum": 3184,
+     "passages": 150,
+     "qa_upper": 450,
+     "qa_upper_facet_bounded": 271,
+     "short_of_minimum_10000": 9550,
+     "short_of_target_20000": 19550
+    }
+   }
+  },
+  "excluding_welding_general": {
+   "by_doc": {
+    "ABS-PUB87-2007": 20,
+    "FHWA-HIF-19-088": 393,
+    "IACS-URW33-R1C1": 69,
+    "IACS47": 49,
+    "KR-RULES-P2": 216
+   },
+   "pool": {
+    "distinct_passages_short_of_minimum": 2587,
+    "passages": 747,
+    "qa_upper": 2241,
+    "qa_upper_facet_bounded": 1575,
+    "short_of_minimum_10000": 7759,
+    "short_of_target_20000": 17759
+   },
+   "train_if_val_is": {
+    "LG-FHWA-HIF-19-088": {
+     "distinct_passages_short_of_minimum": 2980,
+     "passages": 354,
+     "qa_upper": 1062,
+     "qa_upper_facet_bounded": 840,
+     "short_of_minimum_10000": 8938,
+     "short_of_target_20000": 18938
+    },
+    "LG-IACS-REC47": {
+     "distinct_passages_short_of_minimum": 2656,
+     "passages": 678,
+     "qa_upper": 2034,
+     "qa_upper_facet_bounded": 1447,
+     "short_of_minimum_10000": 7966,
+     "short_of_target_20000": 17966
+    },
+    "LG-IACS-URW33": {
+     "distinct_passages_short_of_minimum": 2656,
+     "passages": 678,
+     "qa_upper": 2034,
+     "qa_upper_facet_bounded": 1453,
+     "short_of_minimum_10000": 7966,
+     "short_of_target_20000": 17966
+    },
+    "LG-KR-RULES-P2": {
+     "distinct_passages_short_of_minimum": 2803,
+     "passages": 531,
+     "qa_upper": 1593,
+     "qa_upper_facet_bounded": 985,
+     "short_of_minimum_10000": 8407,
+     "short_of_target_20000": 18407
+    }
+   }
+  },
+  "lineage_groups": {
+   "LG-FHWA-HIF-19-088": 761,
+   "LG-IACS-REC47": 127,
+   "LG-IACS-URW33": 74,
+   "LG-KR-RULES-P2": 291
+  },
+  "minimum_distinct_train_passages": 3334,
+  "note": "상한이다. 권리 결정 · 사람 검수 기록이 없어 지금 생성기로 넘어가는 구절은 0 이다. 면 표지는 키워드 후보라 qa_upper_facet_bounded 도 검수 전 값이다.",
+  "per_passage": 3
+ },
+ "reasoning": {
+  "by_method": {
+   "RT": {
+    "combos": 11,
+    "short_of_target_10000": 9560,
+    "skeleton_upper": 440,
+    "source_pages": [
+     "328"
+    ],
+    "source_tables": {
+     "KR-RULES-P2:본문(d)": 1,
+     "KR-RULES-P2:표15": 4,
+     "KR-RULES-P2:표16": 6
+    }
+   },
+   "VT": {
+    "combos": 1,
+    "short_of_target_10000": 9960,
+    "skeleton_upper": 40,
+    "source_pages": [
+     "327"
+    ],
+    "source_tables": {
+     "KR-RULES-P2:표면결함표": 1
+    }
+   }
+  },
+  "combo_cap": 40,
+  "combos_needed_for_10000_at_cap": 250,
+  "limits_csv_sha256": "334c78811677accb86a2ec14dad24716e16add3b6a14b47abe33ca6fe9e0cccb",
+  "note": "조합 하나의 골격 40 건은 측정값 · 두께만 다른 같은 규칙이다. 상한을 올려 1만을 채우면 반복으로 채운 수다. 서로 다른 규칙 단위는 combos 다.",
+  "skeleton_upper_total": 480
+ }
+}

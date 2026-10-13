@@ -42,7 +42,7 @@ GenStop = Literal["eos", "length"]
 ClauseError = Literal["citations_invalid", "verdict_invalid"]
 
 ParseErrorV14 = Literal["no_json", "json_decode", "truncated", "schema_violation"]
-"""상류(C 의 export)가 넘기는 레코드 실패 사유. 1.3 의 `unknown_iso_code`·`bbox_invalid` 는 항목 폐기로 바뀐 지
+"""상류(학습·추론 측의 export)가 넘기는 레코드 실패 사유. 1.3 의 `unknown_iso_code`·`bbox_invalid` 는 항목 폐기로 바뀐 지
 오래고 `join_missing` 은 분리형의 것이라 1.4 에는 없다."""
 
 CLAUSE_ERRORS: tuple[str, ...] = ("citations_invalid", "verdict_invalid")

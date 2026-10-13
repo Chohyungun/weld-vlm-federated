@@ -637,7 +637,7 @@ FED_CLIENT_TAGS = ("C1", "C2", "C3")
 
 def _read_under(path: Path, root: Path) -> bytes:
     """`path` 의 바이트 — 최종 경로(링크 · 정션을 푼 것)가 `root` 아래이고 다른 이름의 하드 링크가 없는 보통 파일일 때만.
-    하드 링크는 경로를 풀어도 드러나지 않는다 — 목록 단계가 만든 파일은 이름이 하나다(외부 검토 회신 `rehearsal_blockers2` 의 3)."""
+    하드 링크는 경로를 풀어도 드러나지 않는다 — 목록 단계가 만든 파일은 이름이 하나다(검토 기록 `rehearsal_blockers2` 의 3)."""
     real = Path(path).resolve()
     if not real.is_relative_to(Path(root).resolve()):
         raise ValueError(f"{Path(path).name} 의 최종 경로 {real} 가 실행 루트 {root} 아래가 아니다 — 읽지 않는다")

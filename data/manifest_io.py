@@ -354,7 +354,7 @@ def join_defects(
 ) -> pd.DataFrame:
     """manifest × annotations 를 결함 인스턴스 단위 long 프레임으로 조인한다.
 
-    **하류 트랙은 이 함수만 쓴다. 직접 merge 하지 마라.** 조인 규칙:
+    **하류 모듈은 이 함수만 쓴다. 직접 merge 하지 마라.** 조인 규칙:
 
     - `manifest.image_id` LEFT JOIN `annotations.image_id`
     - 결함 0개인 이미지도 **1행 남는다** (annotation 컬럼 전부 null, `row_kind="normal"`)

@@ -3,7 +3,7 @@
 어댑터는 원시 출력 형식의 차이만 흡수한다. 지표 계산은 어댑터 뒤에 있는 단일 채점기
 (`evaluation/score.py`)가 전담하고, 여기서는 어떤 지표도 계산하지 않는다.
 
-**좌표를 변환하지 않는다.** C 가 `to_px` 로 역변환을 끝낸 `bbox_px`(원본 픽셀, float)를
+**좌표를 변환하지 않는다.** 학습·추론 측이 `to_px` 로 역변환을 끝낸 `bbox_px`(원본 픽셀, float)를
 그대로 받는다 — 이중 역변환을 구조적으로 막는 장치다(스펙 §3-4). 이미지 경계 이탈은
 **세기만 하고 버리지 않는다**: 클리핑은 IoU 를 올리는 방향으로만 작동해 답을 고쳐주는
 셈이고, 실패로 처리하면 나쁜 예측이 파싱 실패로 둔갑해 실패율이 거짓말을 한다.
@@ -84,7 +84,7 @@ def adapt_unified_generations(
     Args:
         lines: 원시 파일의 각 줄.
         cell: `uni_central` / `uni_fed`.
-        seed: C 의 파일럿 시드.
+        seed: 학습·추론 측의 파일럿 시드.
         known_iso_codes: `label_map.yaml` 의 코드 집합. 하드코딩하지 않는다(불변조건 1-8).
         image_size: image_id → (W, H). 경계 이탈 **집계용**이며 판정에는 쓰지 않는다.
 
@@ -221,11 +221,11 @@ DETECTION_EXPORT_TAGS: tuple[tuple[str, str, str | None], ...] = (
 )
 """C 의 export 태그 → (칸, 클라이언트). **클라이언트 번호가 여기서 이름으로 바뀐다.**
 
-C 는 `client_idx` 0·1·2 를 파일명에 쓰고(`scripts/main_det.py:_export_targets`), 계약 #4 는
+학습·추론 측은 `client_idx` 0·1·2 를 파일명에 쓰고(`scripts/main_det.py:_export_targets`), 계약 #4 는
 `C1`·`C2`·`C3` 를 쓴다. 두 이름을 잇는 표가 코드에 없으면 채점이 클라이언트를 밀어서
 읽어도 아무 데서도 안 걸린다 — RQ3 의 클라이언트별 이득이 통째로 뒤바뀐다.
 근거: `evaluation.detect_infer.CHECKPOINTS` 가 파일럿에서 이미 쓰던 같은 대응
-(`sep_local_c0.npz` ↔ `C1`)이고, C 의 `client-tags = "C1,C2,C3"` 도 같은 순서다.
+(`sep_local_c0.npz` ↔ `C1`)이고, 학습·추론 측의 `client-tags = "C1,C2,C3"` 도 같은 순서다.
 """
 
 
@@ -242,14 +242,14 @@ def adapt_detection_export(
     """본실험 검출 `{tag}.detections.jsonl` → 계약 #4 레코드.
 
     입력 한 줄: `{image_id, boxes:[{cls, xyxy_px, conf}], coord_space, coord_cfg_hash}`
-    (13_spec_D §2-3, C 가 `conf=0.01` 하한으로 낸다).
+    (13_spec_D §2-3, 학습·추론 측이 `conf=0.01` 하한으로 낸다).
 
     **파일럿의 `evaluation.detect_infer._record_from_result` 와 같은 매핑을 쓴다.** 그쪽은
-    Ultralytics 결과 객체에서, 이쪽은 C 가 저장한 jsonl 에서 만들 뿐 만들어지는 레코드는
+    Ultralytics 결과 객체에서, 이쪽은 학습·추론 측이 저장한 jsonl 에서 만들 뿐 만들어지는 레코드는
     같은 모양이어야 한다 — 파일럿과 본실험의 채점 입력이 갈리면 두 실험을 비교할 수 없다.
     같은 규칙 셋:
 
-    - `cls` 정수 → `class_names[cls]` → `iso_code_of(...)`. 클래스 순서는 C 가 nc=4 로
+    - `cls` 정수 → `class_names[cls]` → `iso_code_of(...)`. 클래스 순서는 학습·추론 측이 nc=4 로
       주입한 순서이며 `ScoringParams.class_names` 가 정본이다.
     - 퇴화 박스(x1≥x2 또는 y1≥y2)는 **항목만** 버리고 센다. 스키마가 거부하므로 만들지
       않는 것이고, 레코드는 살린다(80번 D7 의 항목 단위 폐기).

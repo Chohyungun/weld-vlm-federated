@@ -59,7 +59,7 @@ def _py(*args):
     (_py("-m", "pytest", "C:/venv/Scripts/flwr.exe"), None),
 ])
 def test_파이썬_옵션을_해석해_실제_스크립트를_본다(info, want):
-    """`cmd[1]` 만 보면 `python -u <script>` 를 놓친다 — 옵션을 해석한 자리 하나만 본다(외부 검토 회신 `rehearsal_blockers` 의 2)."""
+    """`cmd[1]` 만 보면 `python -u <script>` 를 놓친다 — 옵션을 해석한 자리 하나만 본다(검토 기록 `rehearsal_blockers` 의 2)."""
     assert classify(info, SCRIPTS) == want
 
 
@@ -71,7 +71,7 @@ def test_파이썬_옵션을_해석해_실제_스크립트를_본다(info, want)
     ("\\venv\\Scripts\\flwr.py", "C:/", "unclear"),                   # 루트만 붙은 상대 경로
 ])
 def test_상대_스크립트_경로는_대상의_작업_디렉터리로_푼다(rel, cwd, want):
-    """검사하는 쪽의 현재 디렉터리로 풀지 않는다(외부 검토 회신 `rehearsal_blockers2` 의 2)."""
+    """검사하는 쪽의 현재 디렉터리로 풀지 않는다(검토 기록 `rehearsal_blockers2` 의 2)."""
     assert classify({**_py("-u", rel), "cwd": cwd}, SCRIPTS) == want
 
 

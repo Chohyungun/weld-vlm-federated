@@ -192,7 +192,7 @@ def stratified_block(pop: Population, by_cell: dict,
                      frozen: Path = Path(FROZEN_SNAPSHOT)) -> dict:
     """전역 지표 옆에 **같은 산출물 안에** 층화 지표를 싣는다 (판정 6 · 13번 D-1).
 
-    절단점은 동결본 train+val 에서만 온다(A 의 `data.id_strata`). 채점 모집단이 파일럿
+    절단점은 동결본 train+val 에서만 온다(데이터 처리 측의 `data.id_strata`). 채점 모집단이 파일럿
     부분집합이든 동결 평가셋 전량이든 같은 절단점을 받는다. K 사다리 전체를 내되 기본
     K 를 표시한다 — `stratified_scoring` 게이트가 기본 K 의 표와 지름길 행을 본다.
     구간별 상세는 `stratified_compare.py --ladder` 가 낸다(여기서는 표만).
@@ -339,7 +339,7 @@ def threshold_independent_block(params: ScoringParams, pop: Population, det_tags
     **"임계 독립"의 정확한 범위**(22번 과제 2가 요구한 주석): 운용 conf 임계에는 독립이다.
     그러나 아래에는 **여전히 의존한다** — 이 값들을 "모든 설정에 불변"으로 읽으면 안 된다.
 
-    1. **export 하한 자체**(`conf_floor`, C 가 0.01 로 내보냈다). 그 아래 박스는 존재하지 않는다
+    1. **export 하한 자체**(`conf_floor`, 학습·추론 측이 0.01 로 내보냈다). 그 아래 박스는 존재하지 않는다
     2. **NMS IoU**(Ultralytics 기본값) — 추론 시점에 이미 적용돼 레코드에 반영돼 있다
     3. **매칭 IoU**(mAP@50 은 0.50, mAP@50:95 는 0.50~0.95 평균)
     4. **`max_det`**(300) — 이미지당 상한에 걸리면 재현율 꼬리가 잘린다
@@ -956,7 +956,7 @@ def cmd_score(args) -> int:
 def cmd_gate(args) -> int:
     """게이트 상수만 갈아 끼워 다섯 칸을 다시 판정한다. 채점 자체는 건드리지 않는다.
 
-    A 의 content-free 천장 재산출이 도착하면 `--gate <값>` 한 번, 혹은
+    데이터 처리 측의 content-free 천장 재산출이 도착하면 `--gate <값>` 한 번, 혹은
     `configs/base.yaml` 에 키가 생기면 플래그 없이도 그 값으로 돈다.
     """
     params = params_from_args(args)

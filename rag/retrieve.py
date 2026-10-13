@@ -28,15 +28,15 @@ NO_CLAUSE = "해당 조항 없음"
 class Chunk:
     """조항 단위 청크. 고정 길이 분할을 쓰지 않는다 — 조항 경계가 깨진다.
 
-    메타데이터는 `corpus/derived/chunk_meta.jsonl`(B의 `derive_chunk_meta` 산출물)에서
-    온다. D가 `limits.csv`를 직접 순회해 만들지 않는다.
+    메타데이터는 `corpus/derived/chunk_meta.jsonl`(코퍼스 측의 `derive_chunk_meta` 산출물)에서
+    온다. 평가 측이 `limits.csv`를 직접 순회해 만들지 않는다.
     """
 
     chunk_id: str
     doc: str
     clause_id: str
     inspection_methods: tuple[str, ...] = ()
-    """`RT` / `VT` / `ALL` 의 합집합. 계약 #3 변경(게이트 #13 결정 L)이며 B의
+    """`RT` / `VT` / `ALL` 의 합집합. 계약 #3 변경(게이트 #13 결정 L)이며 코퍼스 측의
     `derive_chunk_meta` 가 조항 단위로 집계해 내려보낸다(복수형인 이유).
 
     **같은 결함 코드라도 표면 기공과 내부 기공은 허용치가 다르다** — 축이 없으면 잘못된
@@ -103,7 +103,7 @@ def _level_matches(
 ) -> bool:
     """등급 어휘 매칭. **정확 매칭을 그대로 쓰면 IACS 유래 청크가 전부 탈락한다.**
 
-    B가 `quality_level`을 단일 `B/C/D` enum에서 스킴 스코프 값으로 바꿨다 — IACS Rec.47은
+    코퍼스 측이 `quality_level`을 단일 `B/C/D` enum에서 스킴 스코프 값으로 바꿨다 — IACS Rec.47은
     `STD`/`LIM` 2단, KS는 류 등급, 무등급 단일 한계 조항은 `ALL`이다. 질의의 품질수준은
     iso5817 계열 가정값이므로 `grade_map[scheme][질의 수준] ∋ chunk 수준`을 경유한다.
     """
@@ -252,9 +252,9 @@ class IndexStats:
 
 
 def chunk_from_meta(meta: Mapping[str, object], text: str = "") -> Chunk:
-    """B의 `derive_chunk_meta()` 항목 하나를 청크로 옮긴다.
+    """코퍼스 측의 `derive_chunk_meta()` 항목 하나를 청크로 옮긴다.
 
-    **D가 `limits.csv` 를 직접 순회해 메타를 만들지 않는다**(B 스펙 §1-4 금지 규칙 ④).
+    **평가 측이 `limits.csv` 를 직접 순회해 메타를 만들지 않는다**(코퍼스 스펙 §1-4 금지 규칙 ④).
     필드명이 어긋나면 축 필터가 조용히 통과해 버리므로, 여기가 유일한 변환 지점이다.
     """
     def _dec(key: str) -> Decimal | None:

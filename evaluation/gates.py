@@ -16,7 +16,7 @@
 (`tests/test_gate_registry.py`) — 레지스트리 자체가 무이빨이 되는 것을 막는 장치다.
 
 블로킹 여부는 게이트마다 다르다. 지금 `gate_status: 판정_대기` 인 항목은 **기록하되
-차단하지 않는다**(76번 §1-4, A 가 박아 둔 스위치). 차단하지 않는 것과 재지 않는 것은
+차단하지 않는다**(76번 §1-4, 데이터 처리 측이 박아 둔 스위치). 차단하지 않는 것과 재지 않는 것은
 다르다 — 재고, 기록하고, 차단만 보류한다.
 """
 
@@ -166,7 +166,7 @@ def _gate_tags(ctx: GateContext) -> GateResult:
 def _gate_coord(ctx: GateContext) -> GateResult:
     """다섯 칸이 **같은 좌표 규약**을 선언하는가 (판정 1, main 47c4dbc).
 
-    D 는 좌표를 변환하지 않는다. 그래서 이 게이트가 좌표 축의 유일한 방어선이다 —
+    평가 모듈은 좌표를 변환하지 않는다. 그래서 이 게이트가 좌표 축의 유일한 방어선이다 —
     규약이 갈린 레코드가 같은 표에 실리는 것이 함정 #4 다.
     """
     if not ctx.records_by_cell or not ctx.expected_coord_space:
@@ -213,7 +213,7 @@ def _gate_population(ctx: GateContext) -> GateResult:
 def _gate_content_free(ctx: GateContext) -> GateResult:
     """content-free 천장 대조. `gate_status` 에 따라 차단 여부가 갈린다.
 
-    `판정_대기` 면 **재고 기록하되 차단하지 않는다** — A 가 76번 §1-4 에서 "값은
+    `판정_대기` 면 **재고 기록하되 차단하지 않는다** — 데이터 처리 측이 76번 §1-4 에서 "값은
     등록하되 자동 차단에는 쓰지 않는다"로 박아 둔 스위치다. 판정 6(을안)이
     층화 채점 병기를 정했으므로, 전역 Macro-F1 에 대한 이 선은 **한계 서술용**이다.
     """

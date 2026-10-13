@@ -46,7 +46,7 @@ ALLOWED_IMPORTS = {"__future__", "hashlib", "json", "math", "dataclasses", "typi
 # --------------------------------------------------------------------------
 
 def test_coords_는_표준라이브러리만_import한다():
-    """의존성 제로 리프 원칙. torch·transformers·numpy 가 들어오면 D가 import할 수 없다."""
+    """의존성 제로 리프 원칙. torch·transformers·numpy 가 들어오면 평가 측이 import할 수 없다."""
     tree = ast.parse(COORDS_PY.read_text(encoding="utf-8"))
     imported: set[str] = set()
     for node in ast.walk(tree):
@@ -91,7 +91,7 @@ def test_coord_cfg_hash_는_세_입력을_모두_반영한다():
     # (3) 소스 해시가 입력에 실제로 들어가 있다
     assert coords_source_sha256() in _hash_payload_probe()
 
-    # (4) 같은 입력이면 같은 값 (C와 D가 같은 값을 계산해야 한다)
+    # (4) 같은 입력이면 같은 값 (학습·추론 측과 평가 측이 같은 값을 계산해야 한다)
     assert coord_cfg_hash(base) == coord_cfg_hash(base)
 
 
@@ -129,7 +129,7 @@ def _load_fixtures() -> list[dict]:
 
 @pytest.mark.parametrize("case", _load_fixtures(), ids=lambda c: c["id"])
 def test_골든_픽스처(case: dict):
-    """손계산 기대값과 대조한다. D가 같은 픽스처를 독립 재실행한다(계약 #4 G9)."""
+    """손계산 기대값과 대조한다. 평가 측이 같은 픽스처를 독립 재실행한다(계약 #4 G9)."""
     tol = 1e-9
     cfg = CoordCfg(**case["cfg"])
     geom = ImageGeom(**case["geom"])

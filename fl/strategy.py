@@ -50,7 +50,7 @@ CONFIG_KEY = "config"
 #:
 #: 한 키에 두 의미를 실으면 언젠가 다시 충돌한다. 가중은 이 키, 표본 수는
 #: "num-examples", 감독 토큰은 "supervised-tokens" — 세 값이 항상 따로 실린다.
-#: 검출은 가중 == 표본 수, 통합형은 가중 == 감독 토큰 총합(총괄 판정 2)이다.
+#: 검출은 가중 == 표본 수, 통합형은 가중 == 감독 토큰 총합(판정 2)이다.
 WEIGHT_KEY = "fedavg-weight"
 
 #: `MetricRecord` 는 `int | float | list` 만 받는다(실측 — str·bool 거부).

@@ -171,7 +171,7 @@ def parse_plan(raw: bytes, *, purpose: str, path: Path | None = None) -> Plan:
             bad.append("gen.target_n")
         if plan.get("train.central_rows") != "union" or plan.get("train.fed_rows") != "same_as_local":
             bad.append("train.central_rows · train.fed_rows")
-    if purpose == "frame_diag":                                  # 진단 — 중앙 한 칸 · 중앙 풀에서 바로(총괄 결정 20) · 박스 수 목표
+    if purpose == "frame_diag":                                  # 진단 — 중앙 한 칸 · 중앙 풀에서 바로(결정 20) · 박스 수 목표
         if not isinstance(rows, Mapping) or set(rows) != {"central"} or not _int(rows.get("central"), low=1):
             bad.append("train.rows")
         if plan.get("train.central_rows") != "direct":

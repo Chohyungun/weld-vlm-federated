@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="실제 로컬 산출물과 서버 관측 스냅샷을 연결한 읽기 전용 용접 AI 연구 대시보드">
+  <title>Weld Lab · 연구 관제실</title>
+  <link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+<aside class="sidebar">
+  <a class="brand" href="#overview"><span class="brand-symbol">W<span>·</span></span><span>WELD LAB<small>RESEARCH OBSERVATORY</small></span></a>
+  <div class="workspace-label">WORKSPACE <span>01</span></div>
+  <nav aria-label="주 메뉴">
+    <a href="#overview" class="active"><span>◉</span> 작업 개요 <b>01</b></a>
+    <a href="#data"><span>▦</span> 데이터 탐색 <b>02</b></a>
+    <a href="#results"><span>▥</span> 실행 결과 <b>03</b></a>
+    <a href="#events"><span>≡</span> 실행 기록 <b>04</b></a>
+  </nav>
+  <div class="sidebar-run"><span class="mini-label">ACTIVE CORPUS</span><strong>영상 설명 생성</strong><p>Qwen → Phi → 사람 검수</p><span class="tag dark">IMAGE REPORT ONLY</span></div>
+  <div class="sidebar-bottom"><span class="lock-icon">◇</span><div>로컬 · 읽기 전용<small>데이터는 이 컴퓨터에만 머뭅니다</small></div></div>
+</aside>
+<main id="main">
+  <header class="topbar"><span class="breadcrumb">연구 워크스페이스 <span>/</span> 용접 영상 설명</span><div><span id="connection" class="connection">자료 확인 중</span><button id="refresh" class="button small">새로고침 ↻</button></div></header>
+  <div id="error" class="error-banner" hidden role="alert"></div>
+  <section id="overview" class="section">
+    <div class="page-heading"><div><p class="eyebrow">EXPERIMENT CONTROL ROOM</p><h1>실험이 보이는 곳<span>.</span></h1><p class="subtitle">데이터에서 생성 결과까지, 실제 실행의 근거를 한눈에 확인하세요.</p></div><div class="run-badge"><span>RUN ID</span><code id="run-id">불러오는 중…</code><small id="observed">실제 관측 시각 확인 중</small></div></div>
+    <div class="notice" id="freshness"><span>ⓘ</span><div>저장된 기록을 읽고 있습니다.</div></div>
+    <div class="stats-grid" id="stats"><article class="stat"><p>연결된 작업</p><strong>—</strong><small>자료 불러오는 중</small></article></div>
+    <article class="panel pipeline-panel"><div class="panel-heading"><div><p class="eyebrow">PIPELINE</p><h2>작업 수행 과정</h2></div><span class="tag amber">검수 · 릴리스 보류</span></div><div id="pipeline" class="pipeline"></div><div class="hold-note"><span>!</span><p><strong>자동 판정 완료는 학습 품질 승인이 아닙니다.</strong> 결함 설명의 치수·두께 한계 문장 누락과 Phi의 무결함 과탈락 가능성을 별도 검토해야 합니다. 현재 학습은 시작하지 않았습니다.</p></div></article>
+    <div class="overview-grid"><article class="panel"><div class="panel-heading"><div><p class="eyebrow">DATA COMPOSITION</p><h2>어떤 데이터인가요?</h2></div><a href="#data" class="text-link">데이터 보기 ↗</a></div><div class="composition"><div id="split-donut" class="donut-wrap"></div><div id="split-legend" class="legend"></div></div><div id="clients" class="client-bars"></div><p class="footnote">train / val 명부만 연결 · 평가용 이미지는 제공하지 않습니다.</p></article><article class="panel budget-panel"><div class="panel-heading"><div><p class="eyebrow">BUDGET GUARDRAIL</p><h2>GPU 운영 안전선</h2></div><span class="tag">₩100,000</span></div><div class="budget-value"><strong id="cost">—</strong><span>/ 100,000원</span></div><div class="meter"><span id="cost-bar"></span></div><div class="budget-detail"><div><span>추정 기준</span><strong id="cost-basis">보수적 운영 추정</strong></div><div><span>관측 시각</span><strong id="cost-time">—</strong></div><div><span>GPU 관측</span><strong id="gpu">라이브 정보 없음</strong></div></div><p class="footnote">청구서 확정액이 아닙니다. 스토리지 비용은 실행 종료 후에도 남을 수 있습니다.</p></article></div>
+  </section>
+  <section id="data" class="section"><div class="section-title"><div><p class="eyebrow">DATA EXPLORER</p><h2>데이터와 설명을 나란히</h2><p>고정 명부의 train/val 입력 영상, 결함 주석, 생성 문장과 판정 사유를 함께 살펴봅니다.</p></div><span class="tag">원본 수정 없음</span></div>
+    <div class="panel explorer"><div class="filters"><label class="search-field"><span>⌕</span><input id="search" type="search" placeholder="ID, 결함 이름, 생성 문장 검색" aria-label="샘플 검색"></label><label><span class="sr-only">분할</span><select id="split"><option value="">전체 분할</option><option>train</option><option>val</option></select></label><label><span class="sr-only">클라이언트</span><select id="client"><option value="">전체 클라이언트</option><option>C1</option><option>C2</option><option>C3</option></select></label><label><span class="sr-only">결함 유무</span><select id="defect"><option value="">결함 · 무결함</option><option value="defect">결함 있음</option><option value="normal">무결함</option></select></label><label><span class="sr-only">판정 상태</span><select id="judge"><option value="">전체 판정</option><option value="pending">미회수 / 미판정</option><option value="flagged">검토 필요</option><option value="all_true">3항목 true</option><option value="parse_error">파싱 오류</option></select></label></div>
+    <div class="explorer-layout"><div class="sample-list-side"><div class="list-heading"><strong id="sample-count">—개</strong><span>회수 샘플</span></div><div id="sample-list" class="sample-list" aria-label="샘플 목록"></div><div class="pagination"><button id="prev" class="button small">← 이전</button><span id="page-info">1</span><button id="next" class="button small">다음 →</button></div></div><div id="sample-detail" class="sample-detail"><div class="empty-state">샘플을 선택하면 영상과 설명이 표시됩니다.</div></div></div></div>
+    <article class="panel distribution-panel"><div class="panel-heading"><div><p class="eyebrow">LABEL DISTRIBUTION</p><h2>결함 이름별 데이터 분포</h2></div><span class="muted">작업행별 해당 결함 포함 수 · 중복 포함 가능</span></div><div id="class-bars" class="class-bars"></div></article>
+  </section>
+  <section id="results" class="section"><div class="section-title"><div><p class="eyebrow">RUN RESULTS</p><h2>실행 결과, 숫자 뒤의 근거</h2><p>저장된 샤드에서 직접 계산한 처리 지표입니다. 학습 성능과 구분합니다.</p></div><span class="tag">검증된 회수 묶음</span></div><div class="results-grid"><article class="panel"><div class="panel-heading"><div><h3>샤드별 처리 시간</h3><p class="muted">샤드 처리 wall time · 모델 로딩 제외</p></div><div class="chart-legend"><span>● 생성</span><span>● 판정</span></div></div><div id="throughput-chart"></div><div id="stage-metrics" class="metric-pairs"></div></article><article class="panel"><div class="panel-heading"><div><h3>Phi 자동 판정 분포</h3><p class="muted">로컬에 회수된 행만 집계</p></div></div><div id="judge-bars"></div><div class="small-warning">세 항목 true도 사람 검수·정식 릴리스를 대신하지 않습니다. 무결함 예외와 제한 설명 누락 검토는 별도입니다.</div></article></div><article class="panel training-panel"><div class="training-icon">◇</div><div><p class="eyebrow">TRAINING & EVALUATION</p><h3>학습 성능은 아직 표시할 수 없습니다</h3><p id="training-note">현재 연결된 run은 학습 전입니다.</p><div class="gate-tags"><span>권리 확인</span><span>사람 검수</span><span>정식 릴리스</span><span>실험 등록</span><span>조기 좌표 점검</span></div></div><span class="tag amber">대기</span></article></section>
+  <section id="events" class="section"><div class="section-title"><div><p class="eyebrow">AUDIT TRAIL</p><h2>실행 기록과 자료 출처</h2><p>샤드 재개, 종료 코드, 저장 확인을 시간순으로 추적합니다.</p></div><span class="tag">민감한 접속 정보 제외</span></div><article class="panel event-panel"><div class="table-scroll"><table><thead><tr><th>관측 시각 (KST)</th><th>이벤트</th><th>단계</th><th>샤드</th><th>종료 코드</th><th>비고</th></tr></thead><tbody id="events-table"></tbody></table></div></article><div id="evidence" class="evidence-grid"></div></section>
+  <footer><span>WELD LAB / LOCAL OBSERVATORY</span><p>실행 권한 없이 읽기만 합니다. 이 화면에서 GPU 작업·학습을 시작하거나 데이터를 변경할 수 없습니다.</p><small id="identity"></small></footer>
+</main>
+</body></html>

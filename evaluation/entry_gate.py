@@ -300,3 +300,21 @@ def check_list_split(ids: Iterable[str], meta: ManifestMeta, purpose: str, *, wh
     if unknown or wrong:
         raise EntryRejected("LIST_SPLIT", f"{where}: 기준 분할 {want!r} 밖의 id — 매니페스트에 없음 {unknown}개 · "
                                           f"다른 분할 {wrong}개")
+
+
+def check_main_full_eval(gen, pop, meta: ManifestMeta) -> None:
+    """본실험 주 분석의 **전량 계약**(07번 §40). `gen` · `pop` 은 `validate_eval_list` 가 만든 목록이다.
+
+    주채점 목록은 생성 목록과 **같은 파일**(정규 바이트의 sha256)이고, 그 집합은 검증한 동결 매니페스트의 `split == eval`
+    id 전체다. 기대 집합은 호출자의 목록이 아니라 매니페스트에서 만든다. 부분집합 재채점은 주 분석의 경로가 아니다 —
+    중복 제외 민감도는 별도 역할이다(§40). 사유에는 건수만 싣고 id 는 싣지 않는다.
+    """
+    if pop.file_sha256 != gen.file_sha256:
+        raise EntryRejected("MAIN_LIST_NOT_IDENTICAL", "본실험의 주채점 목록은 생성 목록과 같은 파일이어야 한다 — "
+                                                       "부분집합 · 다른 순서는 주 분석의 목록이 아니다")
+    want = {i for i, s in meta.split_of.items() if s == "eval"}
+    missing, extra = len(want - gen.id_set), len(gen.id_set - want)
+    if missing or extra:
+        raise EntryRejected("MAIN_LIST_NOT_FULL_EVAL", f"본실험 생성 목록이 동결 매니페스트의 평가 행 전체가 아니다 — "
+                                                       f"빠짐 {missing}개 · 평가 행 밖 {extra}개 · 목록 {len(gen)}개 · "
+                                                       f"평가 행 {len(want)}개")

@@ -117,7 +117,7 @@ def _denied(found):
 
 
 def test_내리다_권한이_거부돼도_원래_단계의_실패를_덮지_않고_정리_실패로_적는다():
-    """`stop()` 이 `AccessDenied` 를 내도 잔류를 다시 보고, 원래 단계의 실패를 그대로 올린다(외부 검토 회신 `rehearsal_blockers` 의 1)."""
+    """`stop()` 이 `AccessDenied` 를 내도 잔류를 다시 보고, 원래 단계의 실패를 그대로 올린다(검토 기록 `rehearsal_blockers` 의 1)."""
     left = [{"pid": 7, "name": "flower-superlink.exe", "kind": "target"}]
     seen = {"n": 0}
 

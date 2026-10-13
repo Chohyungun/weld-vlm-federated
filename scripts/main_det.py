@@ -1,6 +1,6 @@
 """본실험 검출 3칸 실행기 — ② 분리·로컬 / ③ 분리·중앙 / ④ 분리·연합 (R=50·E=2·N=100).
 
-2026-09-03 총괄 착수 승인(의사결정로그). 파일럿·게이트에서 산 규칙 전부를 배선한다:
+2026-09-03 착수 승인(의사결정로그). 파일럿·게이트에서 산 규칙 전부를 배선한다:
 
 - **분리 실행 + epoch 경계 재개.** 모든 스테이지가 완료 마커로 멱등이라, 죽으면
   같은 명령을 다시 띄우는 것이 곧 재개다(`detection/resume.py` 경유).
@@ -16,8 +16,8 @@
 - 조기 종료 금지(N=100 연속·last 채점) · 원자 로그 · 회계 finally · `gates_evaluated`
   기록 확인(첫 시드 첫 칸에서 멈춰 검사) · 스테이지 사이 GPU/커밋 여유 대기
   (다른 작업과의 경합으로 죽은 §4-6 의 교훈).
-- **detections.jsonl 원시 출력 계약(13_spec_D §2-3)을 C 가 낸다** — D 가 임시 추론을
-  다시 하는 일이 없어야 한다(74번 M11). 추론 진입점은 D 의 `load_yolo_from_npz`
+- **detections.jsonl 원시 출력 계약(13_spec_D §2-3)을 학습·추론 측이 낸다** — 평가 측이 임시 추론을
+  다시 하는 일이 없어야 한다(74번 M11). 추론 진입점은 평가 측의 `load_yolo_from_npz`
   (fp32 · model_cfg 명시) 하나다.
 
 ## 시드
@@ -55,7 +55,7 @@ VIEWS = OUT / "views"
 
 MODEL = "yolo11s.pt"
 PROFILE = "main"
-#: 총괄 확정(의사결정로그 2026-09-03). configs 에 `experiment` 블록이 등록되면 대조한다.
+#: 확정(의사결정로그 2026-09-03). configs 에 `experiment` 블록이 등록되면 대조한다.
 R, E = 50, 2
 N = R * E
 CLIENTS = ("C1", "C2", "C3")
@@ -72,7 +72,7 @@ def registered_seeds() -> dict[int, int | None]:
 
     시드 2·3 값을 여기서 지어내지 않는다. 등록 전에 돌리기 시작하면 "결과를 보고 시드를
     고르는" 경로가 열린다 — 사전등록 상수가 어느 모집단에서도 재현되지 않던 사고(80번 D2)
-    와 같은 부류다. A 의 configs 등록(`experiment.seeds`)을 기다린다.
+    와 같은 부류다. 데이터 처리 측의 configs 등록(`experiment.seeds`)을 기다린다.
     """
     seeds: dict[int, int | None] = {1: SEED1, 2: None, 3: None}
     cfg_path = Path("configs/base.yaml")
@@ -482,9 +482,9 @@ def _export_targets(seed_no: int) -> list[tuple[str, Path]]:
 def cmd_export(seed_no: int) -> None:
     """평가셋 전량 추론 → `{tag}.detections.jsonl` (§2-3).
 
-    - 추론 진입점은 D 의 `load_yolo_from_npz` **하나**(fp32, model_cfg 명시 — .half() 금지).
-    - `conf = CONF_FLOOR(0.01)` 하한 추론으로 낸다. D 가 어떤 임계로든 걸러 쓸 수 있고
-      (`filter_by_conf` 동치는 D 가 비트 대조로 실측), 채점 임계를 C 가 선점하지 않는다.
+    - 추론 진입점은 평가 측의 `load_yolo_from_npz` **하나**(fp32, model_cfg 명시 — .half() 금지).
+    - `conf = CONF_FLOOR(0.01)` 하한 추론으로 낸다. 평가 측이 어떤 임계로든 걸러 쓸 수 있고
+      (`filter_by_conf` 동치는 평가 측이 비트 대조로 실측), 채점 임계를 학습·추론 측이 선점하지 않는다.
     - CPU 고정 — 74번 M11(±2박스 어긋남)의 재발을 막으려면 산출 장치가 기록·고정돼야 한다.
     - 부속 meta 에 checkpoint sha256·조건 전량을 남긴다.
     """

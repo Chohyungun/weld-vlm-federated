@@ -16,7 +16,7 @@
    제외(아래 8)를 먼저 걷는다. 진단이면 페어 행의 결함이 하나 이상이고, `gen.max_target_tokens` 가 값이면 타깃 길이가 그 이하인 장만 남긴다.
 2. 층은 `strata_key`, 묶음은 `group_id` 다. 층 안에서 묶음을 `sha256(f"{group_id}|{sampling_seed}")` 의 16진 문자열 오름차순으로 세운다.
    묶음을 넣으면 그 묶음의 남은 후보 장을 모두 넣는다.
-3. 3~5 는 **2판 §13-2(3판 개정 — 총괄 결정 04 의 2절)** 를 따른다 — 최소 단계(상한 검사 없이, 끝까지) → 나머지를 최대 잔여 방식으로 나눈 정수 몫
+3. 3~5 는 **2판 §13-2(3판 개정 — 결정 04 의 2절)** 를 따른다 — 최소 단계(상한 검사 없이, 끝까지) → 나머지를 최대 잔여 방식으로 나눈 정수 몫
    (잔여가 같으면 층 키 오름차순, 정확한 유리수) → 1차 채우기(층 순서대로, 층마다 이 단계에서 넣은 양이 몫에 닿을 때까지, 합이 목표에 닿으면 모두 멈춘다,
    장 수가 상한을 넘는 묶음은 버린다) → 2차 채우기(몫을 보지 않고 층 순서 → 층 안 순서) → 그래도 미달이면 거부.
 6. 학습 행은 참여자마다 페어의 train 행 가운데 매니페스트의 train 행인 것(제외를 걷은 뒤)에서 뽑는다. 묶음을 2 의 순서로 넣어 행 수가
@@ -28,14 +28,14 @@
    train · val 장을 모두 뺀다(묶음 간선을 함께 이으므로 성분은 묶음을 쪼개지 않는다). 매니페스트에 없는 id 가 간선에 있으면 입력 오류로 거부한다(§13-1 의 ①).
    기록하는 수는 train · val 장을 품은 그런 성분의 수, 그 안의 train · val 묶음 수와 장 수다.
 9. 낸 목록(생성 · 학습)과 평가 id 의 교집합이 0 이 아니면 쓰지 않는다.
-10. **중앙 직접 뽑기 — 총괄 결정 20(층화).** 후보는 세 참여자의 학습 행 전부(6 의 거름과 제외를 지난 것)다. 층은 `strata_key`,
+10. **중앙 직접 뽑기 — 결정 20(층화).** 후보는 세 참여자의 학습 행 전부(6 의 거름과 제외를 지난 것)다. 층은 `strata_key`,
     묶음은 `group_id` 다. 층의 몫은 목표 T 를 **층의 행 수**에 비례해 최대 잔여 방식으로 나눈 정수다(동률은 층 키 오름차순 — 3 과 같은 함수).
     층 순서(키 오름차순)대로, 층 안에서는 묶음을 `sha256(f"{group_id}|{sampling_seed}|central_direct")` 의 16진 문자열 오름차순
     (같으면 `group_id` 오름차순)으로 넣는다 — 생성 · 참여자 목록과 **다른 흐름**이다. 그 층에서 넣은 행이 몫 이상이 되면 다음 층으로 간다.
     마지막 묶음이 몫을 넘으면 그 묶음까지 넣고 다음 층의 몫에서 빼지 않는다(넘은 수는 기록에 싣는다). 몫이 0 인 층은 넣지 않는다.
     T 가 후보 행 수보다 크면 거부한다(몫은 층의 행 수를 넘지 않으므로 그 밖에는 모자랄 수 없다). 한 묶음의 행이 두 층에 걸치면 입력 오류로
     거부한다 — 층은 묶음 대표 클래스라 묶음 안에서 같아야 한다. `train.avoid_multiple_of_accum` 은 이 뽑기에서 정하지 않았다 — 참이면 거부한다.
-11. **빈 층 — 총괄 결정 21 의 3 · 4 와 그 덧붙임(2판 §14 · §14-1 · §14-2).** 제외(8) **전에는** 후보가 있었는데(1 의 내용 거름 — 결함 · 타깃 길이 —
+11. **빈 층 — 결정 21 의 3 · 4 와 그 덧붙임(2판 §14 · §14-1 · §14-2).** 제외(8) **전에는** 후보가 있었는데(1 의 내용 거름 — 결함 · 타깃 길이 —
     을 지난 장) 제외 **뒤에** 후보 묶음이 0 이 된 층이다. 리허설의 생성 목록은 그 층을 **다른 곳에서도, 남은 층으로도 채우지 않는다** —
     **층별 몫은 빈 층이 있기 전의 배분 그대로다.** 빈 층에만 제외 전 후보를 돌려 둔 세계(그 층이 비지 않았을 세계)에서 3 의 절차를 목표 T 로
     한 번 돌리고, 빈 층에서 뽑힌 장만 걷어 낸다 — 남은 층의 선택은 그 세계와 같고(최소 단계 · 몫 · 상한 · 2차 채우기 모두), 빈 층의 몫만 0 이다.
@@ -102,7 +102,7 @@ def order_key(group_id: str, seed: int) -> str:
     return hashlib.sha256(f"{group_id}|{seed}".encode()).hexdigest()
 
 
-#: 중앙 직접 뽑기의 순서 흐름 — 생성 · 참여자 목록의 순서(`order_key`)와 다른 흐름이다(총괄 결정 20 의 시드 행).
+#: 중앙 직접 뽑기의 순서 흐름 — 생성 · 참여자 목록의 순서(`order_key`)와 다른 흐름이다(결정 20 의 시드 행).
 DIRECT_STREAM = "central_direct"
 
 
@@ -263,7 +263,7 @@ def sample_train(rows: Sequence[Mapping[str, Any]], *, group_of: Mapping[str, st
 
 def sample_central_direct(rows: Sequence[Mapping[str, Any]], *, group_of: Mapping[str, str],
                           stratum_of: Mapping[str, str], seed: int, target: int) -> tuple[set[str], dict]:
-    """읽기 10 — 중앙 풀에서 층 · 묶음 단위로 T 행(총괄 결정 20). 돌려주는 것은 뽑은 `image_id` 집합과 층별 기록이다."""
+    """읽기 10 — 중앙 풀에서 층 · 묶음 단위로 T 행(결정 20). 돌려주는 것은 뽑은 `image_id` 집합과 층별 기록이다."""
     strata: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
     seen_stratum: dict[str, str] = {}
     for r in rows:
@@ -291,7 +291,7 @@ def sample_central_direct(rows: Sequence[Mapping[str, Any]], *, group_of: Mappin
     return set(picked), rec
 
 
-#: 진단 목적 목록의 보류(총괄 결정 21 의 4 와 그 덧붙임의 2) — 풀릴 때까지 참이다. 계획 · 명령줄 · 환경으로는 바꾸지 않는다.
+#: 진단 목적 목록의 보류(결정 21 의 4 와 그 덧붙임의 2) — 풀릴 때까지 참이다. 계획 · 명령줄 · 환경으로는 바꾸지 않는다.
 DIAG_LISTS_ON_HOLD = True
 
 
@@ -354,7 +354,7 @@ def build_lists(manifest: Sequence[Mapping[str, Any]], pairs: Sequence[Mapping[s
     by_boxes = plan.get("gen.target_boxes") is not None
     target = int(plan.get("gen.target_boxes") if by_boxes else plan.get("gen.target_n"))
     # 빈 층의 몫은 비운다(결정 21 덧붙임의 1) — 층별 몫은 빈 층이 있기 전의 배분 그대로: 빈 층에만 제외 전 후보를 돌려 둔 세계에서
-    # 목표 T 로 뽑고 빈 층의 장만 걷는다(남은 층은 다시 나누지 않는다 — 외부 검토 회신 emptystrata2 의 1)
+    # 목표 T 로 뽑고 빈 층의 장만 걷는다(남은 층은 다시 나누지 않는다 — 검토 기록 emptystrata2 의 1)
     phantom = [c for c in pre_cands if str(c["strata_key"]) in set(empty)]
     phantom_ids = {str(c["image_id"]) for c in phantom}
     picked = sample_gen(cands + phantom, seed=seed, target=target, by_boxes=by_boxes, max_n=int(plan.get("gen.max_n")),

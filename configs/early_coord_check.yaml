@@ -1,0 +1,96 @@
+# 조기 좌표 점검의 규칙 파일 — 목적 `early_coord_check`. 미니스펙 10번(3판, §14 까지)의 3 · 4 · 13 · 14절.
+#
+# **진단 규칙 파일(`configs/registration/frame_diag_rules-*.json`)과 꼴 · 이름 · digest 가 다르다.** 진단 경로는 이 파일을
+# 받지 않고(JSON 이 아니고 칸이 다르다) 이 파일을 읽는 쪽은 진단 규칙 파일을 받지 않는다(`kind` 가 다르다) — 시험이 고정한다.
+# 기본 설정에 병합하지 않는다. 읽는 쪽은 `evaluation/early_coord_check.load_rules` 하나다.
+#
+# **`null` 은 아직 없는 값이고, 그 값이 필요한 단계는 `null` 인 채로 시작하지 않는다(`require_ready`).**
+#   - `sequential_rule` · `discrimination`: 합성 순차 판별력(scripts/probe/early_coord_check_discrimination.py)을
+#     이 파일로 돌려 고른다 — 한 번 통과의 거짓 통과가 0 이면 `single`, 아니면 두 step 연속의 거짓 통과가 0 일 때
+#     `two_consecutive`, 둘 다 아니면 null 로 남기고 첫 점검 학습을 시작하지 않는다(14-2)
+#   - `max_attempts`: 허용 시도 수 — 첫 점검 실행 전에 적는다
+#
+# 한 번 커밋한 규칙은 고치지 않는다 — 고치면 새 판이다(`version`).
+kind: early_coord_check
+version: 3
+
+# 문턱과 계산 설정 — 진단 검사기(`evaluation/frame_diag.FrameRules`)의 칸 그대로. 값은 진단 문턱 제안 2판의 가운데에서
+# 출발했다(`sources.thresholds`). 표본 하한은 쌍 100 · 쌍의 묶음 20 · 장 묶음 20 · 장 50.
+rules:
+  n_img: 50
+  s_min: 0.7425
+  w_s: 0.11
+  w_r: 0.0075
+  w_mix: 0.0019
+  delta: 0.0055
+  trim: 0.0
+  n_boot: 400
+  boot_seed: 20261001
+  axis_ratio_width: 0.01
+  min_pairs: 100
+  se_divisor: 3.0
+  min_groups: 20
+  min_pair_groups: 20
+  min_valid_boot: 0.95
+
+steps: [100, 200, 400]   # 점검 step 목록 — 학습 쪽 11번의 권고를 받았다(맞춤표). 상한 400
+n: all                   # 표본 n — 대상 전부. 쌍 하한 때문에 줄이지 않는다
+gen_limit: 512           # 생성 길이 L — 대상의 타깃 거름과 같은 값. 본실험 생성 한도와 별개다
+
+sequential_rule: null
+max_attempts: null
+
+# 점검 실행의 시간 · 금액 상한과 단가(13-2 의 정본) — 비면 시작하지 않는다(`require_ready`).
+#   - 학습 쪽은 상한과 단가를 **여기서만** 읽는다. 실행 인자(--max-hours · --max-won)는 이보다 **좁히기만** 한다 — 넓히면
+#     거부한다(`evaluation.early_coord_check.effective_limits`). 단가를 실행 인자 · 코드 기본값으로 두지 않는다.
+#   - 금액 대조는 시간 × 단가 × 계수로 센다(`effective_limits` 의 `cost_krw_of_hour`).
+#   - max_hours · max_cost_krw 는 학습 쪽 비용표에서 골라 첫 점검 실행 전에 적는다.
+limits:
+  max_hours: null
+  max_cost_krw: null
+  price_krw_per_hour: 2500
+  price_source: "Elice Cloud G-NAHP-80(A100 80GB) 시간당 요금 — 사용자 확인 2026-10-07"
+  safety_factor: 1.2
+
+# 형식 관문 — step 마다 점검 생성의 파싱률이 이 값 아래면 그 step 은 판정 불가(사유: 형식). **제안 값**이다 — 파싱된 장에만
+# 기댄 판정이 선택 효과를 받지 않게 높게 둔다. 첫 점검 실행 전에 확인한다.
+format_gate:
+  min_parse_rate: 0.95
+
+# 비노출 — step 까지 소비한 학습 행에 그 장의 묶음이 하나도 나오지 않은 장. 대상 전부와 비노출 부분이 각각 통과해야 통과(14-1)
+unexposed:
+  unit: group
+  must_pass: true
+
+# 대상 — 봉인 페어의 학습 행 가운데 골격 결함이 하나 이상인 장, 그 가운데 R0 뒤 남은 장(13-1 의 m-4).
+# 목록의 정규형 바이트(evaluation/eval_list.canonical_bytes, 정렬) sha256 — 두 구현의 집계가 같은 값(12절)
+target_list:
+  sha256: b7986fb78b9726dc4b24c892f78691e465e7be39125b636a2c818f381338f58e
+  n: 417
+
+model_input_wh: [1280, 704]   # 등록의 상정 프로세서 입력 크기 — 배율 k = (1, 704/720)
+
+# 착수 허가(evaluation.early_coord_check.verify_permit)의 대조값은 출발 어댑터 · 착수 고정 · 점검 실행 신원 · 시드 번호 넷이다(3판).
+# 프로세서 설정은 따로 대조하지 않는다 — 착수 고정(PIN.json)의 `common` 칸이 통합형 설정 블록과 processor_kwargs 를 이미 묶는다.
+# 규칙 · 대상의 지문은 이 파일(rules 객체)에서 온다. seed 는 시드 번호(seed_index)다.
+
+model_free_checks: [original_size, processor_input, coord_roundtrip, gold_echo]
+
+# 네 칸을 여는 기준(의사결정로그 10-07) — 모델 없는 네 검사가 모두 통과이고 이 점검이 통과
+open_cells_when: model_free_all_pass_and_check_pass
+
+# 결과별 동작의 문장은 코드(`evaluation/early_coord_check.ACTIONS`)가 정본이다 — 여기는 가리키기만 한다
+actions: evaluation.early_coord_check.ACTIONS
+
+# 진단 검사기(evaluation/frame_diag.py) 바이트(LF)의 sha256 — 지금 검사기와 같아야 읽힌다
+checker_sha256: 993354398ca8d45225bf62422d39aed4754b817b44163bc1684ca66759b7c196
+
+discrimination: null
+
+sources:
+  thresholds: docs/dev_log/2026-09-30-리허설/14_진단문턱_제안_D_2판.json
+  thresholds_sha256: 071da36db95b0f3940f096d6d1ae11c18cb410c32428da1d5d9043ffbad768fd
+  minispec: docs/dev_log/2026-10-07-본실험코퍼스/10_미니스펙_조기좌표점검_D.md
+  minispec_sha256: 336b8868ad2a1417a51057b0a068e76e234eb94ba26da1756c93999a0e57682c
+  alignment_table_sha256: 9fdf43ca7b96377a4699d4439c814052d5505a7fa48593122f0c628576cfce37
+  decision: 의사결정로그 2026-10-07 — 네 칸을 여는 기준 · 본 중앙은 공통 출발점에서 새로
