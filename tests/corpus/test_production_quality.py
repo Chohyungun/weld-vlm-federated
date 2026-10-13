@@ -508,7 +508,7 @@ def test_형식_정규화는_행_출처_상태_AUDIT_에_남는다(tmp_path):
     a, st = read_json(tmp_path / "audit" / "AUDIT.json"), _status(tmp_path / "audit")
     assert result["status"] == "blocked" and a["blockers"] == ["non_transformers_backend"], a["blockers"]
     assert a["counts"]["accepted"] == 4 and a["errors"] == 0
-    assert a["audit_version"] == "quality_v9" and a["judge_parser_version"] == "parse_judge_v6"
+    assert a["audit_version"] == "quality_v10" and a["judge_parser_version"] == "parse_judge_v6"
     assert a["judge_identity"]["parser_schema"] == "judge_structured_v6"
     assert a["counts"]["judge_format_normalized"] == {"code_fence": 1, "string_boolean": 1}
     assert st["img-000"]["judge_format_normalized"] == ["code_fence"]
@@ -1836,7 +1836,7 @@ def test_v7_정상_행은_판정_모델_없이_결정적_영수증으로_수락�
     # 막는 사유는 시험용 판정 백엔드 하나뿐 — 정상 행 둘은 판정 행 없이 수락됐다(judge_missing 이 아니다)
     assert result["status"] == "blocked" and a["blockers"] == ["non_transformers_backend"], a["blockers"]
     assert a["counts"]["accepted"] == 4 and a["incomplete"] == 0 and a["complete"] is True
-    assert a["audit_version"] == "quality_v9" and a["judge_parser_version"] == "parse_judge_v7"
+    assert a["audit_version"] == "quality_v10" and a["judge_parser_version"] == "parse_judge_v7"
     assert a["judge_identity"]["parser_schema"] == "judge_structured_v7" and a["stages"]["judge"]["rows"] == 2
     policy_sha = _digest(src["identity_basis"]["policy_identity"])
     assert a["policy"]["identity_sha256"] == policy_sha == _digest(P.policy_identity_v7())
@@ -2054,3 +2054,188 @@ def test_구역별_소계는_결함_행의_대조된_잠긴_칸에서만_온다(
     assert Q._content_problems(broken, {"text": _zone_text(5, 1, 4)}) == ["untraceable_number"]
     # 정상 행 · 원문 QA 는 대상이 아니다
     assert Q._zone_subtotals(image_task(1, target=locked())) == set() == Q._zone_subtotals(qa_task(0))
+
+
+# --------------------------------------------------------------------------- 생성 v4 의 소비(정상 행 템플릿 · 결함 행 관찰 + 렌더)
+#
+# 생성 v4 실행을 실제로 만든다: 가짜 부모 실행 → `generation_policy.prepare_regeneration` → 가짜 모델로 생성(정상 행은 모델
+# 없이 템플릿) → v7 판정 쓰기 · 읽기 → 집계. 집계는 생성 행을 생성 정책의 렌더러로 다시 만들어 맞대고 관찰 구조 진단을
+# 다시 계산해 거른다(`generation:*`). 생성 v4 정책이 없는 트리에서는 돌지 않는다 — 생성 v4 와 한 게이트에서 돈다.
+
+G_V4 = callable(getattr(G, "render_generation_row", None))
+needs_v4 = pytest.mark.skipif(not G_V4, reason="생성 v4 정책(render_generation_row)이 이 트리에 없다 — 생성 v4 와 한 게이트에서 돈다")
+#: 결함 행 셋의 (사상표 키, 근거 칸, 쓸 칸 이름) — 근거가 서로 달라 생성 지시가 행마다 다르다
+V4_DEFECTS = (("porosity", "가운데-가운데", "영상 가운데"), ("crack", "위-왼쪽", "위쪽 왼쪽"),
+              ("porosity", "아래-오른쪽", "아래쪽 오른쪽"))
+
+
+def _v4_obs(i, form="good"):
+    key, _, zone = V4_DEFECTS[i]
+    name = LABELS[key].name_ko
+    if form == "one_sentence":                          # 결정적 정책은 지나지만 관찰 문장 하한(2)에 걸린다
+        return f"{name} 1개가 {zone}에 표시되어 있다."
+    if form == "polite":                                # 결정적 정책은 지나지만 "-다." 로 끝나지 않는다
+        return f"{name} 1개가 {zone}에 표시되어 있습니다. 주석만으로는 결함의 모양과 크기를 알 수 없습니다."
+    return f"{name} 1개가 {zone}에 표시되어 있다. 주석만으로는 결함의 모양과 크기를 알 수 없다."
+
+
+def _v4_parent(root, n_normal=2):
+    """생성 v4 의 부모 — 정상 n 행 · 결함 셋(근거는 v3 정식 꼴, 제한 문장은 생성 정책의 첫 꼴)."""
+    (root / ".git").mkdir(parents=True)
+    parent = root / "parent"
+    parent.mkdir()
+    tasks = [image_task(i, target=locked()) for i in range(n_normal)]
+    for j, (key, where, _) in enumerate(V4_DEFECTS):
+        t = image_task(n_normal + j, target=locked((key, [10 + 40 * j, 20, 30 + 40 * j, 40])))
+        t["evidence"]["defect_positions"] = [{"name": LABELS[key].name_ko, "where": where}]
+        tasks.append(t)
+    for t in tasks:
+        t["evidence"]["limitation"] = G.LIMITATION_FORMS[0]
+    config = {**_config(), "schema_version": 1, "recipe": "parent_fixture",
+              "inputs": {"expected_image_train": len(tasks), "expected_image_val": 0}}
+    raw = b"".join(canonical_bytes(t) + b"\n" for t in tasks)
+    (parent / "tasks.jsonl").write_bytes(raw)
+    basis = {"schema_version": 1, "config_sha256": _digest(config), "tasks_sha256": hashlib.sha256(raw).hexdigest(),
+             "pairs_sha256": "a" * 64, "pairs_snapshot_digest": "b" * 64, "manifest_snapshot_digest": "c" * 64,
+             "source_bank_sha256": "d" * 64, "prepare_code_sha256": "e" * 64}
+    run = {"schema_version": 1, "identity_basis": basis, "identity_sha256": _digest(basis), "config": config,
+           "config_sha256": basis["config_sha256"], "tasks_sha256": basis["tasks_sha256"],
+           "counts": {"tasks": len(tasks), "image_report": {"train": len(tasks), "val": 0},
+                      "source_qa": {"train": 0, "val": 0}, "by_kind_split_client": {"image_report|train|C1": len(tasks)}}}
+    (parent / "RUN.json").write_bytes(canonical_bytes(run) + b"\n")
+    (parent / "config.json").write_bytes(canonical_bytes(config) + b"\n")
+    return parent, config
+
+
+class V4Judge(V7Judge):
+    """v7 판정 모델의 가짜 — 결함 행 후보는 렌더된 글(관찰 + 제한 문장)이라 그 글로 행을 찾는다."""
+
+    rendered: ClassVar[dict] = {}
+
+    def generate_batch(self, prompts, system, deadline):
+        assert self.stage == "judge" and self.stopping
+        rows = []
+        for p in prompts:
+            request = json.loads(p)
+            assert request.get("row_class") == "defect", "결함 행만 판정 모델에 간다(생성 v4 는 영상 행뿐)"
+            tid = V4Judge.rendered[request["candidate"]]
+            V7Judge.calls.append(tid)
+            rows.append({"text": Fake.judge.get(tid, D7_TEXT), "finish_reason": "json_closed", "input_tokens": 10,
+                         "output_tokens": 10})
+        return rows
+
+
+def _v4_run(tmp_path, forms=("good", "good", "good")):
+    """생성 v4 실행 → 생성 → v7 판정 쓰기 · 읽기. (실행 디렉터리, 설정, 작업, 판정 출처)."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    root = tmp_path / "repo"
+    parent, config = _v4_parent(root)
+    run_dir = root / "generation-v4"
+    G.prepare_regeneration(parent, run_dir, config, repo_root=root)
+    config = read_json(run_dir / "config.json")
+    tasks = list(iter_jsonl(run_dir / "tasks.jsonl"))
+    by_index = {t["id"]: int(t["id"].split("-")[1]) - 2 for t in tasks if t["evidence"]["row_class"] == "defect"}
+    raw = {tid: _v4_obs(i, forms[i]) for tid, i in by_index.items()}
+    Fake._by_prompt = {t["prompt"]: t["id"] for t in tasks if t["prompt"]}
+    Fake.gen, Fake.judge, Fake.finish, Fake.backend_by_stage, V7Judge.calls = raw, {}, {}, {"judge": "fake"}, []
+    V4Judge.rendered = {G.normalize_observation(v) + G.RENDER_JOINER + G.LIMITATION_FORMS[0]: k for k, v in raw.items()}
+    assert I.run_stage(run_dir, "generate", config, backend_factory=Fake)["exit_code"] == 0
+    done = I.run_judge(run_dir, config, tmp_path / "judge-v7", judge_config=V7_JUDGE, policy_version="v7",
+                       backend_factory=V4Judge)
+    assert done["exit_code"] == 0, done
+    return run_dir, config, tasks, I.read_judge_source(run_dir, config, tmp_path / "judge-v7")
+
+
+def _v4_audit(tmp_path, forms=("good", "good", "good")):
+    run_dir, config, tasks, src = _v4_run(tmp_path, forms)
+    out = tmp_path / "audit"
+    audit_run(run_dir, config, out, judge_source=src)
+    return tasks, read_json(out / "AUDIT.json"), _status(out), {r["id"]: r for r in iter_jsonl(out / "dataset.jsonl")}
+
+
+@needs_v4
+def test_v4_정상_템플릿과_통과한_관찰은_수락되고_템플릿_행은_백엔드로_막지_않는다(tmp_path):
+    tasks, a, st, rows = _v4_audit(tmp_path)
+    normal = [t["id"] for t in tasks if t["evidence"]["row_class"] == "defect_free"]
+    defect = [t["id"] for t in tasks if t["id"] not in normal]
+    assert len(normal) == 2 and len(defect) == 3 and sorted(V7Judge.calls) == sorted(defect)
+    assert all(st[t["id"]]["status"] == "accepted" for t in tasks), {k: v["reasons"] for k, v in st.items()}
+    assert a["audit_version"] == "quality_v10"
+    assert a["generation_v4"] == {"template_rows": 2, "model_rows": 3, "format_normalized_rows": 0, "reasons": {}}
+    assert a["stages"]["generate"]["backends"] == {"template": 2, "transformers": 3}
+    assert "non_transformers_backend" in a["blockers"] and a["counts"]["accepted"] == 5   # 막는 것은 시험용 판정 모델 하나
+    for tid in normal:
+        gen = rows[tid]["provenance"]["generate"]
+        assert gen["backend"] == "template" == gen["generator"] and gen["family"] is None and gen["model_id"] is None
+        assert rows[tid]["messages"][1]["content"][0]["text"] == G.render_generation_row(next(t for t in tasks if t["id"] == tid))["text"]
+    assert {rows[tid]["provenance"]["generate"]["generator"] for tid in defect} == {"model"}
+
+
+@needs_v4
+@pytest.mark.parametrize("form,code", [("one_sentence", "generation:obs_sentence_count"),
+                                       ("polite", "generation:obs_sentence_end")])
+def test_v4_관찰_구조_진단에_걸린_결함_행은_결정적_정책을_지나도_수락되지_않는다(tmp_path, form, code):
+    tasks, a, st, rows = _v4_audit(tmp_path, ("good", form, "good"))
+    bad = next(t["id"] for t in tasks if t["id"].endswith(f"-{2 + 1:03d}"))
+    assert st[bad]["deterministic_pass"] is True                 # 결정적 정책 · 판정 모델은 통과 — 거르는 것은 관찰 진단뿐
+    assert st[bad]["status"] == "rejected" and st[bad]["reasons"] == [code] and bad not in rows
+    assert a["generation_v4"]["reasons"] == {code: 1} and "rejected_rows" in a["blockers"]
+
+
+@needs_v4
+@pytest.mark.parametrize("breaks", ["template_raw_text", "template_tokens", "model_problems_hidden", "generator_swapped"])
+def test_v4_다시_만든_행과_바이트가_다른_생성_행은_수락되지_않는다(tmp_path, monkeypatch, breaks):
+    """생성 읽기는 이미 렌더를 맞대지만, 집계는 그것을 믿지 않고 다시 맞댄다 — 읽기를 지나 들어온 행을 고쳐 쓴다.
+    글(`text`)은 그대로 두어 판정 영수증은 맞는 채로, 집계 자신의 대조만 시험한다."""
+    run_dir, config, tasks, src = _v4_run(tmp_path, ("good", "one_sentence", "good"))
+    normal = next(t["id"] for t in tasks if t["evidence"]["row_class"] == "defect_free")
+    hidden = next(t["id"] for t in tasks if t["id"].endswith("-003"))
+    real = Q.read_stage_rows
+
+    def tampered(run_dir_, stage, config_):
+        rows = real(run_dir_, stage, config_)
+        for r in rows:
+            if breaks == "template_raw_text" and r["id"] == normal:
+                r["raw_text"] = "표시된 결함이 없다."
+            elif breaks == "template_tokens" and r["id"] == normal:
+                r["output_tokens"] = 1
+            elif breaks == "model_problems_hidden" and r["id"] == hidden:
+                r["observation_problems"] = []                 # 행에 적힌 진단을 비워도 다시 계산한다
+            elif breaks == "generator_swapped" and r["id"] == normal:
+                r["generator"] = "model"
+        return rows
+
+    monkeypatch.setattr(Q, "read_stage_rows", tampered)
+    out = tmp_path / "audit"
+    audit_run(run_dir, config, out, judge_source=src)
+    st, rows = _status(out), {r["id"]: r for r in iter_jsonl(out / "dataset.jsonl")}
+    target = hidden if breaks == "model_problems_hidden" else normal
+    expected = {"template_raw_text": ["generation:template_mismatch"], "template_tokens": ["generation:template_mismatch"],
+                "model_problems_hidden": ["generation:render_mismatch", "generation:obs_sentence_count"],
+                "generator_swapped": ["generation:render_mismatch"]}[breaks]
+    assert st[target]["status"] == "rejected" and st[target]["reasons"][:len(expected)] == expected and target not in rows
+
+
+@needs_v4
+def test_v4_템플릿_글이_다른_정상_행은_템플릿_대조에서_걸린다():
+    """글이 바뀐 템플릿 행은 생성 읽기 · 판정 영수증이 먼저 막는다 — 집계 쪽 대조 함수도 같은 행을 거른다."""
+    task = image_task(0, target=locked())
+    task["evidence"]["limitation"] = G.LIMITATION_FORMS[0]
+    task["evidence"] = G.build_image_evidence_v2(task)
+    row = G.render_generation_row(task)
+    assert Q._generation_v4_problems(task, row) == []
+    other = G.NORMAL_ABSENCE_FORMS[1] + G.RENDER_JOINER + G.NORMAL_LIMITATION_FORMS[1]   # v7 계약 꼴이지만 템플릿 바이트가 아니다
+    assert Q._generation_v4_problems(task, {**row, "text": other}) == ["generation:template_mismatch"]
+    assert Q._generation_v4_problems(task, {**row, "generator": "copied"}) == ["generation:generator_unknown"]
+    # 결함 행 근거에 템플릿 꼴을 대면 렌더러가 거부한다 — 템플릿 대조 실패로 센다
+    d = image_task(1, target=locked(("porosity", [10, 20, 30, 40])))
+    d["evidence"]["limitation"] = G.LIMITATION_FORMS[0]
+    assert Q._generation_v4_problems(d, row) == ["generation:template_mismatch"]
+
+
+def test_v4_가_아닌_실행은_생성_대조를_하지_않고_v4_를_모르는_트리는_v4_실행을_거부한다(monkeypatch):
+    assert Q._generation_v4({"config": {"recipe": "test"}}) is False
+    monkeypatch.delattr(G, "is_v2_run", raising=False)
+    assert Q._generation_v4({"config": {"recipe": "image_report_regeneration_v3"}}) is False
+    with pytest.raises(AuditRefused, match="^generation_policy_unsupported:"):
+        Q._generation_v4({"config": {"recipe": "image_report_regeneration_v4"}})

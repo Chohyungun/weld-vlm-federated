@@ -242,3 +242,91 @@ def test_label_cache_is_content_bound_bounded_and_returns_detached_names(tmp_pat
     assert G._label_snapshot.cache_info().maxsize == 4
     G._label_snapshot.cache_clear()
 
+
+# 명세의 추가 22개를 구현 목록에서 역산하지 않는다.
+_FORBIDDEN_SUPPLEMENT = (
+    "취약", "우려", "심각", "불량을 나타", "가능성", "때문", "탓", "판정", "충족",
+    "가까이", "집중", "분포", "경향", "치우", "일직선", "패턴", "모여", "흩어", "나란히",
+    "줄지어", "띠", "거리",
+)
+
+
+@pytest.mark.parametrize("word", _FORBIDDEN_SUPPLEMENT)
+def test_forbidden_supplement_is_in_instruction_and_diagnostic(word):
+    task = make_task([("porosity", "가운데-가운데", 1)])
+    instruction = task["prompt"].rsplit("\n주석: ", 1)[0]
+    forbidden_line = next(line for line in instruction.splitlines() if line.startswith("쓰지 않는 말: "))
+    assert word in forbidden_line.removeprefix("쓰지 않는 말: ").removesuffix(".").split(", ")
+    raw = sample_text(task) + f" {word}이라는 주장을 한다."
+    assert G.observation_problems(task, raw) == ["obs_forbidden"]
+    row = G.render_generation_row(task, backend(task, raw))
+    assert row["raw_text"] == raw
+    assert row["observation_problems"] == ["obs_forbidden"]
+    assert row["text"] == raw + " " + G.LIMITATION_FORMS[0]
+    assert row["format_normalized"] is False
+
+
+@pytest.mark.parametrize("fragment", [
+    "더 취약할 수 있다는 가능성을 제기할 수 있습니다",
+    "용접품질에 대한 우려를 불러일으키지만",
+    "용접 과정에서의 불량을 나타내지만",
+    "이들 {crack}은 서로 가까이 위치해 있다",
+    "중앙 부근에 집중되어 있다는 점을 시사한다",
+    "이러한 분포는 {porosity}의 발생 경향을 보여주지만",
+    "서로 가까이 위치해 있지만",
+    "그 사이에 간격은 존재하지 않습니다",
+    "그 사이에 충분한 간격이 있어",
+    "그 사이의 거리는 정확히 일정하지 않습니다",
+    "합격 기준을 충족하는지 판단하기 위해서는",
+])
+def test_observed_eleven_forbidden_fragments_are_detected(fragment):
+    labels = {key: label.name_ko for key, label in load_label_map().defect_types.items()}
+    task = make_task([("porosity", "가운데-가운데", 1)])
+    raw = sample_text(task) + " " + fragment.format(**labels) + "."
+    row = G.render_generation_row(task, backend(task, raw))
+    assert "obs_forbidden" in row["observation_problems"]
+    assert row["raw_text"] == raw
+
+
+@pytest.mark.parametrize("label_key", sorted(load_label_map().defect_types))
+@pytest.mark.parametrize("where,display", [
+    ("위-왼쪽", "위쪽 왼쪽"), ("위-가운데", "위쪽 가운데"), ("위-오른쪽", "위쪽 오른쪽"),
+    ("가운데-왼쪽", "가운데 왼쪽"), ("가운데-가운데", "영상 가운데"), ("가운데-오른쪽", "가운데 오른쪽"),
+    ("아래-왼쪽", "아래쪽 왼쪽"), ("아래-가운데", "아래쪽 가운데"), ("아래-오른쪽", "아래쪽 오른쪽"),
+])
+def test_every_label_and_zone_is_safe_in_observation_frame(label_key, where, display):
+    task = make_task([(label_key, where, 1)])
+    name = load_label_map().defect_types[label_key].name_ko
+    raw = f"{name} 1개가 {display}에 표시되어 있다. 주석만으로는 결함의 모양과 크기를 알 수 없다."
+    assert G.observation_problems(task, raw) == []
+    row = G.render_generation_row(task, backend(task, raw))
+    # 제한 문장에 '판정'이 있어도 관찰 진단에는 넣지 않는다.
+    assert "판정" in row["text"] and row["observation_problems"] == []
+
+
+def test_forbidden_vocabulary_stays_separate_from_labels_and_normal_template():
+    names = [label.name_ko for label in load_label_map().defect_types.values()]
+    assert len(_FORBIDDEN_SUPPLEMENT) == len(set(_FORBIDDEN_SUPPLEMENT)) == 22
+    assert len(G.OBSERVATION_FORBIDDEN_WORDS) == len(set(G.OBSERVATION_FORBIDDEN_WORDS)) == 45
+    assert "불량" not in G.OBSERVATION_FORBIDDEN_WORDS
+    assert all(not any(word in name for word in G.OBSERVATION_FORBIDDEN_WORDS) for name in names)
+    assert any(name.endswith("불량") for name in names)  # 실제 사상표 회귀 대상이 빈집합이면 안 된다.
+    normal = G.render_generation_row(make_task())
+    assert normal["text"] == normal_text() and normal["observation_problems"] == []
+    assert not any(word in normal["text"] for word in _FORBIDDEN_SUPPLEMENT)
+
+
+def test_forbidden_stem_matching_includes_tti_and_casefolded_units():
+    task = make_task([("porosity", "가운데-가운데", 1)])
+    for suffix in (" 그런 양상을 띠다.", " 길이는 1MM이다.", " 길이는 1Cm이다."):
+        assert "obs_forbidden" in G.observation_problems(task, sample_text(task) + suffix)
+
+
+def test_old_vocabulary_prompt_is_not_reused_as_current_task(monkeypatch):
+    original = G.OBSERVATION_FORBIDDEN_WORDS
+    with monkeypatch.context() as context:
+        context.setattr(G, "OBSERVATION_FORBIDDEN_WORDS", tuple(word for word in original if word not in _FORBIDDEN_SUPPLEMENT))
+        task = make_task([("porosity", "가운데-가운데", 1)])
+    with pytest.raises(G.RegenerationRefused, match="generation_prompt"):
+        G.validate_v2_task(task)
+

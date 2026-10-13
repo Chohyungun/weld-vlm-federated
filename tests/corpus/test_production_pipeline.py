@@ -364,7 +364,7 @@ def test_v7_판정_경로는_실제_쓰기_읽기_정책으로_집계까지_가�
     ji = audit["judge_identity"]
     assert ji["source"] == "separate" and ji["identity_sha256"] == src["identity_sha256"]
     assert ji["parser_schema"] == "judge_structured_v7" and audit["judge_parser_version"] == "parse_judge_v7"
-    assert audit["audit_version"] == "quality_v9" and audit["policy"]["bound_to_judge_identity"] is True
+    assert audit["audit_version"] == "quality_v10" and audit["policy"]["bound_to_judge_identity"] is True
     assert audit["policy"]["identity_sha256"] == fixtures.sha(canonical_bytes(src["identity_basis"]["policy_identity"]))
     # 막는 것은 시험용 판정 백엔드 하나 — 모든 행이 수락됐다(정상 행은 judge_missing 이 아니다)
     assert result["status"] == "blocked" and audit["blockers"] == ["non_transformers_backend"], audit["blockers"]

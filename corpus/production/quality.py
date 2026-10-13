@@ -54,7 +54,7 @@ from .common import canonical_bytes, parse_json, write_json_new
 from .infer import GENERATE_SYSTEM, _family, read_stage_rows
 
 AUDIT_SCHEMA_VERSION = 1
-AUDIT_VERSION = "quality_v9"
+AUDIT_VERSION = "quality_v10"
 JUDGE_KEYS = ("grounded", "language_ok", "reason", "scope_ok")
 #: 옛 판정(실행 설정의 판정 단계)의 꼴 — 네 키를 `_judge` 가 읽는다
 JUDGE_LEGACY_SCHEMA = "legacy_four_keys"
@@ -369,6 +369,41 @@ def _quality_config(config: Mapping[str, Any]) -> dict:
     if q.get("human_review_required") is not True or q.get("no_partial_release") is not True:
         raise AuditRefused("human_review_required · no_partial_release 는 true 여야 한다")
     return dict(q)
+
+
+def _generation_v4(run: Mapping[str, Any]) -> bool:
+    """생성 v4 실행(정상 행 템플릿 · 결함 행 관찰 + 렌더)인지. 판별은 생성 정책의 함수 하나로만 한다."""
+    from . import generation_policy as G
+    is_v2 = getattr(G, "is_v2_run", None)
+    if is_v2 is not None:
+        return bool(is_v2(run))
+    recipe = (run.get("config") or {}).get("recipe") if isinstance(run, Mapping) else None
+    if isinstance(recipe, str) and recipe.startswith("image_report_regeneration_") and recipe != "image_report_regeneration_v3":
+        raise AuditRefused("generation_policy_unsupported: v4 생성 실행인데 이 트리의 생성 정책이 v4 를 모른다")
+    return False
+
+
+def _generation_v4_problems(task: Mapping[str, Any], row: Mapping[str, Any]) -> list[str]:
+    """생성 v4 행을 생성 정책의 렌더러로 다시 만들어 맞대고, 관찰 구조 진단을 다시 계산한다(행에 적힌 진단을 믿지 않는다).
+    템플릿 행은 바이트가 템플릿과 같아야 하고, 모델 행은 렌더가 같고 `observation_problems` 가 비어야 수락된다."""
+    from . import generation_policy as G
+    public = {k: v for k, v in row.items() if not k.startswith("_")}
+    try:
+        if row.get("generator") == "template":
+            expected = G.render_generation_row(dict(task))
+        elif row.get("generator") == "model":
+            expected = G.render_generation_row(dict(task), {
+                "id": row.get("id"), "text": row.get("raw_text"), "finish_reason": row.get("finish_reason"),
+                "input_tokens": row.get("input_tokens"), "output_tokens": row.get("output_tokens")})
+        else:
+            return ["generation:generator_unknown"]
+    except G.RegenerationRefused:
+        return ["generation:template_mismatch" if row.get("generator") == "template" else "generation:render_mismatch"]
+    out = []
+    if canonical_bytes(public) != canonical_bytes(expected):
+        out.append("generation:template_mismatch" if row["generator"] == "template" else "generation:render_mismatch")
+    out += [f"generation:{c}" for c in expected.get("observation_problems") or []]
+    return out
 
 
 def _read_tasks(run_dir: Path) -> tuple[dict, list[dict], str]:
@@ -996,6 +1031,10 @@ def _provenance(gen: Mapping[str, Any], judge: Mapping[str, Any], verdict: dict,
             continue
         out[side] = {"backend": row["_backend"], "family": spec.get("family"), "model_id": spec.get("model_id"),
                      "shard_sha256": row["_shard_sha256"], "text_sha256": _sha_bytes(row["text"].encode("utf-8"))}
+        if side == "generate" and "generator" in row:       # 생성 v4 — 템플릿 행은 모델이 쓰지 않았다
+            out[side]["generator"] = row["generator"]
+            if row["generator"] == "template":
+                out[side].update(family=None, model_id=None)
     if judge is None:
         out["judge"] = {"applicable": False, "identity_sha256": judge_info["identity_sha256"]}
         if policy is not None:
@@ -1211,6 +1250,8 @@ def audit_run(run_dir, config: Mapping[str, Any], output_dir, *, judge_source: M
     label_names = _label_names() if any(t["kind"] == "image_report" for t in tasks) else []
 
     judged = {r["id"]: r for r in judge_rows}
+    #: 생성 v4(정상 행 템플릿 · 결함 행 관찰 + 렌더) — 템플릿 행의 백엔드는 'template' 이고 바이트 대조로 받는다
+    gen_v4 = _generation_v4(run)
     backends = {"generate": Counter(r["_backend"] for r in gen_rows),
                 "judge": Counter(r["_backend"] for r in judge_rows)}
 
@@ -1283,7 +1324,10 @@ def audit_run(run_dir, config: Mapping[str, Any], output_dir, *, judge_source: M
             reasons[tid] = ["generation_missing" if g is None else
                             "judge_missing" if tid in model_target else "deterministic_receipt_missing"]
             continue
-        body, rej, was_fenced = _content(t, g)
+        g_rej = _generation_v4_problems(t, g) if gen_v4 else []
+        template = gen_v4 and g.get("generator") == "template"
+        body, rej, was_fenced = _content(t, {**g, "finish_reason": "eos"} if template else g)
+        rej = g_rej + rej
         fenced["generate"] += was_fenced
         if body is not None:
             rej += _content_problems(t, body)
@@ -1431,7 +1475,9 @@ def audit_run(run_dir, config: Mapping[str, Any], output_dir, *, judge_source: M
         blockers.append("errors")
     if counts["rejected"]:
         blockers.append("rejected_rows")
-    non_tf = {s: sum(n for b, n in c.items() if b != "transformers") for s, c in backends.items()}
+    # 생성 v4 의 템플릿 행은 모델이 쓰지 않았다 — 그 행은 템플릿 바이트 대조(_generation_v4_problems)가 막고 여기서는 세지 않는다
+    exempt = {"generate": {"template"} if gen_v4 else set(), "judge": set()}
+    non_tf = {s: sum(n for b, n in c.items() if b != "transformers" and b not in exempt[s]) for s, c in backends.items()}
     if any(non_tf.values()):
         blockers.append("non_transformers_backend")
     if source_qa["short_of_minimum"] or source_qa["distinct_passages_short"]:
@@ -1510,6 +1556,13 @@ def audit_run(run_dir, config: Mapping[str, Any], output_dir, *, judge_source: M
             "conflicting_target_rows": len(conflicting), "review": "conflicting rows go to a fully reviewed stratum"},
         "coverage": coverage,
         "source_qa": source_qa,
+        # 생성 v4 — 템플릿 · 모델 행 수와 다시 계산한 생성 사유(관찰 구조 · 렌더 · 템플릿 대조)의 분포. 다른 생성이면 None
+        "generation_v4": None if not gen_v4 else {
+            "template_rows": sum(r.get("generator") == "template" for r in gen_rows),
+            "model_rows": sum(r.get("generator") == "model" for r in gen_rows),
+            "format_normalized_rows": sum(r.get("format_normalized") is True for r in gen_rows),
+            "reasons": dict(sorted(Counter(x for rs in reasons.values() for x in rs
+                                           if x.startswith("generation:")).items()))},
         # v7 판정 신원의 결정적 영수증 — 정상 행은 판정 모델 없이 이것으로만 갈린다. 다른 꼴이면 None
         "deterministic_receipts": None if not is_v7 else {
             "policy_identity_sha256": policy_sha, "rows": len(receipts), "planned": len(tasks),

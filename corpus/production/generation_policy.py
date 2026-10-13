@@ -71,7 +71,12 @@ OBSERVATION_ZONE_ALIASES = ("중앙", "중심", "상자", "부근", "근처", "�
 OBSERVATION_LIMITATION_WORDS = ("두께", "실치수", "화소", "치수 기준", "합부")
 OBSERVATION_FORBIDDEN_WORDS = ("원인", "위험", "결과", "합격", "불합격", "합부", "적합", "안전", "양호",
                              "간격", "군집", "정렬", "연속", "몰림", "규격", "조항", "좌표", "코드",
-                             "밀리미터", "센티미터", "인치", "mm", "cm")
+                             "밀리미터", "센티미터", "인치", "mm", "cm",
+                             "취약", "우려", "심각", "불량을 나타", "가능성", "때문", "탓", "판정", "충족",
+                             "가까이", "집중", "분포", "경향", "치우", "일직선", "패턴", "모여", "흩어",
+                             "나란히", "줄지어", "띠", "거리")
+# 관찰 원문만 검사한다. 결함 이름과 겹치는 '불량' 단독은 금지하지 않으며,
+# '띠' 등은 어간 포함 부분문자열로 검사한다. 고정 제한 문장은 이 검사 뒤 붙인다.
 OBSERVATION_REASON_ORDER = ("obs_empty", "obs_linebreak", "obs_sentence_count", "obs_length",
                           "obs_sentence_end", "obs_name_form", "obs_zone_word", "obs_zone_missing",
                           "obs_limitation_written", "obs_forbidden", "obs_language")
