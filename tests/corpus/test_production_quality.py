@@ -14,12 +14,14 @@ from typing import ClassVar
 
 import pytest
 
+from corpus.production import generation_policy as G
 from corpus.production import infer as I
 from corpus.production import judge_cases as C
 from corpus.production import judge_fingerprints as F
 from corpus.production import judge_identity as J
 from corpus.production import judge_policy as P
 from corpus.production import judge_probe as K
+from corpus.production import judge_stopping as S
 from corpus.production import quality as Q
 from corpus.production import train as T
 from corpus.production.common import canonical_bytes, iter_jsonl, read_json, sha256_file
@@ -1642,14 +1644,22 @@ def test_v7_는_잘림_중복_여분_빠진_키_NaN_을_오류로_둔다(text, f
     assert out["verdict"] is None and out["answers"] is None and out["rejected"] == [] and out["flags"] == []
 
 
-def test_v7_첫_객체에서_멈춘_글은_좁은_정규화_밖이면_못_읽음이다():
-    """정지 조건은 첫 JSON 객체가 닫히는 토큰에서 멈추고 자르지 않는다. 그 토큰에 붙은 공백은 괜찮지만, 여는 울타리만 있고
-    닫는 울타리가 없는 글은 v6 의 좁은 정규화로 벗겨지지 않아 못 읽음이다 — 정규화를 넓히지 않는다."""
+def test_v7_닫는_울타리가_없는_글은_종료와_상관없이_못_읽음이다():
+    """좁은 정규화는 출력 전체를 감싼 울타리만 벗긴다 — 여는 울타리만 있거나 닫는 울타리만 있는 글은 종료(`eos` ·
+    `json_closed`)와 상관없이 못 읽음이다. 정규화를 넓히지 않는다.
+
+    정지기는 앞에 공백만 둔 `{` 로 시작하는 글에서만 첫 객체의 닫힘으로 멈춘다 — 울타리로 시작한 출력은 `json_closed` 가 되지
+    않고, 닫는 울타리를 쓴 뒤의 `eos`(벗겨 읽는다)나 출력 상한(`judge_truncated`)으로 끝난다."""
+    assert S.first_json_object_close(D7_TEXT).closed is True
+    assert S.first_json_object_close("```json\n" + D7_TEXT).eligible is False
     ok = parse_judge_v7(DEFECT_TASK, _row(D7_TEXT + "\n", "json_closed"))
     assert ok["errors"] == [] and ok["format_normalized"] == []
-    for text in ("```json\n" + D7_TEXT, "```json\n" + D7_TEXT + "\n", D7_TEXT + "`", D7_TEXT + "\n```"):
-        out = parse_judge_v7(DEFECT_TASK, _row(text, "json_closed"))
-        assert out["errors"] == ["judge_unparsable"] and out["format_normalized"] == []
+    fenced = parse_judge_v7(DEFECT_TASK, _row(_fence(D7_TEXT), "eos"))
+    assert fenced["errors"] == [] and fenced["format_normalized"] == ["code_fence"]
+    for finish in ("eos", "json_closed"):
+        for text in ("```json\n" + D7_TEXT, "```json\n" + D7_TEXT + "\n", D7_TEXT + "`", D7_TEXT + "\n```"):
+            out = parse_judge_v7(DEFECT_TASK, _row(text, finish))
+            assert out["errors"] == ["judge_unparsable"] and out["format_normalized"] == []
 
 
 def test_v7_와_v5_v6_는_서로의_출력을_대신_읽지_않는다():
@@ -1722,33 +1732,62 @@ def test_v7_출력_계약을_묶고도_출처가_v7_이라_적지_않으면_집�
 
 
 # --------------------------------------------------------------------------- v7 판정 출처의 소비(정상 행은 결정적 영수증만)
+#
+# 실제 판정 신원 쓰기 · 읽기(`infer.run_judge(policy_version="v7")` · `infer.read_judge_source`)와 판정 신원에 묶인 실제 v7
+# 정책으로 집계까지 잇는다 — 가짜는 판정 모델 백엔드(`V7Judge`)뿐이다. 다시 읽기를 건너뛰는 `_v7_reread` 는 위조 시험에만 쓴다
+# (읽기가 먼저 막는 변조를 지나 집계 자신의 대조까지 닿게).
+
+
+#: v7 생성 계약의 통과 글 — 정상 행은 정해진 두 문장, 결함 행은 이름 · 수 · 구역 문장 뒤에 정해진 제한 문장
+N7_DESC = f"{G.NORMAL_ABSENCE_FORMS[0]} {G.NORMAL_LIMITATION_FORMS[0]}"
+D7_DESC = f"{LABELS['porosity'].name_ko} 1개가 영상 가운데에 표시되어 있다. {G.LIMITATION_FORMS[0]}"
+#: v7 정책의 결정적 검사 묶음(영수증의 `deterministic_codes` 칸)
+V7_GROUPS = ("attribute", "contract", "grounded", "negative", "normal")
+#: v7 판정 모델 설정 — 기본 판정과 같고 출력 토큰만 160(정지기 계약)
+V7_JUDGE = {**_spec("phi"), "model_id": "local/judge-v7", "max_new_tokens": 160}
+
+
+class V7Judge(Fake):
+    """v7 판정 신원 쓰기에 넣는 가짜 판정 모델. 정지기(`enable_json_object_stopping`)를 켜야 답하고 종료는 기본 `json_closed`.
+    결함 행 입력(행 종류 · 잠긴 칸 · 후보)에는 원 요청이 없어 후보 글로 행을 찾는다. 정상 행 입력이 오면 실패한다."""
+
+    calls: ClassVar[list] = []
+
+    def __init__(self, cfg, stage):
+        super().__init__(cfg, stage)
+        self.stopping = False
+
+    def enable_json_object_stopping(self):
+        assert self.stage == "judge"
+        self.stopping = True
+
+    def generate_batch(self, prompts, system, deadline):
+        assert self.stage == "judge" and self.stopping, "v7 판정은 정지기를 켠 모델에만 간다"
+        by_text = {text: tid for tid, text in Fake.gen.items()}
+        rows = []
+        for p in prompts:
+            request = json.loads(p)
+            assert request.get("row_class") != "defect_free", "정상 행이 판정 모델에 갔다"
+            qa = "original_request" in request
+            tid = Fake._by_prompt[request["original_request"]] if qa else by_text[request["candidate"]]
+            V7Judge.calls.append(tid)
+            rows.append({"text": Fake.judge.get(tid, JUDGE_OK if qa else D7_TEXT),
+                         "finish_reason": Fake.finish.get(("judge", tid), "json_closed"), "input_tokens": 10, "output_tokens": 10})
+        return rows
 
 
 class V7Policy:
-    """v7 판정 출처에 거는 시험용 정책 — 판단 규칙은 판정 정책 쪽 몫이라 꼴만 흉내 낸다. 생성문에 `ban` 의 글이 있으면
-    그 묶음 · 사유로 기각한다(행 종류를 가리지 않는다). 행 종류는 명부의 잠긴 결함 목록으로 스스로 고른다."""
+    """정책 자리에 거는 시험용 가짜 — 지문만 낸다. 판정 신원에 묶인 실제 v7 정책과 지문이 다르거나 꼴이 다른 정책이 판단 전에
+    거부되는지만 본다(판단 `evaluate_v7` 에 닿으면 시험 실패)."""
 
-    GROUPS = ("attribute", "contract", "grounded", "negative")
-
-    def __init__(self, ban=None, identity=None):
-        self.ban = dict(ban or {"합격이다": ("negative", "verdict_asserted"),
-                                "크고 둥근": ("attribute", "unannotated_attribute")})
-        self.identity = identity or {"version": "image_report_judge_v7_test", "output_schema": "judge_structured_v7"}
+    def __init__(self, identity):
+        self.identity = identity
 
     def policy_identity_v7(self):
         return copy.deepcopy(self.identity)
 
     def evaluate_v7(self, task, text, *, generation_contract=True):
-        kind = "source_qa" if task["kind"] == "source_qa" else (
-            "defect" if task["locked_target"]["defects"] else "defect_free")
-        codes = {g: sorted({c for w, (grp, c) in self.ban.items() if grp == g and w in text}) for g in self.GROUPS}
-        reasons = sorted({c for v in codes.values() for c in v})
-        applicable = kind != "defect_free"
-        return {"row_class": kind, "model_applicable": applicable,
-                "model_applicability": "applicable" if applicable else "not_applicable",
-                "deterministic_codes": codes, "deterministic_reasons": reasons, "deterministic_pass": not reasons,
-                "flags": ["n5_absent"] if kind == "defect_free" and "판단" not in text else [],
-                "generation_contract_applied": generation_contract}
+        raise AssertionError("지문이 다른 정책의 판단에 닿았다")
 
 
 def _sha_text(text):
@@ -1760,125 +1799,116 @@ def _digest(value):
 
 
 def v7_case():
-    """결함 · 정상 · 정상 · 원문 QA — 샤드 둘(크기 2): [결함, 정상] [정상, 원문 QA]."""
+    """결함 · 정상 · 정상 · 원문 QA — 샤드 둘(크기 2): [결함, 정상] [정상, 원문 QA]. 판정을 시작하는 첫 샤드에 모델 대상이 있다
+    (정상 행만인 첫 샤드는 승인된 실행 조건 없이 판정 모델을 시작하지 않는다)."""
     tasks = [image_task(0), image_task(1, client="C2", target=locked()), image_task(2, client="C3", target=locked()),
              qa_task(0)]
-    outputs = {"img-000": GOOD_DESC, "img-001": NONE_DESC, "img-002": NONE_DESC,
+    outputs = {"img-000": D7_DESC, "img-001": N7_DESC, "img-002": N7_DESC,
                "qa-000": qa_json("기공은 무엇이 남긴 공동인가?", "용접금속 안에 갇힌 가스가 남긴 공동이다.")}
     return tasks, outputs
 
 
-def _v7_source(run_dir, config, tasks, policy, *, done=None, judge=None, finish=None):
-    """v7 판정 신원 읽기(판정 정책 쪽 `read_judge_source`)가 내는 객체의 꼴 — 판정을 마친 샤드(명부의 앞부분)의 모든 행에
-    결정적 영수증, 모델 대상(정상이 아닌 행)에만 판정 행. 판정 신원 쓰기의 v7 판은 이 트리에 아직 없어 꼴을 직접 짓고,
-    다시 읽기는 시험에서 주어진 객체를 그대로 돌려준다(`_v7_reread`) — 집계 자신의 대조만 시험한다."""
-    gen = {r["id"]: r for r in I.read_stage_rows(run_dir, "generate", config)}
-    run = read_json(run_dir / "RUN.json")
-    pid = json.loads(canonical_bytes(policy.policy_identity_v7()))
-    by = {t["id"]: t for t in tasks}
-    done_ids = [t["id"] for t in tasks][:len(tasks) if done is None else done]
-    basis = {"policy_version": "v7", "output_schema": "judge_structured_v7", "run_identity_sha256": run["identity_sha256"],
-             "generate_shard_sha256": sorted({r["_shard_sha256"] for r in gen.values()}),
-             "judge_model": {"model_id": "local/judge-v7", "family": "phi"}, "policy_identity": pid}
-    ident = _digest(basis)
-    shard = {tid: _sha_text(f"judge-shard-{i // config['shard_size']}") for i, tid in enumerate(done_ids)}
-    receipts = [{"id": tid, "candidate_sha256": _sha_text(gen[tid]["text"]),
-                 "candidate_finish_reason": gen[tid]["finish_reason"], "policy_identity_sha256": _digest(pid),
-                 **policy.evaluate_v7(by[tid], gen[tid]["text"], generation_contract=True),
-                 "_shard_sha256": shard[tid], "_judge_identity_sha256": ident} for tid in done_ids]
-    model_ids = [tid for tid in done_ids if by[tid]["kind"] == "source_qa" or by[tid]["locked_target"]["defects"]]
-    judge, finish = dict(judge or {}), dict(finish or {})
-    rows = [{"id": tid, "text": judge.get(tid, JUDGE_OK if by[tid]["kind"] == "source_qa" else D7_TEXT),
-             "finish_reason": finish.get(tid, "eos"), "input_tokens": 10, "output_tokens": 10, "_stage": "judge",
-             "_backend": "fake", "_shard_sha256": shard[tid], "_judge_identity_sha256": ident} for tid in model_ids]
-    return {"identity_sha256": ident, "policy_version": "v7", "output_schema": "judge_structured_v7",
-            "all_task_ids": done_ids, "model_task_ids": model_ids, "deterministic_receipts": receipts,
-            "identity_basis": basis, "judge_dir": str(run_dir.parent / "judge-v7"), "probe_approval_sha256": None,
-            "gpu_model_verified": False, "caller_expected_pins": dict.fromkeys(Q.JUDGE_SOURCE_PIN_KEYS),
-            "pin_provenance": "unapproved-fake", "rows": rows}
-
-
-@pytest.fixture
-def _v7_reread(monkeypatch):
-    monkeypatch.setattr(Q, "_reread_judge_source", lambda run_dir, config, src: copy.deepcopy(dict(src)))
-
-
-def _v7_audit(tmp_path, outputs=None, *, policy=None, **source):
+def _v7_run(tmp_path, outputs=None, *, judge=None, finish=None, max_shards=None):
+    """생성(가짜) → 판정 신원 쓰기 v7(가짜 판정 모델) → 판정 신원 읽기(꼴을 주지 않는다 — 판정 폴더로 스스로 고른다)."""
     tmp_path.mkdir(parents=True, exist_ok=True)
     tasks, base = v7_case()
     run_dir, config = run_all(tmp_path, tasks, {**base, **(outputs or {})}, stages=("generate",))
-    policy = policy or V7Policy()
-    src = _v7_source(run_dir, config, tasks, policy, **source)
+    Fake.judge, Fake.finish = dict(judge or {}), {("judge", k): v for k, v in (finish or {}).items()}
+    Fake.backend_by_stage, V7Judge.calls = {"judge": "fake"}, []
+    done = I.run_judge(run_dir, config, tmp_path / "judge-v7", judge_config=V7_JUDGE, policy_version="v7",
+                       backend_factory=V7Judge, max_shards=max_shards)
+    assert done["policy_version"] == "v7" and done["exit_code"] == (0 if max_shards is None else 4), done
+    return run_dir, config, I.read_judge_source(run_dir, config, tmp_path / "judge-v7")
+
+
+def _v7_audit(tmp_path, outputs=None, **judge):
+    run_dir, config, src = _v7_run(tmp_path, outputs, **judge)
     out = tmp_path / "audit"
-    result = audit_run(run_dir, config, out, judge_source=src, policy=policy)
+    result = audit_run(run_dir, config, out, judge_source=src)
     return result, read_json(out / "AUDIT.json"), _status(out), {r["id"]: r for r in iter_jsonl(out / "dataset.jsonl")}, src
 
 
-def test_v7_정상_행은_판정_모델_없이_결정적_영수증으로_수락된다(tmp_path, _v7_reread):
+def test_v7_정상_행은_판정_모델_없이_결정적_영수증으로_수락된다(tmp_path):
     result, a, st, rows, src = _v7_audit(tmp_path)
+    # 판정 신원 읽기가 v7 을 골랐다 — 영수증은 네 행 모두, 판정 모델은 결함 행 · 원문 QA 만 불렀다
+    assert src["policy_version"] == "v7" and src["all_task_ids"] == ["img-000", "img-001", "img-002", "qa-000"]
+    assert src["model_task_ids"] == [r["id"] for r in src["rows"]] == V7Judge.calls == ["img-000", "qa-000"]
     # 막는 사유는 시험용 판정 백엔드 하나뿐 — 정상 행 둘은 판정 행 없이 수락됐다(judge_missing 이 아니다)
     assert result["status"] == "blocked" and a["blockers"] == ["non_transformers_backend"], a["blockers"]
     assert a["counts"]["accepted"] == 4 and a["incomplete"] == 0 and a["complete"] is True
     assert a["audit_version"] == "quality_v9" and a["judge_parser_version"] == "parse_judge_v7"
     assert a["judge_identity"]["parser_schema"] == "judge_structured_v7" and a["stages"]["judge"]["rows"] == 2
+    policy_sha = _digest(src["identity_basis"]["policy_identity"])
+    assert a["policy"]["identity_sha256"] == policy_sha == _digest(P.policy_identity_v7())
     for rid in ("img-001", "img-002"):
         assert rows[rid]["provenance"]["judge"] == {"applicable": False, "identity_sha256": src["identity_sha256"]}
-        assert rows[rid]["provenance"]["policy"] == {"identity_sha256": _digest(V7Policy().policy_identity_v7()),
-                                                      "flags": ["n5_absent"]}
+        assert rows[rid]["provenance"]["policy"] == {"identity_sha256": policy_sha, "flags": []}
         s = st[rid]
         assert s["judge_applicable"] is False and s["judge_text_sha256"] is None and s["judge_verdict"] is None
-        assert s["deterministic_pass"] is True and s["deterministic_reasons"] == [] and s["policy_flags"] == ["n5_absent"]
+        assert s["deterministic_pass"] is True and s["deterministic_reasons"] == [] and s["policy_flags"] == []
     judge = rows["img-000"]["provenance"]["judge"]
     assert judge["verdict"] == D7_ANSWERS and judge["schema"] == "judge_structured_v7" and judge["parser"] == "parse_judge_v7"
     assert judge["backend"] == "fake" and judge["identity_sha256"] == src["identity_sha256"] and "applicable" not in judge
     assert rows["qa-000"]["provenance"]["judge"]["verdict"] == json.loads(JUDGE_OK)
     assert st["img-000"]["judge_applicable"] is True is st["qa-000"]["judge_applicable"]
     det = a["deterministic_receipts"]
-    assert det["rows"] == det["planned"] == 4 and det["model_task_ids"] == {"count": 2,
-                                                                             "ids_sha256": ids_sha256(["img-000", "qa-000"])}
+    assert det["rows"] == det["planned"] == len(src["deterministic_receipts"]) == 4
+    assert det["policy_identity_sha256"] == policy_sha
+    assert det["model_task_ids"] == {"count": 2, "ids_sha256": ids_sha256(["img-000", "qa-000"])}
     assert det["normal"] == {"planned": 2, "receipts": 2, "deterministic_pass": 2, "deterministic_reject": 0,
-                             "status": {"accepted": 2}, "reasons": {}, "flags": {"n5_absent": 2},
-                             "codes": dict.fromkeys(V7Policy.GROUPS, {})}
-    assert det["model"]["planned"] == 2 and det["model"]["status"] == {"accepted": 2}
+                             "status": {"accepted": 2}, "reasons": {}, "flags": {}, "codes": {g: {} for g in V7_GROUPS}}
+    assert det["model"]["planned"] == det["model"]["receipts"] == 2 and det["model"]["status"] == {"accepted": 2}
     agree = a["policy"]["model_agreement"]
     assert agree["denominator"] == 1 and agree["both_pass"] == 1 and agree["excluded"] == {"judge_not_applicable": 2}
 
 
-def test_v7_정상_행의_결정적_기각은_사유_코드_분포로_남는다(tmp_path, _v7_reread):
-    bad = "표시된 결함이 없다. 합격이다."
-    result, a, st, rows, _ = _v7_audit(tmp_path, {"img-001": bad, "img-002": "표시된 결함이 크고 둥근 모양이다."})
-    assert st["img-001"]["status"] == "rejected" and st["img-001"]["reasons"] == ["policy:verdict_asserted"]
-    assert st["img-002"]["reasons"] == ["policy:unannotated_attribute"] and st["img-002"]["deterministic_pass"] is False
+def test_v7_정상_행의_결정적_기각은_사유_코드_분포로_남는다(tmp_path):
+    _, a, st, rows, _ = _v7_audit(tmp_path, {"img-001": "표시된 결함이 없다. 합격이다.",
+                                                  "img-002": "표시된 결함이 크고 둥근 모양이다."})
+    assert V7Judge.calls == ["img-000", "qa-000"]                 # 기각될 정상 행도 판정 모델에 가지 않는다
+    assert st["img-001"]["status"] == "rejected" and st["img-001"]["reasons"] == [
+        "policy:normal_limitation_absent", "policy:normal_not_contract_form", "policy:normal_verdict_implied",
+        "policy:verdict_asserted"]
+    assert st["img-002"]["reasons"] == ["policy:normal_limitation_absent", "policy:normal_not_contract_form"]
+    assert st["img-002"]["deterministic_pass"] is False and st["img-002"]["policy_flags"] == ["n5_lexical_absent"]
     assert "img-001" not in rows and "img-002" not in rows and "rejected_rows" in a["blockers"]
     normal = a["deterministic_receipts"]["normal"]
     assert normal["deterministic_reject"] == 2 and normal["status"] == {"rejected": 2}
-    assert normal["reasons"] == {"unannotated_attribute": 1, "verdict_asserted": 1}
-    assert normal["codes"]["negative"] == {"verdict_asserted": 1} and normal["codes"]["attribute"] == {"unannotated_attribute": 1}
+    assert normal["reasons"] == {"normal_limitation_absent": 2, "normal_not_contract_form": 2, "normal_verdict_implied": 1,
+                                 "verdict_asserted": 1}
+    assert normal["codes"] == {"attribute": {}, "contract": {"normal_not_contract_form": 2}, "grounded": {},
+                               "negative": {"verdict_asserted": 1},
+                               "normal": {"normal_limitation_absent": 2, "normal_verdict_implied": 1}}
+    assert normal["flags"] == {"n5_lexical_absent": 2}
     assert a["counts"]["reasons"]["policy:verdict_asserted"] == 1
 
 
-def test_v7_결함_행은_결정적_통과와_물음_넷이_모두_참이어야_수락된다(tmp_path, _v7_reread):
+def test_v7_결함_행은_결정적_통과와_물음_넷이_모두_참이어야_수락된다(tmp_path):
     """판정 모델이 통과로 답해도 결정적 기각이면 기각, 결정적 통과여도 물음 하나가 거짓이면 기각."""
-    false_one = v5(**{**D7_ANSWERS, "no_unsupported_relation": False})
-    _, a, st, _, _ = _v7_audit(tmp_path / "x", {"img-000": GOOD_DESC + " 합격이다."})
-    assert st["img-000"]["reasons"] == ["policy:verdict_asserted"]
+    name = LABELS["porosity"].name_ko
+    verdict = f"{name} 1개가 영상 가운데에 표시되어 있다. 합격이다. {G.LIMITATION_FORMS[0]}"
+    _, a, st, _, _ = _v7_audit(tmp_path / "x", {"img-000": verdict})
+    assert st["img-000"]["reasons"] == ["policy:verdict_asserted"] and V7Judge.calls == ["img-000", "qa-000"]
     assert a["policy"]["model_agreement"]["model_pass_policy_reject"] == 1
+    false_one = v5(**{**D7_ANSWERS, "no_unsupported_relation": False})
     _, a, st, _, _ = _v7_audit(tmp_path / "y", judge={"img-000": false_one})
     assert st["img-000"]["reasons"] == ["judge_no_unsupported_relation_false"]
     assert a["policy"]["model_agreement"]["model_reject_policy_pass"] == 1
 
 
-def test_v7_reason_long_은_표지이고_json_closed_종료를_받는다(tmp_path, _v7_reread):
+def test_v7_reason_long_은_표지이고_json_closed_와_eos_종료를_받는다(tmp_path):
     long = v5(**{**D7_ANSWERS, "reason": "가" * 41})
-    _, a, st, rows, _ = _v7_audit(tmp_path, judge={"img-000": long}, finish={"img-000": "json_closed"})
-    assert st["img-000"]["status"] == "accepted" and st["img-000"]["judge_flags"] == ["reason_long"]
+    _, a, st, rows, src = _v7_audit(tmp_path, judge={"img-000": long}, finish={"qa-000": "eos"})
+    assert {r["id"]: r["finish_reason"] for r in src["rows"]} == {"img-000": "json_closed", "qa-000": "eos"}
+    assert st["img-000"]["status"] == "accepted" == st["qa-000"]["status"] and st["img-000"]["judge_flags"] == ["reason_long"]
     assert rows["img-000"]["provenance"]["judge"]["flags"] == ["reason_long"]
     assert a["counts"]["judge_model_flags"] == {"reason_long": 1}
 
 
-def test_v7_판정_전_샤드의_모델_대상_행만_judge_missing_이다(tmp_path, _v7_reread):
-    """판정을 마친 샤드는 첫째뿐 — 둘째 샤드의 원문 QA(모델 대상)는 judge_missing, 정상 행은 영수증 없음."""
-    result, a, st, _, _ = _v7_audit(tmp_path, done=2)
+def test_v7_판정_전_샤드의_모델_대상_행만_judge_missing_이다(tmp_path):
+    """판정 신원 쓰기를 샤드 하나에서 멈춘다 — 둘째 샤드의 원문 QA(모델 대상)는 judge_missing, 정상 행은 영수증 없음."""
+    _, a, st, _, src = _v7_audit(tmp_path, max_shards=1)
+    assert src["all_task_ids"] == ["img-000", "img-001"] and src["model_task_ids"] == V7Judge.calls == ["img-000"]
     assert st["qa-000"]["status"] == "incomplete" and st["qa-000"]["reasons"] == ["judge_missing"]
     assert st["img-002"]["status"] == "incomplete" and st["img-002"]["reasons"] == ["deterministic_receipt_missing"]
     assert st["img-002"]["deterministic_pass"] is None and st["img-002"]["judge_applicable"] is False
@@ -1906,7 +1936,7 @@ def _v7_break(src, breaks):
         banned = _receipt(src, "img-002")
         assert banned["deterministic_pass"] is False
         banned.update(deterministic_pass=True, deterministic_reasons=[],
-                      deterministic_codes=dict.fromkeys(V7Policy.GROUPS, []))
+                      deterministic_codes={g: [] for g in V7_GROUPS})
     elif breaks == "diagnostic_view":                   # 생성 계약을 끈 진단용 판단은 운영 영수증이 아니다
         normal["generation_contract_applied"] = False
     elif breaks == "extra_key":
@@ -1935,6 +1965,12 @@ def _v7_break(src, breaks):
         del src["output_schema"]
 
 
+@pytest.fixture
+def _v7_reread(monkeypatch):
+    """위조 시험 전용 — 다시 읽기(판정 신원 읽기)가 변조를 먼저 막지 않게 주어진 객체를 그대로 돌려준다."""
+    monkeypatch.setattr(Q, "_reread_judge_source", lambda run_dir, config, src: copy.deepcopy(dict(src)))
+
+
 @pytest.mark.parametrize("breaks,code", [
     ("candidate", "judge_receipt_mismatch"), ("finish", "judge_receipt_mismatch"), ("policy_sha", "judge_receipt_mismatch"),
     ("forged_pass", "judge_receipt_mismatch"), ("diagnostic_view", "judge_receipt_mismatch"),
@@ -1945,31 +1981,76 @@ def _v7_break(src, breaks):
     ("policy_version", "judge_source_v7"), ("top_schema", "judge_source_v7"),
 ])
 def test_v7_영수증이_생성문_정책_판정_신원과_어긋나면_집계하지_않는다(tmp_path, _v7_reread, breaks, code):
-    """둘째 정상 행(img-002)은 정책이 기각하는 생성문이다 — 그 영수증을 통과로 고쳐 쓰면 정상 행이 모델 없이 수락될 길이다."""
-    tasks, outputs = v7_case()
-    outputs["img-002"] = "표시된 결함이 없다. 합격이다."
-    run_dir, config = run_all(tmp_path, tasks, outputs, stages=("generate",))
-    policy = V7Policy()
-    src = _v7_source(run_dir, config, tasks, policy)
+    """실제로 쓰고 읽은 출처를 변조한다. 둘째 정상 행(img-002)은 정책이 기각하는 생성문이다 — 그 영수증을 통과로 고쳐 쓰면
+    정상 행이 모델 없이 수락될 길이다. 변조하지 않은 같은 출처는 집계를 지난다(첫 시험)."""
+    run_dir, config, src = _v7_run(tmp_path, {"img-002": "표시된 결함이 없다. 합격이다."})
     _v7_break(src, breaks)
     with pytest.raises(AuditRefused, match=f"^{code}:"):
-        audit_run(run_dir, config, tmp_path / "audit", judge_source=src, policy=policy)
+        audit_run(run_dir, config, tmp_path / "audit", judge_source=src)
     assert not (tmp_path / "audit" / "AUDIT.json").exists()
 
 
-def test_v7_판정_출처와_v7_정책은_함께만_건다(tmp_path, _v7_reread):
-    tasks, outputs = v7_case()
-    run_dir, config = run_all(tmp_path, tasks, outputs, stages=("generate",))
-    src = _v7_source(run_dir, config, tasks, V7Policy())
+def test_v7_판정_출처와_v7_정책은_함께만_건다(tmp_path):
+    run_dir, config, src = _v7_run(tmp_path)
     # v7 출처에 v6 의 정책 꼴(영수증을 다시 계산할 수 없다)
     with pytest.raises(AuditRefused, match="^policy_interface:"):
         audit_run(run_dir, config, tmp_path / "a1", judge_source=src, policy=StubPolicy())
     # 판정 신원에 묶인 것과 다른 v7 정책
-    other = V7Policy(identity={"version": "image_report_judge_v7_other", "output_schema": "judge_structured_v7"})
+    other = V7Policy({"version": "image_report_judge_v7_other", "output_schema": "judge_structured_v7"})
     with pytest.raises(AuditRefused, match="^judge_policy_mismatch:"):
         audit_run(run_dir, config, tmp_path / "a2", judge_source=src, policy=other)
     # 다른 판(출력 계약)의 지문을 내는 v7 정책
     with pytest.raises(AuditRefused, match="^policy_identity:"):
         audit_run(run_dir, config, tmp_path / "a3", judge_source=src,
-                  policy=V7Policy(identity={"version": "x", "output_schema": "judge_structured_v6"}))
+                  policy=V7Policy({"version": "x", "output_schema": "judge_structured_v6"}))
     assert not any((tmp_path / n / "AUDIT.json").exists() for n in ("a1", "a2", "a3"))
+
+
+# --------------------------------------------------------------------------- 구역별 소계의 수치 추적(실제 v7 정책 → 집계)
+
+
+def _zone_task(upper, lower):
+    """기공 upper + lower 개를 위-왼쪽 · 아래-오른쪽에 둔 결함 행. bbox 좌표에 1 ~ 4 가 없다(소계가 좌표에서 오지 않게)."""
+    boxes = [("porosity", [10 + 40 * i, 20, 30 + 40 * i, 40]) for i in range(upper)]
+    boxes += [("porosity", [610 + 40 * i, 620, 630 + 40 * i, 640]) for i in range(lower)]
+    task = image_task(9, target=locked(*boxes))
+    name = LABELS["porosity"].name_ko
+    task["evidence"]["defect_positions"] = [{"name": name, "where": "위-왼쪽"}] * upper + [{"name": name, "where": "아래-오른쪽"}] * lower
+    return task
+
+
+def _zone_text(total, upper, lower, tail=""):
+    name = LABELS["porosity"].name_ko
+    return f"{name} {total}개가 표시되어 있다. 위-왼쪽에 {upper}개, 아래-오른쪽에 {lower}개가 있다.{tail} {G.LIMITATION_FORMS[0]}"
+
+
+@pytest.mark.parametrize("upper", [1, 2, 3, 4])
+def test_v7_참인_구역별_소계는_정책과_집계를_함께_지나고_틀린_수는_어느_한쪽이_막는다(upper):
+    """총 5개를 두 구역에 나눈 소계 — 소계는 잠긴 칸 투영(판정 정책의 `grouped_locked_fields`)에서만 온다."""
+    lower = 5 - upper
+    task = _zone_task(upper, lower)
+    others = {n for s in [*Q._strings(task["locked_target"])] for n in numbers_in(s)}
+    assert Q._zone_subtotals(task) == {upper, lower} and not {upper, lower} & others   # 소계는 다른 원천에 없다
+    good = _zone_text(5, upper, lower, " 주석만으로 실제 형상은 알 수 없다.")
+    assert P.evaluate_v7(task, good)["deterministic_reasons"] == [] and Q._content_problems(task, {"text": good}) == []
+    # 바꿔 적은 소계 — 두 수 모두 잠긴 소계라 집계는 지나고, 칸별 수를 맞대는 정책이 막는다
+    swapped = _zone_text(5, lower, upper)
+    assert P.evaluate_v7(task, swapped)["deterministic_reasons"] == ["zone_count_mismatch"]
+    assert Q._content_problems(task, {"text": swapped}) == []
+    # 잠긴 칸에 없는 소계 · 총합 · 실치수는 집계가 추적 불가로 막는다
+    wrong = 2 if upper in (1, 4) else 1
+    assert Q._content_problems(task, {"text": _zone_text(5, wrong, 5 - wrong)}) == ["untraceable_number"]
+    assert Q._content_problems(task, {"text": _zone_text(6, upper, lower)}) == ["untraceable_number"]
+    assert Q._content_problems(task, {"text": _zone_text(5, upper, lower, " 지름은 7 mm 이다.")}) == ["untraceable_number"]
+
+
+def test_구역별_소계는_결함_행의_대조된_잠긴_칸에서만_온다():
+    task = _zone_task(1, 4)
+    assert Q._zone_subtotals(task) == {1, 4}
+    # 근거의 위치가 잠긴 결함과 어긋나면 소계를 하나도 내지 않는다(원천을 넓히지 않는 쪽으로 닫는다)
+    broken = copy.deepcopy(task)
+    broken["evidence"]["defect_positions"] = broken["evidence"]["defect_positions"][:-1]
+    assert Q._zone_subtotals(broken) == set()
+    assert Q._content_problems(broken, {"text": _zone_text(5, 1, 4)}) == ["untraceable_number"]
+    # 정상 행 · 원문 QA 는 대상이 아니다
+    assert Q._zone_subtotals(image_task(1, target=locked())) == set() == Q._zone_subtotals(qa_task(0))

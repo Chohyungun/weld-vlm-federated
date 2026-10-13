@@ -14,9 +14,10 @@
   동작으로 옮긴다. 결정(한 번 통과 · 두 step 연속의 보류)은 평가 쪽 몫이고, 학습 쪽은 판정 문자열을 따로 두지 않는다.
 - **시도 기록**(`record_attempt`) — 끝난 점검 실행마다 `ecc_attempts.jsonl` 에 한 줄(루트는 지우지 않는다). 시작한 시도의
   수(`attempts_started`)는 점검 루트의 준비 기록으로 센다 — 규칙 파일의 허용 시도 수를 넘으면 새 루트를 만들지 않는다.
-- **규칙 · 착수 허가**(`load_check_rules` · `check_permit`) — 평가 쪽 `load_rules` · `require_ready` · `verify_permit`(2판 서명
-  `raw, *, expected_sha256, rules, expected, file_sha256_of` — 3판의 대조값은 출발 어댑터 · 착수 고정 · 점검 실행 신원 · 시드 번호
-  넷)을 **부르는 자리**다. 평가 쪽 모듈이 없으면 점검도 본실험 칸도 시작하지 않는다(닫힌 쪽으로).
+- **규칙 · 착수 허가**(`load_check_rules` · `check_permit`) — 평가 쪽 `load_rules` · `require_ready` · `verify_permit`(3판 서명
+  `raw, *, expected_sha256, rules, expected, file_sha256_of` — 대조값은 출발 어댑터 · 착수 고정 · 점검 실행 신원 · 시드 번호 넷,
+  프로세서 설정은 착수 고정이 묶는다)을 **부르는 자리**다. 평가 쪽 모듈이 없으면 점검도 본실험 칸도 시작하지 않는다(닫힌 쪽으로).
+  학습 쪽은 부르기 전에 둘을 더 본다 — 규칙의 판별력 영수증 실물(경로 · 바이트 지문)과 통과 파일의 네 검사 산출 파일 실물(§119 I-04 · I-05).
 - **착수 허가의 키**(`accept_permit` · `read_permit_key`) — 점검이 통과하면 평가 쪽 통과 파일을 평가 쪽 검증으로 받아 시드 폴더에
   사본과 키 기록(`ECC_PERMIT_KEY.json` — 통과 파일의 sha256 · 점검 실행 신원 · …)을 덮지 않고 쓴다. 본실험 칸은 그 키를 **통과
   파일 밖에서** 읽어 `expected_sha256` 으로 넘긴다(20b 의 I-1).
@@ -290,8 +291,11 @@ def effective_limits(rules: Any, *, max_hours: float | None = None, max_won: flo
     """점검 실행의 상한과 금액 단가 — 평가 쪽 `effective_limits(rules, max_hours=…, max_cost_krw=…)` 를 부른다(3판, 13-2 의 정본).
 
     실행 인자는 규칙 파일의 상한을 **좁히기만** 한다(넓히면 `ecc_budget_widen`). 돌려주는 `cost_krw_of_hour` 는 단가 × 계수다 —
-    학습 쪽은 단가를 따로 두지 않는다.
+    학습 쪽은 단가를 따로 두지 않는다. 실행 인자는 유한 양수여야 한다 — NaN · ±무한 · 음수 · bool 은 받지 않는다(§119 I-09).
     """
+    for name, v in (("max_hours", max_hours), ("max_won", max_won)):
+        if v is not None and not _finite(v, positive=True):
+            raise EccRefused("ecc_budget_args", f"실행 인자 {name} 은 유한 양수여야 한다: {v!r}")
     D = _eval_side()
     try:
         return dict(D.effective_limits(rules, max_hours=max_hours, max_cost_krw=max_won))
@@ -309,8 +313,14 @@ def budget_check(out_dir: Path, *, spent_hours: float, next_hours: float, max_ho
     `won_per_hour` 는 평가 쪽 `effective_limits` 의 `cost_krw_of_hour`(단가 × 계수)다 — 기본값이 없다(20b 의 I-2).
     `price_detail`(단가 · 계수 · 출처)은 원장 줄에 함께 적는다.
     """
-    if won_per_hour is None or not float(won_per_hour) > 0:
-        raise EccRefused("ecc_rate_missing", "시간당 금액 단가가 없다 — 규칙 파일의 limits 에서 온다")
+    if won_per_hour is None or not _finite(won_per_hour, positive=True):
+        raise EccRefused("ecc_rate_missing", "시간당 금액 단가가 없거나 유한 양수가 아니다 — 규칙 파일의 limits 에서 온다")
+    for name, v in (("spent_hours", spent_hours), ("next_hours", next_hours)):
+        if not _finite(v, positive=False):
+            raise EccRefused("ecc_budget_args", f"{name} 은 유한 비음수여야 한다: {v!r}")
+    for name, v in (("max_hours", max_hours), ("max_won", max_won)):
+        if v is not None and not _finite(v, positive=True):
+            raise EccRefused("ecc_budget_args", f"{name} 은 유한 양수여야 한다: {v!r}")
     ledger_s = cum_wall_s(out_dir)
     if float(spent_hours) * 3600 < ledger_s:
         raise EccRefused("ecc_spent_below_ledger",
@@ -326,6 +336,37 @@ def budget_check(out_dir: Path, *, spent_hours: float, next_hours: float, max_ho
         raise EccRefused("ecc_budget_exceeded", f"{what}: 쓴 {spent_hours:.3f} h + 예상 {next_hours:.3f} h 가 상한을 넘는다")
     append_ledger(out_dir, {"at": time.time(), "event": "budget_ok",
                             "detail": json.dumps(detail, ensure_ascii=False, sort_keys=True)})
+
+
+def _finite(v: Any, *, positive: bool) -> bool:
+    """bool 이 아닌 유한 실수. `positive` 면 0 보다 커야, 아니면 0 이상이어야 한다."""
+    import math
+
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+        return False
+    return v > 0 if positive else v >= 0
+
+
+def _permit_files_problems(raw: bytes, file_sha256_of: Callable[[Any], str | None]) -> list[str]:
+    """통과 파일의 네 검사 산출 파일 — 비지 않은 경로 · 64 자리 16진 sha · 실물이 지금 있어야 한다(§119 I-04). 평가 쪽 `verify_permit`
+    은 지문 콜백의 None 과 빈 기대값을 같다고 볼 수 있으므로, 학습 쪽이 부르기 전에 먼저 본다."""
+    try:
+        obj = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return []                                                   # 꼴 오류는 평가 쪽이 PERMIT_FORMAT 으로 거부한다
+    files = ((obj.get("evidence") or {}) if isinstance(obj, dict) else {}).get("model_free_files")
+    if not isinstance(files, dict):
+        return ["model_free_files 가 사전이 아니다"]
+    out = []
+    for name, f in sorted(files.items()):
+        path, sha = (f.get("path"), f.get("sha256")) if isinstance(f, dict) else (None, None)
+        if not isinstance(path, str) or not path:
+            out.append(f"{name}: 경로가 비었다")
+        elif not (isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{64}", sha)):
+            out.append(f"{name}: sha256 이 64 자리 16진이 아니다")
+        elif file_sha256_of(path) is None:
+            out.append(f"{name}: 산출 파일이 지금 없다")
+    return out
 
 
 def _eval_side() -> Any:
@@ -408,6 +449,14 @@ def load_check_rules(rule_path: Path | None = None) -> dict[str, Any]:
         D.require_ready(rules)
     except D.EarlyCheckRejected as exc:
         raise EccRefused("ecc_rules_rejected", str(exc)) from None
+    disc = getattr(rules, "discrimination", None)
+    if isinstance(disc, dict):                                      # §119 I-05 — 영수증의 경로 · 바이트 지문을 실물과 맞댄다
+        q = Path(str(disc.get("path") or ""))
+        q = q if q.is_absolute() else _repo_root() / q
+        if not disc.get("path") or not q.is_file():
+            raise EccRefused("ecc_discrimination_missing", f"규칙의 판별력 영수증이 없다: {disc.get('path')!r}")
+        if hashlib.sha256(q.read_bytes()).hexdigest() != str(disc.get("sha256", "")).lower():
+            raise EccRefused("ecc_discrimination_changed", "규칙의 판별력 영수증 바이트가 적힌 sha256 과 다르다")
     steps = tuple(int(s) for s in rules.steps)
     CheckStop(steps=steps, out_dir=Path("."))                  # 꼴 검사(양의 정수 · 오름차순 · 겹침 없음)
     return {"steps": steps, "max_attempts": int(rules.max_attempts), "rules_sha256": str(rules.raw_sha256),
@@ -445,6 +494,9 @@ def check_permit(permit_path: Path | None, *, expected_sha256: str, rules: Any, 
         raise EccRefused("ecc_permit_missing", f"조기 좌표 점검의 통과 파일이 없다: {p.name}")
     D = _eval_side()
     raw = p.read_bytes()
+    bad = _permit_files_problems(raw, file_sha256_of)
+    if bad:
+        raise EccRefused("ecc_permit_files", "통과 파일의 네 검사 산출 파일이 서지 않는다 — " + " · ".join(bad))
     try:
         D.verify_permit(raw, expected_sha256=expected_sha256, rules=rules, expected=dict(expected),
                         file_sha256_of=file_sha256_of)
@@ -481,6 +533,9 @@ def accept_permit(permit_src: Path, *, rules: Any, expected: Mapping[str, Any], 
     raw = Path(permit_src).read_bytes()
     sha = hashlib.sha256(raw).hexdigest()
     D = _eval_side()
+    bad = _permit_files_problems(raw, file_sha256_of)
+    if bad:
+        raise EccRefused("ecc_permit_files", "통과 파일의 네 검사 산출 파일이 서지 않는다 — " + " · ".join(bad))
     try:
         D.verify_permit(raw, expected_sha256=sha, rules=rules, expected=dict(expected), file_sha256_of=file_sha256_of)
     except D.EarlyCheckRejected as exc:
@@ -610,7 +665,7 @@ def run_ecc_train(spec: Any, *, steps: Sequence[int], registered_steps: Sequence
     cs = CheckStop(steps=steps, out_dir=out, stop=stop, resume_from=resume_meta, pin_sha256=pin_sha,
                    prior_wall_s=prior, train_config_args=tc_args)
     try:
-        _, _, m, _ = train_rounds(
+        arrays, _, m, _ = train_rounds(
             rows=rows, epochs=spec.total_epochs, round_idx=0, client_idx=0, base_seed=spec.seed_value,
             adapter_in=list(init_arrays), adapter_keys=list(init_keys), model_id=spec.model_id, resume_dir=None,
             run_id=cell_run_id(spec, CENTRAL_TAG), init_seed=spec.seed_value, num_rounds=1,
@@ -627,5 +682,8 @@ def run_ecc_train(spec: Any, *, steps: Sequence[int], registered_steps: Sequence
                 "init_adapter_digest": init_info["init_adapter_digest"], "cum_wall_s": meta["cum_wall_s"]}
     append_ledger(out, {"at": time.time(), "event": "complete", "optimizer_steps": m["optimizer_steps"],
                         "supervised_tokens": m["supervised_tokens"], "cum_wall_s": round(prior + float(m["wall_s"]), 6)})
+    from vlm.init_adapter import init_adapter_digest
+
     return {"exit_code": 0, "step": None, "pin_sha256": pin_sha, "init_adapter_digest": init_info["init_adapter_digest"],
-            "optimizer_steps": int(m["optimizer_steps"]), "metrics": m}
+            "optimizer_steps": int(m["optimizer_steps"]), "metrics": m,
+            "final_adapter_digest": init_adapter_digest(list(arrays))}        # 끝 어댑터의 원소까지 묶는 지문(T2)

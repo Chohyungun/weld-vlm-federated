@@ -1,15 +1,17 @@
-"""판정 v7 의 결정적 grounded — 평가 쪽 참조 구현(정본). 미니스펙 16번 7판 §13-4.
+"""판정 v7 의 결정적 grounded — 평가 쪽 참조 구현(정본). 미니스펙 16번 7판 §13(보강 1 ~ 6).
 
-결함 행: 글에서 사상표 이름 · 개수(아라비아 · 고유어) · 9 구역(어순 · 쪽 · 하이픈 · 띄어쓰기 · 영상 가운데 · 중앙)을 뽑아 잠긴 필드와
-맞댄다. 정상 행 · 제한 문장: 생성 계약(v6 생성 지시의 고정 문장)과 정확 일치. 주석 밖 시각 속성의 긍정 서술. 모델은 부르지 않는다.
+결함 행: 글에서 사상표 이름 · 개수(아라비아 · 고유어) · 9 구역(어순 · 쪽 · 하이픈 · 띄어쓰기 · 칸 · 띠의 칸 · 영상 가운데 · 중앙)을 뽑아
+잠긴 필드와 '이름 × 구역 × 수' 다중집합으로 맞댄다. 언급은 모두 모아 두고 같은 항목의 다른 값은 모순이다(뒤가 앞을 덮지 않는다).
+이름 · 영역별 부재 주장도 사실로 남겨 잠긴 입력과 양립해야 한다. 정상 행 · 제한 문장: 생성 계약(v6 생성 지시의 고정 문장)과 정확
+일치, 그리고 정상 행의 음성 패턴(`normal_codes`). 주석 밖 시각 속성의 긍정 서술. 모델은 부르지 않는다.
 
-정식 구현은 외부 검토 도구가 `corpus/production/judge_policy.py` 로 옮긴다. 두 구현은 `evaluation/vectors/grounded_v7_vectors.jsonl`
-의 같은 입력에서 같은 출력을 내야 한다 — 하니스 `scripts/probe/check_grounded_v7_equivalence.py`. 이 파일은 분석 때의 참조
-(`_workspace/2026-10-13-v7-D/grounded_v7.py`, sha256 6d4c420e…)를 저장소 경로로 옮긴 것이다 — 경로 조작 · 실행 진입점을
-뺀 것 말고는 같고, 두 사본이 G150 벡터에서 같은 출력을 내는 것을 하니스로 확인했다. 그 뒤 외부 검토의 구조 반례 둘(구역별 수의 뒤바뀜 · 요약 문장이 가린 구역별 합)을 받아 '이름 × 구역 × 수' 다중집합 대조와 구역별 합 검사를 더했다(7판 보강 2). 이어 뒤 문장이 앞 문장을 덮던 누락 가족을 닫으려고 언급을 모두 모아 두고 같은 항목의 다른 값을 모순으로 기각하게 했다(7판 보강 3).
+정식 구현은 외부 검토 도구가 이 파일을 **바이트 그대로** `corpus/production/judge_grounded_v7.py` 로 옮긴다. 두 사본은
+`evaluation/vectors/grounded_v7_vectors.jsonl` 의 같은 입력에서 같은 출력을 내야 한다 — 하니스
+`scripts/probe/check_grounded_v7_equivalence.py`. 벡터는 독립 증거가 아니다(두 구현의 동치만 고정한다).
 
-공개 함수 셋(하니스의 계약): `grounded_codes(task, text)` · `contract_codes(task, text)` · `attribute_codes(task, text)` — 모두 사유
-코드의 정렬된 목록을 돌려주고, 빈 목록이 통과다. `grounded_codes` 는 결함 행에서만 뜻이 있다(그 밖은 빈 목록).
+공개 함수 넷(하니스의 계약): `grounded_codes(task, text)` · `contract_codes(task, text)` · `attribute_codes(task, text)` ·
+`normal_codes(task, text)` — 모두 사유 코드의 정렬된 목록을 돌려주고, 빈 목록이 통과다. `grounded_codes` 는 결함 행에서만,
+`normal_codes` 는 정상 행에서만 뜻이 있다(그 밖은 빈 목록).
 """
 
 from __future__ import annotations
@@ -28,11 +30,17 @@ KO = {"한": 1, "하나": 1, "두": 2, "둘": 2, "세": 3, "셋": 3, "네": 4, "
 ROW = {"위": "위", "위쪽": "위", "아래": "아래", "아래쪽": "아래", "가운데": "가운데"}
 COL = {"왼쪽": "왼쪽", "왼편": "왼쪽", "오른쪽": "오른쪽", "오른편": "오른쪽", "가운데": "가운데"}
 ALL = {(r, c) for r in ("위", "가운데", "아래") for c in ("왼쪽", "가운데", "오른쪽")}
-_R = r"(위쪽|아래쪽|위|아래|가운데)"
+_R = r"(?<![가-힣])(위쪽|아래쪽|위|아래|가운데)"
+"""행 낱말 — 앞에 한글이 붙으면 낱말이 아니다('부위 왼쪽' 의 '위')."""
 _C = r"(왼쪽|오른쪽|왼편|오른편|가운데)"
+_ROWB = r"(?<![가-힣])(위쪽|아래쪽|가운데)"
+_COLB = r"(?<![가-힣])(왼쪽|오른쪽|가운데)"
 NEG = re.compile(r"(?:없|않|아니)")
 SUMMARY = re.compile(r"(?:모두|총|합쳐|합계)")
-ATTR = re.compile(r"(?:크고|작고|둥근|둥글|길쭉|가늘|굵|밝은|어두운|선명|날카로|뾰족|긴 |짧은|넓은|좁은|큰 |작은 )")
+ATTR = re.compile(r"(?<![가-힣])(?:크고|작고|둥근|둥글|길쭉|가늘|굵|밝은|어두운|선명|날카로|뾰족|짧은|넓은|좁은|긴\s|큰\s|작은\s)")
+"""시각 속성 어휘 — 낱말 앞에 한글이 없을 때만('생긴 · 시작은' 은 속성이 아니다, 7판 보강 6)."""
+ABSENCE_EXEMPT = re.compile(r"(?:다른|나머지|외에|밖에|제외)")
+"""부재문의 예외 — '위쪽 왼쪽 외에는 결함이 없다' 는 잠긴 칸과 모순이 아니다."""
 ATTR_OK = re.compile(r"(?:알 수 없|확인할 수 없|모른|주어지지 않|판단하지 않)")
 
 
@@ -41,16 +49,21 @@ def zone_key(r: str, c: str) -> tuple[str, str]:
 
 
 def zone_spans(text: str) -> list[tuple[int, int, tuple[str, str]]]:
-    """두 낱말 구역(어순 무관 · 쪽 · 하이픈 · 띄어쓰기)과 '영상 가운데 · 중앙' 의 자리. 겹치면 먼저 찾은 것을 쓴다."""
+    """두 낱말 구역(어순 무관 · 쪽 · 하이픈 · 띄어쓰기), '띠의 칸'(아래쪽 띠의 가운데 칸), '영상 가운데 · 중앙' 의 자리.
+    겹치면 먼저 찾은 것을 쓴다 — 띠의 칸 → 행 열 → 열 행 → 중앙 순."""
     spans: list[tuple[int, int, tuple[str, str]]] = []
 
     def add(m, z):
         if not any(s < m.end() and m.start() < e for s, e, _ in spans):
             spans.append((m.start(), m.end(), z))
+    for m in re.finditer(_ROWB + r"\s*(?:가로\s*)?띠의\s*" + _C + r"\s*(?:구역|칸)", text):
+        add(m, zone_key(m.group(1), m.group(2)))
+    for m in re.finditer(_COLB + r"\s*세로\s*띠의\s*(위쪽|아래쪽|가운데)\s*(?:구역|칸)", text):
+        add(m, zone_key(m.group(2), m.group(1)))
     for m in re.finditer(_R + r"[ -]?" + _C + r"(?!\s*(?:세로\s*)?띠)", text):
         add(m, zone_key(m.group(1), m.group(2)))
-    for m in re.finditer(r"(왼쪽|오른쪽|왼편|오른편)[ -]?(위쪽|아래쪽|위|아래|가운데)", text):
-        add(m, zone_key(m.group(2), m.group(1)))
+    for m in re.finditer(r"(?<![가-힣])(왼쪽|오른쪽|왼편|오른편|가운데)[ -]?(위쪽|아래쪽|위|아래|가운데)(?!치)", text):
+        add(m, zone_key(m.group(2), m.group(1)))   # 열이 앞서는 꼴 — '왼쪽 가운데' 는 (가운데, 왼쪽), '가운데 위쪽' 은 (위, 가운데). '왼쪽 위치' 는 구역이 아니다
     for m in re.finditer(r"(?:영상 가운데|중앙|가운데 구역|가운데 칸)", text):
         add(m, ("가운데", "가운데"))
     return sorted(spans)
@@ -61,16 +74,28 @@ def zones_in(text: str) -> tuple[set, str]:
 
 
 def regions_in(text: str) -> set:
-    """띠 · 구역 · 가장자리 같은 넓은 영역(칸의 집합)."""
+    """띠 · 높이 · 열 · 구역 · 가장자리 같은 넓은 영역(칸의 집합). 두 낱말 구역에 든 낱말은 띠로 읽지 않는다 —
+    '가운데 오른쪽 칸' 의 '오른쪽 칸' 은 세로 띠가 아니라 구역의 꼬리다(7판 보강 6)."""
+    zs = [(s, e) for s, e, _ in zone_spans(text)]
+
+    def free(m) -> bool:
+        return not any(s < m.end() and m.start() < e for s, e in zs)
     out = set()
-    for m in re.finditer(r"(위쪽|아래쪽|가운데)\s*(?:가로\s*)?띠", text):
-        out |= {z for z in ALL if z[0] == ROW[m.group(1)]}
-    for m in re.finditer(r"(왼쪽|오른쪽|가운데)\s*세로\s*띠", text):
-        out |= {z for z in ALL if z[1] == COL[m.group(1)]}
-    for m in re.finditer(r"(왼쪽|오른쪽)\s*(?:구역|칸)", text):
-        out |= {z for z in ALL if z[1] == COL[m.group(1)]}
-    for m in re.finditer(r"(위쪽|아래쪽)(?:\s*(?:구역|칸))?(?:에는|에도|은|는)", text):
-        out |= {z for z in ALL if z[0] == ROW[m.group(1)]}
+    # 띠 · 높이 · 열은 나열될 수 있다 — '위쪽과 가운데 높이' 는 두 행의 합이다
+    for m in re.finditer(r"((?:(?<![가-힣])(?:위쪽|아래쪽|가운데)\s*(?:과|와|및|,)\s*)*)" + _ROWB + r"\s*(?:가로\s*)?(?:띠|높이|줄)", text):
+        if free(m):
+            for r in re.findall(r"위쪽|아래쪽|가운데", m.group(1)) + [m.group(2)]:
+                out |= {z for z in ALL if z[0] == ROW[r]}
+    for m in re.finditer(r"((?:(?<![가-힣])(?:왼쪽|오른쪽|가운데)\s*(?:과|와|및|,)\s*)*)" + _COLB + r"\s*(?:세로\s*띠|열)", text):
+        if free(m):
+            for c in re.findall(r"왼쪽|오른쪽|가운데", m.group(1)) + [m.group(2)]:
+                out |= {z for z in ALL if z[1] == COL[c]}
+    for m in re.finditer(r"(?<![가-힣])(왼쪽|오른쪽)\s*(?:구역|칸)", text):
+        if free(m):
+            out |= {z for z in ALL if z[1] == COL[m.group(1)]}
+    for m in re.finditer(r"(?<![가-힣])(위쪽|아래쪽)(?:\s*(?:구역|칸))?(?:에는|에도|은|는)", text):
+        if free(m):
+            out |= {z for z in ALL if z[0] == ROW[m.group(1)]}
     if "가장자리" in text:
         out |= ALL - {("가운데", "가운데")}
     return out
@@ -91,12 +116,14 @@ def locked_of(task: dict) -> tuple[dict, dict]:
 
 
 COUNT_AFTER_NAME = (r"(?:은|는|이|가)?\s*(모두\s*|총\s*)?(?:(\d+)\s*개|(" + "|".join(KO) + r")\s*개|(하나|둘|셋|넷)(?=가|이|만|\s|$))")
-BARE_COUNT = re.compile(r"(?<![가-힣\d])(?:(\d+)|(" + "|".join(KO) + r"))\s*개(?!수)(?!\s*(?:의\s*)?(?:구역|칸|영역|곳|위치|띠|줄|부분))")
+_UNIT_NOT_DEFECT = r"(?!\s*(?:의\s*)?(?:구역|칸|영역|곳|위치|띠|줄|부분|열|높이))"
+"""'두 개의 구역' · '세 칸' — 자리를 센 수는 결함의 수가 아니다."""
+BARE_COUNT = re.compile(r"(?<![가-힣\d])(?:(\d+)|(" + "|".join(KO) + r"))\s*개(?!수)" + _UNIT_NOT_DEFECT)
 
 
 _KO_ALT = "|".join(KO)
-GRAND = re.compile(r"결함(?:은|는|이|가|들은|들이)?\s*(?:모두\s*|총\s*|합쳐\s*)?(?:(\d+)|(" + _KO_ALT + r"))\s*개(?!수)"
-                   r"|(?<![가-힣\d])(?:(\d+)|(" + _KO_ALT + r"))\s*개의\s*결함")
+GRAND = re.compile(r"결함(?:은|는|이|가|들은|들이)?\s*(?:모두\s*|총\s*|합쳐\s*)?(?:(\d+)|(" + _KO_ALT + r"))\s*개(?!수)" + _UNIT_NOT_DEFECT
+                   + r"|(?<![가-힣\d])(?:(\d+)|(" + _KO_ALT + r"))\s*개의\s*결함")
 
 
 SUBSET = re.compile(r"(?:그중|그 중|그 가운데|이 가운데|이 중|이 가운데)\s*$")
@@ -118,6 +145,14 @@ def add_zone_counts(n: str, ks: list, zl: list, zone_st: dict, group_st: dict, t
             zone_st.setdefault((n, z), []).append(k)
     else:
         group_st.setdefault((n, frozenset(zl)), []).append(sum(ks))
+
+
+_CLAUSE = re.compile(r",\s*|(?<=[가-힣])(?:고|며|지만|으나|는데|면서)\s+")
+
+
+def _clauses(s: str) -> list[str]:
+    """문장을 쉼표 · 연결 어미에서 나눈다 — 부재 주장의 범위(이름 · 구역)는 절 안이다."""
+    return [c for c in _CLAUSE.split(s) if c and c.strip()]
 
 
 def grand_counts(s: str) -> list[tuple[tuple[int, int], int]]:
@@ -170,16 +205,32 @@ def defect_grounded(task: dict, text: str) -> list[str]:
                         grand_st.append(sum(ks))                     # 이름이 여럿(또는 없음)이면 결함 전체의 수
             reg = regions_in(s)
             if NEG.search(s) and "결함" in s:                      # 부재문 — 그 영역에 잠긴 결함이 없어야 한다
-                if (z | reg) & locked_all and not re.search(r"(?:다른|나머지)", s):
+                if (z | reg) & locked_all and not ABSENCE_EXEMPT.search(s):
                     out.append("absence_contradicts_locked")
             elif z - locked_all:                                    # 이름 없는 관찰 — 칸이 잠긴 칸 안에
                 out.append("observation_zone_outside_locked")
             continue
+        # 이름이 든 부재 절('균열은 없다' · '위쪽 왼쪽에는 균열이 없다')은 버리지 않고 사실로 남긴다 — 잠긴 입력과 양립해야 한다.
+        # 절은 쉼표 · 연결 어미로 나눈다. 수가 붙은 이름은 긍정 언급이고, 수 없이 뒤에 부정이 따르는 이름은 부재 주장이다
+        positive: set = set()
+        for c in _clauses(s):
+            c_names = [n for n in names_here if n in c]
+            if not c_names:
+                continue
+            c_neg = bool(NEG.search(c))
+            for n in c_names:
+                for m in re.finditer(re.escape(n), c):
+                    tail = c[m.end():]
+                    if re.match(COUNT_AFTER_NAME, tail) or not (c_neg and NEG.search(tail)):
+                        positive.add(n)
+                    elif not ABSENCE_EXEMPT.search(c):
+                        claimed = {zz for _, _, zz in zone_spans(c)} | regions_in(c)
+                        if (not claimed and n in counts) or (claimed and (lzones.get(n, set()) & claimed)):
+                            out.append("absence_contradicts_locked")
+        names_here = [n for n in names_here if n in positive]
+        if not names_here:
+            continue                                                # 부재 주장만 있는 문장 — 이름을 세지 않는다
         name_pos = sorted((m.start(), m.end(), n) for n in names_here for m in re.finditer(re.escape(n), s))
-        neg_sent = bool(re.search(r"(?:없|않)", s)) and not any(re.search(re.escape(n) + r"[^.]*?(?:\d|" + "|".join(KO) + r")", s)
-                                                                   for n in names_here)
-        if neg_sent:
-            continue                                                # 이름이 든 부재문 — 이름을 세지 않는다
         for _, _, n in name_pos:
             said.add(n)
         spans = zone_spans(s)
@@ -190,10 +241,11 @@ def defect_grounded(task: dict, text: str) -> list[str]:
             if i + 1 < len(spans) and re.fullmatch(r"\s*(?:와|과|및|,)\s*", s[ze:spans[i + 1][0]]):
                 target[i] = target[i + 1]
                 continue
-            nxt = re.match(r"\s*(?:에|의)\s*(?:는\s*)?", after)
+            nxt = re.match(r"\s*(?:(?:구역|칸)\s*)?(?:에|의)\s*(?:는\s*)?", after)
             follow = []
             if nxt:
-                seg = after[nxt.end():].split(",")[0]
+                stop = (spans[i + 1][0] - ze) if i + 1 < len(spans) else len(after)
+                seg = after[nxt.end():stop].split(",")[0]            # 다음 구역 앞에서 닫는다 — '균열 1개와 아래쪽 오른쪽에 기공' 의 기공은 뒤 구역의 것
                 if any(seg.startswith(n) for n in names_here):  # 'ZONE에 · 의 이름 …' — 바로 뒤의 이름들에
                     follow = [n for _, n in sorted((m.start(), n) for n in names_here for m in re.finditer(re.escape(n), seg))]
             if follow:
@@ -238,6 +290,12 @@ def defect_grounded(task: dict, text: str) -> list[str]:
             for (zs, ze, z), names_for in zip(spans, target):
                 if n in (names_for or []) and z not in zl:
                     zl.append(z)
+            if ks and zl and len(ks) == len(zl) + 1 and ks[0] == sum(ks[1:]):
+                total_st.setdefault(n, []).append(ks[0])            # '기공 3개가 A에 2개, B에 1개' — 앞 수가 뒤 수들의 합이면 총수
+                ks = ks[1:]
+            elif ks and len(zl) >= 2 and len(ks) == len(zl) and re.search(r"나머지", s) and ks[0] > sum(ks[1:]):
+                total_st.setdefault(n, []).append(ks[0])            # '3개 가운데 2개는 A에, 나머지는 B에' — 나머지 = 총수 − 앞 수들
+                ks = ks[1:] + [ks[0] - sum(ks[1:])]
             if ks:
                 add_zone_counts(n, ks, zl, zone_st, group_st, total_st)
         # 띠 소견 — '결함은 X 띠를 따라' 는 (그 이름의) 잠긴 칸이 모두 그 띠 안이라는 말이다. '대부분 · 일부 · 주로' 면 묻지 않는다

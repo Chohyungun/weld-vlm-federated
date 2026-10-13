@@ -67,10 +67,22 @@ def test_결정적이고_입력_행_순서와_무관하다(pop):
     assert E.sample_eval(pop, (300,), seed="다른 시드")["samples"][300]["ids"] != a["samples"][300]["ids"]
 
 
-def test_크기가_커지면_앞의_표본을_품는다(pop):
-    res = E.sample_eval(pop, (150, 250, 400))
+def test_크기가_커지면_앞의_표본을_품고_실행_때도_사슬을_본다(pop, monkeypatch):
+    res = E.sample_eval(pop, (400, 150, 250))
     s = [set(res["samples"][k]["ids"]) for k in (150, 250, 400)]
-    assert s[0] <= s[1] <= s[2]
+    assert s[0] <= s[1] <= s[2] and res["prefix_chain"] == [150, 250, 400]
+    monkeypatch.setattr(E, "allocate", lambda g, size, n: max(1, g - size // 100))     # 크기가 클수록 덜 뽑는 꼴 — 사슬이 깨진다
+    with pytest.raises(E.SampleRefused) as err:
+        E.sample_eval(pop, (150, 400))
+    assert err.value.code == "prefix"
+
+
+def test_시드의_다이제스트_접두는_검증한_스냅샷과_같아야_한다():
+    E.check_seed_digest(E.SEED, E.SEED.rsplit("|", 1)[1] + "0" * 56)
+    with pytest.raises(E.SampleRefused) as err:
+        E.check_seed_digest(E.SEED, "d" * 64)
+    assert err.value.code == "seed_digest"
+    assert E.configured_digest()[:8] == E.SEED.rsplit("|", 1)[1]                      # 지금 설정의 스냅샷과 공개 시드
 
 
 def test_묶음은_나뉘지_않고_평가셋_밖_id_는_없다(pop):
@@ -139,11 +151,19 @@ def test_명령행은_스냅샷을_대조하고_새_폴더에_쓴다(tmp_path, m
     _write_manifest(mdir / "manifest.csv", pop)
     import data.manifest_io as M
 
-    monkeypatch.setattr(M, "verify_snapshot", lambda root: "d" * 64)
-    args = ["--manifest-dir", str(mdir), "--expect-digest", "d" * 64, "--out", str(tmp_path / "s"), "--sizes", "200", "300"]
+    digest = E.SEED.rsplit("|", 1)[1] + "d" * 56                                       # 시드 접두와 맞는 가짜 다이제스트
+    monkeypatch.setattr(M, "verify_snapshot", lambda root: digest)
+    monkeypatch.setattr(E, "configured_digest", lambda repo_root=None: digest)          # 기본은 설정에서 — 명령행에 옮겨 적지 않는다
+    args = ["--manifest-dir", str(mdir), "--out", str(tmp_path / "s"), "--sizes", "200", "300"]
     assert E.main(args) == 0
     meta = json.loads((tmp_path / "s" / "SAMPLE.json").read_text(encoding="utf-8"))
     assert meta["sizes"]["300"]["set_sha256"] == set_digest(E.sample_eval(pop, (300,))["samples"][300]["ids"])
+    assert meta["prefix_chain"] == [200, 300] and meta["manifest_snapshot_digest"] == digest
     with pytest.raises(E.SampleRefused) as err:
-        E.main([*args[:3], "e" * 64, args[4], str(tmp_path / "t"), *args[6:]])
+        E.main([*args[:2], "--expect-digest", "e" * 64, "--out", str(tmp_path / "t"), *args[4:]])
     assert err.value.code == "snapshot"
+    monkeypatch.setattr(M, "verify_snapshot", lambda root: "d" * 64)
+    monkeypatch.setattr(E, "configured_digest", lambda repo_root=None: "d" * 64)
+    with pytest.raises(E.SampleRefused) as err:
+        E.main([*args[:3], str(tmp_path / "u"), *args[4:]])
+    assert err.value.code == "seed_digest"

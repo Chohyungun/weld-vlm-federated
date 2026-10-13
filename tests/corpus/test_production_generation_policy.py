@@ -162,7 +162,7 @@ def test_결함_한계도_근거의_문장을_그대로_쓰며_본문에는_복�
     assert "합격 여부를 결정할 수 없다" not in instruction
     for form in evidence["limitation_forms"]:
         assert form in embedded and form not in instruction
-    assert G.POLICY_VERSION == "image_report_regeneration_v3"
+    assert G.LEGACY_POLICY_VERSION == "image_report_regeneration_v3"
     assert G.policy_identity()["version"] == G.POLICY_VERSION
 
 
@@ -308,7 +308,7 @@ def test_해시를_다시_맞춰도_잘못된_명부를_거부한다(case, kind,
 
 def test_작성_중_부모_바이트가_바뀌면_RUN을_발행하지_않는다(case, monkeypatch):
     repo, parent, _, config = case
-    original = G.build_image_prompt
+    original = G.build_image_prompt_v2
     changed = False
 
     def mutate_parent(evidence):
@@ -319,7 +319,7 @@ def test_작성_중_부모_바이트가_바뀌면_RUN을_발행하지_않는다(
             changed = True
         return original(evidence)
 
-    monkeypatch.setattr(G, "build_image_prompt", mutate_parent)
+    monkeypatch.setattr(G, "build_image_prompt_v2", mutate_parent)
     with pytest.raises(G.RegenerationRefused, match="parent_changed"):
         G.prepare_regeneration(parent, repo / "new", config, repo_root=repo)
     assert (repo / "new" / "tasks.jsonl").exists()
@@ -328,14 +328,14 @@ def test_작성_중_부모_바이트가_바뀌면_RUN을_발행하지_않는다(
 
 def test_쓰는_도중_게이트가_열리면_RUN을_발행하지_않고_실패_출력은_보존한다(case, monkeypatch):
     repo, parent, _, config = case
-    original = G.build_image_prompt
+    original = G.build_image_prompt_v2
     before = _bytes_under(parent)
 
     def open_gate(evidence):
         (repo / ".git" / "CTO_GATE_OPEN").write_bytes(b"open")
         return original(evidence)
 
-    monkeypatch.setattr(G, "build_image_prompt", open_gate)
+    monkeypatch.setattr(G, "build_image_prompt_v2", open_gate)
     with pytest.raises(ValueError, match="gate/merge"):
         G.prepare_regeneration(parent, repo / "new", config, repo_root=repo)
     assert not (repo / "new" / "RUN.json").exists()
@@ -418,7 +418,7 @@ def test_폭과_높이_없는_부모의_거친_위치_대조를_완료라고_기
     scope = new["regeneration"]["validation_scope"]
     assert scope["coarse_positions"] == "preserved_parent_tasks_not_recomputed_without_image_dimensions"
     assert scope["image_bytes"] == "not_opened_requires_separate_deployment_gate"
-    assert list(iter_jsonl(repo / "new" / "tasks.jsonl"))[1]["evidence"] == G.build_image_evidence(tasks[1])
+    assert list(iter_jsonl(repo / "new" / "tasks.jsonl"))[1]["evidence"] == G.build_image_evidence_v2(tasks[1])
 
 
 def _set_synthetic_population(parent, tasks):

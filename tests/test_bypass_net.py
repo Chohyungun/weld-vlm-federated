@@ -55,8 +55,12 @@ CLOSED: dict[str, tuple[str, str]] = {
         "축소 파일럿 게이트 — cluster_bootstrap 의 구간을 싣지만 옛 등록 블록 · 규약 문장이 없다. 다른 소관의 파일이다"),
     "scripts/recompute_baselines.py": ("no_interval", "score_records 만 가져온다"),
     "scripts/verify_ablation_arms.py": ("no_interval", "score_records 만 가져온다"),
+    "scripts/probe/eval_sample_ci_estimate.py": (
+        "no_interval",
+        "평가 표본 크기 어림(25번) — 사전실험 검출기 예측(통합형 묶음이 아니다)의 계수를 build_counts 로만 센다. "
+        "구간 이름을 가져오지 않는다 — 자체 층 안 재표집은 크기 비교용 어림이고 등록 구간이 아니다(2026-10-13 추가)"),
 }
-"""닫힌 목록 열 — 사전실험 스크립트다. 통합형 묶음을 읽지 않는다(`UNI_MAIN_TAGS` 를 가져오지 않는다 — 아래 시험).
+"""닫힌 목록 열하나 — 사전실험 스크립트다. 통합형 묶음을 읽지 않는다(`UNI_MAIN_TAGS` 를 가져오지 않는다 — 아래 시험).
 
 분류 셋. `old_registration` 은 구간을 싣되 옛 등록 블록이나 규약 문장을 산출에 싣는다 — 시험이 그 참조를 본다.
 `no_interval` 은 구간을 내는 이름을 가져오지 않는다 — 시험이 본다. `interval_unmarked` 는 구간을 싣는데 표지가 없다 —
@@ -171,7 +175,7 @@ def test_그물에_닿고_검증을_부르지_않는_모듈은_닫힌_목록뿐�
 
 
 def test_닫힌_목록은_열이다() -> None:
-    assert len(CLOSED) == 10
+    assert len(CLOSED) == 11    # 2026-10-13 평가 표본 크기 어림을 더했다(10 → 11)
     assert sum(1 for p in CLOSED if not p.startswith("scripts/probe/")) == 3
 
 

@@ -336,6 +336,39 @@ def _approval_binding(approval, run, spec, policy, implementation):
             "writer_role": "separate-judge-not-a-probe", "gpu_model_verified": True}
 
 
+def _approval_binding_v7(approval, run, spec, policy, implementation):
+    """Only a verified, externally pinned final blinded receipt admits v7 writing."""
+    basis = approval["identity_basis"]
+    inputs = basis.get("input_basis", {})
+    registration = inputs.get("registration", {})
+    final_protocol = "judge_v7_g150_b_v2"
+    if (basis.get("protocol") != final_protocol or inputs.get("protocol") != final_protocol or
+            basis.get("approval_scope") != "final_blinded" or
+            basis.get("final_blinded_approval") is not True or
+            not isinstance(registration, dict) or
+            registration.get("expected_protocol") != final_protocol or
+            registration.get("expected_approval_scope") != "final_blinded"):
+        raise I.StageRefused("final_blinded_approval", "v7 production requires registered final G150-B v2 approval")
+    # read_probe_approval has already recomputed these pins from both preserved
+    # calls. Bind them into the writer identity so readers/audits cannot lose scope.
+    binding = _approval_binding(approval, run, spec, policy, implementation)
+    return {**binding, "protocol": final_protocol, "approval_scope": "final_blinded",
+            "final_blinded_approval": True, "registration": _clone(registration)}
+
+
+def _check_generator_separation(runtime, generated):
+    """Compare actual families after the strict generation reader has run.
+
+    Valid v2 template-only shards have model=None, including a normal prefix
+    before a later modeled shard. The reader verifies those templates and the
+    single runtime shared by every modeled shard. An all-template source has no
+    actual generator runtime; the separate configured-family check still applies.
+    """
+    generator = I._first_runtime(generated)
+    if generator is not None and I._family(runtime["model_type"]) == I._family(generator["model_type"]):
+        raise I.StageRefused("self_judging", "actual model families are equal")
+
+
 def _inspect(root, target, config, judge_config=None, *, owned_locks=False,
              probe_approval=None, probe_approval_sha256=None):
     require_v6_parser()
@@ -410,8 +443,7 @@ def _inspect(root, target, config, judge_config=None, *, owned_locks=False,
         runtime = record["identity_basis"].get("runtime_model")
         _check_runtime(runtime, spec)
         _check_approved_runtime(approval, runtime, backend_injected=False)
-        if I._family(runtime["model_type"]) == I._family(generated[0]["model"]["model_type"]):
-            raise I.StageRefused("self_judging", "actual model families are equal")
+        _check_generator_separation(runtime, generated)
         if record["identity_basis"] != {**basis, "runtime_model": runtime}:
             raise I.StageRefused("judge_identity_changed", "source, render, policy or implementation differs")
     done = _read_done(target, record, tasks, generated, spec, config)
@@ -627,8 +659,7 @@ def run_judge(run_dir, config: dict, judge_dir, *, judge_config=None,
                         runtime = judge_runtime_identity(model, spec)
                         _check_approved_runtime(context["approval"], runtime,
                                                 backend_injected=backend_factory is not None)
-                        if I._family(runtime["model_type"]) == I._family(context["generated"][0]["model"]["model_type"]):
-                            raise I.StageRefused("self_judging", "actual architecture families are equal")
+                        _check_generator_separation(runtime, context["generated"])
                         _unchanged(context)
                         if context["record"] is None:
                             context["record"] = _write_genesis(target, {**context["basis"], "runtime_model": runtime})
@@ -837,7 +868,7 @@ def _inspect_v7(root, target, config, judge_config=None, *, owned_locks=False,
         approval_paths.append((target / "probe_approval", local["files_sha256"]))
     elif stored_approval is not None:
         raise I.StageRefused("probe_approval_missing", "writer's portable approval is missing")
-    binding = (_approval_binding(approval, run, spec, policy_identity, before["implementation"])
+    binding = (_approval_binding_v7(approval, run, spec, policy_identity, before["implementation"])
                if approval is not None else None)
     prompts, rendered, deterministic, model_ids = {}, [], {}, {}
     for index, shard in generated.items():
@@ -869,8 +900,7 @@ def _inspect_v7(root, target, config, judge_config=None, *, owned_locks=False,
         runtime = record["identity_basis"].get("runtime_model")
         _check_runtime_v7(runtime, spec)
         _check_approved_runtime(approval, runtime, backend_injected=False)
-        if I._family(runtime["model_type"]) == I._family(generated[0]["model"]["model_type"]):
-            raise I.StageRefused("self_judging", "actual model families are equal")
+        _check_generator_separation(runtime, generated)
         if record["identity_basis"] != {**basis, "runtime_model": runtime}:
             raise I.StageRefused("judge_identity_changed", "source, render, policy or implementation differs")
     done = _read_done_v7(target, record, tasks, generated, spec, config, deterministic, model_ids)
@@ -1039,8 +1069,7 @@ def _run_judge_v7(run_dir, config: dict, judge_dir, *, judge_config=None,
                         runtime = _clone(context["approval"]["identity_basis"]["runtime_model"])
                         _check_runtime_v7(runtime, spec)
                         _check_approved_runtime(context["approval"], runtime, backend_injected=False)
-                        if I._family(runtime["model_type"]) == I._family(context["generated"][0]["model"]["model_type"]):
-                            raise I.StageRefused("self_judging", "actual architecture families are equal")
+                        _check_generator_separation(runtime, context["generated"])
                         context["record"] = _write_genesis_v7(target, {**context["basis"], "runtime_model": runtime})
                         context["output_pins"]["JUDGE.json"] = hashlib.sha256(
                             I._canonical(context["record"]) + b"\n").hexdigest()
@@ -1057,8 +1086,7 @@ def _run_judge_v7(run_dir, config: dict, judge_dir, *, judge_config=None,
                         runtime = judge_runtime_identity(model, spec, policy_version="v7")
                         _check_approved_runtime(context["approval"], runtime,
                                                 backend_injected=backend_factory is not None)
-                        if I._family(runtime["model_type"]) == I._family(context["generated"][0]["model"]["model_type"]):
-                            raise I.StageRefused("self_judging", "actual architecture families are equal")
+                        _check_generator_separation(runtime, context["generated"])
                         _unchanged(context)
                         if context["record"] is None:
                             context["record"] = _write_genesis_v7(target, {**context["basis"], "runtime_model": runtime})

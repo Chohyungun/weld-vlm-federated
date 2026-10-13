@@ -12,7 +12,7 @@
 #
 # 한 번 커밋한 규칙은 고치지 않는다 — 고치면 새 판이다(`version`).
 kind: early_coord_check
-version: 3
+version: 4
 
 # 문턱과 계산 설정 — 진단 검사기(`evaluation/frame_diag.FrameRules`)의 칸 그대로. 값은 진단 문턱 제안 2판의 가운데에서
 # 출발했다(`sources.thresholds`). 표본 하한은 쌍 100 · 쌍의 묶음 20 · 장 묶음 20 · 장 50.
@@ -37,8 +37,18 @@ steps: [100, 200, 400]   # 점검 step 목록 — 학습 쪽 11번의 권고를 
 n: all                   # 표본 n — 대상 전부. 쌍 하한 때문에 줄이지 않는다
 gen_limit: 512           # 생성 길이 L — 대상의 타깃 거름과 같은 값. 본실험 생성 한도와 별개다
 
-sequential_rule: null
-max_attempts: null
+# 판 4 (2026-10-13, 지시 1013o 의 2) — 미정 다섯 칸을 채웠다. 값은 _workspace/2026-10-13-ecc-D/make_rules_v4.py 가 산출 파일에서 냈다.
+#   순차 규칙의 근거: 19번 2판 판별력 영수증(docs/dev_log/2026-10-07-본실험코퍼스/19_조기좌표점검_판별력_2판.json, sha256 c285746093fc62ea…) — 반복 5, 사다리 3.
+#   `two_consecutive` 의 사다리별 거짓 통과 / 거짓 경보(음성 실행 / 양성 실행):
+#     낮은 사다리: 1 / 0 (195 / 45)
+#     평평 0.06: 1 / 0 (195 / 45)
+#     평평 0.08: 0 / 1 (195 / 45)
+#   다른 규칙의 거짓 통과 / 거짓 경보: 낮은 사다리 5 / 0 · 평평 0.06 6 / 0 · 평평 0.08 0 / 0
+#   14-2 의 기준(두 규칙 가운데 거짓 통과 0)은 어느 쪽도 모든 사다리에서 채우지 못한다 — 문턱 바로 위의 음성은 유한한 문턱에서 가끔
+#   통과한다(19번 §7-1). 거짓 통과가 적은 쪽을 적었다. 이 선택은 등록 사항이라 총괄 승인이 필요하다(19번 §9).
+#   영수증의 모듈 지문은 2판 모듈의 것이다 — 3판 · 4판의 변경은 착수 허가 키 · 판별력 실물 검증 · 상한 인자 검증이라 판정 식과 무관하다.
+sequential_rule: two_consecutive
+max_attempts: 1          # 시드 1 · 이번 주 한 번(총괄 지시 1013o 의 2)
 
 # 점검 실행의 시간 · 금액 상한과 단가(13-2 의 정본) — 비면 시작하지 않는다(`require_ready`).
 #   - 학습 쪽은 상한과 단가를 **여기서만** 읽는다. 실행 인자(--max-hours · --max-won)는 이보다 **좁히기만** 한다 — 넓히면
@@ -46,8 +56,13 @@ max_attempts: null
 #   - 금액 대조는 시간 × 단가 × 계수로 센다(`effective_limits` 의 `cost_krw_of_hour`).
 #   - max_hours · max_cost_krw 는 학습 쪽 비용표에서 골라 첫 점검 실행 전에 총괄이 적는다.
 limits:
-  max_hours: null
-  max_cost_krw: null
+  # 인스턴스(칸) 하나 기준 — 조기 점검이 도는 첫 인스턴스의 점검 실행 상한(총괄 지시 1013o 의 2):
+  #   max_hours = ceil(ecc_h.upper.to_400 × 1.2), ecc_h.upper.to_400 = 학습 쪽 26번 확정판 plan.json 의 '점검이 step 400 까지 가고
+  #   모든 장이 L 까지 생성하는 상한' = 28.2 h(plan.json sha256 176cbf9b10a3dd85…, 11번 비용표 k=3 · n=417 · L=512 의 total_h 와 같다)
+  #   → ceil(28.2 × 1.2) = ceil(33.84) = 34
+  #   max_cost_krw = max_hours × price_krw_per_hour × safety_factor = 34 × 2500 × 1.2 = 102000
+  max_hours: 34
+  max_cost_krw: 102000
   price_krw_per_hour: 2500
   price_source: "Elice Cloud G-NAHP-80(A100 80GB) 시간당 요금 — 사용자 확인 2026-10-07"
   safety_factor: 1.2
@@ -85,7 +100,9 @@ actions: evaluation.early_coord_check.ACTIONS
 # 진단 검사기(evaluation/frame_diag.py) 바이트(LF)의 sha256 — 지금 검사기와 같아야 읽힌다
 checker_sha256: 993354398ca8d45225bf62422d39aed4754b817b44163bc1684ca66759b7c196
 
-discrimination: null
+discrimination:
+  path: docs/dev_log/2026-10-07-본실험코퍼스/19_조기좌표점검_판별력_2판.json
+  sha256: c285746093fc62ead4089d34465629fff3322e52b50982c7d6a03bfa86fd1611
 
 sources:
   thresholds: docs/dev_log/2026-09-30-리허설/14_진단문턱_제안_D_2판.json

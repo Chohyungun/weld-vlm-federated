@@ -62,6 +62,9 @@ from evaluation.reject_v14 import (
 )
 from evaluation.actuals import compare_values, impl_identifiers, impl_problems
 from evaluation.prereg_unified import PURPOSES
+
+SCORABLE_PURPOSES = tuple(p for p in PURPOSES if p != "early_coord_check")
+"""묶음 검증기가 받는 목적 — 조기 좌표 점검의 산출은 채점 대상이 아니다(`early_coord_check.refuse_for_scoring`, 2026-10-13)."""
 from evaluation.schema_v14 import UNI_MAIN_TAGS, tag_parts
 
 MODE_MODEL = "model"
@@ -436,7 +439,7 @@ def _check_sidecar_schema(meta, path: Path, out: list[Rejection]) -> bool:
         if k in meta and (type(meta[k]) is not int or meta[k] < 0):
             out.append(Rejection(RejectCode.SIDECAR_SCHEMA, path.name, {"not_int": k}))
     # 07번 §30-4 의 넷 — 꼴만 여기서 본다. 값의 대조는 D 단계다.
-    if "purpose" in meta and meta["purpose"] not in PURPOSES:
+    if "purpose" in meta and meta["purpose"] not in SCORABLE_PURPOSES:
         out.append(Rejection(RejectCode.SIDECAR_SCHEMA, path.name, {"not_vocab": "purpose"}))
     if "impl_ids" in meta and impl_identifiers(meta["impl_ids"]) is None:
         # 쓰는 쪽의 꼴 — 식별자 사전(`actuals.IMPL_FIELDS`)의 목록, 또는 이음새 이름 → 식별자 사전(리허설 2판 반영판 §1-4)
@@ -800,7 +803,7 @@ def _check_projection(registration: Registration, mode: str, want_list: EvalList
     """등록 투영의 목적 · 모드 결속. 목적은 대역 면제와 고의 중단 통과를 정하는 스위치라 **값과 같은 등록에서** 나와야 한다."""
     v = registration.values
     why = []
-    if registration.purpose not in PURPOSES:
+    if registration.purpose not in SCORABLE_PURPOSES:
         why.append("목적이 어휘 밖이다")
     if v.get("purpose") != registration.purpose:
         why.append("값의 purpose 와 목적이 다르다")

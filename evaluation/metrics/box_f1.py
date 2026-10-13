@@ -257,34 +257,52 @@ def build_counts(
                              "coord_numeric_convention": COORD_NUMERIC_CONVENTION})
 
 
+SENSITIVITY_REGISTERED = "fp_per_class_every_failed_record"
+"""등록된 민감도 변형(실험설계 8-5, 2026-10-13 사용자 승인): **실패 레코드마다** 채점 클래스별 오탐 1건. 정상 이미지의 실패에도
+적용하고, 결함 이미지의 미탐은 주 채점대로 둔다(그 위에 오탐이 더해진다)."""
+SENSITIVITY_NORMAL_ONLY = "fp_per_class_normal_failed_only"
+"""07번 §12-8 의 옛 읽기 — 정상 이미지의 실패에만 오탐을 더한다. 등록값이 아니다. 기록과 비교를 위해 이름을 남긴다."""
+SENSITIVITY_VARIANTS = (SENSITIVITY_REGISTERED, SENSITIVITY_NORMAL_ONLY)
+
+
 def sensitivity_counts(
     base: CountTable,
     *,
     gold_codes: Mapping[str, Sequence[str] | set[str]],
     failed_image_ids,
+    variant: str = SENSITIVITY_REGISTERED,
 ) -> CountTable:
-    """민감도 변형 — **정상 이미지의 레코드 실패에 클래스마다 오탐 1건**을 더한다(§12-8).
+    """민감도 변형 — 레코드 실패에 **클래스마다 오탐 1건**을 더한다.
 
-    주 채점은 실패를 빈 예측으로 둔다. 그러면 정상 이미지의 실패는 벌점을 하나도 받지 않는다 —
-    불변조건 3-4 의 "오답 처리" 와 어긋나는 자리이고, 그 크기를 재는 것이 이 변형이다.
+    주 채점은 실패를 빈 예측으로 둔다. 그러면 정상 이미지의 실패는 벌점을 하나도 받지 않고 결함 이미지의 실패도
+    미탐만 받는다 — 불변조건 3-4 의 "오답 처리" 와 어긋나는 자리이고, 그 크기를 재는 것이 이 변형이다.
+
+    `variant` 의 기본은 **등록값**(`SENSITIVITY_REGISTERED` — 실패 레코드마다)이다. `SENSITIVITY_NORMAL_ONLY` 는
+    07번 §12-8 의 옛 읽기(정상 이미지의 실패에만)이고 등록값이 아니다 — 앞 판이 이것만 구현했었다(2026-10-13 정정).
 
     **채점 4클래스로 고정한다**(그 모집단의 평균 대상 목록이 아니라). 목록이 모집단마다 달라지면
     micro 가 함께 움직여 민감도의 뜻이 흐려진다.
     """
+    if variant not in SENSITIVITY_VARIANTS:
+        raise ValueError(f"모르는 민감도 변형 {variant!r} — {SENSITIVITY_VARIANTS} 가운데 하나다")
     idx = base.index_of()
     fp = base.fp.copy()
-    n_added = 0
+    n_normal = n_defect = 0
     for image_id in failed_image_ids:
         if image_id not in idx:
             continue
         if set(gold_codes.get(image_id, ())):
-            continue        # 결함 이미지의 실패는 주 채점과 같다(정답이 FN 으로 남는다)
+            if variant == SENSITIVITY_NORMAL_ONLY:
+                continue    # 옛 읽기: 결함 이미지의 실패는 주 채점과 같다
+            n_defect += 1   # 등록값: 미탐(주 채점 그대로) 위에 오탐이 더해진다
+        else:
+            n_normal += 1
         fp[idx[image_id], :] += 1
-        n_added += 1
     return CountTable(base.classes, base.image_ids, base.tp, fp, base.fn,
                       base.boundary, base.pred_per_image,
-                      notes={**base.notes, "variant": "sensitivity",
-                             "n_normal_failures_penalised": n_added,
+                      notes={**base.notes, "variant": "sensitivity", "sensitivity_variant": variant,
+                             "n_normal_failures_penalised": n_normal,
+                             "n_defect_failures_penalised": n_defect,
                              "fp_per_failure": len(base.classes)})
 
 

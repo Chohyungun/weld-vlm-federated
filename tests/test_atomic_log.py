@@ -59,7 +59,7 @@ def test_append로_라운드가_쌓인다(tmp_path):
 
 
 def test_결측_라운드를_찾아낸다(tmp_path):
-    """RQ3 은 라운드별 궤적에서 나온다. 중간이 비면 곡선을 그릴 수 없다."""
+    """RQ2 는 라운드별 궤적에서 나온다. 중간이 비면 곡선을 그릴 수 없다."""
     log = _log(tmp_path)
     for r in range(3):
         for c in (0, 1, 2):

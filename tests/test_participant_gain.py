@@ -1,4 +1,4 @@
-"""RQ3 참여 이득 지표 8종 테스트. `51_RQ3_참여이득_지표설계.md` §1.
+"""RQ2 참여 이득 지표 8종 테스트. 참여 이득 지표설계 문서(51번) §1.
 
 **평균이 소규모 참여자의 손해를 가려 주는지**가 이 지표군의 존재 이유이고, 그 상황을
 테스트가 직접 만든다.
@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import pytest
 
-from evaluation.rq3 import (
+from evaluation.participant_gain import (
     CUMULATIVE_BYTES_BASIS,
     Delta,
     attribute_by_client,
-    build_rq3_report,
+    build_participant_gain_report,
     format_report,
     rows_to_client_metric,
 )
@@ -21,7 +21,7 @@ from evaluation.rq3 import (
 def report(fed=None, solo=None, **kw):
     fed = fed or {"C1": 0.82, "C2": 0.78, "C3": 0.70}
     solo = solo or {"C1": 0.80, "C2": 0.74, "C3": 0.60}
-    return build_rq3_report(fed, solo, n_train_samples={"C1": 32000, "C2": 16000,
+    return build_participant_gain_report(fed, solo, n_train_samples={"C1": 32000, "C2": 16000,
                                                        "C3": 7156}, **kw)
 
 
@@ -88,7 +88,7 @@ def test_min_gain_exposes_the_worst_client():
 
 
 def test_min_gain_none_when_no_clients():
-    assert build_rq3_report({}, {}).min_gain is None
+    assert build_participant_gain_report({}, {}).min_gain is None
 
 
 # --- ④ 소규모 클라이언트 ----------------------------------------------------------
@@ -99,7 +99,7 @@ def test_small_client_gain_is_the_direct_answer():
 
 
 def test_small_client_absent_returns_none():
-    r = build_rq3_report({"C1": 0.8}, {"C1": 0.7}, small_client="C3")
+    r = build_participant_gain_report({"C1": 0.8}, {"C1": 0.7}, small_client="C3")
     assert r.small_client_gain is None
 
 
@@ -131,7 +131,7 @@ def test_disparity_reduction_negative_when_gap_widens():
 
 
 def test_single_client_has_zero_disparity():
-    r = build_rq3_report({"C1": 0.8}, {"C1": 0.7})
+    r = build_participant_gain_report({"C1": 0.8}, {"C1": 0.7})
     assert r.disparity.solo_sd == 0.0
 
 
@@ -249,7 +249,7 @@ def test_caveat_states_no_personalisation_layer():
 
 
 def test_caveat_flags_client_present_in_only_one_cell():
-    r = build_rq3_report({"C1": 0.8, "C9": 0.5}, {"C1": 0.7})
+    r = build_participant_gain_report({"C1": 0.8, "C9": 0.5}, {"C1": 0.7})
     assert any("C9" in c for c in r.caveats)
 
 
@@ -329,11 +329,11 @@ def test_v3_metric_rows_do_not_touch_trajectory_or_traffic():
 # --- 범위 — 사전실험 분석이다 (30번 3-2~3-4) -----------------------------------------------------
 
 def test_보고의_첫_단서가_범위를_말한다():
-    """산출물만 본 사람이 통합형 RQ3 로 읽지 않게 — 두 양은 정의가 다르다(07번 §19-4)."""
-    from evaluation.rq3 import SCOPE_NOTE
+    """산출물만 본 사람이 통합형 RQ2 로 읽지 않게 — 두 양은 정의가 다르다(07번 §19-4)."""
+    from evaluation.participant_gain import SCOPE_NOTE
     r = report()
     assert r.caveats[0] == SCOPE_NOTE
-    assert "통합형 본실험의 RQ3" in SCOPE_NOTE and "아니다" in SCOPE_NOTE
+    assert "통합형 본실험의 RQ2" in SCOPE_NOTE and "아니다" in SCOPE_NOTE
 
 
 def test_지표_행이_없는_원장이면_궤적이_빈_까닭을_적는다():

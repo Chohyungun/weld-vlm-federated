@@ -90,7 +90,7 @@ class P9CellResult:
     verdict: str
     client: str | None = None
     """`sep_local` 은 클라이언트 3모델이 각각 대상이다. 이 필드가 없으면 산출물의 세 행이
-    이름으로 구분되지 않아 RQ3 귀속이 행 순서에 의존한다(17번 시드 1 첫 채점에서 드러남)."""
+    이름으로 구분되지 않아 RQ2 귀속이 행 순서에 의존한다(17번 시드 1 첫 채점에서 드러남)."""
 
     def as_dict(self) -> dict:
         return {

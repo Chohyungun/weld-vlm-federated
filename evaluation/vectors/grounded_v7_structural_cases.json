@@ -1,0 +1,3758 @@
+{
+ "cases": [
+  {
+   "candidate": "위쪽 왼쪽에 기공 2개가 표시되어 있다. 아래쪽 오른쪽에 기공 1개가 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "S-01",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 기공 1개가 표시되어 있다. 아래쪽 오른쪽에 기공 2개가 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "S-02",
+   "intent": [
+    "zone_count_mismatch"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 기공 2개가 표시되어 있다. 아래쪽 오른쪽에 기공 2개가 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "S-03",
+   "intent": [
+    "count_mismatch"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 기공 2개가 표시되어 있다. 아래쪽 오른쪽에 기공 2개가 표시되어 있다. 기공은 총 3개이다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "S-04",
+   "intent": [
+    "zone_count_mismatch",
+    "zone_sum_mismatch"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 3개가 위쪽 왼쪽과 아래쪽 오른쪽에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "S-05",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 4개가 위쪽 왼쪽과 아래쪽 오른쪽에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "S-06",
+   "intent": [
+    "count_mismatch"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 3개가 위쪽 왼쪽과 영상 가운데에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "S-07",
+   "intent": [
+    "zone_not_described",
+    "zone_outside_locked"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 2개가 위쪽 왼쪽에, 1개가 아래쪽 오른쪽에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "S-08",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 1개가 위쪽 왼쪽에, 2개가 아래쪽 오른쪽에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "S-09",
+   "intent": [
+    "zone_count_mismatch"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공은 모두 3개로, 위쪽 왼쪽에 2개, 아래쪽 오른쪽에 1개가 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "S-10",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공은 모두 3개로, 위쪽 왼쪽에 2개, 아래쪽 오른쪽에 2개가 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "S-11",
+   "intent": [
+    "zone_count_mismatch",
+    "zone_sum_mismatch"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 1개가 위쪽 왼쪽에, 균열 2개가 아래쪽 오른쪽에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "S-12",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 2,
+      "기공": 1
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 균열 1개, 아래쪽 오른쪽에 기공 2개가 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "S-13",
+   "intent": [
+    "count_mismatch",
+    "zone_count_mismatch",
+    "zone_outside_locked"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 2,
+      "기공": 1
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 2개가 위쪽 왼쪽에, 1개가 영상 가운데에 표시되어 있다. 균열 1개가 아래쪽 오른쪽에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "S-14",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1,
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "가운데"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "가운데"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 1개가 위쪽 왼쪽에, 2개가 영상 가운데에 표시되어 있다. 균열 1개가 아래쪽 오른쪽에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "S-15",
+   "intent": [
+    "zone_count_mismatch"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1,
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "가운데"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "가운데"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 3개가 위쪽 왼쪽과 영상 가운데에, 균열 1개가 아래쪽 오른쪽에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "S-16",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1,
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "가운데"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "가운데"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 기공 1개와 균열 1개, 아래쪽 오른쪽에 기공 2개가 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "S-17",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1,
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 기공 2개와 균열 1개, 아래쪽 오른쪽에 기공 1개가 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "S-18",
+   "intent": [
+    "zone_count_mismatch"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1,
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 기공 1개가 표시되어 있다. 아래쪽 오른쪽에 기공 2개가 표시되어 있다. 기공 3개가 위쪽 왼쪽과 아래쪽 오른쪽에 표시되어 있다. 기공은 총 3개이다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "C-01",
+   "intent": [
+    "zone_count_mismatch"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 기공 2개가 표시되어 있다. 아래쪽 오른쪽에 기공 1개가 표시되어 있다. 기공 3개가 위쪽 왼쪽과 아래쪽 오른쪽에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "C-02",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 3개가 위쪽 왼쪽과 아래쪽 오른쪽에 표시되어 있다. 위쪽 왼쪽에 기공 1개, 아래쪽 오른쪽에 기공 2개가 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "C-03",
+   "intent": [
+    "zone_count_mismatch"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 3개가 위쪽 왼쪽과 아래쪽 오른쪽에 표시되어 있다. 위쪽 왼쪽에 기공 2개, 아래쪽 오른쪽에 기공 1개가 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "C-04",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 기공 2개가 표시되어 있다. 아래쪽 오른쪽에 기공 1개가 표시되어 있다. 기공은 총 4개이다. 기공은 총 3개이다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "C-05",
+   "intent": [
+    "statement_conflict"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 기공 2개가 표시되어 있다. 아래쪽 오른쪽에 기공 1개가 표시되어 있다. 기공은 총 3개이다. 기공은 총 4개이다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "C-06",
+   "intent": [
+    "statement_conflict"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 기공 2개가 표시되어 있다. 아래쪽 오른쪽에 기공 1개가 표시되어 있다. 기공은 총 3개이다. 기공은 총 3개이다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "C-07",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 기공 2개가 표시되어 있다. 아래쪽 오른쪽에 기공 1개가 표시되어 있다. 위쪽 왼쪽의 기공은 2개이다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "C-08",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 기공 2개가 표시되어 있다. 아래쪽 오른쪽에 기공 1개가 표시되어 있다. 위쪽 왼쪽의 기공은 1개이다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "C-09",
+   "intent": [
+    "statement_conflict",
+    "zone_count_mismatch"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 1개가 위쪽 왼쪽에, 균열 2개가 아래쪽 오른쪽에 표시되어 있다. 기공은 총 2개이고 균열은 총 1개이다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "C-10",
+   "intent": [
+    "count_mismatch",
+    "zone_sum_mismatch"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 2,
+      "기공": 1
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 1개가 위쪽 왼쪽에, 균열 2개가 아래쪽 오른쪽에 표시되어 있다. 결함은 모두 4개이다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "C-11",
+   "intent": [
+    "count_mismatch"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 2,
+      "기공": 1
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "결함은 모두 3개로, 기공 1개가 위쪽 왼쪽에, 균열 2개가 아래쪽 오른쪽에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "C-12",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 2,
+      "기공": 1
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽, 아래쪽 오른쪽에 기공이 표시되어 있다. 위쪽 왼쪽에 2개, 아래쪽 오른쪽에 1개가 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "C-13",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽, 아래쪽 오른쪽에 기공이 표시되어 있다. 위쪽 왼쪽에 1개, 아래쪽 오른쪽에 2개가 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "C-14",
+   "intent": [
+    "zone_count_mismatch"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽, 아래쪽 오른쪽에 기공이 표시되어 있다. 기공은 모두 3개이다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "C-15",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽, 아래쪽 오른쪽에 기공이 표시되어 있다. 기공은 모두 4개이다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "C-16",
+   "intent": [
+    "count_mismatch"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 기공 2개, 아래쪽 오른쪽에 기공 1개가 표시되어 있다. 3개 가운데 어느 것도 치수를 알 수 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "C-17",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 기공 2개, 아래쪽 오른쪽에 기공 1개가 표시되어 있다. 4개 가운데 어느 것도 치수를 알 수 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "C-18",
+   "intent": [
+    "count_mismatch"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 기공 2개, 아래쪽 오른쪽에 기공 1개가 표시되어 있다. 기공 4개 가운데 어느 것도 치수를 알 수 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "C-19",
+   "intent": [
+    "count_mismatch"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 1개와 균열 2개가 표시되어 있다. 위쪽 왼쪽에 1개, 아래쪽 오른쪽에 2개가 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "C-20",
+   "intent": [
+    "unattributed_count"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 2,
+      "기공": 1
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "2개의 기공이 위쪽 왼쪽에, 1개의 기공이 아래쪽 오른쪽에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "C-21",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 2개는 모두 위쪽 왼쪽에 있다. 아래쪽 오른쪽에 기공 1개가 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "C-22",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 3개가 위쪽 왼쪽에 2개, 아래쪽 오른쪽에 1개 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "R-01",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 3개 가운데 2개는 위쪽 왼쪽에, 나머지는 아래쪽 오른쪽에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "R-02",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 3개 가운데 2개는 위쪽 왼쪽에 있고 나머지 1개는 아래쪽 오른쪽에 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "R-03",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 3개가 위쪽 왼쪽과 아래쪽 오른쪽에 표시되어 있다. 결함은 두 개의 구역에 나뉘어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "R-04",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽 칸에 균열 1개가 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "R-05",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1
+     },
+     "defect_positions": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "아래쪽 띠의 가운데 칸에 기공 1개가 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "R-06",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 1
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "아래 가운데"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "아래 가운데"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 가운데에 기공 1개가 표시되어 있다. 이 기공은 가스 차폐 불량으로 생긴 것이다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "R-07",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 1
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 가운데"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 가운데"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 균열 1개가 표시되어 있다. 아래쪽 오른쪽에는 균열이 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "R-08",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1
+     },
+     "defect_positions": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 균열 1개가 표시되어 있다. 위쪽 왼쪽 외에는 결함이 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "R-09",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1
+     },
+     "defect_positions": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 기공 1개와 아래쪽 오른쪽에 균열 1개가 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "R-10",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1,
+      "기공": 1
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 기공 1개, 아래쪽 오른쪽에 균열 1개가 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "R-11",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1,
+      "기공": 1
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "가운데 위쪽에 기공 1개가 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "R-12",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 1
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 가운데"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 가운데"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 균열 1개가 표시되어 있다. 용접 부위 왼쪽에 치우쳐 있다. 왼쪽 위치에 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "R-13",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1
+     },
+     "defect_positions": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "주석은 위 왼쪽 칸의 균열 1개를 가리킨다. 가운데 높이에는 결함 표시가 없다. 표시된 결함은 모두 왼쪽 열에 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "R-14",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1
+     },
+     "defect_positions": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 2개가 위쪽 가운데와 영상 가운데에 표시되어 있다. 결함은 위쪽과 가운데 높이에 모여 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "R-15",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 2
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 가운데"
+      },
+      {
+       "name": "기공",
+       "where": "가운데"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 가운데"
+      },
+      {
+       "name": "기공",
+       "where": "가운데"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "가운데 왼쪽 칸에 슬래그혼입 1개, 가운데 오른쪽 칸에 융합불량 1개가 표시된 것이 주석의 전부다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "R-16",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "슬래그혼입": 1,
+      "융합불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "슬래그혼입",
+       "where": "가운데 왼쪽"
+      },
+      {
+       "name": "융합불량",
+       "where": "가운데 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "슬래그혼입",
+       "where": "가운데 왼쪽"
+      },
+      {
+       "name": "융합불량",
+       "where": "가운데 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "주석은 아래 왼쪽, 아래 가운데, 아래 오른쪽 칸의 기공 3개, 위 왼쪽 칸의 균열 1개를 가리킨다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "R-17",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1,
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "아래 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 가운데"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "아래 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 가운데"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "표시된 결함은 기공 4개이며, 위치는 가운데 왼쪽, 영상 가운데, 가운데 오른쪽 칸이다. 표시된 결함은 모두 가운데 높이에 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT+",
+   "id": "R-18",
+   "intent": null,
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 4
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "가운데 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "가운데"
+      },
+      {
+       "name": "기공",
+       "where": "가운데 오른쪽"
+      },
+      {
+       "name": "기공",
+       "where": "가운데 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "가운데 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "가운데"
+      },
+      {
+       "name": "기공",
+       "where": "가운데 오른쪽"
+      },
+      {
+       "name": "기공",
+       "where": "가운데 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 균열 1개가 표시되어 있다. 균열은 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "R-19",
+   "intent": [
+    "absence_contradicts_locked"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1
+     },
+     "defect_positions": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 균열 1개가 표시되어 있다. 위쪽 왼쪽에는 균열이 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "R-20",
+   "intent": [
+    "absence_contradicts_locked"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1
+     },
+     "defect_positions": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "균열은 없다. 위쪽 왼쪽에 균열 1개가 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "R-21",
+   "intent": [
+    "absence_contradicts_locked"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1
+     },
+     "defect_positions": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 균열 1개가 표시되어 있다. 표시된 결함은 모두 오른쪽 열에 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "R-22",
+   "intent": [
+    "band_contradicts_locked"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1
+     },
+     "defect_positions": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "위쪽 왼쪽에 균열 1개가 표시되어 있다. 위쪽 높이에는 결함 표시가 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "R-23",
+   "intent": [
+    "absence_contradicts_locked"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1
+     },
+     "defect_positions": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 3개가 위쪽 왼쪽에 1개, 아래쪽 오른쪽에 2개 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "R-24",
+   "intent": [
+    "zone_count_mismatch"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 3개 가운데 1개는 위쪽 왼쪽에, 나머지는 아래쪽 오른쪽에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "STRUCT-",
+   "id": "R-25",
+   "intent": [
+    "zone_count_mismatch"
+   ],
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "표시된 결함이 하나도 없다. 이것이 합격이나 안전을 뜻하지는 않는다.",
+   "group": "NORM+",
+   "id": "NV-01",
+   "intent": null,
+   "intent_field": "normal_codes",
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {},
+     "defect_positions": [],
+     "row_class": "defect_free",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "주석에 표시된 결함이 없다. 합격 여부와 안전 여부는 판단하지 않는다.",
+   "group": "NORM+",
+   "id": "NV-02",
+   "intent": null,
+   "intent_field": "normal_codes",
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {},
+     "defect_positions": [],
+     "row_class": "defect_free",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "결함 표시가 없다는 것이 곧 용접부가 안전하다는 뜻은 아니다. 주석에 표시된 결함이 없다.",
+   "group": "NORM+",
+   "id": "NV-03",
+   "intent": null,
+   "intent_field": "normal_codes",
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {},
+     "defect_positions": [],
+     "row_class": "defect_free",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "주석에 결함이 표시되지 않았습니다. 이것만으로 합격이나 안전을 말할 수는 없습니다.",
+   "group": "NORM+",
+   "id": "NV-04",
+   "intent": null,
+   "intent_field": "normal_codes",
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {},
+     "defect_positions": [],
+     "row_class": "defect_free",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "이 영상의 주석에는 표시된 결함이 없다. 이것이 용접부의 합격이나 안전을 보장하지 않는다.",
+   "group": "NORM+",
+   "id": "NV-05",
+   "intent": null,
+   "intent_field": "normal_codes",
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {},
+     "defect_positions": [],
+     "row_class": "defect_free",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "표시된 결함이 없다. 따라서 이 용접부는 합격으로 보인다.",
+   "group": "NORM-",
+   "id": "NV-06",
+   "intent": [
+    "normal_verdict_implied"
+   ],
+   "intent_field": "normal_codes",
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {},
+     "defect_positions": [],
+     "row_class": "defect_free",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "표시된 결함이 없다. 합격이나 안전을 뜻하지는 않지만 양호한 편이다.",
+   "group": "NORM-",
+   "id": "NV-07",
+   "intent": [
+    "normal_verdict_implied"
+   ],
+   "intent_field": "normal_codes",
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {},
+     "defect_positions": [],
+     "row_class": "defect_free",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "판정 결과: 양호. 표시된 결함이 없다.",
+   "group": "NORM-",
+   "id": "NV-08",
+   "intent": [
+    "normal_verdict_implied"
+   ],
+   "intent_field": "normal_codes",
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {},
+     "defect_positions": [],
+     "row_class": "defect_free",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "표시된 결함이 없다. 결함이 없는 이유는 숙련된 용접 덕분이다. 이것이 합격이나 안전을 뜻하지는 않는다.",
+   "group": "NORM-",
+   "id": "NV-09",
+   "intent": [
+    "normal_cause_asserted"
+   ],
+   "intent_field": "normal_codes",
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {},
+     "defect_positions": [],
+     "row_class": "defect_free",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "표시된 결함이 한 개도 없다. 이것이 합격이나 안전을 뜻하지는 않는다.",
+   "group": "NORM-",
+   "id": "NV-10",
+   "intent": [
+    "normal_number_or_unit"
+   ],
+   "intent_field": "normal_codes",
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {},
+     "defect_positions": [],
+     "row_class": "defect_free",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "표시된 결함이 없다. 두께가 삼 밀리미터라도 합격을 뜻하지는 않는다.",
+   "group": "NORM-",
+   "id": "NV-11",
+   "intent": [
+    "normal_number_or_unit"
+   ],
+   "intent_field": "normal_codes",
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {},
+     "defect_positions": [],
+     "row_class": "defect_free",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "표시된 결함이 없다. 다음 형식으로 답한다. 이것이 합격이나 안전을 뜻하지는 않는다.",
+   "group": "NORM-",
+   "id": "NV-12",
+   "intent": [
+    "normal_instruction_leak"
+   ],
+   "intent_field": "normal_codes",
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {},
+     "defect_positions": [],
+     "row_class": "defect_free",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "표시된 결함이 없다. 출력은 JSON 으로 하라. 이것이 합격이나 안전을 뜻하지는 않는다.",
+   "group": "NORM-",
+   "id": "NV-13",
+   "intent": [
+    "normal_instruction_leak"
+   ],
+   "intent_field": "normal_codes",
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {},
+     "defect_positions": [],
+     "row_class": "defect_free",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "표시된 결함이 없다. 아래쪽 가장자리에 작은 흔적이 있다. 이것이 합격이나 안전을 뜻하지는 않는다.",
+   "group": "NORM-",
+   "id": "NV-14",
+   "intent": [
+    "normal_defect_or_position"
+   ],
+   "intent_field": "normal_codes",
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {},
+     "defect_positions": [],
+     "row_class": "defect_free",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "표시된 결함이 없다. 다만 크랙으로 보이는 선이 있다. 이것이 합격이나 안전을 뜻하지는 않는다.",
+   "group": "NORM-",
+   "id": "NV-15",
+   "intent": [
+    "normal_defect_or_position"
+   ],
+   "intent_field": "normal_codes",
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {},
+     "defect_positions": [],
+     "row_class": "defect_free",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "표시된 결함이 없다. 이것이 합격이나 안전을 뜻하지 않는다고 할 근거는 없다.",
+   "group": "NORM-",
+   "id": "NV-16",
+   "intent": [
+    "normal_limitation_inverted"
+   ],
+   "intent_field": "normal_codes",
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {},
+     "defect_positions": [],
+     "row_class": "defect_free",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "표시된 결함이 없다. 이것이 부적합을 의미하지는 않는다.",
+   "group": "NORM-",
+   "id": "NV-17",
+   "intent": [
+    "normal_limitation_absent",
+    "normal_limitation_wrong_direction"
+   ],
+   "intent_field": "normal_codes",
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {},
+     "defect_positions": [],
+     "row_class": "defect_free",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "표시된 결함이 없다.",
+   "group": "NORM-",
+   "id": "NV-18",
+   "intent": [
+    "normal_limitation_absent"
+   ],
+   "intent_field": "normal_codes",
+   "task": {
+    "evidence": {
+     "defect_counts_by_name": {},
+     "defect_positions": [],
+     "row_class": "defect_free",
+     "size_mm_available": false
+    },
+    "kind": "image_report",
+    "locked_target": {
+     "clauses": [],
+     "defects": [],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  }
+ ],
+ "kind": "grounded_v7_structural_cases"
+}

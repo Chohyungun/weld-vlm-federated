@@ -573,7 +573,7 @@ def build_pairs(manifest, annotations, table, names: dict[str, str], lexicon: fr
     res.materials = sorted({str(x) for x in tv["material"].unique()})
     # 재질별 근거를 따로 만든다. 덮는 행이 없는 재질은 빈 사전이고, 그 경우 텍스트가
     # 조항을 특정하지 않는다 (§4 안 B — 격리하면 C3 결함 페어가 0건이 되어
-    # RQ3 이 인위적으로 바뀐다).
+    # RQ2 가 인위적으로 바뀐다).
     bases = {mat: clause_basis(table, mat) for mat in res.materials}
     res.covered = covered_materials(table)
     res.uncovered = sorted(set(res.materials) - res.covered)
@@ -714,7 +714,7 @@ def v1_accounting() -> dict:
     """동결본 v1 의 알려진 결함 회계 — **"421건, 두 종류"** (80번 체크리스트 20).
 
     v1 은 규약 1-6 에 따라 재생성하지 않는다. 대신 무엇이 틀렸는지를 v2 산출물이 들고
-    다니게 한다. RQ2·RQ3 을 v1 파일럿 결과 위에서 읽으려면 이 숫자가 함께 가야 한다.
+    다니게 한다. RQ1·RQ2 를 v1 파일럿 결과 위에서 읽으려면 이 숫자가 함께 가야 한다.
     """
     return {
         "asset": "d4_pairs_pilot_v1",
@@ -727,7 +727,7 @@ def v1_accounting() -> dict:
             {"kind": "material_axis",
              "n": 219,
              "detail": "알루미늄 이미지에 강재 전용 조항(KRA27-T15/T16/3D) 인용. "
-                       "C3 결함 페어의 100% 다 — 전체 대비 8.3% 로 읽으면 RQ3 이 재는 "
+                       "C3 결함 페어의 100% 다 — 전체 대비 8.3% 로 읽으면 RQ2 가 재는 "
                        "단위를 놓친다.",
              "fixed_in_v2": "재질 축을 보고, 덮는 행이 없으면 조항을 특정하지 않는다"},
             {"kind": "aggregate_length",
@@ -765,7 +765,7 @@ def base_meta(res: BuildResult, *, asset: str) -> dict:
                       "uncovered": res.uncovered},
         "uncovered_policy": (
             "덮는 행이 없는 재질은 조항을 특정하지 않고 그 사실을 문장에 적는다"
-            " (§4 안 B). 격리(안 A)하면 C3 결함 페어가 0건이 되어 RQ3 이"
+            " (§4 안 B). 격리(안 A)하면 C3 결함 페어가 0건이 되어 RQ2 가"
             " 인위적으로 바뀐다."),
         "ordering": ("레코드는 image_id 오름차순, 결함은 ann_id **문자열** 오름차순이다('#10' < '#2')."
                      " 정렬은 학습 계약이다 — 학습기의 셔플이 행 위치에 시드를 걸고, 생성이 한도에서 잘릴 때"

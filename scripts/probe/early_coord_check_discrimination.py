@@ -143,10 +143,17 @@ def run_world(name, rho, rep, rules: E.EarlyRules, n_images: int, schedule) -> l
     return statuses
 
 
+def _positive_int(s: str) -> int:
+    v = int(s)
+    if v < 1:
+        raise argparse.ArgumentTypeError("반복 수는 1 이상이다 — 측정 0 건으로 영수증을 쓰지 않는다")
+    return v
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--rules", type=Path, required=True)
-    ap.add_argument("--reps", type=int, default=3)
+    ap.add_argument("--reps", type=_positive_int, default=3, help="반복 수 — 1 이상(측정 0 건의 영수증을 쓰지 않는다, §119 I-05)")
     ap.add_argument("--schedules", default=",".join(SCHEDULES), help="돌릴 사다리 이름(쉼표로)")
     ap.add_argument("--out", type=Path, required=True)
     a = ap.parse_args()

@@ -58,6 +58,10 @@ DEFAULT_INIT_SEED = 20260828
 MICRO_BATCH = 1          # 판정 10 — micro=2 는 사다리에 없다
 GRAD_ACCUM = 32          # 유효 배치 32
 LR = 1e-4
+#: 4bit 적재 인자(nf4) — 학습 · 생성이 같은 값으로 연다. 등록 파일(`configs/train_registration.yaml` 의 `quantization`)과
+#: 맞대는 값이 이것이다(`vlm/registration.py`). 계산 자료형은 이름 글자로 두고 적재 때 torch 자료형으로 바꾼다.
+QUANT_4BIT = (("load_in_4bit", True), ("bnb_4bit_quant_type", "nf4"), ("bnb_4bit_compute_dtype", "bfloat16"),
+              ("bnb_4bit_use_double_quant", True))
 #: 학습률 예열 스텝. `cosine_lr` 에 명시해 넘기고 학습 설정 원문(`lr_schedule`)에 싣는다.
 WARMUP_STEPS = 0
 #: 언어부 linear 접미사 — 실물 named_modules 덤프에서 확정(2026-08-31 프로브).
@@ -246,9 +250,11 @@ def _load_model(model_id: str | None = None, *, init_seed: int = DEFAULT_INIT_SE
     # 프로세서는 **등록된 설정으로** 연다(`min/max_pixels` 등). 기본값으로 열면 export 가 등록값으로 연
     # 프로세서와 입력 크기가 갈릴 수 있다(리허설 2판 §0-1 · 조건 ② 다). 모델 판도 인자로 고정한다.
     proc = AutoProcessor.from_pretrained(mid, revision=revision, **dict(processor_kwargs or {}))
+    q = dict(QUANT_4BIT)
     bnb = BitsAndBytesConfig(
-        load_in_4bit=True, bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True,
+        load_in_4bit=q["load_in_4bit"], bnb_4bit_quant_type=q["bnb_4bit_quant_type"],
+        bnb_4bit_compute_dtype=getattr(torch, q["bnb_4bit_compute_dtype"]),
+        bnb_4bit_use_double_quant=q["bnb_4bit_use_double_quant"],
     )
     model = AutoModelForImageTextToText.from_pretrained(
         mid, revision=revision, quantization_config=bnb, device_map={"": 0}

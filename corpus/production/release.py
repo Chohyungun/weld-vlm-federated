@@ -43,15 +43,18 @@ EVIDENCE = {"audit": "AUDIT.json", "review": "REVIEW.json", "rights": "RIGHTS.js
 _FENCE = re.compile(r"```(?:json)?\s*(\{.*\})\s*```", re.DOTALL)
 #: 판정 출처(B 05h) — run_config: RUN.json 의 판정 칸으로 돈 첫 판정, separate: 판정 신원을 따로 둔 새 판정. 한 릴리스 안에서 섞지 않는다
 JUDGE_SOURCES = ("run_config", "separate")
-#: 판정 출력의 꼴(B 의 quality `parser_schema`) — 옛 네 키 · 구조화 v5 · 구조화 v6. 칸이 없으면 옛 네 키(이전 집계).
-#: v6 는 v5 를 대체하지 않는다 — 판 표지로 갈리고, 한 꼴을 다른 파서로 다시 읽지 않는다(B 05l)
+#: 판정 출력의 꼴(B 의 quality `parser_schema`) — 옛 네 키 · 구조화 v5 · v6 · v7. 칸이 없으면 옛 네 키(이전 집계).
+#: 새 판은 앞 판을 대체하지 않는다 — 판 표지로 갈리고, 한 꼴을 다른 파서로 다시 읽지 않는다(B 05l · 05m)
 JUDGE_SCHEMAS = ("legacy_four_keys", "judge_structured_v5", "judge_structured_v6", "judge_structured_v7")
 #: 구조화 꼴 → B 의 파서(`quality` 의 이름). 파서 판은 `quality.JUDGE_PARSER_VERSIONS` 의 같은 짝에서 읽는다(R-11 · R-13) —
-#: v7 은 B 의 집계가 v7 을 읽게 되어(`quality_v9`) 그 표에 들 때 열린다. 그 전에는 `judge_parser` 로 닫혀 있다
+#: v7 은 B 의 집계 v7 소비(`quality_v9`)와 함께 그 표에 들어 열렸다. 표에서 빠진 꼴은 `judge_parser` 로 닫힌다
 STRUCTURED_PARSERS = {"judge_structured_v5": "parse_judge_v5", "judge_structured_v6": "parse_judge_v6",
                       "judge_structured_v7": "parse_judge_v7"}
-#: 판정 모델을 부르지 않는 행이 있을 수 있는 꼴 — v7 정상 행(B 05m · 05n R-15). 그 행의 판정 칸은 '적용 안 됨' 꼴
-#: `{"applicable": false, "identity_sha256": <판정 신원>}` 두 칸뿐이다(05n 의 제안 꼴 — B 의 집계 v7 소비와 함께 확정)
+#: 생성 v4(생성 정책 `image_report_regeneration_v4`)의 템플릿 행 — 정상 행은 모델을 부르지 않고 고정 글을 쓴다(B 17b 2-3).
+#: 그 행의 데이터셋 행 출처 `provenance.generate` 는 이 네 칸뿐이다(모델 · 계열 칸이 없다 — 06k 의 꼴, B 의 집계와 맞춘다)
+TEMPLATE_GENERATE_KEYS = frozenset({"backend", "generator", "shard_sha256", "text_sha256"})
+#: 판정 모델을 부르지 않는 행이 있을 수 있는 꼴 — v7 정상 행(B 05m · 05p). 그 행의 판정 칸은 '적용 안 됨' 꼴
+#: `{"applicable": false, "identity_sha256": <판정 신원>}` 두 칸뿐이다(B 의 집계 v7 소비 `quality_v9` 가 확정한 꼴)
 MODEL_OPTIONAL_SCHEMAS = ("judge_structured_v7",)
 #: 구조화 판정의 행 출처에서 판정 샤드를 다시 읽은 값과 맞대는 칸(B 05k · 05j R-9 · 05l)
 STRUCTURED_FIELDS = ("schema", "parser", "answers", "flags", "format_normalized")
@@ -166,9 +169,16 @@ def check_row(row: Any, audit: dict) -> dict:
         _need(jschema in MODEL_OPTIONAL_SCHEMAS and row["kind"] == "image_report" and judge.get("applicable") is False
               and set(judge) == {"applicable", "identity_sha256"}, "row_judge",
               f"{rid}: 판정 '적용 안 됨' 꼴은 {MODEL_OPTIONAL_SCHEMAS} 의 영상 행에서 두 칸(applicable · identity_sha256)뿐이다")
-    _need(gen.get("backend") == "transformers" and (not applicable or judge.get("backend") == "transformers"), "row_backend",
-          f"{rid}: _backend 가 transformers 가 아니다(시험용 출력은 릴리스 금지)")
-    _need(bool(_family(gen.get("family"))) and (not applicable or _family(gen.get("family")) != _family(judge.get("family"))),
+    template = gen.get("backend") == "template"
+    if template:
+        # 생성 v4 의 정상 행 — 모델 없이 고정 글(06k). 템플릿 바이트 대조는 실행 대조(check_against_run)가 한다
+        _need(row["kind"] == "image_report" and set(gen) == TEMPLATE_GENERATE_KEYS and gen.get("generator") == "template",
+              "row_backend", f"{rid}: 템플릿 생성 출처는 영상 행의 네 칸({sorted(TEMPLATE_GENERATE_KEYS)})뿐이다")
+    _need((template or gen.get("backend") == "transformers") and (not applicable or judge.get("backend") == "transformers"),
+          "row_backend", f"{rid}: _backend 가 transformers 가 아니다(시험용 출력은 릴리스 금지)")
+    _need((template or bool(_family(gen.get("family"))))
+          and (not applicable or bool(_family(judge.get("family"))))
+          and (template or not applicable or _family(gen.get("family")) != _family(judge.get("family"))),
           "row_family", f"{rid}: 생성 · 판정 계열이 같거나 비었다")
     for side in ((gen, judge) if applicable else (gen,)):
         _need(_hex(side.get("shard_sha256")) and _hex(side.get("text_sha256")), "row_provenance",
@@ -292,7 +302,7 @@ def check_audit(audit: dict, dataset_sha: str, rows: list[dict]) -> None:
         g, j = r["provenance"]["generate"], r["provenance"]["judge"]
         _need(j.get("identity_sha256", "absent") == jid, "row_judge_identity",
               f"{r['id']}: 행의 판정 신원이 AUDIT 의 판정 신원과 다르다")
-        _need(_family(g.get("family")) == _family(gen_cfg["family"])
+        _need((g.get("backend") == "template" or _family(g.get("family")) == _family(gen_cfg["family"]))
               and (j.get("applicable") is False
                    or (_family(j.get("family")) == _family(judge_model["family"]) and j.get("model_id") == judge_model["model_id"])),
               "row_family",
@@ -436,6 +446,38 @@ def _structured_parser(schema: str):
     return parse, version
 
 
+def _generation_v4(run: dict):
+    """실행이 생성 v4 면 생성 정책 모듈, 아니면 None — 그 판의 코드가 없는 트리에서도 None(옛 실행의 길은 그대로)."""
+    from . import generation_policy as G
+
+    is_v2 = getattr(G, "is_v2_run", None)
+    return G if callable(is_v2) and is_v2(run) else None
+
+
+def _v4_generation_problem(G, task: dict, g: dict) -> tuple[str, str] | None:
+    """생성 v4 행 하나의 거부 사유 `(코드, 설명)` — 없으면 None. 행에 적힌 진단을 믿지 않고 생성 정책으로 다시 계산한다
+    (C 24e I-1 · B 17c 3 절). 정상 행은 템플릿 바이트, 결함 행은 원문의 렌더 · 관찰 구조 진단 · 끝 표지를 본다."""
+    try:
+        if g.get("generator") == "template":
+            want = G.render_generation_row(task)                     # 정상 작업이 아니면 정책이 거부한다
+            same = (g.get("text") == want["text"] and g.get("raw_text") is None
+                    and g.get("finish_reason") == want["finish_reason"] and g.get("observation_problems") == [])
+            return None if same else ("generation_template_mismatch", "템플릿 행의 바이트가 생성 정책의 템플릿과 다르다")
+        if g.get("generator") != "model":
+            return "generation_v4_row", "생성 v4 행의 generator 가 template · model 이 아니다"
+        want = G.render_generation_row(task, {k: g.get(k) for k in ("id", "finish_reason", "input_tokens", "output_tokens")}
+                                       | {"text": g.get("raw_text")})
+    except G.RegenerationRefused as exc:
+        return "generation_v4_row", f"생성 정책으로 이 행을 다시 렌더하지 못했다 — {exc}"
+    if g.get("text") != want["text"] or g.get("observation_problems") != want["observation_problems"]:
+        return "generation_v4_row", "결함 행의 text · 진단이 원문을 다시 렌더한 것과 다르다"
+    if want["observation_problems"]:
+        return "generation_observation_problems", f"관찰 구조 진단이 비지 않았다 {want['observation_problems']}"
+    if g.get("finish_reason") != "eos":
+        return "generation_truncated", "결함 행의 생성이 끝 표지(eos)로 끝나지 않았다 — 잘린 관찰에도 제한 문장이 붙는다(B 17c M-4)"
+    return None
+
+
 def _no_model_ids(parse, tasks: list[dict]) -> set[str]:
     """판정 모델을 부르지 않는 작업 행의 id(B 05n R-15 · R-16) — B 의 파서가 판정 행 없이 그 작업을 '적용 안 됨'
     (`judge_not_applicable`)으로 고르는 행. 한 정의(파서)를 따르고, 옛 네 키 · v5 · v6 에는 없다."""
@@ -537,8 +579,14 @@ def check_against_run(audit: dict, audit_dir: Path, rows: list[dict], texts: lis
               "결정적 영수증 요약은 v7 판정 출처의 집계에만 있다")
     _need(len(gen_rows) == len(tasks) and len(judge_rows) == len(tasks), "stage_incomplete",
           f"생성 {len(gen_rows)} · 판정 {len(judge_rows)} · 작업 {len(tasks)} — 전량이 아니다")
-    for stage_rows in (gen_rows, judge_rows):
-        bad = [r["id"] for r in stage_rows if r is not None and r.get("_backend") != "transformers"]
+    gen_v4 = _generation_v4(run)
+
+    def _backend_ok(r: dict, stage: str) -> bool:     # 템플릿은 생성 v4 의 템플릿 행에만(B 17b 2-10)
+        return r.get("_backend") == "transformers" or (
+            stage == "generate" and gen_v4 is not None and r.get("_backend") == "template" and r.get("generator") == "template")
+
+    for stage, stage_rows in (("generate", gen_rows), ("judge", judge_rows)):
+        bad = [r["id"] for r in stage_rows if r is not None and not _backend_ok(r, stage)]
         _need(not bad, "stage_backend", f"_backend 가 transformers 가 아닌 행 {len(bad)}개(첫 {bad[:1]})")
     task_ids = [t["id"] for t in tasks]
     _need([r["id"] for r in rows] == task_ids, "planned_sequence", "데이터셋 id 수열이 tasks.jsonl 과 같지 않다")
@@ -553,11 +601,17 @@ def check_against_run(audit: dict, audit_dir: Path, rows: list[dict], texts: lis
     for row, txt, task, g, j in zip(rows, texts, tasks, gen_rows, judge_rows):
         rid = row["id"]
         _need(g["id"] == rid and (j is None or j["id"] == rid), "stage_order", rid)
+        if gen_v4 is not None:
+            # 생성 v4 — 관찰 구조 진단이 비지 않은 행 · 템플릿 바이트가 다른 정상 행 · 잘린 결함 행은 받지 않는다(C 24e I-1)
+            problem = _v4_generation_problem(gen_v4, task, g)
+            if problem is not None:
+                raise ReleaseRefused(problem[0], f"{rid}: {problem[1]}")
         for key in TASK_FIELDS:
             _need(row.get(key) == task.get(key), "task_field", f"{rid}: {key} 가 작업 명부와 다르다")
         if task["kind"] == "image_report":
             _need(row.get("image_sha256") == task.get("image_sha256"), "task_field", f"{rid}: image_sha256 이 작업 명부와 다르다")
-            _need(task["prompt"] not in txt["user"], "user_prompt_leak", f"{rid}: 생성 prompt 를 user message 로 복사했다")
+            _need(not task["prompt"] or task["prompt"] not in txt["user"], "user_prompt_leak",
+                  f"{rid}: 생성 prompt 를 user message 로 복사했다")           # 생성 v4 의 정상 행은 지시문이 빈 글이다
             _need(txt["user"] == task.get("train_user_text"), "user_text", f"{rid}: user message 가 작업 행의 train_user_text 가 아니다")
         _need(row["messages"] == render_messages(task, g["text"]), "message_mismatch",
               f"{rid}: 학습 메시지가 판정받은 생성문에서 정규 렌더러로 만든 것과 다르다")
@@ -568,6 +622,9 @@ def check_against_run(audit: dict, audit_dir: Path, rows: list[dict], texts: lis
             _need(rc.get("deterministic_pass") is True, "judge_receipt_rejected", f"{rid}: 결정적 영수증이 기각인 행이 데이터셋에 있다")
             _need(rc.get("candidate_sha256") == _sha_bytes(g["text"].encode("utf-8")) and rc.get("policy_identity_sha256") == policy_sha,
                   "judge_receipt_mismatch", f"{rid}: 결정적 영수증의 생성문 · 정책 지문이 이 행과 다르다")
+            # 집계와 같은 두 칸(검토 Minor) — 생성 계약을 건 운영 판단만 수락의 근거가 되고, 모델 대상 표시는 명부의 행 종류와 같다
+            _need(rc.get("generation_contract_applied") is True and rc.get("model_applicable") is (rid not in no_model),
+                  "judge_receipt_mismatch", f"{rid}: 영수증이 생성 계약을 건 판단이 아니거나 모델 대상 표시가 명부와 다르다")
             if row["kind"] == "image_report":
                 _need((prov.get("policy") or {}).get("identity_sha256") == policy_sha, "row_policy_identity",
                       f"{rid}: 행의 정책 지문이 AUDIT 의 정책 지문과 다르다")
@@ -580,6 +637,11 @@ def check_against_run(audit: dict, audit_dir: Path, rows: list[dict], texts: lis
             if stage_row is None:
                 continue
             p = prov[side]
+            if side == "generate" and stage_row["_backend"] == "template":
+                _need(p == {"backend": "template", "generator": "template", "shard_sha256": stage_row["_shard_sha256"],
+                            "text_sha256": _sha_bytes(stage_row["text"].encode("utf-8"))},
+                      "provenance_mismatch", f"{rid}: 템플릿 생성 출처가 샤드와 다르다")
+                continue
             _need(p.get("backend") == stage_row["_backend"] and p.get("shard_sha256") == stage_row["_shard_sha256"]
                   and p.get("text_sha256") == _sha_bytes(stage_row["text"].encode("utf-8"))
                   and _family(p.get("family")) == _family(spec["family"]) and p.get("model_id") == spec["model_id"],

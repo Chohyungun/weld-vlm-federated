@@ -147,7 +147,7 @@ def test_nan_bbox_rejected():
 # --- 교차 필드 규칙 ---------------------------------------------------------------
 
 def test_sep_local_requires_client():
-    """sep_local 만 모델이 3개다. RQ3(C3 편익) 분해에 필요하다."""
+    """sep_local 만 모델이 3개다. RQ2(C3 편익) 분해에 필요하다."""
     with pytest.raises(ValidationError):
         PredictionRecord.model_validate(rec(cell="sep_local", client=None))
 

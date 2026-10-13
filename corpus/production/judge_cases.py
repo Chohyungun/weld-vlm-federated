@@ -184,8 +184,67 @@ V7_EVALUATION_SCOPE = {
     "generation_contract_applied_to_probe_gate": False,
     "full_generation_contract_reported_separately": True,
     "final_approval_eligible": False,
-    "adjustment_operational_approval_eligible": True,
+    "adjustment_operational_approval_eligible": False,
 }
+V7_A_PROTOCOL = "judge_v7_g150_a_v2"
+V7_B_PROTOCOL = "judge_v7_g150_b_v2"
+V7_REGISTERED_SCOPES = {
+    V7_A_PROTOCOL: "adjustment_operational_only",
+    V7_B_PROTOCOL: "final_blinded",
+}
+V7_REGISTERED_GROUP_COUNTS = {"N+": 4, "D+": 50, "ADV1": 25, "ADV2": 25}
+
+
+def v7_registered_evaluation_scope(protocol: str) -> dict:
+    """Fixed roles, not caller-supplied claims about a mutable case bundle."""
+    if protocol not in V7_REGISTERED_SCOPES:
+        raise ValueError("unregistered v7 protocol")
+    final = protocol == V7_B_PROTOCOL
+    return {"previous_model_protocol": V7_PROTOCOL,
+            "prior_model_output_exposed": not final,
+            "new_independent_discrimination_claimed": final,
+            "role": "sealed final approval" if final else "nonsealed adjustment operational gate",
+            "generation_contract_applied_to_probe_gate": True,
+            "full_generation_contract_reported_separately": True,
+            "final_approval_eligible": final,
+            "adjustment_operational_approval_eligible": not final}
+
+
+def validate_v7_manifest(raw: bytes, *, expected_manifest_sha256,
+                         expected_protocol, expected_approval_scope,
+                         expected_source_sha256) -> dict:
+    """Authenticate metadata without reading any case file, including sealed ones.
+
+    Both the outer manifest and all four original-source pins must be supplied
+    independently. A manifest's self-declared hashes never constitute registration.
+    """
+    groups = set(V5_GROUP_COUNTS)
+    if (not isinstance(expected_manifest_sha256, str) or
+            re.fullmatch(r"[0-9a-f]{64}", expected_manifest_sha256) is None or
+            hashlib.sha256(raw).hexdigest() != expected_manifest_sha256):
+        raise ValueError("v7 manifest differs from externally expected SHA256")
+    if (expected_protocol not in V7_REGISTERED_SCOPES or
+            expected_approval_scope != V7_REGISTERED_SCOPES[expected_protocol]):
+        raise ValueError("v7 protocol and external approval scope are not registered")
+    if (not isinstance(expected_source_sha256, Mapping) or set(expected_source_sha256) != groups or
+            any(not isinstance(pin, str) or re.fullmatch(r"[0-9a-f]{64}", pin) is None
+                for pin in expected_source_sha256.values())):
+        raise ValueError("v7 requires all four externally expected source SHA256 pins")
+    data = parse_json(raw)
+    keys = {"schema_version", "protocol", "approval_scope", "source_sha256", "source_sets", "group_counts"}
+    if (not isinstance(data, dict) or set(data) != keys or type(data["schema_version"]) is not int or
+            data["schema_version"] != 1 or data["protocol"] != expected_protocol or
+            data["approval_scope"] != expected_approval_scope or
+            data["source_sha256"] != dict(expected_source_sha256) or
+            not isinstance(data["group_counts"], dict) or data["group_counts"] != V7_REGISTERED_GROUP_COUNTS or
+            any(type(n) is not int for n in data["group_counts"].values()) or
+            not isinstance(data["source_sets"], dict) or set(data["source_sets"]) != groups or
+            any(not isinstance(name, str) or not name.strip() for name in data["source_sets"].values()) or
+            len(set(data["source_sets"].values())) != 4):
+        raise ValueError("v7 manifest schema, scope, source pins or group counts differ")
+    return data
+
+
 _V5_SOURCE_SETS = {"N+": "judge_nplus_g1", "D+": "judge_dplus_g1",
                    "ADV1": "judge_adv_negative_g1", "ADV2": "judge_adv_negative_g2"}
 _V5_ZONES = frozenset(position.replace("-", " ") for position in POSITIONS) - {"가운데 가운데"} | {"가운데"}
@@ -242,14 +301,21 @@ def build_v5_cases(sources: Mapping, *, expected_source_sha256: Mapping) -> dict
     원파일의 바이트 표현은 source_file_sha256으로 결속한다. 기대·이유·묶음 이름은
     task에 넣지 않는다. 이 변환이나 결정적 음성 미검출은 모델 승인 증거가 아니다.
     """
-    groups = set(V5_GROUP_COUNTS)
+    return _build_structured_cases(sources, expected_source_sha256=expected_source_sha256,
+                                   source_sets=_V5_SOURCE_SETS, group_counts=V5_GROUP_COUNTS,
+                                   mixed_negative_groups=False)
+
+
+def _build_structured_cases(sources, *, expected_source_sha256, source_sets, group_counts,
+                             mixed_negative_groups):
+    groups = set(group_counts)
     if (not isinstance(sources, Mapping) or set(sources) != groups or
             not isinstance(expected_source_sha256, Mapping) or set(expected_source_sha256) != groups):
         raise ValueError("v5 requires all four sources and externally expected SHA256 pins")
     pins = dict(expected_source_sha256)
     if any(not isinstance(pin, str) or re.fullmatch(r"[0-9a-f]{64}", pin) is None for pin in pins.values()):
         raise ValueError("v5 source pins must be lowercase SHA256 strings")
-    source_paths = {group: Path(sources[group]).resolve() for group in V5_GROUP_COUNTS}
+    source_paths = {group: Path(sources[group]).resolve() for group in group_counts}
     if len(set(source_paths.values())) != len(source_paths):
         raise ValueError("v5 sources must be four distinct files")
     paths = {"adapter_sha256": Path(__file__).resolve(),
@@ -262,13 +328,13 @@ def build_v5_cases(sources: Mapping, *, expected_source_sha256: Mapping) -> dict
             any(not isinstance(name, str) or not name.strip() for name in names)):
         raise ValueError("v5 label names must be nonempty and unique")
     cases, metadata, source_files, seen_ids = [], {}, {}, set()
-    for group, expected_count in V5_GROUP_COUNTS.items():
+    for group, expected_count in group_counts.items():
         raw = source_paths[group].read_bytes()
         if hashlib.sha256(raw).hexdigest() != pins[group]:
             raise ValueError(f"v5 source SHA256 differs from caller pin: {group}")
         source_files[group] = base64.b64encode(raw).decode("ascii")
         source = parse_json(raw)
-        if (not isinstance(source, dict) or source.get("set") != _V5_SOURCE_SETS[group] or
+        if (not isinstance(source, dict) or source.get("set") != source_sets[group] or
                 not isinstance(source.get("cases"), list) or len(source["cases"]) != expected_count):
             raise ValueError(f"v5 wrong source set or case count: {group}")
         metadata[group] = deepcopy({key: value for key, value in source.items() if key != "cases"})
@@ -285,6 +351,8 @@ def build_v5_cases(sources: Mapping, *, expected_source_sha256: Mapping) -> dict
                 raise ValueError("v5 original expectation differs from its group; do not relabel")
             task = task_from_v5_source(source, original, label_names=names)
             expected_kind = {"N+": "defect_free", "D+": "defect", "ADV1": "defect_free"}.get(group)
+            if mixed_negative_groups and group not in ("N+", "D+"):
+                expected_kind = None
             if expected_kind is not None and task["evidence"]["row_class"] != expected_kind:
                 raise ValueError("v5 group and original row_kind disagree")
             seen_ids.add(cid)
@@ -375,3 +443,55 @@ def write_v7_cases(sources: Mapping, output_path, *, expected_source_sha256: Map
     write_json_new(output, result)
     return {"path": str(output), "sha256": sha256_file(output), "cases": len(result["cases"]),
             "protocol": V7_PROTOCOL, "final_blinded_approval": False}
+
+
+def build_v7_registered_cases(sources: Mapping, *, manifest_path, expected_manifest_sha256,
+                               expected_protocol, expected_approval_scope,
+                               expected_source_sha256: Mapping) -> dict:
+    """Build a registered A/B input only after authenticating external metadata.
+
+    Calling this function reads source content. Metadata-only registration should
+    call validate_v7_manifest instead; it never opens sealed case files.
+    """
+    manifest_path = Path(manifest_path)
+    raw = manifest_path.read_bytes()
+    manifest = validate_v7_manifest(raw, expected_manifest_sha256=expected_manifest_sha256,
+                                    expected_protocol=expected_protocol,
+                                    expected_approval_scope=expected_approval_scope,
+                                    expected_source_sha256=expected_source_sha256)
+    result = _build_structured_cases(sources, expected_source_sha256=expected_source_sha256,
+                                     source_sets=manifest["source_sets"],
+                                     group_counts=V7_REGISTERED_GROUP_COUNTS, mixed_negative_groups=True)
+    if manifest_path.read_bytes() != raw:
+        raise ValueError("v7 manifest changed during construction")
+    result["schema_version"] = 5
+    result["protocol"] = expected_protocol
+    result["provenance"]["evaluation_scope"] = v7_registered_evaluation_scope(expected_protocol)
+    result["provenance"]["registration"] = {
+        "manifest_base64": base64.b64encode(raw).decode("ascii"),
+        "expected_manifest_sha256": expected_manifest_sha256,
+        "expected_protocol": expected_protocol,
+        "expected_approval_scope": expected_approval_scope,
+        "expected_source_sha256": dict(expected_source_sha256)}
+    for case in result["cases"]:
+        case["protocol"] = expected_protocol
+    return result
+
+
+def write_v7_registered_cases(sources: Mapping, output_path, *, manifest_path,
+                               expected_manifest_sha256, expected_protocol,
+                               expected_approval_scope, expected_source_sha256: Mapping,
+                               repo_root=None) -> dict:
+    assert_gate_closed(repo_root)
+    output = Path(output_path)
+    if output.exists() or output.is_symlink():
+        raise ValueError("v7 output must be a new path")
+    result = build_v7_registered_cases(
+        sources, manifest_path=manifest_path, expected_manifest_sha256=expected_manifest_sha256,
+        expected_protocol=expected_protocol, expected_approval_scope=expected_approval_scope,
+        expected_source_sha256=expected_source_sha256)
+    assert_gate_closed(repo_root)
+    write_json_new(output, result)
+    return {"path": str(output), "sha256": sha256_file(output), "cases": len(result["cases"]),
+            "protocol": expected_protocol, "approval_scope": expected_approval_scope,
+            "final_blinded_approval": False, "model_discrimination_measured": False}

@@ -1,7 +1,7 @@
 """통합형 본실험 실행기(`scripts/main_uni.py`, 12번 C3) — 모델 없이 도는 부분.
 
-학습 단계는 모델을 올리므로 여기서는 **올리기 전**을 본다 — 설정이 비면 모든 학습 명령이 거부되는 것, 설정에서 칸 설정을
-만드는 것, 연합 run-config 가 flwr 의 파서와 선언된 키를 지나는 것, 고의 중단 변수의 거부, 연합 칸의 상태별 처리,
+학습 단계는 모델을 올리므로 여기서는 **올리기 전**을 본다 — 저장소 설정이 10-13 결정값을 싣는 것, 그 설정으로도 공통 초기
+어댑터 · 착수 고정 없이는 학습 명령이 모델을 올리기 전에 멈추는 것, 설정이 비면 거부하는 것, 설정에서 칸 설정을 만드는 것, 연합 run-config 가 flwr 의 파서와 선언된 키를 지나는 것, 고의 중단 변수의 거부, 연합 칸의 상태별 처리,
 시드별 체인의 순서, 상태 격자. 모델 적재 함수는 불리면 떨어지게 막는다.
 """
 
@@ -17,8 +17,16 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import vlm.train_cell as _tc  # noqa: E402
 from scripts import main_uni as M  # noqa: E402
 from tests.test_uni_review_fixes import pairs_snapshot  # noqa: E402
+
+#: 칸 학습의 실물 — 저장소 설정 시험이 되돌려 쓴다(모델 적재 함수는 `_no_model` 이 막은 채로 둔다)
+_REAL_LOCAL, _REAL_CENTRAL = _tc.run_uni_local_cell, _tc.run_uni_central_cell
+#: 의사결정로그 2026-10-13 13:5x「본실험 등록 조건 확정」 — N = E = R = 1 · 평가 생성 한도 L = 512. 데이터 쪽이
+#: configs/base.yaml 에 적었다(wt/A 8318844). 시험은 그 결정을 고정한다 — 설정을 바꾸면 이 시험이 먼저 안다.
+DECIDED_BUDGET = (1, 1, 1)
+DECIDED_GEN_LIMIT = 512
 
 
 @pytest.fixture(autouse=True)
@@ -57,13 +65,63 @@ def _cfg_yaml(tmp: Path, **over) -> Path:
     return p
 
 
-@pytest.mark.parametrize("cmd", ["initadapter", "local", "central", "fed", "all", "close-ledger"])
-def test_저장소의_설정으로는_어느_학습_명령도_시작하지_않는다(cmd, tmp_path, capsys):
+def test_저장소의_설정은_10_13_결정값을_싣는다():
+    cfg = M.load_main_config()
+    assert (cfg.num_rounds, cfg.local_epochs, cfg.total_epochs) == DECIDED_BUDGET
+    assert cfg.total_epochs == cfg.num_rounds * cfg.local_epochs
+    assert cfg.max_new_tokens == DECIDED_GEN_LIMIT
+
+
+@pytest.fixture(scope="module")
+def repo_pairs():
+    """저장소 설정의 학습 명령은 모델을 올리기 전에 봉인 페어 계약을 해시로 맞댄다 — 이 트리에 없으면 아래 시험은 설 수 없다."""
+    from vlm.uni_config import load_uni_config, pairs_snapshot_problems
+
+    cfg = load_uni_config()
+    bad = pairs_snapshot_problems(ROOT / cfg.pairs_path, cfg.pairs_digest)
+    if bad:
+        pytest.skip(f"봉인 페어 계약이 이 트리에 없거나 다르다(정션 · 본체 밖 사본) — {bad[0]}")
+
+
+def _record_build(monkeypatch) -> list[dict]:
+    """초기 어댑터 만들기를 기록만 하는 대역으로 — 모델을 올리지 않고 파일도 쓰지 않는다."""
+    import numpy as np
+
+    import vlm.init_adapter as ia
+
+    calls: list[dict] = []
+    monkeypatch.setattr(ia, "build_initial_adapter",
+                        lambda **kw: calls.append(kw) or ([np.zeros(2, dtype=np.float32)], ["a"], {}))
+    return calls
+
+
+@pytest.mark.parametrize("cmd, reason", [("local", "init_adapter_missing"), ("central", "init_adapter_missing"),
+                                         ("fed", "init_adapter_missing"), ("all", "init_adapter_missing"),
+                                         ("close-ledger", "close_inputs_missing")])
+def test_저장소의_설정으로도_초기_어댑터_없이는_학습_명령이_모델을_올리기_전에_멈춘다(cmd, reason, tmp_path, capsys,
+                                                                       monkeypatch, repo_pairs):
+    monkeypatch.chdir(ROOT)                                            # 설정의 상대 경로(페어 · 프롬프트)는 저장소 기준이다
+    monkeypatch.setattr(_tc, "run_uni_local_cell", _REAL_LOCAL)        # 칸의 실물 가드까지 — 모델 적재 함수는 막힌 채
+    monkeypatch.setattr(_tc, "run_uni_central_cell", _REAL_CENTRAL)
+    built = _record_build(monkeypatch) if cmd == "all" else None       # all 은 initadapter 를 지난다(대역)
     argv = [cmd, "--seed", "1"] + (["--tag", "uni_local_C1"] if cmd == "close-ledger" else [])
     assert M.main(argv, out=tmp_path / "out") == 2
-    err = capsys.readouterr().err
-    assert "config_incomplete" in err and "비어 있다" in err
-    assert not (tmp_path / "out").exists()
+    assert f"[{reason}]" in capsys.readouterr().err
+    assert built is None or len(built) == 1
+    out = tmp_path / "out"
+    assert not any(q.suffix in (".npz", ".csv") for q in out.rglob("*")) if out.exists() else True
+
+
+def test_저장소의_설정으로_initadapter_는_설정의_모델_판과_시드로_공통_초기_어댑터를_만든다(tmp_path, monkeypatch, repo_pairs):
+    """착수 고정보다 먼저 도는 유일한 학습 명령이다(착수 고정이 초기 어댑터의 digest 를 묶는다). 모델은 대역이다."""
+    monkeypatch.chdir(ROOT)
+    calls = _record_build(monkeypatch)
+    assert M.main(["initadapter", "--seed", "1"], out=tmp_path / "out") == 0
+    cfg = M.load_main_config()
+    (kw,) = calls
+    assert (kw["model_id"], kw["revision"], kw["seed"], kw["purpose"]) == \
+        (cfg.model_id, cfg.model_revision, int(cfg.seeds[0]), "main")
+    assert Path(kw["cache_path"]) == M.seed_dir(tmp_path / "out", 1) / "fl" / "uni_fed" / "initial.npz"
 
 
 def test_설정에서_칸_설정을_만든다(tmp_path):

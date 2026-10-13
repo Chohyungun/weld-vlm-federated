@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import itertools
 import json
 import sys
 from collections import defaultdict
@@ -34,6 +35,7 @@ SIZES = (2000, 3000, 4000)
 SPEC = {"path": "docs/dev_log/2026-10-07-본실험코퍼스/25_평가표본_대표지표_D.md", "commit": "051f43a",
         "sha256": "f730d886fa9d948ecbb59f9b826c1faed44907d7577cbc515e6ec43ac31cb4ba", "section": "§2"}
 SIDE_HEADER = ("image_id", "stratum", "G_h", "n_h")
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class SampleRefused(ValueError):
@@ -125,8 +127,28 @@ def sample_eval(rows: Iterable[Mapping[str, str]], sizes: Iterable[int] = SIZES,
         side.sort(key=lambda r: r[0])
         per = {s: {"n_h": n_h[s], "sampled_images": sum(len(groups[g]["ids"]) for g in order[s][:n_h[s]])} for s in sorted(order)}
         samples[size] = {"ids": ids, "side_rows": side, "groups": len(chosen), "images": len(ids), "strata": per}
+    # §2-6 접두 사슬을 실행 때도 본다(검토 Minor) — 크기 순으로 뽑힌 묶음 · 이미지가 앞 크기의 것을 품어야 한다
+    chain = sorted(samples)
+    for small, big in itertools.pairwise(chain):
+        if not (set(samples[small]["ids"]) <= set(samples[big]["ids"])
+                and all(samples[small]["strata"][s]["n_h"] <= samples[big]["strata"][s]["n_h"] for s in order)):
+            raise SampleRefused("prefix", f"크기 {small} 의 표본이 크기 {big} 의 표본에 들지 않는다")
     return {"seed": seed, "population": {"eval_images": population, "eval_groups": len(groups)}, "strata": strata,
-            "samples": samples}
+            "samples": samples, "prefix_chain": chain}
+
+
+def configured_digest(repo_root: Path = ROOT) -> str:
+    """기본 설정의 동결 스냅샷 다이제스트(`fixed_before_main_runs.snapshot_digest`) — 사람이 명령행에 옮겨 적지 않게."""
+    import yaml
+
+    cfg = yaml.safe_load((repo_root / "configs/base.yaml").read_text(encoding="utf-8"))
+    return cfg["fixed_before_main_runs"]["snapshot_digest"]
+
+
+def check_seed_digest(seed: str, digest: str) -> None:
+    """공개 시드 끝 마디(다이제스트 앞 8 자)가 검증한 스냅샷 다이제스트와 같아야 한다 — 다른 스냅샷에 같은 시드를 쓰지 않게."""
+    if not (isinstance(digest, str) and seed.rsplit("|", 1)[-1] == digest[:8]):
+        raise SampleRefused("seed_digest", "시드의 다이제스트 접두가 검증한 스냅샷 다이제스트와 다르다")
 
 
 def list_bytes(ids: list[str]) -> bytes:
@@ -157,7 +179,8 @@ def write_samples(result: dict, out: Path, snapshot_digest: str) -> dict:
 
     out.mkdir(parents=True, exist_ok=False)
     meta = {"spec": dict(SPEC), "seed": result["seed"], "manifest_snapshot_digest": snapshot_digest,
-            "columns": list(COLUMNS), "population": result["population"], "strata": result["strata"], "sizes": {}}
+            "columns": list(COLUMNS), "population": result["population"], "strata": result["strata"],
+            "prefix_chain": result["prefix_chain"], "sizes": {}}
     for size, smp in result["samples"].items():
         raw = list_bytes(smp["ids"])
         checked = validate_eval_list(raw, where=f"eval_sample_{size}")          # 정규형 검사를 지나야 쓴다
@@ -175,15 +198,18 @@ def write_samples(result: dict, out: Path, snapshot_digest: str) -> dict:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m data.eval_sample", description=__doc__.splitlines()[0])
     ap.add_argument("--manifest-dir", type=Path, required=True, help="봉인 매니페스트 폴더(SNAPSHOT.sha256 · manifest.csv)")
-    ap.add_argument("--expect-digest", required=True, help="스냅샷 다이제스트(configs 의 fixed_before_main_runs.snapshot_digest)")
+    ap.add_argument("--expect-digest", default=None,
+                    help="스냅샷 다이제스트 — 기본은 configs/base.yaml 의 fixed_before_main_runs.snapshot_digest 를 읽는다")
     ap.add_argument("--out", type=Path, required=True, help="새 폴더(있으면 거부) — 목록은 추적 밖에 둔다")
     ap.add_argument("--sizes", type=int, nargs="+", default=list(SIZES))
     a = ap.parse_args(argv)
     from data.manifest_io import verify_snapshot
 
+    expect = a.expect_digest if a.expect_digest is not None else configured_digest()
     digest = verify_snapshot(a.manifest_dir)
-    if digest != a.expect_digest:
-        raise SampleRefused("snapshot", f"매니페스트 다이제스트 {digest} 가 기대 {a.expect_digest} 와 다르다")
+    if digest != expect:
+        raise SampleRefused("snapshot", f"매니페스트 다이제스트 {digest} 가 기대 {expect} 와 다르다")
+    check_seed_digest(SEED, digest)
     result = sample_eval(read_manifest_columns(a.manifest_dir / "manifest.csv"), a.sizes)
     meta = write_samples(result, a.out, digest)
     print(json.dumps({k: {x: v[x] for x in ("images", "groups", "file_sha256", "set_sha256", "side_sha256")}

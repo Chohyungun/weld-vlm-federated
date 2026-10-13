@@ -418,10 +418,10 @@ def policy_identity() -> dict:
 
 # v7 is an explicit new API. The v5/v6 names above retain their old behaviour.
 # The four canonical functions live in a byte-identical, separately fingerprinted
-# D 6a923c1 transplant; do not tune them against a probe in this module.
-V7_VERSION = "image_report_judge_v7_20261013_6a923c1"
-V7_REFERENCE_COMMIT = "6a923c1"
-V7_REFERENCE_SHA256 = "82d2473cb804e14cd72414cc4a1cbd907bc4b816b7ec6b85478a926594207919"
+# D 256c40b supplement-6 transplant; do not tune against a probe in this module.
+V7_VERSION = "image_report_judge_v7_20261013_256c40b"
+V7_REFERENCE_COMMIT = "256c40b"
+V7_REFERENCE_SHA256 = "07ce544f974e95692800314413a1c87f4ad6d741a54cf239404e979713e00962"
 V7_TRANSPLANT_SHA256 = V7_REFERENCE_SHA256
 V7_OUTPUT_SCHEMA_VERSION = "judge_structured_v7"
 V7_MAX_NEW_TOKENS = 160

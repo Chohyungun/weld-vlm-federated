@@ -678,8 +678,9 @@ def test_v7_결함_행의_판정값은_물음_넷이_모두_참이어야_받는�
 
 @pytest.fixture
 def v7_reader(monkeypatch):
-    """릴리스의 판정 폴더 다시 읽기를 주어진 v7 출처의 사본으로 갈아 끼운다 — 외부 검토 도구의 v7 판정 신원 읽기가 이 트리에
-    없어서다(시험 전용). 출처 객체와 다시 읽은 것의 대조 · 그 뒤의 v7 검사는 그대로 돈다."""
+    """릴리스의 판정 폴더 다시 읽기를 손으로 지은 v7 출처의 사본으로 갈아 끼운다 — **위조 시험 전용**. 실제 v7 판정 신원
+    쓰기 · 읽기와의 결합은 잇는 시험(`test_production_pipeline.py`)이 본다. 출처 객체와 다시 읽은 것의 대조 · 그 뒤의 v7 검사는
+    그대로 돈다."""
     import copy
 
     from corpus.production import release
@@ -700,7 +701,8 @@ def _model_image(source):
     return lambda r: r["id"] in image_ids
 
 
-def test_v7_집계를_받는다_정상_행은_적용_안_됨_결함은_물음_넷(tmp_path, v7_reader):
+def test_v7_위조_시험의_바탕_손으로_지은_출처는_릴리스를_지난다(tmp_path, v7_reader):
+    """아래 위조 시험들의 양성 대조 — 고치지 않은 출처가 지나야 그 시험들의 거부가 그 한 칸 때문이라고 읽을 수 있다."""
     c = Case(tmp_path, v7=True)
     c.release()
     assert verify_release(c.out)["verified"] is True
@@ -722,7 +724,8 @@ def test_v7_영수증이_기각인_행이_데이터셋에_있으면_거부(tmp_p
     Case(tmp_path, v7=mutate).refused("judge_receipt_rejected")
 
 
-@pytest.mark.parametrize("field,value", [("candidate_sha256", "e" * 64), ("policy_identity_sha256", "f" * 64)])
+@pytest.mark.parametrize("field,value", [("candidate_sha256", "e" * 64), ("policy_identity_sha256", "f" * 64),
+                                         ("generation_contract_applied", False), ("model_applicable", True)])
 def test_v7_영수증의_생성문_정책_지문이_다르면_거부(tmp_path, v7_reader, field, value):
     def mutate(src):
         _receipt(src, _normal)[field] = value

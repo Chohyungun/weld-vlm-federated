@@ -1,8 +1,8 @@
-"""RQ3 참여 이득 지표 8종. `51_RQ3_참여이득_지표설계.md` §1.
+"""RQ2 참여 이득 지표 8종. 참여 이득 지표설계 문서(51번) §1.
 
 ## 범위 — 사전실험(분리형) 분석이다
 
-**이 모듈은 분리형 사전실험의 참여자별 비교를 위한 것이다. 통합형 본실험의 RQ3 가 아니다.**
+**이 모듈은 분리형 사전실험의 참여자별 비교를 위한 것이다. 통합형 본실험의 RQ2 가 아니다.**
 통합형의 참여자별 비교는 07번 미니스펙 §19-4 가 정의했고 그 정의대로 **새로 구현한다**(본채점 진입점 구현 회차).
 이 모듈을 통합형 진입점에 잇지 않는다. 둘은 다른 양이다.
 
@@ -17,7 +17,7 @@
 싣지 않는다(`fl/atomic_log.py`). 그런 행을 쓰는 자리는 정의돼 있지 않다 — 실제 원장을 넣으면 궤적이 비고,
 그 사실을 보고의 단서에 적는다.
 
-RQ3 는 "데이터가 적거나 분포가 다른 회사도 참여할 가치가 있는가"에 답한다.
+RQ2 는 "데이터가 적거나 분포가 다른 회사도 참여할 가치가 있는가"에 답한다.
 **전체 평균 하나로는 답할 수 없다.** 평균은 소규모 참여자가 손해를 보고 있어도 가려 준다.
 
 ## 평가 방식
@@ -60,8 +60,8 @@ from statistics import pstdev
 PCT_POINT = "%p"
 PCT_RELATIVE = "%"
 
-#: 이 모듈의 범위. 보고의 단서 첫 줄에 들어간다 — 산출물만 본 사람이 통합형 RQ3 로 읽지 않게.
-SCOPE_NOTE = ("사전실험(분리형) 참여자별 분석이다. 통합형 본실험의 RQ3(공통 평가셋의 연합−로컬_k 대응 차와 "
+#: 이 모듈의 범위. 보고의 단서 첫 줄에 들어간다 — 산출물만 본 사람이 통합형 RQ2 로 읽지 않게.
+SCOPE_NOTE = ("사전실험(분리형) 참여자별 분석이다. 통합형 본실험의 RQ2(공통 평가셋의 연합−로컬_k 대응 차와 "
               "삼분)가 아니다")
 
 #: ⑧ `gain_per_mb` 분모 규약의 id. 산출물이 이 값을 싣는다.
@@ -174,7 +174,7 @@ class RoundPoint:
 
 
 @dataclass(frozen=True)
-class Rq3Report:
+class ParticipantGainReport:
     """지표 8종 산출 결과. 단일 진입점의 반환값."""
 
     metric_name: str
@@ -210,7 +210,7 @@ class Rq3Report:
     # --- ④ 소규모 클라이언트 이득 -------------------------------------------
     @property
     def small_client_gain(self) -> Delta | None:
-        """RQ3 의 직접 답."""
+        """RQ2 의 직접 답."""
         for g in self.gains:
             if g.client_id == self.small_client:
                 return g.delta
@@ -225,7 +225,7 @@ class Rq3Report:
 
     @property
     def losers(self) -> tuple[str, ...]:
-        """손해 본 참여자. **있으면 그대로 보고한다.** 숨기면 RQ3 이 무의미해진다."""
+        """손해 본 참여자. **있으면 그대로 보고한다.** 숨기면 RQ2 이 무의미해진다."""
         return tuple(g.client_id for g in self.gains if not g.positive)
 
     # --- ⑦ 라운드별 궤적 ----------------------------------------------------
@@ -306,7 +306,7 @@ def attribute_by_client(
 
 # --- 단일 진입점 ---------------------------------------------------------------
 
-def build_rq3_report(
+def build_participant_gain_report(
     federated: Mapping[str, float],
     solo: Mapping[str, float],
     *,
@@ -315,7 +315,7 @@ def build_rq3_report(
     n_train_samples: Mapping[str, int] | None = None,
     atomic_rows: Iterable[Mapping[str, object]] | None = None,
     federated_cell: str = "sep_fed",
-) -> Rq3Report:
+) -> ParticipantGainReport:
     """지표 8종을 한 번에 낸다. 후처리 리포트의 단일 진입점.
 
     Args:
@@ -354,7 +354,7 @@ def build_rq3_report(
     missing = sorted((set(federated) | set(solo)) - set(clients))
     if missing:
         caveats.append(f"한쪽 칸에만 있는 클라이언트를 제외했다: {missing}")
-    return Rq3Report(
+    return ParticipantGainReport(
         metric_name=metric_name,
         gains=gains,
         disparity=disparity,
@@ -414,10 +414,10 @@ def _trajectory_from_atomic(
 
 # --- 보고 ---------------------------------------------------------------------
 
-def format_report(report: Rq3Report) -> str:
+def format_report(report: ParticipantGainReport) -> str:
     """사람이 읽는 표. **전체 평균 하나만 싣지 않는다**(§6-1)."""
     lines = [
-        f"RQ3 참여 이득 (기준 지표: {report.metric_name})",
+        f"RQ2 참여 이득 (기준 지표: {report.metric_name})",
         "",
         "| 클라이언트 | 단독 | 연합 | 이득(%p) | 이득(%) | 학습 표본 |",
         "|---|---|---|---|---|---|",

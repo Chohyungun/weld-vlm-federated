@@ -822,14 +822,16 @@ def test_기록이_채워지면_빈_항목이_아니다() -> None:
 # 목적 셋 · 목적별 완결 · 진단 규칙의 자리 · 영수증의 파일 해시 · 리허설·진단의 채점 쪽.
 
 def test_판_3_이다() -> None:
-    """판 3 의 목적 셋은 판 4 · 5 에서도 그대로다. 판 4 는 구간 규약 칸만, 판 5 는 모집단의 부표본 칸만 바꿨다."""
+    """판 3 의 목적 셋은 판 4 · 5 에서도 그대로다. 판 4 는 구간 규약 칸만, 판 5 는 모집단의 부표본 칸만 바꿨다.
+    판 5 추기(2026-10-13)는 목적 `early_coord_check`(분할 train)를 더했다 — 칸은 그대로다."""
     assert P.REGISTRATION_VERSION == "5"
-    assert P.PURPOSES == ("main", "rehearsal", "frame_diag")
-    assert P.SPLIT_OF_PURPOSE["frame_diag"] == "val"
-    assert P.VOCAB["generation.list_split"] == ("eval", "val"), "어휘에 같은 값이 두 번 들지 않는다"
+    assert P.PURPOSES == ("main", "rehearsal", "frame_diag", "early_coord_check")
+    assert P.SPLIT_OF_PURPOSE["frame_diag"] == "val" and P.SPLIT_OF_PURPOSE["early_coord_check"] == "train"
+    assert P.VOCAB["generation.list_split"] == ("eval", "val", "train"), "어휘에 같은 값이 두 번 들지 않는다"
+    assert P.RECEIPT_KINDS == P.PURPOSES
 
 
-@pytest.mark.parametrize("purpose", ["main", "rehearsal", "frame_diag"])
+@pytest.mark.parametrize("purpose", ["main", "rehearsal", "frame_diag", "early_coord_check"])
 def test_목적마다_가득_찬_등록은_완결이다(purpose: str) -> None:
     filled(purpose=purpose).require_complete(side="generation")
 
@@ -1035,5 +1037,7 @@ def test_부표본_칸을_든_등록_파일은_받지_않는다() -> None:
         load_registration(raw)
 
 
-def test_가중은_none_하나다() -> None:
-    assert P.VOCAB["population.weighting"] == ("none",)
+def test_가중은_none_과_층화_가중_둘이다() -> None:
+    """판 5 는 `none` 하나였다(전량 평가). 2026-10-13 층화 표본 결정으로 `stratified_g_over_n` 을 더했다 — 그 값이면
+    `evaluation.eval_registration.check_population_binding` 이 봉인한 주 표본과 묶는다."""
+    assert P.VOCAB["population.weighting"] == ("none", "stratified_g_over_n")

@@ -348,7 +348,7 @@ def _load_initial(cell: str, cfg: Any) -> tuple["ArrayRecord", list[str], dict]:
 def _save_round(out_dir: Path, server_round: int, num_rounds: int, agg: Any) -> None:
     """**매 라운드** 글로벌 모델을 저장한다.
 
-    라운드별 궤적이 RQ3(참여 이득)의 재료이고, 그 궤적은 학습이 전부 끝난 뒤 저장된
+    라운드별 궤적이 RQ2(참여 이득)의 재료이고, 그 궤적은 학습이 전부 끝난 뒤 저장된
     체크포인트를 단일 채점기로 일괄 채점해 얻는다. 간격을 두고 저장하면 어느 라운드에서
     무엇이 일어났는지 사후에 볼 수 없다.
 

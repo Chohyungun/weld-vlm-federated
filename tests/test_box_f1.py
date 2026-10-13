@@ -26,6 +26,8 @@ from evaluation.metrics.box_f1 import (
     is_candidate,
     max_matching,
     score_m1,
+    SENSITIVITY_NORMAL_ONLY,
+    SENSITIVITY_REGISTERED,
     sensitivity_counts,
 )
 from evaluation.metrics.localization import match_image
@@ -230,15 +232,35 @@ def test_micro_는_계수를_통째로_더한_값이다() -> None:
 # ---------------------------------------------------------------- 민감도
 
 def test_정상_이미지의_실패에만_오탐을_더한다() -> None:
+    """07번 §12-8 의 옛 읽기(등록값 아님)를 이름으로 불러 그대로 고정한다 — 2026-10-13 에 기본이 등록값으로 바뀌었다."""
     gold = {"n": [], "d": [("2011", box(0, 0))]}
     base = build_counts({"n": [], "d": []}, gold, C)
     s = sensitivity_counts(base, gold_codes={"n": [], "d": ["2011"]},
-                           failed_image_ids=["n", "d"])
+                           failed_image_ids=["n", "d"], variant=SENSITIVITY_NORMAL_ONLY)
     idx = s.index_of()
     assert list(s.fp[idx["n"]]) == [1, 1, 1, 1], "정상 실패는 채점 4클래스에 각 1건"
     assert list(s.fp[idx["d"]]) == [0, 0, 0, 0], "결함 실패는 주 채점과 같다"
     assert np.array_equal(s.tp, base.tp) and np.array_equal(s.fn, base.fn)
     assert s.notes["n_normal_failures_penalised"] == 1
+
+
+def test_등록된_민감도는_실패_레코드마다_오탐을_더한다() -> None:
+    """실험설계 8-5 · 2026-10-13 승인: 실패 레코드마다 클래스별 오탐 1 — 정상에도, 결함에도. 결함의 미탐은 주 채점대로."""
+    gold = {"n": [], "d": [("2011", box(0, 0))]}
+    base = build_counts({"n": [], "d": []}, gold, C)
+    s = sensitivity_counts(base, gold_codes={"n": [], "d": ["2011"]}, failed_image_ids=["n", "d"])
+    idx = s.index_of()
+    assert list(s.fp[idx["n"]]) == [1, 1, 1, 1]
+    assert list(s.fp[idx["d"]]) == [1, 1, 1, 1], "결함 이미지의 실패에도 오탐이 더해진다"
+    assert np.array_equal(s.tp, base.tp) and np.array_equal(s.fn, base.fn), "미탐은 주 채점 그대로"
+    assert s.notes["sensitivity_variant"] == SENSITIVITY_REGISTERED
+    assert (s.notes["n_normal_failures_penalised"], s.notes["n_defect_failures_penalised"]) == (1, 1)
+
+
+def test_모르는_민감도_변형은_거부한다() -> None:
+    base = build_counts({"n": []}, {"n": []}, C)
+    with pytest.raises(ValueError):
+        sensitivity_counts(base, gold_codes={"n": []}, failed_image_ids=["n"], variant="fp_somehow")
 
 
 def test_민감도는_주_채점을_바꾸지_않는다() -> None:

@@ -100,10 +100,16 @@ def env_probe(repo: Path | None = None) -> dict[str, Any]:
             "transformers": ver("transformers"), "gpu_name": gpu, "driver": driver}
 
 
-def common_probe(config_path: Path | None = None, *, repo: Path | None = None) -> dict[str, Any]:
-    """통합형 설정 블록 · 프롬프트 바이트 · 템플릿 모드 · 좌표 규약."""
+def common_probe(config_path: Path | None = None, *, repo: Path | None = None,
+                 registration_path: Path | None = None) -> dict[str, Any]:
+    """통합형 설정 블록 · 프롬프트 바이트 · 템플릿 모드 · 좌표 규약 · 본실험 등록값(`configs/train_registration.yaml`).
+
+    등록값은 코드 · 설정 · 규칙 파일과 맞댄 뒤에만 싣는다(`vlm.registration.registration_probe`). 등록 파일이 없거나 어긋나면
+    `RegistrationRejected`(착수 고정의 거부)다 — 착수 고정을 쓰지 않고, 본 칸은 시작 · 재개하지 않는다.
+    """
     from vlm.coords import CoordCfg, coord_cfg_hash
     from vlm.pilot_vlm import template_mode_of
+    from vlm.registration import registration_probe
     from vlm.uni_config import load_uni_config
 
     root = Path(repo) if repo is not None else REPO_ROOT
@@ -118,7 +124,8 @@ def common_probe(config_path: Path | None = None, *, repo: Path | None = None) -
             "template_mode": template_mode_of(cfg.chat_template_kwargs or {}),
             "coord_cfg_hash": coord_cfg_hash(CoordCfg(coord_space=cfg.coord_space or "ABS_ORIG")),
             "processor_kwargs_sha256": _sha_bytes(_canonical(cfg.processor_kwargs)),
-            "config_file_sha256": _sha_file(Path(config_path)) if config_path is not None else None}
+            "config_file_sha256": _sha_file(Path(config_path)) if config_path is not None else None,
+            **registration_probe(config_path, path=registration_path)}
 
 
 def init_probe(init_adapter_path: Path) -> dict[str, Any]:

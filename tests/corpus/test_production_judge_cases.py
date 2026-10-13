@@ -246,6 +246,105 @@ def _object_sha(value):
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _registration_manifest(tmp_path, protocol, pins, originals, sources=None):
+    if sources is not None:
+        originals["N+"]["cases"] = originals["N+"]["cases"][:4]
+        sources["N+"].write_bytes(json.dumps(originals["N+"], ensure_ascii=False).encode("utf-8"))
+        pins["N+"] = sha256_file(sources["N+"])
+    value = {"schema_version": 1, "protocol": protocol,
+             "approval_scope": C.V7_REGISTERED_SCOPES[protocol],
+             "source_sha256": pins, "source_sets": {g: row["set"] for g, row in originals.items()},
+             "group_counts": dict(C.V7_REGISTERED_GROUP_COUNTS)}
+    path = tmp_path / "invented-registration-manifest.json"
+    write_json_new(path, value)
+    kwargs = {"expected_manifest_sha256": sha256_file(path), "expected_protocol": protocol,
+              "expected_approval_scope": value["approval_scope"], "expected_source_sha256": pins}
+    return path, kwargs
+
+
+@pytest.mark.parametrize("protocol", [C.V7_A_PROTOCOL, C.V7_B_PROTOCOL])
+def test_registered_v7_preserves_all_source_bytes_and_expectations(tmp_path, protocol):
+    sources, pins, originals = _v5_sources(tmp_path)
+    old = C.build_v5_cases(sources, expected_source_sha256=pins)
+    manifest, expected = _registration_manifest(tmp_path, protocol, pins, originals, sources)
+    before = {g: path.read_bytes() for g, path in sources.items()}
+    new = C.build_v7_registered_cases(sources, manifest_path=manifest, **expected)
+    assert new["schema_version"] == 5 and new["protocol"] == protocol
+    assert new["provenance"]["evaluation_scope"]["generation_contract_applied_to_probe_gate"] is True
+    assert new["provenance"]["evaluation_scope"]["final_approval_eligible"] is (protocol == C.V7_B_PROTOCOL)
+    assert not new["model_discrimination_measured"]
+    assert len(new["cases"]) == 104
+    old_cases = [c for c in old["cases"] if c["group"] != "N+" or c["source_index"] < 4]
+    assert all(b == {**a, "protocol": protocol, "source_file_sha256": pins[a["group"]]}
+               for a, b in zip(old_cases, new["cases"]))
+    assert {g: path.read_bytes() for g, path in sources.items()} == before
+    for name, value in expected.items():
+        assert new["provenance"]["registration"][name] == value
+
+
+def test_v7_manifest_validation_never_reads_source_files(tmp_path, monkeypatch):
+    # Metadata-only path; the source paths deliberately do not exist.
+    pins = {g: str(i + 1) * 64 for i, g in enumerate(C.V5_GROUP_COUNTS)}
+    originals = {g: {"set": "invented-unopened-" + g} for g in pins}
+    manifest, expected = _registration_manifest(tmp_path, C.V7_B_PROTOCOL, pins, originals)
+    raw = manifest.read_bytes()
+
+    def no_source_read(*args, **kwargs):
+        raise AssertionError("metadata validation opened a file")
+
+    monkeypatch.setattr(Path, "read_bytes", no_source_read)
+    value = C.validate_v7_manifest(raw, **expected)
+    assert value["source_sha256"] == pins
+
+
+@pytest.mark.parametrize("change", ["outer_sha", "source_sha", "scope", "protocol", "extra_key",
+                                    "counts", "boolean_count", "sets", "missing_pin"])
+def test_registered_v7_manifest_rejects_mutable_or_incompatible_claims(tmp_path, change):
+    sources, pins, originals = _v5_sources(tmp_path)
+    path, expected = _registration_manifest(tmp_path, C.V7_A_PROTOCOL, pins, originals, sources)
+    value = read_json(path)
+    if change == "outer_sha":
+        expected["expected_manifest_sha256"] = "0" * 64
+    elif change == "missing_pin":
+        expected["expected_source_sha256"] = {"N+": pins["N+"]}
+    else:
+        if change == "source_sha":
+            value["source_sha256"]["N+"] = "0" * 64
+        elif change == "scope":
+            value["approval_scope"] = "final_blinded"
+        elif change == "protocol":
+            value["protocol"] = C.V7_B_PROTOCOL
+        elif change == "extra_key":
+            value["approval_eligible"] = True
+        elif change == "counts":
+            value["group_counts"]["N+"] = 49
+        elif change == "boolean_count":
+            value["group_counts"]["N+"] = True
+        else:
+            value["source_sets"]["D+"] = value["source_sets"]["N+"]
+        raw = json.dumps(value, ensure_ascii=False).encode("utf-8")
+        path.write_bytes(raw)
+        expected["expected_manifest_sha256"] = hashlib.sha256(raw).hexdigest()
+    with pytest.raises(ValueError, match="v7"):
+        C.build_v7_registered_cases(sources, manifest_path=path, **expected)
+
+
+def test_registered_v7_writer_rechecks_gate_and_never_overwrites(tmp_path, monkeypatch):
+    sources, pins, originals = _v5_sources(tmp_path)
+    manifest, expected = _registration_manifest(tmp_path, C.V7_A_PROTOCOL, pins, originals, sources)
+    seen = []
+    monkeypatch.setattr(C, "assert_gate_closed", lambda root: seen.append(root))
+    output = tmp_path / "registered-cases.json"
+    result = C.write_v7_registered_cases(sources, output, manifest_path=manifest,
+                                         repo_root=tmp_path, **expected)
+    assert seen == [tmp_path, tmp_path] and result["sha256"] == sha256_file(output)
+    assert not result["final_blinded_approval"] and not result["model_discrimination_measured"]
+    before = output.read_bytes()
+    with pytest.raises(ValueError, match="new path"):
+        C.write_v7_registered_cases(sources, output, manifest_path=manifest, **expected)
+    assert output.read_bytes() == before
+
+
 def test_v6_new_protocol_preserves_v5_source_task_candidate_and_expectation(tmp_path):
     sources, pins, originals = _v5_sources(tmp_path)
     before = {group: path.read_bytes() for group, path in sources.items()}

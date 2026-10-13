@@ -10,11 +10,18 @@
 구조화 판정(v6) 경로: 생성 → 따로 둔 판정(`infer.run_judge` — 주입한 백엔드는 시험용 `fake` 만 받는다) → 판정 신원 읽기
 (`infer.read_judge_source`) → `quality.audit_run(judge_source=…)`(행 종류별 구조화 답을 엄격히 읽는다) → 릴리스. 시험용 판정은
 집계에서 막히고 릴리스도 멈춘다 — 실제 판정 모델은 승인된 두 탐침을 거쳐야 하므로 이 시험에서는 통과 릴리스까지 가지 않는다.
+
+구조화 판정(v7) 경로: 생성(v7 생성 계약의 글) → 판정 신원 쓰기 v7(`infer.run_judge(policy_version="v7")`, 출력 160 토큰, 정지기를
+켠 시험용 판정 모델 — 결함 행 · 원문 QA 만 부르고 정상 행은 부르지 않는다) → 판정 신원 읽기(꼴을 스스로 고른다) →
+`quality.audit_run(judge_source=…)`(정상 행은 결정적 영수증으로, 결함 행은 결정적 통과와 물음 넷으로). 판정 정책 · 파서 · 쓰기 ·
+읽기 · 집계는 실제 것이고 가짜는 모델 백엔드뿐이다.
 """
 from __future__ import annotations
 
 import json
 import re
+from collections import Counter
+from typing import ClassVar
 
 import pytest
 import yaml
@@ -24,7 +31,7 @@ release = pytest.importorskip("corpus.production.release", reason="릴리스 모
 fixtures = pytest.importorskip("tests.corpus.production_fixtures", reason="작업 명부 시험 세계가 이 트리에 아직 없다")
 
 from corpus.parse.passage_bank import select_bank_for_generation, text_sha256
-from corpus.production import infer, quality
+from corpus.production import generation_policy, infer, quality
 from corpus.production.common import canonical_bytes, write_json_new
 from corpus.production.quality import audit_run
 
@@ -267,6 +274,122 @@ def test_구조화_판정_경로는_따로_둔_판정으로_집계까지_가고_
 
     # 시험용 판정의 행은 릴리스하지 않는다 — 집계가 막은 그대로 행 검사에서 멈춘다
     _refused(world, tmp_path, "row_backend")
+
+
+# --------------------------------------------------------------------------- 구조화 판정 v7 — 실제 쓰기 · 읽기 · 정책 · 집계
+
+
+#: v7 결함 행의 물음 넷("참 = 문제 없음") — 키는 집계의 v7 표에서 읽는다
+V7_QUESTIONS = tuple(k for k in quality.JUDGE_V7_KEYS["defect"] if k != "reason")
+
+
+def _v7_contract_text(ev: dict) -> str:
+    """v7 생성 계약의 글 — 정상 행은 정해진 두 문장(생성 정책의 첫 꼴), 결함 행은 (이름, 구역)마다 'NAME k개가 ZONE에 표시되어
+    있다.' 뒤에 정해진 제한 문장. 이름 · 구역 · 수는 생성 지시의 주석에서만 읽는다."""
+    if not ev["defect_positions"]:
+        return f"{generation_policy.NORMAL_ABSENCE_FORMS[0]} {generation_policy.NORMAL_LIMITATION_FORMS[0]}"
+    cells = Counter((d["name"], d["where"]) for d in ev["defect_positions"])
+    return " ".join(f"{n} {k}개가 {w}에 표시되어 있다." for (n, w), k in cells.items()) + " " + generation_policy.LIMITATION_FORMS[0]
+
+
+class V7PipelineBackend(PipelineBackend):
+    """영상 설명은 v7 생성 계약의 글로 쓰고, 판정은 v7 물음에 모두 통과로 답한다. 판정은 정지기를 켜야 답하고 종료는
+    `json_closed` 다. 판정 입력의 행 종류를 `judged` 에 남기고, 정상 행 입력이 오면 실패한다(정상 행은 판정 모델을 부르지 않는다)."""
+
+    judged: ClassVar[list] = []
+    stopping = False
+
+    def enable_json_object_stopping(self):
+        assert self.stage == "judge"
+        self.stopping = True
+
+    def generate_batch(self, prompts, system, deadline):
+        if self.stage != "judge":
+            rows = super().generate_batch(prompts, system, deadline)
+            for p, r in zip(prompts, rows):
+                if "구절 id:" not in p:
+                    r["text"] = _v7_contract_text(json.loads(p.split("주석: ", 1)[1]))
+            return rows
+        assert self.stopping, "v7 판정은 정지기를 켠 모델에만 간다"
+        out = []
+        for p in prompts:
+            request = json.loads(p)
+            kind = request.get("row_class", request.get("task_kind"))
+            assert kind != "defect_free", "정상 행이 판정 모델에 갔다"
+            V7PipelineBackend.judged.append(kind)
+            answer = ({**dict.fromkeys(V7_QUESTIONS, True), "reason": "주석과 같다"} if kind == "defect"
+                      else {"grounded": True, "scope_ok": True, "language_ok": True, "reason": "근거와 일치"})
+            out.append({"text": json.dumps(answer, ensure_ascii=False), "finish_reason": "json_closed",
+                        "input_tokens": 20, "output_tokens": 15})
+        return out
+
+
+def _separate_judge_v7(world, run_dir, name="judge-v7"):
+    """v7 판정을 판정 신원 쓰기로 돌리고(출력 160 토큰 · 시험용 판정 모델) 판정 신원 읽기로 객체를 받는다 — 읽기에 꼴을 주지
+    않는다(판정 폴더의 꼴로 스스로 고른다)."""
+    target = world.tmp / name
+    V7PipelineBackend.judged = []
+    PipelineBackend.backend = "fake"
+    try:
+        done = infer.run_judge(run_dir, world.config, target, judge_config={**world.config["judge"], "max_new_tokens": 160},
+                               policy_version="v7", backend_factory=V7PipelineBackend)
+    finally:
+        PipelineBackend.backend = "transformers"
+    assert done["exit_code"] == 0 and done["policy_version"] == "v7" and done["completed_tasks"] == done["planned_tasks"]
+    return infer.read_judge_source(run_dir, world.config, target)
+
+
+def test_v7_판정_경로는_실제_쓰기_읽기_정책으로_집계까지_가고_정상_행은_판정_모델을_부르지_않는다(tmp_path):
+    world, bank = _world(tmp_path)
+    _prepare(world, bank)
+    run_dir = world.tmp / "run"
+    assert infer.run_stage(run_dir, "generate", world.config, backend_factory=V7PipelineBackend)["exit_code"] == 0
+    src = _separate_judge_v7(world, run_dir)
+    result = audit_run(run_dir, world.config, world.tmp / "audit", judge_source=src)
+    audit = json.loads((world.tmp / "audit" / "AUDIT.json").read_bytes())
+    tasks = _tasks(run_dir)
+    normal = [t["id"] for t in tasks if quality._judge_row_class(t) == "defect_free"]
+    model = [t["id"] for t in tasks if t["id"] not in normal]
+    kinds = Counter(quality._judge_row_class(t) for t in tasks)
+    assert kinds["defect_free"] == len(normal) == 2 and kinds["defect"] > 0 and kinds["source_qa"] > 0
+
+    # 판정 신원 읽기가 v7 을 골랐다 — 영수증은 모든 행, 판정 행은 모델 대상만, 정상 행은 판정 모델에 가지 않았다
+    assert src["policy_version"] == "v7" and src["output_schema"] == quality.JUDGE_V7_SCHEMA_VERSION
+    assert src["all_task_ids"] == [t["id"] for t in tasks] == [r["id"] for r in src["deterministic_receipts"]]
+    assert src["model_task_ids"] == model == [r["id"] for r in src["rows"]]
+    assert Counter(V7PipelineBackend.judged) == {"defect": kinds["defect"], "source_qa": kinds["source_qa"]}
+    assert {r["finish_reason"] for r in src["rows"]} == {"json_closed"}
+
+    # 집계 — v7 파서 · 판정 신원에 묶인 실제 v7 정책 · 결정적 영수증
+    ji = audit["judge_identity"]
+    assert ji["source"] == "separate" and ji["identity_sha256"] == src["identity_sha256"]
+    assert ji["parser_schema"] == "judge_structured_v7" and audit["judge_parser_version"] == "parse_judge_v7"
+    assert audit["audit_version"] == "quality_v9" and audit["policy"]["bound_to_judge_identity"] is True
+    assert audit["policy"]["identity_sha256"] == fixtures.sha(canonical_bytes(src["identity_basis"]["policy_identity"]))
+    # 막는 것은 시험용 판정 백엔드 하나 — 모든 행이 수락됐다(정상 행은 judge_missing 이 아니다)
+    assert result["status"] == "blocked" and audit["blockers"] == ["non_transformers_backend"], audit["blockers"]
+    assert audit["counts"]["accepted"] == len(tasks) and audit["complete"] is True and audit["incomplete"] == 0
+    det = audit["deterministic_receipts"]
+    assert det["rows"] == det["planned"] == len(src["deterministic_receipts"]) == len(tasks)
+    assert det["policy_identity_sha256"] == audit["policy"]["identity_sha256"]
+    assert det["model_task_ids"] == {"count": len(model), "ids_sha256": quality.ids_sha256(model)}
+    assert det["normal"]["receipts"] == det["normal"]["deterministic_pass"] == len(normal)
+    assert det["normal"]["status"] == {"accepted": len(normal)} and det["normal"]["reasons"] == {}
+    assert det["model"]["receipts"] == det["model"]["deterministic_pass"] == len(model)
+    assert det["model"]["status"] == {"accepted": len(model)}
+
+    rows = {r["id"]: r for r in map(json.loads, (world.tmp / "audit" / "dataset.jsonl").read_text(encoding="utf-8").splitlines())}
+    assert list(rows) == [t["id"] for t in tasks]
+    for t in tasks:
+        judge = rows[t["id"]]["provenance"]["judge"]
+        if t["id"] in normal:
+            assert judge == {"applicable": False, "identity_sha256": src["identity_sha256"]}
+        elif t["kind"] == "image_report":
+            assert judge["verdict"] == {**dict.fromkeys(V7_QUESTIONS, True), "reason": "주석과 같다"}
+            assert list(judge["verdict"]) == [*V7_QUESTIONS, "reason"]
+            assert judge["schema"] == "judge_structured_v7" and judge["parser"] == "parse_judge_v7"
+        else:
+            assert judge["verdict"] == {"grounded": True, "scope_ok": True, "language_ok": True, "reason": "근거와 일치"}
 
 
 # --------------------------------------------------------------------------- 같은 바이트 영상

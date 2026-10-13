@@ -23,7 +23,9 @@ from . import infer as I
 from . import judge_identity as J
 from . import judge_policy as P
 from . import quality as Q
-from .judge_cases import V7_EVALUATION_SCOPE
+from .judge_cases import (V7_EVALUATION_SCOPE, V7_A_PROTOCOL, V7_B_PROTOCOL,
+                          V7_REGISTERED_SCOPES, V7_REGISTERED_GROUP_COUNTS, validate_v7_manifest,
+                          v7_registered_evaluation_scope)
 
 _POSITIVE = {"N+", "D+"}
 GROUPS = ("N+", "N-invented", "N-number", "N-assertion", "N-leak", "D+",
@@ -62,8 +64,14 @@ V7_THRESHOLDS = {"dplus_model_false_reject_maximum": 2, "dplus_model_denominator
                  "positive_deterministic_false_reject": 0,
                  "negative_combined_false_accept": 0, "negative_combined_denominator": 50,
                  "actual_independent_calls": 2, "parser_error_rows": 0, "truncated_rows": 0}
+V7_REGISTERED_THRESHOLDS = {**V7_THRESHOLDS, "nplus_deterministic_denominator": 4, "planned_cases": 104}
 _V7_BOOL_KEYS = ("has_limitation", "language_ok", "no_unannotated_attributes", "no_unsupported_relation")
-_STRUCTURED_PROTOCOLS = (V5_PROTOCOL, V6_PROTOCOL, V7_PROTOCOL)
+_V7_PROTOCOLS = (V7_PROTOCOL, V7_A_PROTOCOL, V7_B_PROTOCOL)
+_STRUCTURED_PROTOCOLS = (V5_PROTOCOL, V6_PROTOCOL, *_V7_PROTOCOLS)
+
+
+def _is_v7(protocol):
+    return protocol in _V7_PROTOCOLS
 _FORMAT_NORMALIZATIONS = ("code_fence", "string_boolean")
 _ARTIFACTS = {"CALL.json", "cases.json", "config.json", "backend_batches.jsonl", "outputs.jsonl", "PROBE.json"}
 
@@ -106,10 +114,15 @@ def _check_gate():
     return "repository-runtime"
 
 
-def _inputs(raw):
+def _inputs(raw, *, expected_manifest_sha256=None, expected_protocol=None,
+            expected_approval_scope=None, expected_source_sha256=None):
     data = I._json(raw)
     if isinstance(data, dict) and (data.get("schema_version") in (2, 3, 4) or "protocol" in data):
-        return _structured_inputs(data)
+        return _structured_inputs(data, expected_registration={
+            "expected_manifest_sha256": expected_manifest_sha256,
+            "expected_protocol": expected_protocol,
+            "expected_approval_scope": expected_approval_scope,
+            "expected_source_sha256": expected_source_sha256})
     allowed = {"schema_version", "cases", "provenance", "thresholds", "model_discrimination_measured"}
     if (not isinstance(data, dict) or set(data) - allowed or
             type(data.get("schema_version")) is not int or data["schema_version"] != 1 or "cases" not in data):
@@ -167,14 +180,48 @@ def _inputs(raw):
     return cases
 
 
-def _structured_inputs(data):
+def _registration(provenance, protocol, expected_registration):
+    """Validate externally supplied registration before decoding source content."""
+    if protocol not in V7_REGISTERED_SCOPES:
+        if expected_registration and any(value is not None for value in expected_registration.values()):
+            raise I.StageRefused("probe_registration", "external registration cannot relabel an old protocol")
+        return None
+    record = provenance.get("registration") if isinstance(provenance, dict) else None
+    keys = {"expected_manifest_sha256", "expected_protocol", "expected_approval_scope", "expected_source_sha256"}
+    if (not isinstance(record, dict) or set(record) != keys | {"manifest_base64"} or
+            not isinstance(expected_registration, dict) or set(expected_registration) != keys or
+            any(expected_registration[key] is None or record[key] != expected_registration[key] for key in keys) or
+            expected_registration["expected_protocol"] != protocol):
+        raise I.StageRefused("probe_registration", "external manifest, scope, protocol and four source pins are required")
+    try:
+        if not isinstance(record["manifest_base64"], str):
+            raise ValueError("manifest encoding must be text")
+        raw = base64.b64decode(record["manifest_base64"], validate=True)
+        return validate_v7_manifest(raw, **expected_registration)
+    except (ValueError, TypeError, binascii.Error) as exc:
+        raise I.StageRefused("probe_registration", "registered manifest does not match external pins") from exc
+
+
+def _registration_pins(data):
+    """Replay pins already admitted by run_probe; not a public input trust anchor."""
+    if data.get("protocol") not in V7_REGISTERED_SCOPES:
+        return {}
+    record = data.get("provenance", {}).get("registration", {})
+    return {key: record.get(key) for key in (
+        "expected_manifest_sha256", "expected_protocol", "expected_approval_scope", "expected_source_sha256")}
+
+
+def _structured_inputs(data, *, expected_registration=None):
     protocol = data.get("protocol")
-    versioned = protocol in (V6_PROTOCOL, V7_PROTOCOL)
-    pins = _source_pins(protocol)
+    versioned = protocol in (V6_PROTOCOL, *_V7_PROTOCOLS)
+    registered = protocol in V7_REGISTERED_SCOPES
+    group_counts = _group_counts(protocol)
+    manifest = _registration(data.get("provenance"), protocol, expected_registration)
+    pins = manifest["source_sha256"] if manifest else _source_pins(protocol)
     required = {"schema_version", "protocol", "cases", "provenance", "model_discrimination_measured"}
     if (set(data) not in (required, required | {"thresholds"}) or
             type(data.get("schema_version")) is not int or
-            data["schema_version"] != (4 if protocol == V7_PROTOCOL else 3 if versioned else 2) or
+            data["schema_version"] != (5 if registered else 4 if _is_v7(protocol) else 3 if versioned else 2) or
             protocol not in _STRUCTURED_PROTOCOLS or data.get("model_discrimination_measured") is not False):
         raise I.StageRefused("probe_protocol_contract", "explicit versioned 150-case protocol required")
     if "thresholds" in data and I._digest(data["thresholds"]) != I._digest(_thresholds(protocol)):
@@ -186,6 +233,8 @@ def _structured_inputs(data):
             "deterministic_results_are_not_model_approval", "source_files_base64"}
     if versioned:
         keys.add("evaluation_scope")
+    if registered:
+        keys.add("registration")
     if (not isinstance(provenance, dict) or set(provenance) != keys or
             provenance["source_sha256"] != pins or
             provenance["real_images_or_ids_used"] is not False or
@@ -203,15 +252,15 @@ def _structured_inputs(data):
         raise I.StageRefused("probe_provenance", "structured probes require pinned source and adapter provenance")
     if versioned and I._digest(provenance["evaluation_scope"]) != I._digest(_evaluation_scope(protocol)):
         raise I.StageRefused("probe_evaluation_scope", "exposed G sources are not new independent samples")
-    sources = _structured_sources(provenance, protocol)
+    sources = _structured_sources(provenance, protocol, manifest=manifest)
     cases = data["cases"]
-    if not isinstance(cases, list) or len(cases) != 150:
-        raise I.StageRefused("probe_cases", "structured probes require exactly 150 source-preserving cases")
+    if not isinstance(cases, list) or len(cases) != sum(group_counts.values()):
+        raise I.StageRefused("probe_cases", "structured probes require the exact registered source-preserving count")
     fields = {"id", "group", "task", "candidate", "expected_model_accept", "expected_deterministic_accept",
               "source_case", "source_case_sha256", "source_file_sha256", "source_group", "source_index"}
     if versioned:
         fields.add("protocol")
-    ids, positions, counts = set(), {g: [] for g in V5_GROUP_COUNTS}, Counter()
+    ids, positions, counts = set(), {g: [] for g in group_counts}, Counter()
     for case in cases:
         if not isinstance(case, dict) or set(case) != fields:
             raise I.StageRefused("probe_case", "unexpected versioned case fields")
@@ -261,12 +310,12 @@ def _structured_inputs(data):
             raise I.StageRefused("probe_task", "adapted task differs from the pinned source fields")
         positions[group].append(case["source_index"])
         counts[group] += 1
-    if dict(counts) != V5_GROUP_COUNTS or any(positions[g] != list(range(n)) for g, n in V5_GROUP_COUNTS.items()):
-        raise I.StageRefused("probe_groups", "structured probes require ordered 50/50/25/25 source indices")
+    if dict(counts) != group_counts or any(positions[g] != list(range(n)) for g, n in group_counts.items()):
+        raise I.StageRefused("probe_groups", "structured probes require ordered registered group source indices")
     return cases
 
 
-def _structured_sources(provenance, protocol):
+def _structured_sources(provenance, protocol, *, manifest=None):
     """Authenticate original bytes, membership and adapter dependencies portably."""
     from . import judge_cases as adapter
     from data import label_map
@@ -288,7 +337,11 @@ def _structured_sources(provenance, protocol):
     sources = {}
     sets = {"N+": "judge_nplus_g1", "D+": "judge_dplus_g1",
             "ADV1": "judge_adv_negative_g1", "ADV2": "judge_adv_negative_g2"}
-    for group, count in V5_GROUP_COUNTS.items():
+    if protocol in V7_REGISTERED_SCOPES:
+        if manifest is None:
+            raise I.StageRefused("probe_registration", "source verification requires authenticated registration")
+        sets = manifest["source_sets"]
+    for group, count in _group_counts(protocol).items():
         value = encoded[group]
         try:
             if not isinstance(value, str):
@@ -296,7 +349,7 @@ def _structured_sources(provenance, protocol):
             raw = base64.b64decode(value, validate=True)
         except (ValueError, binascii.Error) as exc:
             raise I.StageRefused("probe_source_files", "invalid source byte encoding") from exc
-        pins = _source_pins(protocol)
+        pins = manifest["source_sha256"] if manifest else _source_pins(protocol)
         if hashlib.sha256(raw).hexdigest() != pins[group]:
             raise I.StageRefused("probe_source_pin", "source bytes differ from the pinned four-file G source")
         source = I._json(raw)
@@ -318,33 +371,41 @@ def _source_dependencies_unchanged(raw):
     if data.get("protocol") in _STRUCTURED_PROTOCOLS:
         # Includes a second raw-source SHA and loaded label-map check; no images,
         # production rows, models, mutable original paths or generated fixtures.
-        _structured_sources(data["provenance"], data["protocol"])
+        manifest = _registration(data["provenance"], data["protocol"], _registration_pins(data))
+        _structured_sources(data["provenance"], data["protocol"], manifest=manifest)
 
 
 def _protocol(cases):
     # Called only after complete input validation, never inferred from model output.
-    if cases and all(c.get("protocol") == V7_PROTOCOL for c in cases):
-        return V7_PROTOCOL
+    if cases and _is_v7(cases[0].get("protocol")) and all(
+            c.get("protocol") == cases[0]["protocol"] for c in cases):
+        return cases[0]["protocol"]
     if cases and all(c.get("protocol") == V6_PROTOCOL for c in cases):
         return V6_PROTOCOL
     return V5_PROTOCOL if len(cases) == 150 else LEGACY_PROTOCOL
 
 
 def _thresholds(protocol):
-    if protocol == V7_PROTOCOL:
+    if protocol in V7_REGISTERED_SCOPES:
+        return V7_REGISTERED_THRESHOLDS
+    if _is_v7(protocol):
         return V7_THRESHOLDS
     return V6_THRESHOLDS if protocol == V6_PROTOCOL else V5_THRESHOLDS if protocol == V5_PROTOCOL else _THRESHOLDS
 
 
+def _group_counts(protocol):
+    return V7_REGISTERED_GROUP_COUNTS if protocol in V7_REGISTERED_SCOPES else V5_GROUP_COUNTS
+
+
 def _parser_schema(protocol):
-    if protocol == V7_PROTOCOL:
+    if _is_v7(protocol):
         return "judge_structured_v7"
     return "judge_structured_v6" if protocol == V6_PROTOCOL else (
         "judge_structured_v5" if protocol == V5_PROTOCOL else "legacy_four_keys")
 
 
 def _require_parser(protocol):
-    if protocol == V7_PROTOCOL:
+    if _is_v7(protocol):
         return J.require_v7_parser()
     if protocol == V6_PROTOCOL:
         return J.require_v6_parser()
@@ -354,40 +415,48 @@ def _require_parser(protocol):
 
 
 def _source_pins(protocol):
+    if protocol in V7_REGISTERED_SCOPES:
+        raise I.StageRefused("probe_registration", "registered source pins require authenticated manifest")
     return V7_SOURCE_SHA256 if protocol == V7_PROTOCOL else (
         V6_SOURCE_SHA256 if protocol == V6_PROTOCOL else V5_SOURCE_SHA256)
 
 
 def _evaluation_scope(protocol):
+    if protocol in V7_REGISTERED_SCOPES:
+        return v7_registered_evaluation_scope(protocol)
     return V7_EVALUATION_SCOPE if protocol == V7_PROTOCOL else V6_EVALUATION_SCOPE
 
 
+def _approval_scope(protocol):
+    return V7_REGISTERED_SCOPES.get(protocol, "regression_diagnostic_only")
+
+
 def _policy_for(protocol):
-    if protocol == V7_PROTOCOL:
+    if _is_v7(protocol):
         return J._policy_v7()
     return J._policy()
 
 
 def _runtime_for(model, spec, protocol):
-    if protocol == V7_PROTOCOL:
+    if _is_v7(protocol):
         return J.judge_runtime_identity(model, spec, policy_version="v7")
     return J.judge_runtime_identity(model, spec)
 
 
 def _model_cases(cases):
-    if _protocol(cases) == V7_PROTOCOL:
+    if _is_v7(_protocol(cases)):
         return [case for case in cases if P.row_class(case["task"]) == "defect"]
     return cases
 
 
 def _raw_check(rows, ids, spec, protocol):
-    if protocol == V7_PROTOCOL:
+    if _is_v7(protocol):
         return I._check_rows(rows, ids, spec, allow_json_closed=True)
     return I._check_rows(rows, ids, spec)
 
 
 def _receipt_schema(protocol):
-    return 3 if protocol == V7_PROTOCOL else 2 if protocol == V6_PROTOCOL else 1
+    return 3 if _is_v7(protocol) else 2 if protocol == V6_PROTOCOL else 1
 
 
 def _settings(config):
@@ -410,21 +479,24 @@ def _code_pins():
 
 
 def _render(cases):
-    if _protocol(cases) == V7_PROTOCOL:
+    if _is_v7(_protocol(cases)):
         return [P.render_judge_v7(c["task"], {"text": c["candidate"], "finish_reason": "eos"})
                 for c in _model_cases(cases)]
     return [P.render_judge(c["task"], {"text": c["candidate"], "finish_reason": "eos"}) for c in cases]
 
 
-def check_rules(cases_path) -> dict:
+def check_rules(cases_path, *, expected_manifest_sha256=None, expected_protocol=None,
+                expected_approval_scope=None, expected_source_sha256=None) -> dict:
     """Read-only CPU discrimination check; no backend, model or output file."""
     _check_gate()
     path = J._safe_path(Path(cases_path))
     I._plain_file(path)
     raw = path.read_bytes()
-    cases = _inputs(raw)
+    cases = _inputs(raw, expected_manifest_sha256=expected_manifest_sha256,
+                    expected_protocol=expected_protocol, expected_approval_scope=expected_approval_scope,
+                    expected_source_sha256=expected_source_sha256)
     protocol = _protocol(cases)
-    if protocol == V7_PROTOCOL:
+    if _is_v7(protocol):
         return _check_rules_v7(path, raw, cases)
     structured = protocol in _STRUCTURED_PROTOCOLS
     _, system, policy = J._policy()
@@ -497,7 +569,7 @@ def _write_new(path, raw):
 
 
 def _analysis(case, raw):
-    if case.get("protocol") == V7_PROTOCOL:
+    if _is_v7(case.get("protocol")):
         return _analysis_v7(case, raw)
     parser_flags = []
     normalized = []
@@ -547,7 +619,7 @@ def _analysis(case, raw):
 
 def _summary(cases, rows, status):
     protocol = _protocol(cases)
-    if protocol == V7_PROTOCOL:
+    if _is_v7(protocol):
         return _summary_v7(cases, rows, status)
     v5 = protocol in _STRUCTURED_PROTOCOLS
     v6 = protocol == V6_PROTOCOL
@@ -627,14 +699,15 @@ def _analysis_v7(case, raw):
     # D 900657c: normal rows have no model fallback. Their operational gate
     # must enforce the strict production contract, not only the exposed-set
     # diagnostic below. Do not rewrite the pinned old N+ prose to make it pass.
-    gate = full if normal else regression
+    registered = case.get("protocol") in V7_REGISTERED_SCOPES
+    gate = full if normal or registered else regression
     det = not gate["deterministic_reasons"]
     base = {"id": case["id"], "group": case["group"], "case_sha256": I._digest(case),
             "row_class": P.row_class(case["task"]),
             "deterministic_codes": gate["deterministic_codes"],
             "deterministic_reasons": gate["deterministic_reasons"],
             "deterministic_flags": gate["flags"], "deterministic_accept": det,
-            "generation_contract_applied_to_probe_gate": normal,
+            "generation_contract_applied_to_probe_gate": normal or registered,
             "full_generation_contract": full,
             "full_generation_contract_accept": not full["deterministic_reasons"]}
     if normal:
@@ -677,9 +750,11 @@ def _analysis_v7(case, raw):
 
 
 def _summary_v7(cases, rows, status):
+    protocol = _protocol(cases)
+    registered = protocol in V7_REGISTERED_SCOPES
     planned = Counter(c["group"] for c in cases)
-    if dict(planned) != V7_GROUP_COUNTS:
-        raise I.StageRefused("probe_groups", "v7 denominators must remain 50/50/25/25")
+    if dict(planned) != _group_counts(protocol):
+        raise I.StageRefused("probe_groups", "v7 denominators must equal the fixed protocol registry")
     case_by_id = {c["id"]: c for c in cases}
     ids = [row["id"] for row in rows]
     if len(set(ids)) != len(ids) or any(cid not in case_by_id for cid in ids):
@@ -736,10 +811,11 @@ def _summary_v7(cases, rows, status):
     thresholds = (complete and parser_errors == 0 and truncated == 0 and positive_det == 0 and
                   dplus <= 2 and negative == 0 and groups["D+"]["model"]["applicable"] == 50)
     return {"planned_cases": len(cases), "completed_cases": len(rows), "complete": complete,
-            "protocol": V7_PROTOCOL, "thresholds": V7_THRESHOLDS, "approval_eligible": True,
-            "approval_scope": "adjustment_operational_only", "final_blinded_approval": False,
-            "evaluation_scope": V7_EVALUATION_SCOPE, "groups": groups,
+            "protocol": protocol, "thresholds": _thresholds(protocol), "approval_eligible": registered,
+            "approval_scope": _approval_scope(protocol), "final_blinded_approval": False,
+            "evaluation_scope": _evaluation_scope(protocol), "groups": groups,
             "nplus_model_metric": "not_applicable", "dplus_model_denominator": 50,
+            "nplus_deterministic_denominator": planned["N+"],
             "dplus_model_false_reject": dplus, "negative_combined_denominator": 50,
             "negative_combined_false_accept": negative,
             "positive_deterministic_false_reject": positive_det,
@@ -749,7 +825,7 @@ def _summary_v7(cases, rows, status):
             "parser_error_rows": parser_errors, "truncated_rows": truncated,
             "deterministic_flags": dict(sorted(flags.items())), "model_flags": dict(sorted(model_flags.items())),
             "format_normalized_rows": normalized_rows, "format_normalizations": dict(sorted(norms.items())),
-            "generation_contract_applied_to_probe_gate": False,
+            "generation_contract_applied_to_probe_gate": registered,
             "normal_generation_contract_applied_to_probe_gate": True,
             "normal_positive_contract_rejected": sum(
                 bool(r["full_generation_contract"]["deterministic_codes"]["contract"])
@@ -758,17 +834,20 @@ def _summary_v7(cases, rows, status):
             "positive_full_generation_contract_rejected": sum(groups[g]["full_generation_contract_rejected"] for g in _POSITIVE),
             "full_generation_contract_passed": complete and not any(g["full_generation_contract_rejected"] for g in groups.values()),
             "thresholds_passed": bool(thresholds), "single_call_is_not_determinism_verification": True,
-            "exposed_adjustment_set_cannot_mint_final_approval": True}
+            "exposed_adjustment_set_cannot_mint_final_approval": protocol != V7_B_PROTOCOL}
 
 
 def _check_rules_v7(path, raw, cases):
-    _, system, policy = _policy_for(V7_PROTOCOL)
+    protocol = _protocol(cases)
+    registered = protocol in V7_REGISTERED_SCOPES
+    _, system, policy = _policy_for(protocol)
     code = _code_pins()
     rows, positive_rejects, normal_false_accepts = [], 0, 0
     for case in cases:
         regression, full = _v7_evaluations(case)
         normal = P.row_class(case["task"]) == "defect_free"
-        accept = not regression["deterministic_reasons"]
+        gate = full if registered else regression
+        accept = not gate["deterministic_reasons"]
         positive_rejects += case["group"] in _POSITIVE and not accept
         normal_false_accepts += case["group"] not in _POSITIVE and normal and accept
         rows.append({"id": case["id"], "group": case["group"], "case_sha256": I._digest(case),
@@ -776,14 +855,14 @@ def _check_rules_v7(path, raw, cases):
                      "model_applicability": "not_applicable" if normal else "applicable",
                      "deterministic_only_negative_false_accept": case["group"] not in _POSITIVE and normal and accept})
     if (I._file_sha(path) != hashlib.sha256(raw).hexdigest() or _code_pins() != code or
-            _policy_for(V7_PROTOCOL)[1:] != (system, policy)):
+            _policy_for(protocol)[1:] != (system, policy)):
         raise I.StageRefused("probe_inputs_changed", "v7 case/policy/source changed during rule check")
     _source_dependencies_unchanged(raw)
     _check_gate()
-    return {"schema_version": 2, "protocol": V7_PROTOCOL, "cases": len(cases), "rows": rows,
+    return {"schema_version": 2, "protocol": protocol, "cases": len(cases), "rows": rows,
             "rows_recorded": len(rows), "exit_code": 0 if positive_rejects == normal_false_accepts == 0 else 2,
             "policy_identity": policy, "implementation_sha256": code,
-            "cases_file_sha256": hashlib.sha256(raw).hexdigest(), "evaluation_scope": V7_EVALUATION_SCOPE,
+            "cases_file_sha256": hashlib.sha256(raw).hexdigest(), "evaluation_scope": _evaluation_scope(protocol),
             "positive_deterministic_false_reject": positive_rejects,
             "normal_negative_deterministic_false_accept": normal_false_accepts,
             "normal_production_positive_rejected": sum(
@@ -793,7 +872,9 @@ def _check_rules_v7(path, raw, cases):
                 r["full_generation_contract"]["deterministic_pass"]
                 for r in rows if r["group"] not in _POSITIVE
                 and r["model_applicability"] == "not_applicable"),
-            "scope": "exposed-set regression without contract; strict normal production counted separately",
+            "scope": ("registered strict generation contract for every row" if registered else
+                      "exposed-set regression without contract; strict normal production counted separately"),
+            "registration": _registration_pins(I._json(raw)),
             "positive_full_generation_contract_rejected": sum(not r["full_generation_contract"]["deterministic_pass"]
                                                                for r in rows if r["group"] in _POSITIVE),
             "model_discrimination_measured": False, "combined_discrimination_measured": False,
@@ -801,8 +882,10 @@ def _check_rules_v7(path, raw, cases):
             "ready_for_training": False}
 
 
-def run_probe(cases_path, config: dict, output_dir, *, backend_factory=None) -> dict:
-    """One fresh call. V7 exposed sources qualify only for operational approval."""
+def run_probe(cases_path, config: dict, output_dir, *, backend_factory=None,
+              expected_manifest_sha256=None, expected_protocol=None,
+              expected_approval_scope=None, expected_source_sha256=None) -> dict:
+    """One fresh call. Only separately registered A/B inputs are approval-eligible."""
     environment = _check_gate()
     source, target = J._safe_path(Path(cases_path)), J._safe_path(Path(output_dir))
     I._plain_file(source)
@@ -811,10 +894,23 @@ def run_probe(cases_path, config: dict, output_dir, *, backend_factory=None) -> 
     config = J._clone(config)
     spec, generation, memory_limit = _settings(config)
     raw_cases = source.read_bytes()
-    cases = _inputs(raw_cases)
+    registration = {"expected_manifest_sha256": expected_manifest_sha256,
+                    "expected_protocol": expected_protocol,
+                    "expected_approval_scope": expected_approval_scope,
+                    "expected_source_sha256": expected_source_sha256}
+    cases = _inputs(raw_cases, **registration)
     protocol = _protocol(cases)
+    if protocol == V7_PROTOCOL and backend_factory is None:
+        raise I.StageRefused("diagnostic_only_protocol", "old G150 is CPU/injected-backend regression only")
     _require_parser(protocol)  # Before output creation or backend/model loading.
-    if protocol == V7_PROTOCOL and spec["max_new_tokens"] != 160:
+    if protocol in V7_REGISTERED_SCOPES:
+        for case in cases:
+            _, full = _v7_evaluations(case)
+            accepted = not full["deterministic_reasons"]
+            if ((case["group"] in _POSITIVE and not accepted) or
+                    (case["group"] not in _POSITIVE and P.row_class(case["task"]) == "defect_free" and accepted)):
+                raise I.StageRefused("probe_cpu_admission", "registered strict-contract CPU gate failed")
+    if _is_v7(protocol) and spec["max_new_tokens"] != 160:
         raise I.StageRefused("probe_config", "v7 requires the preregistered max_new_tokens=160")
     source_sha = hashlib.sha256(raw_cases).hexdigest()
     policy, system, identity = _policy_for(protocol)
@@ -828,8 +924,9 @@ def run_probe(cases_path, config: dict, output_dir, *, backend_factory=None) -> 
                    "thresholds": _thresholds(protocol),
                    "case_provenance_sha256": I._digest(I._json(raw_cases).get("provenance")),
                    "parser_schema_version": _parser_schema(protocol),
+                   **({"registration": J._clone(registration)} if protocol in V7_REGISTERED_SCOPES else {}),
                    **({"evaluation_scope": _evaluation_scope(protocol)}
-                      if protocol in (V6_PROTOCOL, V7_PROTOCOL) else {})}
+                      if protocol in (V6_PROTOCOL, *_V7_PROTOCOLS) else {})}
 
     def unchanged(model=None, runtime=None):
         _check_gate()
@@ -874,13 +971,13 @@ def run_probe(cases_path, config: dict, output_dir, *, backend_factory=None) -> 
     deadline = started + spec["wall_seconds"]
     model, runtime, rows, batches = None, None, [], 0
     normal_rows = ([_analysis(c, None) for c in cases if P.row_class(c["task"]) == "defect_free"]
-                   if protocol == V7_PROTOCOL else [])
+                   if _is_v7(protocol) else [])
     status, exit_code = "complete", 0
     memory = {"peak_allocated_bytes": 0, "peak_reserved_bytes": 0}
     try:
         unchanged()
         model = (backend_factory or I.TransformersBackend)(dict(spec), "judge")
-        if protocol == V7_PROTOCOL:
+        if _is_v7(protocol):
             enable = getattr(model, "enable_json_object_stopping", None)
             if not callable(enable):
                 raise I.StageRefused("probe_json_stop", "v7 backend must explicitly enable JSON object stopping")
@@ -912,7 +1009,7 @@ def run_probe(cases_path, config: dict, output_dir, *, backend_factory=None) -> 
             for case, row in zip(batch_cases, output):
                 if not isinstance(row, dict):
                     raise I.StageRefused("row_content", case["id"])
-                if protocol == V7_PROTOCOL and "id" in row and row["id"] != case["id"]:
+                if _is_v7(protocol) and "id" in row and row["id"] != case["id"]:
                     raise I.StageRefused("probe_raw_id", "returned model ID cannot be overwritten")
                 raw_rows.append({**row, "id": case["id"]})
             _raw_check(raw_rows, [c["id"] for c in batch_cases], spec, protocol)
@@ -952,7 +1049,7 @@ def run_probe(cases_path, config: dict, output_dir, *, backend_factory=None) -> 
     unchanged()
     if I._file_sha(log_path) != log_hash.hexdigest():
         raise I.StageRefused("probe_log_changed", "raw backend log changed before receipt")
-    if protocol == V7_PROTOCOL:
+    if _is_v7(protocol):
         observed = {row["id"]: row for row in normal_rows + rows}
         rows = [observed[c["id"]] for c in cases if c["id"] in observed]
     outputs = b"".join(I._canonical(row) + b"\n" for row in rows)
@@ -999,14 +1096,22 @@ def _verify_probe(folder):
     if basis.get("artifacts_sha256") != {k: v for k, v in before.items() if k != "PROBE.json"}:
         raise I.StageRefused("probe_artifacts", "artifact hash mismatch")
     cases_raw = (folder / "cases.json").read_bytes()
-    cases = _inputs(cases_raw)
+    saved_input = basis.get("input_basis")
+    if not isinstance(saved_input, dict):
+        raise I.StageRefused("probe_identity_changed", "missing input basis")
+    registered = I._json(cases_raw).get("protocol") in V7_REGISTERED_SCOPES
+    registration = saved_input.get("registration") if registered else {}
+    if not isinstance(registration, dict) or (registered and set(registration) != {
+            "expected_manifest_sha256", "expected_protocol", "expected_approval_scope", "expected_source_sha256"}):
+        raise I.StageRefused("probe_registration", "receipt must preserve admitted external registration")
+    cases = _inputs(cases_raw, **registration)
     protocol = _protocol(cases)
     if receipt["schema_version"] != _receipt_schema(protocol):
         raise I.StageRefused("probe_receipt", "receipt schema differs from the authenticated input protocol")
     _require_parser(protocol)
     config = I._json((folder / "config.json").read_bytes())
     spec, generation, memory_limit = _settings(config)
-    if protocol == V7_PROTOCOL and spec["max_new_tokens"] != 160:
+    if _is_v7(protocol) and spec["max_new_tokens"] != 160:
         raise I.StageRefused("probe_config", "v7 requires max_new_tokens=160")
     model_cases = _model_cases(cases)
     _, system, policy = _policy_for(protocol)
@@ -1018,8 +1123,9 @@ def _verify_probe(folder):
                    "thresholds": _thresholds(protocol),
                    "case_provenance_sha256": I._digest(I._json(cases_raw).get("provenance")),
                    "parser_schema_version": _parser_schema(protocol),
+                   **({"registration": J._clone(registration)} if registered else {}),
                    **({"evaluation_scope": _evaluation_scope(protocol)}
-                      if protocol in (V6_PROTOCOL, V7_PROTOCOL) else {})}
+                      if protocol in (V6_PROTOCOL, *_V7_PROTOCOLS) else {})}
     if basis.get("input_basis") != input_basis:
         raise I.StageRefused("probe_identity_changed", "cases, config, renderer, parser or implementation changed")
     call = I._json((folder / "CALL.json").read_bytes())
@@ -1036,7 +1142,7 @@ def _verify_probe(folder):
     if len(rows) > len(cases):
         raise I.StageRefused("probe_rows", "too many output rows")
     analysed_cases = cases
-    if protocol == V7_PROTOCOL:
+    if _is_v7(protocol):
         ids = [row.get("id") for row in rows if isinstance(row, dict)]
         analysed_cases = [case for case in cases if case["id"] in ids]
         if ids != [case["id"] for case in analysed_cases]:
@@ -1045,7 +1151,7 @@ def _verify_probe(folder):
         if any(cid not in ids for cid in normals):
             raise I.StageRefused("probe_rows", "v7 must retain all deterministic-only normal results")
     for case, row in zip(analysed_cases, rows):
-        normal = protocol == V7_PROTOCOL and P.row_class(case["task"]) == "defect_free"
+        normal = _is_v7(protocol) and P.row_class(case["task"]) == "defect_free"
         if not isinstance(row, dict) or (not normal and not isinstance(row.get("raw"), dict)):
             raise I.StageRefused("probe_rows", "invalid raw row")
         if normal:
@@ -1072,7 +1178,7 @@ def _verify_probe(folder):
             for cid, raw_row in zip(ids, event["output"]):
                 if not isinstance(raw_row, dict):
                     raise I.StageRefused("probe_raw_log", "invalid raw backend row")
-                if protocol == V7_PROTOCOL and "id" in raw_row and raw_row["id"] != cid:
+                if _is_v7(protocol) and "id" in raw_row and raw_row["id"] != cid:
                     raise I.StageRefused("probe_raw_id", "saved returned model ID differs from requested ID")
                 enriched.append({**raw_row, "id": cid})
             _raw_check(enriched, ids, spec, protocol)
@@ -1153,7 +1259,7 @@ def _compare_verified(first, left, first_sha, second, right, second_sha):
             a["runtime_model"]["judge_runtime"].get("test_only") is False)
     thresholds = a["summary"]["thresholds_passed"] and b["summary"]["thresholds_passed"]
     protocol = a["input_basis"].get("protocol")
-    eligible = (protocol in (V6_PROTOCOL, V7_PROTOCOL) and
+    eligible = (protocol in (V6_PROTOCOL, *V7_REGISTERED_SCOPES) and
                 a["input_basis"].get("parser_schema_version") == _parser_schema(protocol) and
                 a["summary"].get("approval_eligible") is True and b["summary"].get("approval_eligible") is True)
     verified = bool(eligible and real and complete and thresholds and raw_text_equal and row_hashes_equal)
@@ -1164,9 +1270,10 @@ def _compare_verified(first, left, first_sha, second, right, second_sha):
             "raw_row_hashes_equal": bool(row_hashes_equal), "thresholds_passed": bool(thresholds),
             "real_backend_pair": bool(real), "gpu_model_verified": verified,
             "protocol": a["input_basis"]["protocol"], "approval_eligible": bool(eligible),
-            **({"approval_scope": "adjustment_operational_only", "final_blinded_approval": False,
+            **({"approval_scope": _approval_scope(protocol),
+                "final_blinded_approval": protocol == V7_B_PROTOCOL and verified,
                 "nplus_model_metric": "not_applicable", "model_determinism_rows": len([r for r in left if r["raw"] is not None]),
-                "gpu_determinism_measured": bool(real and complete)} if protocol == V7_PROTOCOL else {}),
+                "gpu_determinism_measured": bool(real and complete)} if _is_v7(protocol) else {}),
             "first_summary": a["summary"], "second_summary": b["summary"],
             "ready_for_training": False, "population_error_bound": None,
             "case_count": a["summary"]["planned_cases"], "independent_sample_count": None, "model_invocations": 2}
@@ -1206,7 +1313,7 @@ def _probe_files(folder):
 
 def _approval_basis(report, first, second, judge_config):
     if (report.get("gpu_model_verified") is not True or report.get("exit_code") != 0 or
-            report.get("protocol") not in (V6_PROTOCOL, V7_PROTOCOL) or report.get("approval_eligible") is not True):
+            report.get("protocol") not in (V6_PROTOCOL, *V7_REGISTERED_SCOPES) or report.get("approval_eligible") is not True):
         raise I.StageRefused("probe_not_approved", "two real, un-injected passing versioned probes are required")
     a, b = first["identity_basis"], second["identity_basis"]
     protocol = report["protocol"]
@@ -1215,8 +1322,8 @@ def _approval_basis(report, first, second, judge_config):
     return {"kind": "two-probe-judge-approval", "protocol": protocol,
             "thresholds": _thresholds(protocol), "comparison": report,
             "evaluation_scope": _evaluation_scope(protocol),
-            **({"approval_scope": "adjustment_operational_only", "final_blinded_approval": False}
-               if protocol == V7_PROTOCOL else {}),
+            **({"approval_scope": _approval_scope(protocol), "final_blinded_approval": protocol == V7_B_PROTOCOL}
+               if _is_v7(protocol) else {}),
             "input_basis": a["input_basis"], "judge_config": judge_config,
             "runtime_model": a["runtime_model"], "common_implementation_sha256": common,
             "probe_identity_sha256": [first["identity_sha256"], second["identity_sha256"]],

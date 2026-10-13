@@ -1,0 +1,40 @@
+# configs/train_registration.yaml 의 초안 — 데이터 쪽(A)이 이 바이트를 그대로 옮긴 뒤 early_coord_check_rules 두 칸만 채운다.
+# 학습 쪽이 학습 코드의 상수와 configs/base.yaml(wt/A 8318844 병합본)에서 값을 읽어 냈다(손으로 옮기지 않았다).
+# 같은 값으로 vlm.registration.registration_problems 를 돌려 규칙 칸을 뺀 열세 칸의 어긋남이 0 임을 확인했다.
+# 쓴 뒤 확인: python -X utf8 -m vlm.registration  → 종료 0 과 파일 지문(등록 모듈은 wt/C 에 있다 — 본체 반영 대기).
+# 칸 옆 주석이 출처다.
+# 학습 쪽 판독기 vlm/registration.py 의 KIND
+kind: train_registration
+# 이 파일의 판 — 처음 판
+version: 1
+# 의사결정로그 2026-10-13 13:5x「본실험 등록 조건 확정」 — 시드 1(시드 번호, configs/base.yaml experiment.seeds 의 첫째 값 20260828)
+seed_indices:
+- 1
+# 의사결정로그 2026-10-13 13:5x「본실험 등록 조건 확정」 R = 1 — configs/base.yaml uni_train_budget.num_rounds 와 같아야 한다
+num_rounds: 1
+# 의사결정로그 2026-10-13 13:5x「본실험 등록 조건 확정」 E = 1 — configs/base.yaml uni_train_budget.local_epochs
+local_epochs: 1
+# 의사결정로그 2026-10-13 13:5x「본실험 등록 조건 확정」 N = 1 — configs/base.yaml uni_train_budget.total_epochs
+total_epochs: 1
+# 의사결정로그 2026-10-13 13:5x「본실험 등록 조건 확정」 JSON 전용 — 학습 코드가 구현한 레시피 ['json_only']
+recipe: json_only
+# 의사결정로그 2026-10-13 13:5x「본실험 등록 조건 확정」 L = 512 — configs/base.yaml uni_max_new_tokens
+eval_gen_limit: 512
+# 의사결정로그 2026-10-13 13:5x「본실험 등록 조건 확정」 4bit(nf4) — 학습 코드의 적재 인자 vlm/pilot_vlm.py QUANT_4BIT
+quantization:
+  load_in_4bit: true
+  bnb_4bit_quant_type: nf4
+  bnb_4bit_compute_dtype: bfloat16
+  bnb_4bit_use_double_quant: true
+# 의사결정로그 2026-10-13 13:5x「본실험 등록 조건 확정」 마이크로 배치 1 — vlm/pilot_vlm.py MICRO_BATCH
+micro_batch: 1
+# 의사결정로그 2026-10-13 13:5x「본실험 등록 조건 확정」 누적 32 — vlm/pilot_vlm.py GRAD_ACCUM
+grad_accum: 32
+# 의사결정로그 2026-10-13 13:5x「본실험 등록 조건 확정」 학습률 1e-4 — vlm/pilot_vlm.py LR
+lr: 0.0001
+# 규칙 파일 configs/early_coord_check.yaml 의 version 과 바이트 sha256(소문자 16진) — 미정 칸을 채운 판(wt/D 1b66bb2 의 4판)이 본체에 들어온 뒤, 그 파일에서 읽어 채운다. 손으로 옮기지 않는다
+early_coord_check_rules:
+  version: 4
+  sha256: 99a3940b6a1d10f4538d455777f9eb10d810f3b32b0e76592f201372680c7f51
+# null — 공통 초기 어댑터는 착수 고정이 묶는다(값을 두면 그 digest 와 맞댄다)
+init_adapter_digest: null

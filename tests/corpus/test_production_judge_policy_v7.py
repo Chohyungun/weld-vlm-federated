@@ -94,8 +94,8 @@ def test_contract_exclusion_is_explicit_and_reported():
 def test_reference_is_byte_identical_and_has_a_new_policy_identity():
     digest = hashlib.sha256(Path(D.__file__).read_bytes()).hexdigest()
     assert digest == P.V7_REFERENCE_SHA256 == P.V7_TRANSPLANT_SHA256
-    assert P.V7_REFERENCE_COMMIT == "6a923c1"
-    assert P.V7_VERSION.endswith("_6a923c1")
+    assert P.V7_REFERENCE_COMMIT == "256c40b"
+    assert P.V7_VERSION.endswith("_256c40b")
 
 
 @pytest.mark.parametrize("absence", G.NORMAL_ABSENCE_FORMS)

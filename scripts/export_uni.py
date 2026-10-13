@@ -65,6 +65,11 @@ def _parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--purpose", required=True, choices=("main", "rehearsal", "frame_diag", "early_coord_check"))
     ap.add_argument("--check-step", type=int, default=None)
+    # 점검 export 의 비용 가드(11번 §5 · §119 I-08) — 모델을 올리기 전에 `쓴 시간 + 예상` 을 규칙의 상한과 맞댄다
+    ap.add_argument("--spent-hours", type=float, default=None)
+    ap.add_argument("--next-hours", type=float, default=None)
+    ap.add_argument("--max-hours", type=float, default=None)
+    ap.add_argument("--max-won", type=float, default=None)
     ap.add_argument("--mode", required=True, choices=("model", "echo"))
     ap.add_argument("--tag", required=True)
     ap.add_argument("--seed-index", required=True, type=int)
@@ -94,6 +99,24 @@ def main(argv: list[str] | None = None, *, measure_env: Callable | None = None,
     from vlm.seams import SeamRejected
 
     a = _parser().parse_args(argv)
+    budget_args = (a.spent_hours, a.next_hours, a.max_hours, a.max_won)
+    if a.purpose != "early_coord_check" and any(v is not None for v in budget_args):
+        print("[ecc_budget_args] 비용 가드 인자(--spent-hours · --next-hours · …)는 early_coord_check 에서만 받는다", file=sys.stderr)
+        return EXIT_REFUSED
+    if a.purpose == "early_coord_check" and a.mode == "model":
+        if a.spent_hours is None or a.next_hours is None or a.adapter_dir is None:
+            print("[ecc_budget_args] 점검 export 는 --spent-hours · --next-hours · --adapter-dir 가 있어야 한다(11번 §5)", file=sys.stderr)
+            return EXIT_REFUSED
+        from vlm.ecc import EccRefused, budget_check, effective_limits, load_check_rules
+
+        try:
+            lim = effective_limits(load_check_rules()["rules"], max_hours=a.max_hours, max_won=a.max_won)
+            budget_check(Path(a.adapter_dir), spent_hours=a.spent_hours, next_hours=a.next_hours, max_hours=lim["max_hours"],
+                         max_won=lim["max_cost_krw"], won_per_hour=lim["cost_krw_of_hour"], what="export",
+                         price_detail={k: lim[k] for k in ("price_krw_per_hour", "safety_factor", "price_source")})
+        except EccRefused as exc:
+            print(f"[{exc.code}] {exc}", file=sys.stderr)
+            return EXIT_REFUSED
     if load_generator is None:
         if a.mode == "model" and not model_generator_available():
             print("[model_generator_missing] 모델 생성기의 실제 구현이 아직 없다 — 모델 모드는 시작하지 않는다", file=sys.stderr)

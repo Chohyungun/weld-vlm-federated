@@ -257,3 +257,59 @@ def test_backend_cannot_relabel_a_different_task(prepared, monkeypatch):
         run(root, cfg, target)
     assert not (target / "judged").exists()
     assert Fake.closed == ["judge"]
+
+
+def final_approval(cfg):
+    return {"receipt_sha256": "1" * 64, "identity_sha256": "2" * 64,
+            "files_sha256": {}, "identity_basis": {
+        "protocol": "judge_v7_g150_b_v2", "approval_scope": "final_blinded",
+        "final_blinded_approval": True, "judge_config": cfg["judge"],
+        "common_implementation_sha256": {"test": "3" * 64},
+        "probe_identity_sha256": ["4" * 64, "5" * 64], "probe_call_ids": ["first", "second"],
+        "input_basis": {"protocol": "judge_v7_g150_b_v2", "cases_file_sha256": "6" * 64,
+            "policy_identity": P.policy_identity_v7(), "registration": {
+                "expected_manifest_sha256": "7" * 64,
+                "expected_protocol": "judge_v7_g150_b_v2", "expected_approval_scope": "final_blinded",
+                "expected_source_sha256": {g: "8" * 64 for g in ("N+", "D+", "ADV1", "ADV2")}}}}}
+
+
+def test_final_binding_preserves_scope_and_external_registration(prepared):
+    _, cfg, _ = prepared
+    approval = final_approval(cfg)
+    binding = J._approval_binding_v7(approval, {"identity_sha256": "9" * 64}, cfg["judge"],
+                                   P.policy_identity_v7(), {"test": "3" * 64})
+    assert binding["final_blinded_approval"] is True
+    assert binding["approval_scope"] == "final_blinded"
+    assert binding["registration"] == approval["identity_basis"]["input_basis"]["registration"]
+    approval["identity_basis"]["input_basis"]["registration"]["expected_manifest_sha256"] = "0" * 64
+    assert binding["registration"]["expected_manifest_sha256"] == "7" * 64
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda b: b.update(protocol="judge_v7_g150"),
+    lambda b: b.update(protocol="judge_v7_g150_a_v2", approval_scope="adjustment_operational_only"),
+    lambda b: b.update(final_blinded_approval=False),
+    lambda b: b.update(final_blinded_approval=1),
+    lambda b: b.update(approval_scope="adjustment_operational_only"),
+    lambda b: b["input_basis"].update(protocol="judge_v7_g150_a_v2"),
+    lambda b: b["input_basis"].pop("registration"),
+    lambda b: b["input_basis"]["registration"].update(expected_protocol="judge_v7_g150_a_v2"),
+    lambda b: b["input_basis"]["registration"].update(expected_approval_scope="adjustment_operational_only"),
+])
+def test_nonfinal_receipt_rejected_before_backend_or_writes(prepared, monkeypatch, mutation):
+    from corpus.production import judge_probe
+    root, cfg, target = prepared
+    approval = final_approval(cfg)
+    mutation(approval["identity_basis"])
+    monkeypatch.setattr(judge_probe, "read_probe_approval", lambda *args: approval)
+    with pytest.raises(I.StageRefused, match="final_blinded_approval"):
+        run(root, cfg, target, probe_approval=root / "synthetic-approved",
+            probe_approval_sha256="1" * 64)
+    assert not Fake.made and not target.exists() and not (root / ".inference.lock").exists()
+
+
+def test_final_binding_still_rejects_implementation_mismatch(prepared):
+    _, cfg, _ = prepared
+    with pytest.raises(I.StageRefused, match="probe_approval_identity"):
+        J._approval_binding_v7(final_approval(cfg), {"identity_sha256": "9" * 64}, cfg["judge"],
+                               P.policy_identity_v7(), {"test": "0" * 64})

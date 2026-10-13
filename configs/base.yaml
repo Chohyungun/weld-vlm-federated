@@ -50,7 +50,7 @@ preprocess:
     normal_per_material: 0.05     # 정상 셀 폐기율
     defect_per_cell_abs: 30       # 결함 셀은 30장 또는 2% 중 큰 값
     defect_per_cell_ratio: 0.02
-    material_gap_pp: 0.05         # |AL − ST| 정상 폐기율 차 — RQ3 직결
+    material_gap_pp: 0.05         # |AL − ST| 정상 폐기율 차 — RQ2 직결
     client_mix_shift_pp: 0.02     # 클라이언트별 (재질×클래스) 구성비 변화
 
 # --------------------------------------------------------------------------------------
@@ -149,11 +149,11 @@ fixed_before_main_runs:
   # 받는다. 템플릿 모드를 나타내는 문자열 키(`uni_template_mode` 같은)는 따로 두지 않는다.
   #
   # **`null` 은 아직 정하지 않은 값이다.** 짐작으로 채우지 않는다. 본실험에 필요한 키가 비면 본실험이 서지 않는다.
-  #   - `uni_train_budget`: 정해지지 않았다. 위 `train_budget` 의 앵커를 가리키지 않는다 —
-  #     가리키면 두 예산이 같다는 결정이 된다. 위 머리글의 "검출·통합형 공용" 은 그대로 두었다
+  #   - (채워졌다) `uni_train_budget` · `uni_max_new_tokens` — 의사결정로그 2026-10-13 13:5x「본실험 등록 조건 확정」의
+  #     N = E = R = 1 과 평가 생성 한도 L = 512. 위 `train_budget` 의 앵커를 가리키지 않는다 — 검출 예산과 다른 결정이다.
+  #     위 머리글의 "검출·통합형 공용" 은 그대로 두었다
   #   - (채워졌다) `uni_model.revision` · `uni_pairs` — 총괄 결정 19 의 판과 봉인 페어 계약서. 값 옆에 출처를 적었다
   #   - `uni_prompt_sha256`: 두지 않는다 — 등록 단계가 프롬프트 문자열의 UTF-8 해시로 낸다. 키는 비운 채로 둔다
-  #   - `uni_max_new_tokens`: 학습·검증 타깃 길이의 계측으로 정한다
   #   빈 사전(`{}`)으로 두지 않는다 — 빈 사전은 "채워짐" 으로 읽힌다
   #
   # 값이 있는 키 — 모든 칸이 같은 값을 읽는다. 바꾸면 공통 고정이 바뀐다.
@@ -166,10 +166,10 @@ fixed_before_main_runs:
   #   - `uni_processor_kwargs`: 학습 코드가 프로세서를 여는 설정(사전). 채점 입구가 이 키를 등록의 생성 쪽 칸
   #     (`processor_min_pixels` · `processor_max_pixels`)과 맞댄다. 까닭과 근거는 값 옆에 적었다
   # ====================================================================================
-  uni_train_budget:
-    num_rounds: null
-    local_epochs: null
-    total_epochs: null
+  uni_train_budget:      # 의사결정로그 2026-10-13 13:5x — N = E = R = 1(정수 epoch 만 받으므로 연합은 한 번 평균)
+    num_rounds: 1
+    local_epochs: 1
+    total_epochs: 1
   uni_model:
     id: Qwen/Qwen3.5-4B
     # 총괄 결정 19(본줄기 229da01 의 docs/dev_log/2026-09-30-리허설/19_총괄결정_리허설착수.md)가 승인한 캐시 판이다.
@@ -185,7 +185,7 @@ fixed_before_main_runs:
   uni_prompt_sha256: null      # 두지 않는다 — 등록 단계가 프롬프트 문자열의 UTF-8 해시로 낸다
   uni_chat_template_kwargs:
     enable_thinking: false
-  uni_max_new_tokens: null
+  uni_max_new_tokens: 512      # 의사결정로그 2026-10-13 13:5x — 평가 생성 한도 L = 512(조기 좌표 점검과 같은 값)
   uni_batch_size: 1
   uni_processor_kwargs:
     # 파일럿이 실제로 받은 해상도를 글자로 고정한다 — 모델 판이 바뀌어도 등록이 기본값을 조용히 따라가지 않게.

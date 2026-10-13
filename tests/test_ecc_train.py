@@ -68,7 +68,22 @@ def _rules_raw(**over) -> bytes:
     return yaml.safe_dump(b, allow_unicode=True, sort_keys=False).encode("utf-8")
 
 
+def _receipt(tmp: Path, b: dict) -> dict:
+    """평가 쪽 4판 계약의 판별력 영수증 실물(합성) — 입력은 이 규칙의 `discrimination_inputs`, 반복 1, 고른 순차 규칙의 사다리
+    하나. 평가 쪽 `verify_discrimination` 이 읽는 칸만 싣는다(실제 판별력 측정이 아니다)."""
+    probe = {**b, "discrimination": {"path": "x.json", "sha256": "0" * 64}}
+    rules = D.load_rules(yaml.safe_dump(probe, allow_unicode=True, sort_keys=False).encode("utf-8"))
+    cell = {"false_pass": 0, "false_fail": 0, "positive_runs": 1, "negative_runs": 1}
+    body = {"inputs": D.discrimination_inputs(rules), "reps": 1, "tally": {"synthetic": {rules.sequential_rule: cell}}}
+    disc = tmp / "discrimination.json"
+    disc.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+    return {"path": str(disc), "sha256": hashlib.sha256(disc.read_bytes()).hexdigest()}
+
+
 def _rule_file(tmp: Path, **over) -> Path:
+    """규칙 파일 — 판별력 영수증은 평가 쪽 4판 계약대로 실물로 쓴다(§119 I-05 · 평가 쪽 `verify_discrimination`)."""
+    if "discrimination" not in over:
+        over = {**over, "discrimination": _receipt(tmp, yaml.safe_load(_rules_raw(**over).decode("utf-8")))}
     q = tmp / "early_coord_check.yaml"
     q.write_bytes(_rules_raw(**over))
     return q
@@ -93,9 +108,6 @@ def _permit_bytes(tmp: Path, rules, expected: dict, *, attempt: int = 1) -> byte
           "attempt": attempt, "step_adapter_digests": ["w100"], "processor_cfg_sha256": "pc",
           "model_input_wh": [1280, 704], **expected}
     return D.canonical(D.build_output(rules=rules, target=TGT, model_free=mf, steps=steps, evidence=ev))
-
-
-_REAL_EVAL_SIDE = E._eval_side
 
 
 def _spec(tmp: Path, root: str = ECC_ROOT, **over) -> UniRunSpec:
@@ -204,14 +216,18 @@ def test_T2_멈춤_지정이_있어도_학습_궤적이_같다(tmp_path):
     res = _run(w, stop=False)
     assert res["exit_code"] == 0 and res["optimizer_steps"] == 12
     init = np.load(w.spec.init_adapter_path)
-    _, _, m_plain, _ = pilot_vlm.train_rounds(
+    arrays_plain, _, m_plain, _ = pilot_vlm.train_rounds(
         rows=w.rows, epochs=2, round_idx=0, client_idx=0, base_seed=w.spec.seed_value,
         adapter_in=[init[k] for k in init.files], adapter_keys=list(init.files), model_id="tiny", run_id="x",
         init_seed=w.spec.seed_value, num_rounds=1, model_revision="r1", model_loader=CountingLoader(),
         purpose="rehearsal", standin_allowed=True, tag=CENTRAL_TAG,
         chat_template_kwargs={"enable_thinking": False}, processor_kwargs={})
     arrays_ecc = res["metrics"]
-    # 끝 어댑터의 노름 · 학습량 · 마지막 학습률이 소수점까지 같다 — 콜백이 계산에 끼어들지 않았다(CPU 대역의 결정론 범위).
+    # 끝 어댑터가 **원소까지** 같다(digest = 배열 전체의 sha256 — §119 M-02) · 학습량 · 마지막 학습률도 같다 — 콜백이 계산에
+    # 끼어들지 않았다(CPU 대역의 결정론 범위).
+    from vlm.init_adapter import init_adapter_digest
+
+    assert res["final_adapter_digest"] == init_adapter_digest(list(arrays_plain))
     for key in ("optimizer_steps", "supervised_tokens", "param_l2", "lr"):
         assert m_plain[key] == arrays_ecc[key], key
 
@@ -423,8 +439,11 @@ def test_규칙은_평가_쪽_load_rules_require_ready_로_읽고_그것이_없�
     assert (got["steps"], got["max_attempts"]) == ((100, 200, 400), 1)
     assert got["rules_sha256"] == hashlib.sha256(p.read_bytes()).hexdigest() == got["rules"].raw_sha256
     assert (got["limits"]["max_hours"], got["limits"]["max_cost_krw"]) == (30, 90000)
+    committed = E.load_check_rules(D.RULES_PATH)                        # 커밋된 규칙 파일 — 평가 쪽 4판이 칸을 채웠다
+    assert D.RULES_VERSION == "4" and committed["max_attempts"] == 1 and committed["rules"].sequential_rule is not None
+    (tmp_path / "null").mkdir()
     with pytest.raises(E.EccRefused) as exc:
-        E.load_check_rules(D.RULES_PATH)                                # 커밋된 규칙 파일 — 순차 규칙 · 시도 수 · 상한이 아직 null
+        E.load_check_rules(_rule_file(tmp_path / "null", sequential_rule=None))   # 순차 규칙이 비면 거부
     assert exc.value.code == "ecc_rules_rejected"
     with pytest.raises(E.EccRefused) as exc:
         E.load_check_rules(tmp_path / "없다.yaml")
@@ -442,7 +461,7 @@ def test_평가_쪽_실물의_서명과_대조값이_학습_쪽_호출과_같다
 
     assert list(inspect.signature(D.verify_permit).parameters) == ["raw", "expected_sha256", "rules", "expected",
                                                                    "file_sha256_of"]
-    assert list(inspect.signature(D.effective_limits).parameters) == ["rules", "max_hours", "max_cost_krw"]
+    assert list(inspect.signature(D.effective_limits).parameters) == ["rules", "max_hours", "max_cost_krw", "repo_root"]
     assert list(inspect.signature(D.load_rules).parameters) == ["raw"]
     assert tuple(PERMIT_EXPECTED_KEYS) == tuple(D.PERMIT_EXPECTED_KEYS)          # 3판 — 그 밖의 칸은 거부된다
     assert set(D.PERMIT_EXPECTED_KEYS) | {"permit_sha256"} <= set(E.PERMIT_KEY_FIELDS)    # 키 기록이 대조값 넷을 싣는다

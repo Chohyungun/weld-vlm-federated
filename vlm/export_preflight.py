@@ -224,7 +224,7 @@ def _training(adapter_dir: Path, *, tag: str, seed_index: int, purpose: str, reg
 
 
 def _training_check_step(adapter_dir: Path, *, step: int, tag: str, measured: Mapping, coord_hash: str, cfg,
-                         reg, run_root: Path | None) -> tuple[dict, dict, dict]:
+                         reg, run_root: Path | None, seed_index: int | None = None) -> tuple[dict, dict, dict]:
     """조기 좌표 점검의 학습 쪽 출처 — **별도 분기**다(11번 §3-3). `_training`(본실험 · 리허설 · 진단)의 검사는 고치지 않는다.
 
     받는 것은 점검 실행의 step 파일이다 — meta 의 목적 · step · 등록 step 목록, step 어댑터 · 소비 행 목록의 sha256 이 meta 와 같고,
@@ -252,6 +252,8 @@ def _training_check_step(adapter_dir: Path, *, step: int, tag: str, measured: Ma
     ident = meta.get("identity") or {}
     if ident.get("cell") != tag:
         raise ExportRefused("adapter_identity", f"점검 step meta 의 칸 {ident.get('cell')!r} ≠ {tag!r}")
+    if seed_index is not None and ident.get("seed_index") != seed_index:
+        raise ExportRefused("adapter_identity", f"점검 step meta 의 seed_index {ident.get('seed_index')!r} ≠ {seed_index!r}")
     if _sha256_file(paths["adapter"]) != (meta.get("adapter") or {}).get("sha256"):
         raise ExportRefused("adapter_sha", "점검 step 어댑터의 sha 가 meta 와 다르다")
     if _sha256_file(paths["consumed"]) != (meta.get("consumed") or {}).get("sha256"):
@@ -473,7 +475,8 @@ def export_preflight(*, purpose: str, mode: str, tag: str, seed_index: int, rece
             raise ExportRefused("adapter_missing", "모델 모드는 어댑터 폴더가 있어야 한다")
         if purpose == "early_coord_check":
             meta, stamp, side = _training_check_step(Path(adapter_dir), step=int(check_step), tag=tag, measured=measured,
-                                                     coord_hash=chash, cfg=cfg, reg=reg, run_root=run_root)
+                                                     coord_hash=chash, cfg=cfg, reg=reg, run_root=run_root,
+                                                     seed_index=seed_index)
         else:
             meta, stamp, side = _training(Path(adapter_dir), tag=tag, seed_index=seed_index, purpose=purpose, reg=reg,
                                           measured=measured, coord_hash=chash, cfg=cfg, run_root=run_root)

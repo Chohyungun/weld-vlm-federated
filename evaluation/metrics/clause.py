@@ -137,7 +137,7 @@ def score_citation(
     cited_by_image: Mapping[str, Sequence[str]],
     gold: Iterable[GoldPair],
 ) -> CitationReport:
-    """인용 일치율. **두 구조 공통**이라 RQ2의 핵심 비교 지표다.
+    """인용 일치율. **두 구조 공통**이라 구조 비교(통합형 대 분리형)의 핵심 비교 지표다.
 
     분모는 GT 결함 쌍이고, 인용 집합은 **이미지 수준** 하나다. 결함별로 인용을 쪼개 내라고
     요구하면 통합형의 출력 형식을 바꿔야 하고, 그건 5칸 공통 프롬프트 고정을 깨는 대가가

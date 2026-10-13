@@ -10,6 +10,19 @@ from pathlib import Path
 from .common import read_json
 
 
+def _registered_pins(args):
+    """Pass independently supplied pins without deriving trust from a bundle."""
+    names = ("expected_manifest_sha256", "expected_protocol", "expected_approval_scope")
+    groups = {"N+": "nplus", "D+": "dplus", "ADV1": "adv1", "ADV2": "adv2"}
+    values = {name: getattr(args, name, None) for name in names}
+    sources = {group: getattr(args, name + "_sha256", None) for group, name in groups.items()}
+    if not any(values.values()) and not any(sources.values()):
+        return {}
+    if not all(values.values()) or not all(sources.values()):
+        raise ValueError("registered v7 requires all independent manifest, protocol, scope and source pins")
+    return {**values, "expected_source_sha256": sources}
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="로컬 오픈 가중치 코퍼스 생성·검증·학습")
     commands = parser.add_subparsers(dest="stage", required=True)
@@ -52,12 +65,28 @@ def main(argv=None) -> int:
             fixed_cases.add_argument("--" + name + "-sha256", required=True,
                                      help="별도로 고정한 해당 원파일 SHA256")
         fixed_cases.add_argument("--output", required=True, type=Path)
+    registered = commands.add_parser("judge-cases-v7-registered",
+                                    help="외부 해시로 등록한 조정/최종 승인 집합 작성 (CPU)")
+    registered.add_argument("--manifest", required=True, type=Path)
+    registered.add_argument("--manifest-sha256", required=True)
+    registered.add_argument("--expected-protocol", required=True)
+    registered.add_argument("--expected-approval-scope", required=True)
+    for name in ("nplus", "dplus", "adv1", "adv2"):
+        registered.add_argument("--" + name, required=True, type=Path)
+        registered.add_argument("--" + name + "-sha256", required=True)
+    registered.add_argument("--output", required=True, type=Path)
     rules = commands.add_parser("judge-rules-check", help="합성 입력의 규칙 계수만 확인; 모델 검증 아님 (CPU)")
     rules.add_argument("--cases", required=True, type=Path)
     probe = commands.add_parser("judge-probe", help="고정 합성 입력에 실제 판정 모델 1회 호출; 재시도 없음 (GPU)")
     probe.add_argument("--cases", required=True, type=Path)
     probe.add_argument("--config", required=True, type=Path)
     probe.add_argument("--output", required=True, type=Path)
+    for command in (rules, probe):
+        command.add_argument("--expected-manifest-sha256", default=None)
+        command.add_argument("--expected-protocol", default=None)
+        command.add_argument("--expected-approval-scope", default=None)
+        for name in ("nplus", "dplus", "adv1", "adv2"):
+            command.add_argument("--" + name + "-sha256", default=None)
     compare = commands.add_parser("compare-judge-probes", help="서로 다른 두 호출의 원문·신원·판별력 대조 (CPU)")
     compare.add_argument("--first", required=True, type=Path)
     compare.add_argument("--second", required=True, type=Path)
@@ -116,12 +145,21 @@ def main(argv=None) -> int:
             result = write_fixed({g: getattr(args, name) for g, name in groups.items()}, args.output,
                                     expected_source_sha256={g: getattr(args, name + "_sha256")
                                                             for g, name in groups.items()})
+        elif args.stage == "judge-cases-v7-registered":
+            from .judge_cases import write_v7_registered_cases
+            groups = {"N+": "nplus", "D+": "dplus", "ADV1": "adv1", "ADV2": "adv2"}
+            result = write_v7_registered_cases(
+                {g: getattr(args, name) for g, name in groups.items()}, args.output,
+                manifest_path=args.manifest, expected_manifest_sha256=args.manifest_sha256,
+                expected_protocol=args.expected_protocol,
+                expected_approval_scope=args.expected_approval_scope,
+                expected_source_sha256={g: getattr(args, name + "_sha256") for g, name in groups.items()})
         elif args.stage == "judge-rules-check":
             from .judge_probe import check_rules
-            result = check_rules(args.cases)
+            result = check_rules(args.cases, **_registered_pins(args))
         elif args.stage == "judge-probe":
             from .judge_probe import run_probe
-            result = run_probe(args.cases, config, args.output)
+            result = run_probe(args.cases, config, args.output, **_registered_pins(args))
         elif args.stage == "compare-judge-probes":
             from .judge_probe import compare_probes
             result = compare_probes(args.first, args.second)

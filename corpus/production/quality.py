@@ -238,7 +238,8 @@ def _passage_strings(evidence: Any) -> Iterable[str]:
 
 
 def allowed_numbers(task: Mapping[str, Any]) -> set[Decimal]:
-    """추적 원천: `locked_target` 의 값, 근거의 구절 본문 칸(`PASSAGE_EVIDENCE_KEYS`)의 수, 잠긴 결함 목록의 길이(결함 수).
+    """추적 원천: `locked_target` 의 값, 근거의 구절 본문 칸(`PASSAGE_EVIDENCE_KEYS`)의 수, 잠긴 결함 목록의 길이(결함 수),
+    영상 행의 구역별 소계(`_zone_subtotals`).
 
     다른 목록의 길이(bbox 의 4 등) · 쪽 번호 · 지문(64자리 16진)은 원천이 아니다 — 아무 수나 통과시키지 않게.
     """
@@ -249,7 +250,26 @@ def allowed_numbers(task: Mapping[str, Any]) -> set[Decimal]:
             allowed.update(numbers_in(s))
     if isinstance(target, Mapping) and isinstance(target.get("defects"), list):
         allowed.add(Decimal(len(target["defects"])))
+    allowed.update(_zone_subtotals(task))
     return allowed
+
+
+def _zone_subtotals(task: Mapping[str, Any]) -> set[Decimal]:
+    """결함 행의 (이름, 구역)별 수 — 판정 정책이 결정적 검사에 쓰는 잠긴 칸 투영(`grouped_locked_fields`: 근거의 이름별 수 ·
+    위치가 잠긴 결함과 같은지 대조한다)에서 그대로 읽는다. '위 왼쪽에 1개, 아래 오른쪽에 4개' 의 1 · 4 가 여기서 온다.
+
+    구역 묶음의 합 · 여러 이름을 합친 구역 수 · `0..N` 은 넣지 않는다. 대조에 실패한 행(근거와 잠긴 결함이 어긋남)은
+    소계를 하나도 내지 않는다 — 원천을 넓히지 않는 쪽으로 닫는다. 정상 행 · 원문 QA 는 대상이 아니다.
+    """
+    target = task.get("locked_target")
+    if task.get("kind") != "image_report" or not isinstance(target, Mapping) or not target.get("defects"):
+        return set()
+    from .judge_policy import grouped_locked_fields
+    try:
+        zones = grouped_locked_fields(task)["defects_by_zone"]
+    except (KeyError, TypeError, ValueError):
+        return set()
+    return {Decimal(k) for by_name in zones.values() for k in by_name.values()}
 
 
 def language_problems(text: str) -> list[str]:
@@ -1442,7 +1462,7 @@ def audit_run(run_dir, config: Mapping[str, Any], output_dir, *, judge_source: M
         "run_dir": _run_dir_ref(run_dir, output_dir),
         "run_identity_sha256": run.get("identity_sha256"),
         "run_identity_basis": run.get("identity_basis"),
-        # parser_schema — 판정 출력을 읽은 꼴(옛 네 키 · 구조화 v5 · v6). 핀 · 영수증 칸은 따로 둔 판정에서만 값이 있다
+        # parser_schema — 판정 출력을 읽은 꼴(옛 네 키 · 구조화 v5 · v6 · v7). 핀 · 영수증 칸은 따로 둔 판정에서만 값이 있다
         "judge_identity": {k: judge_info[k] for k in (
             "source", "identity_sha256", "identity_basis", "model", "parser_schema", "caller_expected_pins",
             "pin_provenance", "probe_approval_sha256", "gpu_model_verified")},

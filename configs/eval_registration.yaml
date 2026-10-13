@@ -1,0 +1,34 @@
+# 평가 등록 — 실험설계 8-5 「2026-10-13 등록」 절의 확정 수치. 의사결정로그 2026-10-13 본실험 등록 조건.
+kind: eval_registration
+version: 1
+decided: "2026-10-13"
+representative:
+  metric_id: m1_box_f1_iou_1_2_macro4
+  iou_threshold: "1/2"
+  class_codes: ["100", "2011", "301", "401"]
+  macro_support_rule: gold_support
+  coupling_rule: decoupled_v2
+  sensitivity_variant: fp_per_class_every_failed_record
+auxiliary: [class_jaccard, image_presence_f1, m1_micro, per_class_f1, latency_s_per_image, exchange_bytes]
+population:
+  snapshot_digest: "1f80e98b151372e3fa44c754d0c5ab2cf06bd731d3dfdb8f2515d05383834899"
+  split: eval
+  n_full: 12461
+  sample:
+    seed: "eval_sample_v1|aihub71761_rt_v1|1f80e98b"
+    cluster_unit: group
+    strata: material_x_group_mean_defect_bucket
+    bucket_edges: ["0", "1", "2-3", "4+"]
+    min_groups_per_stratum: 2
+    main_size: 3000
+    weighting: stratified_g_over_n
+    side_file_header: "image_id,stratum,G_h,n_h"
+    sealed:
+      "2000": {images: 2103, groups: 200, file_sha256: "8a7687dd95edfe2a8342bd81a23b5f8331f7da3c46318eb22ed138ec2ffddf94", set_sha256: "39a065c0afa11bfaae75d06642e71005c8deb54beeece10acabfc0b0b2f58df8", side_sha256: "463f6463dc4b43be999f377d9c764f8208f5d530743278bf663139c4f000d4b7"}
+      "3000": {images: 3080, groups: 300, file_sha256: "a251ebffb4265b06610e7d69a115f97753855253b2db94c053174c1449ab39b5", set_sha256: "5c7c0990463eb84ba6ec03df23c934df93b2aaca893f5f225b363156b815540f", side_sha256: "098924530c1c8c5b02e4e8f31e269225b29d327f913bd0da968095d6abd9e318"}
+      "4000": {images: 4181, groups: 399, file_sha256: "1033bea37fe1aa0ef76a87b5b1f77dc5dd717160e06b822bcb0ad948fd85fb9d", set_sha256: "4804d9f94b42aa8d1aa30ac4194c7fa5f893764ce48ee95a6428cb50f11d755e", side_sha256: "025c5e6ef758cda98e206cb8dfc9a448647e242130528e943f039b7f404f24b7"}
+    full_addendum_d_min: 0.115
+    not_judged_on_sample: [al_subset_macro_m1, p9_equivalence]
+generation:
+  max_new_tokens: 512
+seeds: [1]

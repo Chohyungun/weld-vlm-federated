@@ -248,7 +248,8 @@ def make_judge_source(run_dir: Path, config: dict, judge_dir: Path, *, model_id:
 
 
 def make_v7_judge_source(run_dir: Path, config: dict, judge_dir: Path, *, mutate=None) -> dict:
-    """v7 판정 출처의 흉내(시험 전용) — 외부 검토 도구의 v7 판정 신원 읽기가 이 트리에 없어 그 꼴(B 05o · 05p)을 손으로 짓는다.
+    """v7 판정 출처를 손으로 짓는다 — **위조 시험 전용**(한 칸만 정확히 고쳐 릴리스가 그 칸에서 멈추는지 보려고).
+    실제 v7 판정 신원 쓰기 · 읽기 → 집계 → 릴리스의 결합은 잇는 시험(`test_production_pipeline.py`)이 본다.
 
     모델 대상(정상 행이 아닌 행)에만 판정 행, 모든 작업에 결정적 영수증(통과). 판정 신원 = 근거의 정규 JSON 지문.
     `mutate(source)` 는 신원을 만든 뒤 출처를 고친다(영수증 · 모델 대상 위조 시험). 릴리스의 폴더 다시 읽기는 시험에서 이 객체의

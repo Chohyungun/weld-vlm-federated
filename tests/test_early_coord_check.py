@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tempfile
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -46,13 +47,32 @@ def elist(ids):
     return validate_eval_list(canonical_bytes(list(ids)))
 
 
+_SYNTH_DIR = Path(tempfile.mkdtemp(prefix="ecc_disc_"))
+
+
+def synthetic_receipt(b: dict, *, rule: str = "single", reps: int = 3, tally=None) -> dict:
+    """합성 판별력 영수증 — 규칙 파일 `b` 와 같은 입력으로 돌았다고 적은 작은 파일. {path, sha256} 을 돌려준다(절대 경로)."""
+    base = dict(b)
+    base.update({"sequential_rule": None, "discrimination": None})
+    inputs = E.discrimination_inputs(E.load_rules(raw_of(base)))
+    cell = {"false_pass": 0, "false_fail": 0, "positive_runs": 5, "negative_runs": 10}
+    body_ = {"inputs": inputs, "reps": reps, "chosen_rule": rule,
+             "tally": tally if tally is not None else {"합성 사다리": {"single": dict(cell), "two_consecutive": dict(cell)}}}
+    raw = json.dumps(body_, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    path = _SYNTH_DIR / (hashlib.sha256(raw).hexdigest()[:16] + ".json")
+    path.write_bytes(raw)
+    return {"path": str(path), "sha256": hashlib.sha256(raw).hexdigest()}
+
+
 def ready_rules(target=None, **over) -> E.EarlyRules:
     b = body()
-    b.update({"sequential_rule": "single", "max_attempts": 2, "discrimination": {"path": "x.json", "sha256": "0" * 64},
+    b.update({"sequential_rule": "single", "max_attempts": 2,
               "limits": {"max_hours": 3, "max_cost_krw": 20000, "price_krw_per_hour": 2500, "price_source": "합성", "safety_factor": 1.2}})
     if target is not None:
         b["target_list"] = {"sha256": target.file_sha256, "n": len(target)}
     b.update(over)
+    if "discrimination" not in over:
+        b["discrimination"] = synthetic_receipt(b)
     return E.load_rules(raw_of(b))
 
 
@@ -137,8 +157,13 @@ def test_판별력_영수증이_있으면_규칙_파일과_같은_입력으로_�
     path = ROOT / disc["path"]
     assert hashlib.sha256(path.read_bytes()).hexdigest() == disc["sha256"]
     receipt = json.loads(path.read_text(encoding="utf-8"))
-    assert receipt["inputs"] == E.discrimination_inputs(E.load_rules(RAW))
-    assert receipt["chosen_rule"] == body()["sequential_rule"]
+    rules = E.load_rules(RAW)
+    assert receipt["inputs"] == E.discrimination_inputs(rules)
+    # 2판 영수증은 규칙을 고르지 않았다(`chosen_rule` null — 14-2 의 0 을 어느 규칙도 못 채웠다). 규칙은 등록 결정이고,
+    # 영수증은 그 규칙의 사다리별 양성 · 음성 실행을 담아야 한다(4판 · §119 I-05)
+    assert all(rules.sequential_rule in by_rule for by_rule in receipt["tally"].values())
+    assert E.verify_discrimination(rules) == {s: {k: by_rule[rules.sequential_rule][k] for k in ("false_pass", "false_fail", "positive_runs", "negative_runs")}
+                                             for s, by_rule in receipt["tally"].items()}
 
 
 # ---------------------------------------------------------------- 대상 목록
@@ -305,7 +330,8 @@ def test_네_칸은_네_검사와_점검_통과가_함께일_때만_연다() -> 
 
 
 def test_불통과의_동작은_검토와_보존을_적는다() -> None:
-    assert "총괄 · 사용자가" in E.ACTIONS[X] and "옆으로 옮겨 보존한다" in E.ACTIONS[X]
+    assert "운영 책임자가" in E.ACTIONS[X] and "옆으로 옮겨 보존한다" in E.ACTIONS[X]
+    assert not any(w in v for v in E.ACTIONS.values() for w in ("총괄", "사용자"))   # 공개 자료의 런타임 문자열(§119 M-07)
 
 
 # ---------------------------------------------------------------- 산출물 · 착수 허가 · 채점 거부
@@ -325,7 +351,7 @@ def _step(status=P, cover=TGT):
 
 def _evidence(**over):
     ev = {"lineage": {"snapshot": "s", "pairs": "p", "r0": "r"},
-          "model_free_files": {n: {"path": f"{n}.json", "sha256": f"{n}-sha"} for n in E.MODEL_FREE_CHECKS},
+          "model_free_files": {n: {"path": f"{n}.json", "sha256": hashlib.sha256(n.encode()).hexdigest()} for n in E.MODEL_FREE_CHECKS},
           "step_outputs": [{"step": 100, "raw_sha256": "g", "parsed_sha256": "q", "consumed_sha256": "c"}],
           "step_adapter_digests": ["w100"], "model_input_wh": [1280, 704], "attempt": 1, "processor_cfg_sha256": "pc",
           **EXPECT}
@@ -374,6 +400,7 @@ def test_산출을_만들지_않는_경우(change, code) -> None:
         kw["attempt"] = 3
     elif change == "not_ready":
         b = body()
+        b.update({"sequential_rule": None, "discrimination": None})     # 4판 실물은 준비됐다 — 미정을 명시한다
         b["target_list"] = {"sha256": TGT.file_sha256, "n": len(TGT)}
         kw["rules"] = E.load_rules(raw_of(b))
     elif change == "other_target":
@@ -425,9 +452,10 @@ def test_착수_허가의_음성(change, code) -> None:
         over = {"file_sha256_of": None}
     elif change == "rules_not_ready":
         b = body()
-        b.update({"sequential_rule": "single", "discrimination": {"path": "x.json", "sha256": "0" * 64},
+        b.update({"sequential_rule": "single", "max_attempts": None,
                   "limits": {"max_hours": 3, "max_cost_krw": 20000, "price_krw_per_hour": 2500, "price_source": "합성", "safety_factor": 1.2},
                   "target_list": {"sha256": TGT.file_sha256, "n": len(TGT)}})
+        b["discrimination"] = synthetic_receipt(b)
         over = {"rules": E.load_rules(raw_of(b))}
     elif change == "bytes_changed":
         over = {"expected_sha256": hashlib.sha256(raw).hexdigest()}
@@ -461,14 +489,21 @@ def test_묶음_검증기는_점검_목적의_곁_파일을_받지_않는다() -
 
 
 def test_본채점_진입점의_목적에_점검이_없다() -> None:
-    from evaluation.prereg_unified import PURPOSES, SPLIT_OF_PURPOSE
+    """등록 모듈은 점검 목적을 받는다(분할 train — export 가 지나야 한다, 1013o 의 1). **본채점 진입점**의 choices · 탐색 목적 ·
+    채점 거부는 그대로다 — 점검 산출은 채점 대상이 아니다."""
+    from evaluation.entry_gate import PROBE_PURPOSES
+    from evaluation.prereg_unified import PURPOSES, SPLIT_OF_PURPOSE, UnifiedRegistration, require_probe_scoring
 
-    assert E.KIND not in PURPOSES
-    assert SPLIT_OF_PURPOSE == {"main": "eval", "rehearsal": "val", "frame_diag": "val"}
+    assert E.KIND in PURPOSES and SPLIT_OF_PURPOSE[E.KIND] == "train"
+    assert E.KIND not in PROBE_PURPOSES
     src = (ROOT / "scripts/probe/score_unified.py").read_text(encoding="utf-8")
     assert 'choices=("main", "rehearsal", "frame_diag")' in src
     with pytest.raises(E.EarlyCheckRejected):
         E.refuse_for_scoring({"purpose": E.KIND})
+    r = UnifiedRegistration()
+    r.generation.purpose = E.KIND
+    with pytest.raises(ValueError):
+        require_probe_scoring(r, None)
 
 
 def test_착수_허가의_대조값은_넷이고_프로세서는_묻지_않는다() -> None:
@@ -489,4 +524,63 @@ def test_상한은_규칙_파일이_정본이고_실행_인자는_좁히기만_�
     assert E.effective_limits(rules, max_hours=2, max_cost_krw=10000)["max_hours"] == 2.0
     assert code_of(lambda: E.effective_limits(rules, max_hours=4))[0] == "LIMITS_WIDENED"
     assert code_of(lambda: E.effective_limits(rules, max_cost_krw=30000))[0] == "LIMITS_WIDENED"
-    assert code_of(lambda: E.effective_limits(E.load_rules(RAW)))[0] in ("SEQUENTIAL_UNDECIDED", "ATTEMPTS_UNSET", "LIMITS_UNSET")
+    real = E.load_rules(RAW)                                            # 4판 — 실물 규칙 파일은 준비됐다
+    assert E.effective_limits(real)["max_hours"] == float(real.limits["max_hours"])
+
+
+# ---------------------------------------------------------------- 4판 (2026-10-13) — §119 I-04 · I-05 · I-09
+
+def test_판_4_의_규칙_파일은_시작할_수_있고_영수증_실물과_맞는다() -> None:
+    """커밋된 규칙 파일 — 순차 규칙 · 시도 수 · 상한이 차 있고, 판별력 영수증이 실물로 있어 입력이 같다."""
+    rules = E.load_rules(RAW)
+    assert E.RULES_VERSION == "4" and rules.sequential_rule in E.SEQUENTIAL_RULES and rules.max_attempts == 1
+    assert rules.limits["max_hours"] > 0 and rules.limits["max_cost_krw"] > 0
+    E.require_ready(rules)
+    summary = E.verify_discrimination(rules)
+    assert summary and all(v["positive_runs"] > 0 and v["negative_runs"] > 0 for v in summary.values())
+
+
+@pytest.mark.parametrize("case", ["missing", "sha", "inputs", "reps", "no_rule"])
+def test_판별력_영수증은_실물을_본다(case) -> None:
+    b = body()
+    b.update({"sequential_rule": "single", "max_attempts": 1,
+              "limits": {"max_hours": 3, "max_cost_krw": 20000, "price_krw_per_hour": 2500, "price_source": "합성", "safety_factor": 1.2}})
+    if case == "missing":
+        b["discrimination"] = {"path": str(_SYNTH_DIR / "없는.json"), "sha256": "0" * 64}
+        want = "DISCRIMINATION_MISSING"
+    elif case == "sha":
+        d = synthetic_receipt(b)
+        b["discrimination"] = {"path": d["path"], "sha256": "1" * 64}
+        want = "DISCRIMINATION_SHA"
+    elif case == "inputs":
+        other = dict(b)
+        other["steps"] = [5, 6]
+        b["discrimination"] = synthetic_receipt(other)
+        want = "DISCRIMINATION_INPUTS"
+    elif case == "reps":
+        b["discrimination"] = synthetic_receipt(b, reps=0)
+        want = "DISCRIMINATION_EMPTY"
+    else:
+        cell = {"false_pass": 0, "false_fail": 0, "positive_runs": 5, "negative_runs": 10}
+        b["discrimination"] = synthetic_receipt(b, tally={"s": {"two_consecutive": cell}})
+        want = "DISCRIMINATION_EMPTY"
+    assert code_of(lambda: E.require_ready(E.load_rules(raw_of(b))))[0] == want
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), -1, 0, True])
+def test_상한_실행_인자는_유한한_양수다(bad) -> None:
+    rules = ready_rules()
+    assert code_of(lambda: E.effective_limits(rules, max_hours=bad))[0] == "LIMITS_INVALID"
+    assert code_of(lambda: E.effective_limits(rules, max_cost_krw=bad))[0] == "LIMITS_INVALID"
+    assert E.effective_limits(rules, max_hours=1.0)["max_hours"] == 1.0
+
+
+def test_네_검사의_산출_파일_지문은_빈_칸이면_열리지_않는다() -> None:
+    """기대값과 실제값이 함께 비어(None == None) 통과하던 길(§119 I-04) — 만드는 쪽 · 읽는 쪽 둘 다 닫는다."""
+    with pytest.raises(E.EarlyCheckRejected) as e:
+        E._check_model_free_files({n: {} for n in E.MODEL_FREE_CHECKS})
+    assert e.value.code == "EVIDENCE_MISSING"
+    with pytest.raises(E.EarlyCheckRejected):
+        E._check_model_free_files({n: {"path": f"{n}.json", "sha256": f"{n}-sha"} for n in E.MODEL_FREE_CHECKS})
+    ok = {n: {"path": f"{n}.json", "sha256": hashlib.sha256(n.encode()).hexdigest()} for n in E.MODEL_FREE_CHECKS}
+    E._check_model_free_files(ok)

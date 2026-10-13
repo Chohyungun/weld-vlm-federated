@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Collection, Iterable, Mapping, Sequence
@@ -33,11 +34,12 @@ from evaluation.eval_list import EvalList, set_digest
 KIND = "early_coord_check"
 """목적 값 · 산출물 종류 · 원장 줄의 종류. 진단(`frame_diag`)과 다르다."""
 SPLIT = "train"
-RULES_VERSION = "3"
+RULES_VERSION = "4"
 ROOT = Path(__file__).resolve().parents[1]
 RULES_PATH = ROOT / "configs" / "early_coord_check.yaml"
 CHECKER_PATH = Path(F.__file__)
 
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
 PASS, FAIL, INDETERMINATE = F.PASS, F.FAIL, F.INDETERMINATE
 CONTINUE = "이어 간다"
 SINGLE, TWO_CONSECUTIVE = "single", "two_consecutive"
@@ -167,15 +169,23 @@ def load_rules(raw: bytes) -> EarlyRules:
                       (wh[0], wh[1]), hashlib.sha256(raw).hexdigest(), disc, dict(lim))
 
 
-def effective_limits(rules: EarlyRules, *, max_hours: float | None = None, max_cost_krw: float | None = None) -> dict:
+def _finite_positive(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v > 0
+
+
+def effective_limits(rules: EarlyRules, *, max_hours: float | None = None, max_cost_krw: float | None = None,
+                     repo_root: Path | None = None) -> dict:
     """학습 쪽 비용 대조가 쓸 상한 — 규칙 파일의 `limits` 가 정본이고 실행 인자는 **좁히기만** 한다(넓히면 거부).
 
-    금액은 시간 × 단가 × 계수로 센다 — `cost_krw(hours)` 와 같은 식. 돌려주는 사전의 `cost_krw_of_hour` 는 그 한 시간 값이다.
+    실행 인자는 **유한한 양수**여야 한다 — NaN 은 `given > base` 를 지나 상한이 되고 뒤의 초과 검사도 거짓이 된다(외부 검토
+    §119 I-09, 2026-10-13). 금액은 시간 × 단가 × 계수로 센다 — `cost_krw(hours)` 와 같은 식. `cost_krw_of_hour` 는 그 한 시간 값이다.
     """
-    require_ready(rules)
+    require_ready(rules, repo_root=repo_root)
     lim = rules.limits
     out_h, out_w = float(lim["max_hours"]), float(lim["max_cost_krw"])
     for name, given, base in (("max_hours", max_hours, out_h), ("max_cost_krw", max_cost_krw, out_w)):
+        if given is not None and not _finite_positive(given):
+            raise EarlyCheckRejected("LIMITS_INVALID", f"실행 인자 {name} 는 유한한 양수다 — NaN · 무한 · 음수 · 참거짓은 받지 않는다")
         if given is not None and float(given) > base:
             raise EarlyCheckRejected("LIMITS_WIDENED", f"실행 인자 {name} 가 규칙 파일의 상한보다 넓다 — 좁히기만 한다")
     if max_hours is not None:
@@ -188,14 +198,54 @@ def effective_limits(rules: EarlyRules, *, max_hours: float | None = None, max_c
             "price_source": lim["price_source"]}
 
 
-def require_ready(rules: EarlyRules) -> None:
-    """점검 실행을 시작해도 되는가 — 순차 규칙과 허용 시도 수가 정해져 있어야 한다."""
+def verify_discrimination(rules: EarlyRules, *, repo_root: Path | None = None) -> dict:
+    """순차 규칙의 근거인 판별력 영수증의 **실물**을 본다 — 경로 · 해시의 모양만 보지 않는다(외부 검토 §119 I-05, 2026-10-13).
+
+    있는 파일이고, 바이트의 sha256 이 규칙 파일의 값이고, 입력(문턱 · step · 대상 수 · 입력 크기)이 지금 규칙과 같고, 반복이
+    1 이상이고, 모든 사다리에 고른 규칙의 양성 · 음성 실행이 있어야 한다. 고른 규칙의 사다리별 거짓 통과 · 거짓 경보를 돌려준다 —
+    규칙을 다시 고르지는 않는다(그 결정은 등록 사항이다). 상대 경로는 저장소 루트 기준이다.
+    """
+    disc = rules.discrimination
+    if not disc:
+        raise EarlyCheckRejected("DISCRIMINATION_MISSING", "판별력 영수증이 규칙 파일에 없다")
+    raw_path = Path(disc["path"])
+    path = raw_path if raw_path.is_absolute() else (Path(repo_root) if repo_root is not None else ROOT) / raw_path
+    if not path.is_file():
+        raise EarlyCheckRejected("DISCRIMINATION_MISSING", "판별력 영수증 파일이 없다")
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != disc["sha256"].lower():
+        raise EarlyCheckRejected("DISCRIMINATION_SHA", "판별력 영수증의 바이트가 규칙 파일의 sha256 과 다르다")
+    try:
+        body = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise EarlyCheckRejected("DISCRIMINATION_FORMAT", "판별력 영수증을 읽지 못한다") from None
+    if not isinstance(body, dict) or body.get("inputs") != discrimination_inputs(rules):
+        raise EarlyCheckRejected("DISCRIMINATION_INPUTS", "판별력 영수증의 입력(문턱 · step · 대상 · 입력 크기)이 지금 규칙과 다르다")
+    reps = body.get("reps")
+    if type(reps) is not int or reps < 1:
+        raise EarlyCheckRejected("DISCRIMINATION_EMPTY", "판별력 영수증의 반복 수가 1 이상의 정수가 아니다 — 측정 0 건의 영수증은 근거가 아니다")
+    tally = body.get("tally")
+    if not isinstance(tally, dict) or not tally:
+        raise EarlyCheckRejected("DISCRIMINATION_EMPTY", "판별력 영수증에 사다리별 집계가 없다")
+    out = {}
+    for sched, by_rule in tally.items():
+        cell = by_rule.get(rules.sequential_rule) if isinstance(by_rule, dict) else None
+        if not isinstance(cell, dict) or not all(type(cell.get(k)) is int for k in ("false_pass", "false_fail", "positive_runs", "negative_runs")) \
+                or cell["positive_runs"] < 1 or cell["negative_runs"] < 1:
+            raise EarlyCheckRejected("DISCRIMINATION_EMPTY", f"사다리 {sched!r} 에 규칙 {rules.sequential_rule!r} 의 양성 · 음성 실행이 없다")
+        out[sched] = {k: cell[k] for k in ("false_pass", "false_fail", "positive_runs", "negative_runs")}
+    return out
+
+
+def require_ready(rules: EarlyRules, *, repo_root: Path | None = None) -> None:
+    """점검 실행을 시작해도 되는가 — 순차 규칙 · 허용 시도 수 · 상한이 서 있고, 순차 규칙의 판별력 영수증이 실물로 있어야 한다."""
     if rules.sequential_rule is None:
         raise EarlyCheckRejected("SEQUENTIAL_UNDECIDED", "순차 규칙이 미확정이다 — 두 규칙 모두 합성 거짓 통과가 0 이 아니면 시작하지 않는다(14-2)")
     if rules.max_attempts is None:
         raise EarlyCheckRejected("ATTEMPTS_UNSET", "허용 시도 수가 비었다 — 첫 점검 실행 전에 적는다")
     if not rules.limits or rules.limits.get("max_hours") is None or rules.limits.get("max_cost_krw") is None:
         raise EarlyCheckRejected("LIMITS_UNSET", "시간 · 금액 상한이 비었다 — 학습 쪽 비용표에서 골라 첫 점검 실행 전에 적는다")
+    verify_discrimination(rules, repo_root=repo_root)
 
 
 # ---------------------------------------------------------------- 대상 목록
@@ -346,7 +396,7 @@ def step_verdict(images: Sequence[F.FrameImage], exposed_groups: Collection[str]
 
 ACTIONS = {
     PASS: "점검 실행을 끝낸다. 모델 없는 네 검사가 모두 통과였으면 네 칸을 연다. 본 중앙은 공통 출발점에서 새로 시작한다",
-    FAIL: "모든 학습을 멈춘다. 총괄 · 사용자가 좌표 규약 · 프롬프트 · 프로세서를 검토하고 고친 뒤 네 검사부터, 공통 출발점에서 "
+    FAIL: "모든 학습을 멈춘다. 운영 책임자가 좌표 규약 · 프롬프트 · 프로세서를 검토하고 고친 뒤 네 검사부터, 공통 출발점에서 "
           "새 시도. 실패 실행의 산출은 옆으로 옮겨 보존한다",
     INDETERMINATE: "멈추고 보고한다. 네 칸을 열지 않는다",
     CONTINUE: "점검 실행을 다음 step 까지 잇는다",
@@ -418,8 +468,7 @@ def build_output(*, rules: EarlyRules, target: EvalList, model_free: Sequence[Ma
     missing = [k for k in EVIDENCE_KEYS if k not in evidence]
     if missing:
         raise EarlyCheckRejected("EVIDENCE_MISSING", f"증거 묶음의 칸이 빠졌다 — {missing}")
-    if set(evidence.get("model_free_files", {})) != set(MODEL_FREE_CHECKS):
-        raise EarlyCheckRejected("EVIDENCE_MISSING", "모델 없는 네 검사의 산출 파일 지문이 넷이 아니다")
+    _check_model_free_files(evidence.get("model_free_files"))
     seed = evidence["seed"]
     if type(seed) is not int or seed < 1:
         raise EarlyCheckRejected("EVIDENCE_SEED", "증거의 seed 는 시드 번호(1 이상의 정수, seed_index)다")
@@ -494,12 +543,29 @@ def verify_permit(raw: bytes, *, expected_sha256: str, rules: EarlyRules, expect
     if decision["outcome"] != PASS or not opens_four_cells(model_free, decision):
         raise EarlyCheckRejected("PERMIT_NOT_PASSED", "통과가 아니거나 네 칸을 여는 기준을 채우지 않았다")
     files = ev.get("model_free_files") or {}
-    if set(files) != set(MODEL_FREE_CHECKS):
-        raise EarlyCheckRejected("PERMIT_MISMATCH", "모델 없는 네 검사의 산출 파일 지문이 넷이 아니다")
-    bad = sorted(k for k, f in files.items() if file_sha256_of(f.get("path")) != f.get("sha256"))
+    try:
+        _check_model_free_files(files)
+    except EarlyCheckRejected as exc:
+        raise EarlyCheckRejected("PERMIT_MISMATCH", str(exc)) from None
+    bad = []
+    for k, f in files.items():
+        got = file_sha256_of(f["path"])
+        # 없는 파일 · 빈 결과는 "같다" 가 아니라 "없다" 다 — 기대값과 실제값이 함께 비면 통과하던 길을 닫는다(§119 I-04)
+        if not (isinstance(got, str) and _HEX64.match(got)) or got.lower() != f["sha256"]:
+            bad.append(k)
     if bad:
-        raise EarlyCheckRejected("PERMIT_MISMATCH", f"네 검사의 산출 파일이 없거나 바뀌었다 — {bad}")
+        raise EarlyCheckRejected("PERMIT_MISMATCH", f"네 검사의 산출 파일이 없거나 바뀌었다 — {sorted(bad)}")
     return obj
+
+
+def _check_model_free_files(files) -> None:
+    """네 검사의 산출 파일 지문 — 이름 넷이 정확히 있고, 칸마다 비지 않은 경로와 소문자 16진 64자리 sha256 이다(§119 I-04)."""
+    if not isinstance(files, dict) or set(files) != set(MODEL_FREE_CHECKS):
+        raise EarlyCheckRejected("EVIDENCE_MISSING", "모델 없는 네 검사의 산출 파일 지문이 넷이 아니다")
+    for k, f in files.items():
+        if not (isinstance(f, dict) and isinstance(f.get("path"), str) and f["path"].strip()
+                and isinstance(f.get("sha256"), str) and _HEX64.match(f["sha256"])):
+            raise EarlyCheckRejected("EVIDENCE_MISSING", f"검사 {k!r} 의 산출 파일 지문에 경로나 sha256 이 없다 — 빈 칸은 지문이 아니다")
 
 
 def unexposed_counts(consumed_by_step: Sequence[Collection[str]], group_of: Mapping[str, str],

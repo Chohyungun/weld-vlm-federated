@@ -92,7 +92,7 @@ def make_round_recorder(
                     "param_l2": float(m.get("param-l2", 0.0)),
                     "lr": float(m.get("lr", float("nan"))),
                     "peak_vram_gb": float(m.get("peak-vram-gb", 0.0)),
-                    # 판정 2 — 가중 단위를 산출물이 말하게 한다(RQ3 해석 재료).
+                    # 판정 2 — 가중 단위를 산출물이 말하게 한다(RQ2 해석 재료).
                     "supervised_tokens": float(m.get("supervised-tokens", 0.0)),
                     "fedavg_weight": float(m.get(WEIGHT_KEY, 0.0)),
                     # B 증빙(15번 G3·G7) — 검증 로더 실효 워커 수. -1 = 미계측(스모크·⑦·B 이전 원장),

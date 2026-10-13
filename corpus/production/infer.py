@@ -163,6 +163,19 @@ def _read_inputs(run_dir: Path, config: dict):
         raise StageRefused("run_identity", "identity_sha256 is missing")
     if run.get("config_sha256") != _digest(config) or run.get("config") != config:
         raise StageRefused("config_changed", "config differs from RUN.json")
+    from . import generation_policy as G
+
+    generation_v2 = G.is_v2_run(run)
+    if generation_v2:
+        try:
+            G.validate_v2_policy(run)
+        except G.RegenerationRefused as exc:
+            raise StageRefused("generation_policy", str(exc)) from exc
+        basis = run.get("identity_basis")
+        if (not isinstance(basis, dict) or _digest(basis) != run["identity_sha256"] or
+                basis.get("tasks_sha256") != run.get("tasks_sha256") or
+                basis.get("config_sha256") != run.get("config_sha256")):
+            raise StageRefused("run_identity", "v2 generation basis is inconsistent")
     raw = (run_dir / "tasks.jsonl").read_bytes()
     if hashlib.sha256(raw).hexdigest() != run.get("tasks_sha256"):
         raise StageRefused("tasks_changed", "tasks.jsonl digest differs from RUN.json")
@@ -180,10 +193,12 @@ def _read_inputs(run_dir: Path, config: dict):
         ids.add(task["id"])
         if task.get("kind") not in ("image_report", "source_qa") or task.get("split") not in ("train", "val"):
             raise StageRefused("task_scope", task["id"])
-        if not isinstance(task.get("prompt"), str) or not task["prompt"].strip():
+        if not isinstance(task.get("prompt"), str) or (not generation_v2 and not task["prompt"].strip()):
             raise StageRefused("task_prompt", task["id"])
         if not isinstance(task.get("evidence"), dict) or not isinstance(task.get("source_ids"), list):
             raise StageRefused("task_evidence", task["id"])
+        if not generation_v2 and any(key in task["evidence"] for key in ("defects_by_zone", "observation_examples")):
+            raise StageRefused("generation_task", "v2 observation evidence cannot be read as a legacy task")
         if not all(isinstance(x, str) and x for x in task["source_ids"]):
             raise StageRefused("task_sources", task["id"])
         lineage = task.get("lineage_group_id")
@@ -200,6 +215,11 @@ def _read_inputs(run_dir: Path, config: dict):
                 raise StageRefused("image_task_path", task["id"])
         elif task.get("client") != "public" or task.get("image_path") is not None or task.get("locked_target") is not None:
             raise StageRefused("source_task_contract", task["id"])
+        if generation_v2:
+            try:
+                G.validate_v2_task(task)
+            except G.RegenerationRefused as exc:
+                raise StageRefused("generation_task", f"{task['id']}: {exc}") from exc
         tasks.append(task)
     if not tasks:
         raise StageRefused("empty_tasks", "there are no tasks")
@@ -287,8 +307,45 @@ def _check_model(model: dict, spec: dict) -> None:
         raise StageRefused("tokenizer_identity", "missing tokenizer digest")
 
 
+def _check_generation_v2_rows(rows, tasks: list[dict], spec: dict) -> None:
+    """Validate provenance/rendering, not approve the generated observations.
+
+    Failed observations are durable rows with diagnostics. In particular language
+    rejection does not turn into a retry or destructive correction here.
+    """
+    from . import generation_policy as G
+
+    if not isinstance(rows, list) or len(rows) != len(tasks):
+        raise StageRefused("row_count", "v2 generation row count differs from tasks")
+    for row, task in zip(rows, tasks):
+        tid = task["id"]
+        if not isinstance(row, dict) or row.get("id") != tid:
+            raise StageRefused("row_order", tid)
+        if task["evidence"]["row_class"] == "defect_free":
+            expected = G.render_generation_row(task)
+        else:
+            # Token limits/finish reasons still describe the actual model call.
+            raw = row.get("raw_text")
+            _check_rows([{**row, "text": raw}], [tid], spec)
+            expected = G.render_generation_row(task, {
+                "id": tid, "text": raw, "finish_reason": row["finish_reason"],
+                "input_tokens": row["input_tokens"], "output_tokens": row["output_tokens"],
+            })
+        # Canonical bytes distinguish bool from int (False is not a token count).
+        if _canonical(row) != _canonical(expected):
+            raise StageRefused("generation_render", f"{tid}: provenance or rendered text differs")
+
+
+def _first_runtime(shards: dict[int, dict]) -> dict | None:
+    return next((shard["model"] for shard in shards.values()
+                 if shard.get("model") is not None), None)
+
+
 def _read_shards(run_dir: Path, stage: str, run: dict, tasks: list[dict], config: dict,
                  upstream: dict[int, dict] | None = None) -> dict[int, dict]:
+    from . import generation_policy as G
+
+    generation_v2 = stage == "generate" and G.is_v2_run(run)
     folder = run_dir / _DIRS[stage]
     spec = _model_config(config, stage)
     if not folder.exists():
@@ -321,11 +378,34 @@ def _read_shards(run_dir: Path, stage: str, run: dict, tasks: list[dict], config
             raise StageRefused("system_prompt_changed", path.name)
         if shard.get("model_config_sha256") != _digest(spec):
             raise StageRefused("model_config_changed", path.name)
-        _check_rows(shard.get("rows"), ids, spec)
-        _check_model(shard.get("model"), spec)
-        if expected_model is not None and shard["model"] != expected_model:
-            raise StageRefused("model_changed_between_shards", path.name)
-        expected_model = shard["model"]
+        if generation_v2:
+            if (shard.get("generation_policy_sha256") != _digest(config["generation_policy"]) or
+                    shard.get("generation_row_schema") != G.RENDER_VERSION):
+                raise StageRefused("generation_policy", path.name)
+            _check_generation_v2_rows(shard.get("rows"), chunk, spec)
+            needs_model = any(t["evidence"]["row_class"] == "defect" for t in chunk)
+            if not needs_model and ("model" not in shard or shard["model"] is not None):
+                raise StageRefused("model_identity", "template-only shard must have model=null")
+            metrics = shard.get("metrics")
+            expected_counts = {"template_rows": sum(r["generator"] == "template" for r in shard["rows"]),
+                               "model_rows": sum(r["generator"] == "model" for r in shard["rows"]),
+                               "input_tokens": sum(r["input_tokens"] for r in shard["rows"]),
+                               "output_tokens": sum(r["output_tokens"] for r in shard["rows"])}
+            if (not isinstance(metrics, dict) or any(type(metrics.get(k)) is not int or metrics[k] != v
+                                                    for k, v in expected_counts.items()) or
+                    (not needs_model and any(metrics.get(k) != 0 for k in
+                                            ("model_load_seconds", "peak_allocated_bytes", "peak_reserved_bytes")))):
+                raise StageRefused("generation_metrics", path.name)
+        else:
+            _check_rows(shard.get("rows"), ids, spec)
+            if stage == "generate" and any("generator" in row or "raw_text" in row for row in shard["rows"]):
+                raise StageRefused("generation_row_schema", "v2 provenance is not valid in a legacy run")
+            needs_model = True
+        if needs_model:
+            _check_model(shard.get("model"), spec)
+            if expected_model is not None and shard["model"] != expected_model:
+                raise StageRefused("model_changed_between_shards", path.name)
+            expected_model = shard["model"]
         result[index] = shard
     if sorted(result) != list(range(len(result))):
         raise StageRefused("shard_gap", "completed shards must be a contiguous prefix")
@@ -345,6 +425,10 @@ def read_stage_rows(run_dir, stage: str, config: dict) -> list[dict]:
     if (root / ".inference.lock").exists():
         raise StageRefused("writer_locked", "stage reader requires a completed writer invocation")
     run, tasks = _read_inputs(root, config)
+    from . import generation_policy as G
+
+    if stage == "judge" and G.is_v2_run(run):
+        raise StageRefused("separate_judge_required", "v2 generation requires the separate v7 judge")
     upstream = None
     if stage == "judge":
         upstream = _read_shards(root, "generate", run, tasks, config)
@@ -357,7 +441,9 @@ def read_stage_rows(run_dir, stage: str, config: dict) -> list[dict]:
         for shard in shards.values():
             if _family(shard["model"]["model_type"]) == _family(upstream[0]["model"]["model_type"]):
                 raise StageRefused("self_judging", "actual architecture families are equal")
-    return [{**row, "_stage": stage, "_backend": shard["model"]["backend"],
+    return [{**row, "_stage": stage,
+             "_backend": ("template" if stage == "generate" and G.is_v2_run(run)
+                          and row.get("generator") == "template" else shard["model"]["backend"]),
              "_shard_sha256": shard["payload_sha256"]}
             for shard in shards.values() for row in shard["rows"]]
 
@@ -377,6 +463,12 @@ def run_stage(run_dir, stage: str, config: dict, max_shards=None, backend_factor
     run, tasks = _read_inputs(root, config)
     spec = _model_config(config, stage)
     generation_spec = _model_config(config, "generate")
+    from . import generation_policy as G
+
+    if G.is_v2_run(run):
+        if stage != "generate":
+            raise StageRefused("separate_judge_required", "v2 generation requires the separate v7 judge")
+        return _run_generate_v2(root, config, run, tasks, spec, max_shards, backend_factory)
     if stage == "judge" and (_family(spec["family"]) == _family(generation_spec["family"]) or spec["model_id"] == generation_spec["model_id"]):
         raise StageRefused("self_judging", "judge must use a different model family")
     started = time.monotonic()
@@ -465,6 +557,123 @@ def run_stage(run_dir, stage: str, config: dict, max_shards=None, backend_factor
         except RuntimeError as exc:
             if "out of memory" in str(exc).lower():
                 return {**result("out_of_memory", 5), "retry_policy": "explicit resume; unchanged batch and token limits"}
+            raise
+        finally:
+            if model is not None:
+                model.close()
+
+
+def _run_generate_v2(root, config, run, tasks, spec, max_shards, backend_factory):
+    """Template normals, model observations, immutable full-task shards.
+
+    The factory is lazy: even a trailing template-only shard records no model,
+    regardless of whether this invocation loaded one for an earlier shard.
+    """
+    from . import generation_policy as G
+
+    started = time.monotonic()
+    deadline = started + spec["wall_seconds"]
+    with _writer_lock(root):
+        if _read_inputs(root, config) != (run, tasks):
+            raise StageRefused("inputs_changed_during_start", "RUN/tasks changed")
+        done = _read_shards(root, "generate", run, tasks, config)
+        total = math.ceil(len(tasks) / config["shard_size"])
+        expected_runtime = _first_runtime(done)
+        newly_done = 0
+        model = None
+
+        def result(status, exit_code):
+            completed = sum(len(s["rows"]) for s in done.values())
+            return {"stage": "generate", "status": status, "exit_code": exit_code,
+                    "planned_tasks": len(tasks), "completed_tasks": completed,
+                    "pending_tasks": len(tasks) - completed, "completed_shards": len(done),
+                    "new_shards": newly_done, "wall_seconds": round(time.monotonic() - started, 3),
+                    "template_rows": sum(r["generator"] == "template" for s in done.values() for r in s["rows"]),
+                    "model_rows": sum(r["generator"] == "model" for s in done.values() for r in s["rows"])}
+
+        try:
+            for index in range(len(done), total):
+                if max_shards is not None and newly_done >= max_shards:
+                    return result("shard_limit", 4)
+                if time.monotonic() >= deadline:
+                    return result("time_limit", 3)
+                chunk = tasks[index * config["shard_size"]:(index + 1) * config["shard_size"]]
+                ids = [task["id"] for task in chunk]
+                rows = [None] * len(chunk)
+                model_indices = []
+                template_start = time.monotonic()
+                for i, task in enumerate(chunk):
+                    if task["evidence"]["row_class"] == "defect_free":
+                        rows[i] = G.render_generation_row(task)
+                    else:
+                        model_indices.append(i)
+                template_seconds = time.monotonic() - template_start
+                load_seconds = 0.0
+                if model_indices and model is None:
+                    load_started = time.monotonic()
+                    model = (backend_factory or TransformersBackend)(dict(spec), "generate")
+                    load_seconds = time.monotonic() - load_started
+                    _check_model(model.identity, spec)
+                    if expected_runtime is not None and model.identity != expected_runtime:
+                        raise StageRefused("runtime_changed", "model/tokenizer/runtime differs from completed modeled shards")
+                    expected_runtime = dict(model.identity)
+                memory = {"peak_allocated_bytes": 0, "peak_reserved_bytes": 0}
+                shard_start = time.monotonic()
+                for offset in range(0, len(model_indices), spec["batch_size"]):
+                    if time.monotonic() >= deadline:
+                        return result("time_limit", 3)
+                    batch_indices = model_indices[offset:offset + spec["batch_size"]]
+                    prompts = [chunk[i]["prompt"] for i in batch_indices]
+                    batch_rows = model.generate_batch(prompts, GENERATE_SYSTEM, deadline)
+                    if not isinstance(batch_rows, list) or len(batch_rows) != len(prompts):
+                        raise StageRefused("backend_row_count", "batch returned the wrong number of rows")
+                    for key, previous in memory.items():
+                        memory[key] = max(previous, getattr(model, "last_metrics", {}).get(key, 0))
+                    for i, raw in zip(batch_indices, batch_rows):
+                        if not isinstance(raw, dict):
+                            raise StageRefused("row_content", chunk[i]["id"])
+                        if "id" in raw and raw["id"] != chunk[i]["id"]:
+                            raise StageRefused("backend_task_id", chunk[i]["id"])
+                        _check_rows([{**raw, "id": chunk[i]["id"]}], [chunk[i]["id"]], spec)
+                        rows[i] = G.render_generation_row(chunk[i], {**raw, "id": chunk[i]["id"]})
+                _check_generation_v2_rows(rows, chunk, spec)
+                if time.monotonic() >= deadline:
+                    return result("time_limit", 3)
+                G.validate_v2_policy(run)
+                if (_file_sha(root / "tasks.jsonl") != run["tasks_sha256"] or
+                        _json((root / "RUN.json").read_bytes()) != run):
+                    raise StageRefused("inputs_changed_during_inference", "no shard was committed")
+                payload = {
+                    "schema_version": 1, "identity_sha256": run["identity_sha256"],
+                    "config_sha256": run["config_sha256"], "stage": "generate", "index": index,
+                    "task_ids": ids, "input_sha256": _input_digest(chunk, None),
+                    "system_prompt_sha256": hashlib.sha256(GENERATE_SYSTEM.encode()).hexdigest(),
+                    "model_config_sha256": _digest(spec),
+                    "generation_policy_sha256": _digest(config["generation_policy"]),
+                    "generation_row_schema": G.RENDER_VERSION,
+                    "model": dict(model.identity) if model_indices else None, "rows": rows,
+                    "metrics": {"wall_seconds": round(template_seconds + time.monotonic() - shard_start, 6),
+                                "template_render_seconds": round(template_seconds, 6),
+                                "model_load_seconds": round(load_seconds, 6), **memory,
+                                "template_rows": len(chunk) - len(model_indices),
+                                "model_rows": len(model_indices),
+                                "input_tokens": sum(x["input_tokens"] for x in rows),
+                                "output_tokens": sum(x["output_tokens"] for x in rows)},
+                    "created_at": datetime.now(UTC).isoformat(),
+                }
+                folder = root / _DIRS["generate"]
+                folder.mkdir(exist_ok=True)
+                if folder.is_symlink():
+                    raise StageRefused("invalid_output_dir", str(folder))
+                _write_shard(folder / f"{index:06d}.json", payload)
+                done[index] = {**payload, "payload_sha256": _digest(payload)}
+                newly_done += 1
+            return result("complete", 0)
+        except StageTimeLimit:
+            return result("time_limit", 3)
+        except RuntimeError as exc:
+            if "out of memory" in str(exc).lower():
+                return {**result("out_of_memory", 5), "retry_policy": "no automatic retry"}
             raise
         finally:
             if model is not None:

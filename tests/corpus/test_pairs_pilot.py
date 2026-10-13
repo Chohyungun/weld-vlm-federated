@@ -68,7 +68,7 @@ def test_clause_basis_가_재질_축을_본다():
 
 
 def test_덮지_않는_재질은_조항을_특정하지_않는다():
-    """격리(안 A)하면 C3 결함 페어가 0건이 되어 RQ3 이 인위적으로 바뀐다 — 서술로 닫는다."""
+    """격리(안 A)하면 C3 결함 페어가 0건이 되어 RQ2 가 인위적으로 바뀐다 — 서술로 닫는다."""
     defects = [{"type": "2011", "bbox_px": [0, 0, 10, 10], "size_px": {}, "size_mm": None}]
     text = M.defect_target_text(defects, NAMES, {})
     assert "적용 조항을 특정하지 않는다" in text
@@ -87,7 +87,7 @@ def test_합계길이_조항은_미표현_단서를_부기한다():
 
 
 def test_v1_회계가_실측과_맞는다():
-    """219 + 286 − 84 = 421. 산출물이 이 숫자를 들고 다녀야 RQ2·RQ3 을 그 위에서 읽는다."""
+    """219 + 286 − 84 = 421. 산출물이 이 숫자를 들고 다녀야 RQ1·RQ2 를 그 위에서 읽는다."""
     acc = M.v1_accounting()
     kinds = {k["kind"]: k["n"] for k in acc["kinds"]}
     assert kinds == {"material_axis": 219, "aggregate_length": 286}

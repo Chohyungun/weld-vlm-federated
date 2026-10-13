@@ -5,7 +5,7 @@
         uv run python scripts/probe/score_cells.py score
 
 왜 옮겼나 — 이 파일에 `CONF = 0.25` 가 모듈 상수로 박혀 있었다. 분리형만 저신뢰 박스를
-버린 뒤 채점되고 통합형에는 대응 임계가 없어, RQ2 의 핵심 대비가 그 비대칭 위에
+버린 뒤 채점되고 통합형에는 대응 임계가 없어, 구조 비교의 핵심 대비가 그 비대칭 위에
 있었다(감사 D-1 · P14). 임계를 인자로 만들려면 추론이 스크립트 상수와 분리돼야 한다.
 
 지금 임계·시드·모집단은 `evaluation.params`, 추론은 `evaluation.detect_infer`,

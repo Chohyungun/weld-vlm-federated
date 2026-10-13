@@ -4,7 +4,7 @@
     uv run python scripts/probe/sweep_detection_conf.py --stage sweep
 
 **문제.** 분리형 3칸은 `conf 0.25` 로 저신뢰 박스를 버린 뒤 채점되는데 통합형 2칸에는
-대응하는 임계가 없다. RQ2 의 핵심 대비(결함 놓침 0.8142 대 0.2646)가 그 비대칭 위에
+대응하는 임계가 없다. 구조 비교의 핵심 대비(결함 놓침 0.8142 대 0.2646)가 그 비대칭 위에
 있다. 부정이 아니라 두 출력 형식이 근본적으로 다른 데서 온다.
 
 **처방.** 임계 하나를 고르지 않는다. 곡선을 낸다.
@@ -239,8 +239,8 @@ def main() -> int:
     if not uni_cells:
         # 검출 선행 구간(본실험 시드 1) — 통합형 두 칸이 아직 없다. **스윕 자체는 성립한다**:
         # "단일 임계로 결론내지 마라"는 검출 3칸 안에서도 그대로 요구되고, 통합형과의
-        # 예측량 정합점·RQ2 대소만 뒤로 미뤄진다. 빠진 것을 산출물이 말하게 한다.
-        print("통합형 두 칸 미채점(--cells det) — 예측량 정합점·RQ2 대소는 산출하지 않는다")
+        # 예측량 정합점·구조 비교 대소만 뒤로 미뤄진다. 빠진 것을 산출물이 말하게 한다.
+        print("통합형 두 칸 미채점(--cells det) — 예측량 정합점·구조 비교 대소는 산출하지 않는다")
     for cell in uni_cells:
         p = params.out / f"{cell}_s{params.seed}.jsonl"
         if not p.exists():
@@ -283,7 +283,7 @@ def main() -> int:
         rq2_verdict(sweep, uni, params) if uni
         else {"single_threshold_comparable": "판정 보류",
               "n_pairs": 0, "n_flipping_pairs": 0, "pairs": [],
-              "summary": "통합형 두 칸 미채점 — RQ2 대소는 통합형 착수 후에 낸다"}
+              "summary": "통합형 두 칸 미채점 — 구조 비교 대소는 통합형 착수 후에 낸다"}
     )
 
     payload = {
@@ -303,7 +303,7 @@ def main() -> int:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
     print(f"저장: {dest}")
-    print(f"RQ2: {verdict['single_threshold_comparable']} — {verdict['summary']}")
+    print(f"구조 비교: {verdict['single_threshold_comparable']} — {verdict['summary']}")
     return 0
 
 

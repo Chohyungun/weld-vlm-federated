@@ -38,6 +38,7 @@
 | `main` | `eval` | 전부. 진단 규칙 두 칸 · `train_rows_digest` · `plan_sha256` 은 **null** 이어야 한다 | 전부 |
 | `rehearsal` | `val` | 전부. 진단 규칙 두 칸은 null. `train_rows_digest` · `plan_sha256` 은 null 이어도 된다 | 에코 관문 두 칸(`require_probe_scoring`) |
 | `frame_diag` | `val` | 전부 — 진단 규칙 두 칸 · `train_rows_digest` · `plan_sha256` 까지 | 에코 관문 두 칸 |
+| `early_coord_check` | `train` | 리허설과 같다 — 점검 목록은 봉인 페어의 **학습 행**이다(10번 · 19번) | **없다** — 점검 산출은 채점 대상이 아니다(`evaluation.early_coord_check.refuse_for_scoring`). 영수증은 리허설처럼 로컬(점검 루트 아래)이다(2026-10-13 추기, 1013o 의 1) |
 
 진단 규칙은 **생성 쪽**에 있다(§31-1) — 채점 등록을 개정해도 진단 규칙은 바뀌지 않는다.
 """
@@ -57,7 +58,8 @@ from typing import get_type_hints
 from evaluation.recovery_interval import REGISTERED_CI as _REGISTERED_CI
 
 REGISTRATION_VERSION = "5"
-"""판 5(2026-10-05): 본실험 평가는 동결 분할의 평가 행 전량이다 — 부표본이 없다. 모집단의 표본 설계 칸
+"""판 5 추기(2026-10-13): 목적 `early_coord_check`(기준 분할 `train`)를 더했다 — 칸은 바뀌지 않았고 기존 등록의 지문도 그대로다.
+판 5(2026-10-05): 본실험 평가는 동결 분할의 평가 행 전량이다 — 부표본이 없다. 모집단의 표본 설계 칸
 (`subsample_design`)과 총계 오차표 칸(`totals_error_table`)을 뺐다. 가중은 `"none"` 하나다. 07번 §39.
 판 4(2026-10-01): 구간 규약의 채택(의사결정로그 10-01 · 결정표 11행). `ci` 의 규약 칸은 **채택값만** 받는다 —
 `CI_ADOPTED`. 칸 여덟을 더했다(끝점 · 반폭의 상태 어휘 · 동률 규칙 · 분자 0 의 판정 · `n` 의 정의 · 점추정의 분모 실패 ·
@@ -194,8 +196,9 @@ class PopulationSpec:
     n_images: int | None = None
     n_clusters: int | None = None
     weighting: str | None = None
-    """`"none"` 하나다. 평가가 전량이라 설계 가중이 없다(§39). 판 4 까지 있던 표본 설계 칸과 총계 오차표 칸은
-    부표본을 전제한 것이라 판 5 에서 뺐다."""
+    """`"none"`(전량) 또는 `"stratified_g_over_n"`(층화 표본 — 2026-10-13 사용자 결정, 실험설계 8-5 등록 절). 층화면 목록 해시 ·
+    장수가 `configs/eval_registration.yaml` 의 봉인한 주 표본과 같아야 한다(`evaluation.eval_registration.check_population_binding`).
+    판 4 까지 있던 표본 설계 칸과 총계 오차표 칸은 판 5 에서 뺐고, 표본의 설계는 그 설정 파일이 든다."""
     class_support: dict | None = None
 
 
@@ -431,9 +434,12 @@ del _name, _key
 # ── 허용 어휘 ───────────────────────────────────────────────────────────────
 # 자유 문자열이던 칸 가운데 **계약이 선택지를 적은 것**만 어휘를 둔다. 어휘는 고른 값이 아니라 고를 수 있는 값이다.
 
-PURPOSES = ("main", "rehearsal", "frame_diag")
-SPLIT_OF_PURPOSE = {"main": "eval", "rehearsal": "val", "frame_diag": "val"}
-"""목적 → 기준 분할. 영수증의 종류 · 등록의 목적 · 목록의 분할 셋이 한 줄로 서지 않으면 어느 경로든 거부한다."""
+PURPOSES = ("main", "rehearsal", "frame_diag", "early_coord_check")
+SPLIT_OF_PURPOSE = {"main": "eval", "rehearsal": "val", "frame_diag": "val", "early_coord_check": "train"}
+"""목적 → 기준 분할. 영수증의 종류 · 등록의 목적 · 목록의 분할 셋이 한 줄로 서지 않으면 어느 경로든 거부한다.
+`early_coord_check`(조기 좌표 점검)는 2026-10-13 에 더했다 — 점검 export 가 평가 쪽 영수증 · 등록 · 분할 표를 지나야 하는데
+자리가 없어 본체에서 돌 수 없었다(1013o 의 1). 본채점은 이 목적을 받지 않는다 — `entry_gate.PROBE_PURPOSES` ·
+`scripts/probe/score_unified.py` 의 choices · `early_coord_check.refuse_for_scoring` 이 닫는다."""
 RECEIPT_KINDS = PURPOSES
 
 PURPOSE_NULL: dict[str, frozenset[str]] = {
@@ -441,12 +447,14 @@ PURPOSE_NULL: dict[str, frozenset[str]] = {
                        "generation.train_rows_digest", "generation.plan_sha256"}),
     "rehearsal": frozenset({"generation.frame_diag_rules_sha256", "generation.frame_diag_rules_path"}),
     "frame_diag": frozenset(),
+    "early_coord_check": frozenset({"generation.frame_diag_rules_sha256", "generation.frame_diag_rules_path"}),
 }
 """목적마다 **null 이어야 하는** 생성 쪽 칸. 값이 있으면 무효다. 본실험의 학습 행은 칸마다 달라 어댑터 meta 에만 있다(§31-5)."""
 PURPOSE_OPTIONAL: dict[str, frozenset[str]] = {
     "main": frozenset(),
     "rehearsal": frozenset({"generation.train_rows_digest", "generation.plan_sha256"}),
     "frame_diag": frozenset(),
+    "early_coord_check": frozenset({"generation.train_rows_digest", "generation.plan_sha256"}),
 }
 """목적마다 **비어 있어도 되는** 생성 쪽 칸. 값이면 곁 파일 · 어댑터 meta 와 같아야 한다 — 대조는 읽는 쪽의 일이다."""
 PROBE_SCORING_REQUIRED = ("canary.coord_cfg", "canary.coord_fixture_sha256")
@@ -475,7 +483,7 @@ VOCAB: dict[str, tuple[str, ...]] = {
     "ci.interval": ("percentile",),
     "ci.cluster_unit": ("component", "group"),
     "population.cluster_unit": ("component", "group"),
-    "population.weighting": ("none",),
+    "population.weighting": ("none", "stratified_g_over_n"),
     "generation.purpose": PURPOSES,
     "generation.list_split": tuple(dict.fromkeys(SPLIT_OF_PURPOSE.values())),
     "generation.coord_space": ("ABS_ORIG", "ABS_RESIZED", "NORM_1000"),
@@ -927,7 +935,7 @@ def load_registration(raw: bytes) -> UnifiedRegistration:
 class Receipt:
     """등록이 먼저였다는 증거. **등록 병합 다음 커밋으로 적는다.**
 
-    `kind` 는 영수증의 종류(`main` · `rehearsal` · `frame_diag`)이고 등록의 목적과 같아야 한다 — 커밋 자리에 접두
+    `kind` 는 영수증의 종류(`main` · `rehearsal` · `frame_diag` · `early_coord_check`)이고 등록의 목적과 같아야 한다 — 커밋 자리에 접두
     문자열을 붙여 가르지 않는다. `registration_path` 는 `main_commit` 에서 등록 파일을 읽을 저장소 상대 경로다.
     `registration_file_sha256` 은 그 파일 **바이트**의 sha256 이다 — 영수증이 가리키는 등록과 지금 읽은 등록이
     같은 바이트인지 지문을 계산하기 전에 본다(07번 §30-10).
