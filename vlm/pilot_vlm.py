@@ -56,7 +56,7 @@ COORD_CFG = CoordCfg(coord_space="ABS_ORIG")
 #: 같은 상수에서 나와야 사후 대조가 한 번에 된다. 호출부가 명시하면 그 값이 이긴다.
 DEFAULT_INIT_SEED = 20260828
 MICRO_BATCH = 1          # 판정 10 — micro=2 는 사다리에 없다
-GRAD_ACCUM = 32          # 유효 배치 32
+GRAD_ACCUM = 8           # 유효 배치 8 — 의사결정로그 2026-10-31 「2 차 학습량 재결정」(1 차 실패 원인 '갱신 횟수 부족' 대응, 같은 계산량에 갱신 4 배)
 LR = 1e-4
 #: 4bit 적재 인자(nf4) — 학습 · 생성이 같은 값으로 연다. 등록 파일(`configs/train_registration.yaml` 의 `quantization`)과
 #: 맞대는 값이 이것이다(`vlm/registration.py`). 계산 자료형은 이름 글자로 두고 적재 때 torch 자료형으로 바꾼다.
@@ -183,6 +183,43 @@ def sha256_text(text: str) -> str:
 
 TARGET_CONTRACT_SHA256 = sha256_text(canonical_json(TARGET_CONTRACT))
 
+#: 학습 레시피 — 등록의 `recipe`(`vlm.registration.TRAIN_RECIPES` 와 같은 집합). `json_only` 은 1 차 등록의 계약(위 사전)이다.
+RECIPE_V1 = "json_only"
+#: JSON 한 줄 + 줄바꿈 + `target_text`(02 2판 §1-4 의 꼴 (나)). 계약 사전은 02d 가 제안한 그대로다 — 해시가 그 제안값과 같다.
+RECIPE_V2 = "json_line_then_basis"
+TARGET_CONTRACT_V2: dict[str, Any] = {
+    "version": 2,
+    "layout": "json_line + separator + basis",
+    "keys": ["defects", "verdict", "cited_clauses"],
+    "defect_keys": ["iso_code", "bbox_2d"],
+    "bbox": "quantize(to_model(bbox_px, geom, coord_cfg))",
+    "verdict_missing": "판정불가",
+    "clauses_missing": [],
+    "json": {"ensure_ascii": False, "separators": [",", ":"]},
+    "separator": "\n",
+    "basis": "pairs.target_text 그대로(가공 없음)",
+}
+#: 레시피 → 타깃 계약. 새 레시피를 더하면 등록의 레시피 목록 · 시험이 함께 따라온다.
+TARGET_CONTRACTS: dict[str, dict[str, Any]] = {RECIPE_V1: TARGET_CONTRACT, RECIPE_V2: TARGET_CONTRACT_V2}
+#: 배치 식별자의 정본 문자열과 구분자(04 §7-5 ④) — 평가 등록의 서술 꼴 칸이 이 둘과 같아야 한다.
+NARRATIVE_LAYOUT = TARGET_CONTRACT_V2["layout"]
+NARRATIVE_SEPARATOR = TARGET_CONTRACT_V2["separator"]
+
+
+def target_contract_sha256(recipe: str = RECIPE_V1) -> str:
+    """레시피의 타깃 계약 해시 — 학습 설정 원문 · 실행 · 재개 · 연합 신원의 `target_contract_sha256`. 모르는 레시피는 `ValueError`."""
+    if recipe not in TARGET_CONTRACTS:
+        raise ValueError(f"모르는 학습 레시피 {recipe!r} — 아는 것 {list(TARGET_CONTRACTS)}")
+    return sha256_text(canonical_json(TARGET_CONTRACTS[recipe]))
+
+
+def recipe_of_contract(contract_sha256: str) -> str:
+    """계약 해시 → 레시피(등록된 학습 설정 원문에서 레시피를 되찾는 자리). 모르는 해시는 `ValueError`."""
+    for recipe in TARGET_CONTRACTS:
+        if target_contract_sha256(recipe) == contract_sha256:
+            return recipe
+    raise ValueError(f"아는 타깃 계약의 해시가 아니다: {contract_sha256!r}")
+
 
 def processor_config_sha256(proc) -> str:
     """학습 쪽 프로세서 설정의 해시 — **이미지 프로세서의 `to_dict()`** 를 정규화 JSON 으로 잰다.
@@ -206,8 +243,32 @@ def train_rows_digest(rows: list[dict]) -> str:
     return sha256_text(canonical_json([str(r["image_id"]) for r in rows]))
 
 
-def build_target(row: dict, geom: ImageGeom, coord_cfg: CoordCfg | None = None) -> str:
-    """스켈레톤 → 학습 타깃 JSON. 좌표는 coords 모듈만 통과한다. 규약은 인자로 받고 기본은 `ABS_ORIG`."""
+def _basis_of(row: dict) -> str:
+    """레시피 v2 의 서술 — 페어의 `target_text` 를 **가공하지 않고** 돌려준다. 꼴이 어긋나면 거부한다(고치지 않는다).
+
+    문자열이 아니거나 · 벗기면 비거나 · 앞뒤에 공백이 있거나 · 줄 구분 문자(`str.splitlines` 가 나누는 글자 — `\\n` `\\r` 등)를 품으면
+    `ValueError`. 구분자 `\\n` 이 한 뜻이어야 하고, 정답 그대로 낸 출력의 추출문(`vlm.narrative`)이 `target_text` 와 바이트로 같아야 한다.
+    """
+    t = row.get("target_text")
+    if not isinstance(t, str) or not t.strip():
+        raise ValueError(f"레시피 {RECIPE_V2} 의 서술(target_text)이 비었거나 문자열이 아니다: {row.get('image_id')!r}")
+    if t != t.strip() or len(t.splitlines()) != 1:
+        raise ValueError(f"서술(target_text)에 앞뒤 공백 · 줄 구분 문자가 있다 — 가공하지 않고 거부한다: {row.get('image_id')!r}")
+    return t
+
+
+def build_target(row: dict, geom: ImageGeom, coord_cfg: CoordCfg | None = None, *, recipe: str = RECIPE_V1) -> str:
+    """스켈레톤 → 학습 타깃. 좌표는 coords 모듈만 통과한다. 규약은 인자로 받고 기본은 `ABS_ORIG`.
+
+    레시피 `json_only`(기본)는 JSON 한 줄, `json_line_then_basis` 는 그 JSON 한 줄 + `\\n` + `target_text`(가공 없음)다.
+    """
+    if recipe not in TARGET_CONTRACTS:
+        raise ValueError(f"모르는 학습 레시피 {recipe!r} — 아는 것 {list(TARGET_CONTRACTS)}")
+    line = _json_line(row, geom, coord_cfg)
+    return line if recipe == RECIPE_V1 else line + NARRATIVE_SEPARATOR + _basis_of(row)
+
+
+def _json_line(row: dict, geom: ImageGeom, coord_cfg: CoordCfg | None) -> str:
     cfg = coord_cfg or COORD_CFG
     defects = []
     for d in row["skeleton"]["defects"]:
@@ -361,12 +422,12 @@ class _AdapterTrainerView:
 
 
 def _encode(proc, row: dict, prompt: str, *, chat_template_kwargs: Mapping[str, Any] | None = None,
-            coord_cfg: CoordCfg | None = None):
+            coord_cfg: CoordCfg | None = None, recipe: str = RECIPE_V1):
     from PIL import Image
 
     img = Image.open(row["image_path"]).convert("RGB")
     geom = ImageGeom(orig_w=img.size[0], orig_h=img.size[1])
-    target = build_target(row, geom, coord_cfg)
+    target = build_target(row, geom, coord_cfg, recipe=recipe)
     kwargs = _template_kwargs(chat_template_kwargs)
     user = {"role": "user", "content": [{"type": "image", "image": img},
                                         {"type": "text", "text": prompt}]}
@@ -483,6 +544,7 @@ def train_rounds(
     pairs_digest: str | None = None,
     client_tag: str = "",
     check_stop: Any = None,
+    recipe: str = RECIPE_V1,
 ) -> tuple[list[np.ndarray], list[str], dict[str, Any], dict]:
     """한 라운드(⑥은 라운드 1개 = 전체 epoch). 어댑터 fp32 ndarray 를 돌려준다.
 
@@ -525,7 +587,11 @@ def train_rounds(
             끝난 뒤 step 어댑터 · 재개 상태 · 소비 행 목록 · meta 를 쓴 다음 `stop` 이면 `vlm.ecc.CheckStepReached` 로 멈춘다.
             `resume_from` 이 있으면 그 step 에서 **epoch 중간**으로 잇는다(커서 · 순열 지문 · 누적량 · 최적화기 · 난수).
             점검 실행은 epoch 경계 재개(`resume_dir`)를 쓰지 않는다. 난수를 쓰지 않고 학습 계산에 끼어들지 않는다.
+        recipe: 학습 레시피(등록의 `recipe`). 타깃을 만드는 `_encode` 와 신원 · 지표의 `target_contract_sha256` 이 **이 한 값**에서
+            나온다 — 지표만 새 계약을 말하고 실제 타깃은 옛것인 길이 없다. 모르는 레시피는 모델을 올리기 전에 거부한다.
     """
+    # 레시피 — 모델을 올리기 전에 계약 해시를 낸다(모르는 레시피는 여기서 `ValueError`).
+    contract_sha = target_contract_sha256(recipe)
     # 이음새 — 모델 적재기를 **부르기 전에** 목적과 맞댄다(리허설 2판 §1-4 의 순서 3). 본실험에
     # 대역이 오면 여기서 멈추고 대역은 한 번도 불리지 않는다.
     loader, impl_ids = resolve_model_loader(model_loader, purpose=purpose, standin_allowed=standin_allowed)
@@ -632,7 +698,7 @@ def train_rounds(
         gen_prefix_digest=prefix_digest,
         cell=str(tag), client_tag=str(client_tag), num_rounds=int(num_rounds),
         pairs_digest=str(pairs_digest or ""), prompt_sha256=prompt_sha256,
-        coord_cfg_hash=coord_cfg_hash(cfg_coord), target_contract_sha256=TARGET_CONTRACT_SHA256,
+        coord_cfg_hash=coord_cfg_hash(cfg_coord), target_contract_sha256=contract_sha,
         input_adapter_digest=init_adapter_digest(list(adapter_in)) if adapter_in is not None else "",
         micro_batch=int(MICRO_BATCH), grad_accum=int(GRAD_ACCUM), lr0=float(LR), lrf=float(LRF),
         processor_config_sha256=proc_sha,
@@ -716,7 +782,7 @@ def train_rounds(
     # 점검 step 의 meta 에 실을, 학습이 실제로 쓴 값 — 학습 설정 원문의 대조 칸(12번 §7-1)과 같다.
     ecc_view = None if check_stop is None else {
         "processor_config_sha256": proc_sha, "prompt_sha256": prompt_sha256, "template_mode": template_mode_of(kwargs),
-        "coord_cfg_hash": coord_cfg_hash(cfg_coord), "target_contract_sha256": TARGET_CONTRACT_SHA256,
+        "coord_cfg_hash": coord_cfg_hash(cfg_coord), "target_contract_sha256": contract_sha,
         "config_blocks": _config_blocks(model, opt, supervised_logits_only=supervised_logits_only)}
     for ep in range(start_ep, epochs):
         order = list(range(len(rows)))
@@ -747,7 +813,7 @@ def train_rounds(
             if j < cursor0:
                 continue                         # 점검 재개 — 이 epoch 의 앞 표본은 앞 프로세스가 학습했다
             enc, labels, prompt_len = _encode(proc, rows[idx], prompt,
-                                              chat_template_kwargs=kwargs, coord_cfg=cfg_coord)
+                                              chat_template_kwargs=kwargs, coord_cfg=cfg_coord, recipe=recipe)
             grid_by_row[idx] = _grid_key(enc)
             enc = {k: (v.to(dev) if hasattr(v, "to") else v) for k, v in enc.items()}
             # `model(**enc, labels=...)` 는 HF 내부의 **평균** loss 를 계산한다 — 판정 2
@@ -874,7 +940,9 @@ def train_rounds(
         "template_mode": template_mode_of(kwargs),
         "coord_space": cfg_coord.coord_space,
         "coord_cfg_hash": coord_cfg_hash(cfg_coord),
-        "target_contract_sha256": TARGET_CONTRACT_SHA256,
+        "target_contract_sha256": contract_sha,
+        # 레시피 — 1 차 레시피면 칸이 없다(지표가 지금과 같은 꼴이다).
+        **({} if recipe == RECIPE_V1 else {"target_recipe": recipe}),
         "processor_config_sha256": proc_sha,
         "resume_save_failures": int(save_failures),
         # 관측 격자 — 행마다 한 번 센 값별 건수. 모든 행을 센 epoch 가 없으면 None 이다.

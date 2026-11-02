@@ -107,6 +107,11 @@ EXPECTED_SEALED: dict[str, dict[str, str]] = {
         "status": "expected", "owner": "B",
         "record": "본실험 페어 49,845건 · 구성원 4 · digest 456ea615… · 봉인 2026-10-01 · "
                   "봉인 관문 통과 · 두 번째 빌드와 다섯 파일 바이트 같음 (전수메타데이터 06번)"},
+    "data/processed/pairs_main_v2": {
+        "status": "expected", "owner": "B",
+        "record": "본실험 페어 2 판 49,845건 · 구성원 4 · digest 9a77978e… · 봉인 2026-10-27 · "
+                  "봉인 관문 통과 · 두 번째 빌드와 다섯 파일 바이트 같음 "
+                  "(_workspace/seal/seal-20261027/receipts/S10_SEAL.json)"},
     # --- 파일럿 표본과 어블레이션 두 팔 (A). 새 경로 재생성 digest 가 기록값과 일치해 복원(32번 §1).
     #     `evidence` 는 근거 등급 — 기록이 64자 전체인지 8자 접두뿐인지가 다르다. 재생성이 아니라
     #     동일 바이트 복원이므로 60·61·76번과 채점 산출물이 인용하는 digest 가 그대로 유효하다.

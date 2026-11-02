@@ -3,7 +3,9 @@
 The state consumes one genuine generation callback per generated token.  It does
 not turn an already generated string into a stop receipt.  ``finish`` removes
 only padding appended *after* a recorded callback stop, retaining every raw ID.
-Only explicit v7 judge calls enable this stopping contract.
+Only explicit v7 and v8 judge calls enable this stopping contract. Both use the
+same first-object stop; the backend binds ``JSON_STOP_PROTOCOL`` as the mechanism
+and a v8 judge identity also names its contract ``JSON_STOP_PROTOCOL_V8``.
 """
 
 from __future__ import annotations
@@ -14,6 +16,8 @@ from typing import Any, Callable, Sequence
 
 JUDGE_MAX_NEW_TOKENS = 160
 JSON_STOP_PROTOCOL = "judge_json_object_v7"
+JSON_STOP_PROTOCOL_V8 = "judge_json_object_v8"
+CONTRACT_STOP_PROTOCOLS = {"v7": JSON_STOP_PROTOCOL, "v8": JSON_STOP_PROTOCOL_V8}
 
 
 class StopContractError(ValueError):

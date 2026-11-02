@@ -2,11 +2,12 @@
 
 from collections import Counter
 from copy import deepcopy
+import re
 
 import pytest
 
 from corpus.production import generation_policy as G
-from corpus.production.common import parse_json
+from corpus.production.common import canonical_bytes, parse_json
 from data.label_map import load_label_map
 
 
@@ -42,6 +43,24 @@ def sample_text(task):
     return f"{name} 1개가 영상 가운데에 표시되어 있다. 주석만으로는 결함의 모양과 크기를 알 수 없다."
 
 
+def split_v2_prompt(prompt):
+    separator = "\n주석은 다음 줄과 같다.\n"
+    assert prompt.count(separator) == 1
+    instruction, payload = prompt.split(separator)
+    assert payload == canonical_bytes(parse_json(payload)).decode("utf-8")
+    return instruction, payload
+
+
+def assert_symbol_free_instruction(prompt):
+    instruction, _ = split_v2_prompt(prompt)
+    fixed = instruction
+    for words in (G.OBSERVATION_FORBIDDEN_WORDS, G.OBSERVATION_ZONE_ALIASES):
+        fixed = fixed.replace(", ".join(words), " ")
+    for identifier in ("defects_by_zone", "observation_examples", "name", "zone"):
+        fixed = fixed.replace(identifier, " ")
+    assert re.fullmatch(r"[가-힣 ,.\n]*", fixed), sorted(set(re.sub(r"[가-힣 ,.\n]", "", fixed)))
+
+
 def test_normal_has_no_prompt_model_or_tokens():
     task = make_task()
     G.validate_v2_task(task)
@@ -71,7 +90,7 @@ def test_only_linebreak_boundaries_and_outer_whitespace_are_normalized(prefix, s
     assert G.normalize_observation("가  나\t다.\n\n라.") == "가  나\t다. 라."
 
 
-@pytest.mark.parametrize("foreign", ["缺陷", "，", "。", "；", "𠀀", "《"])
+@pytest.mark.parametrize("foreign", ["缺陷", "，", "。", "；", "𠀀", "《", "〈", "〉"])
 def test_han_and_chinese_punctuation_are_rejected_not_rewritten(foreign):
     task = make_task([("porosity", "가운데-가운데", 1)])
     raw = sample_text(task) + foreign
@@ -94,12 +113,50 @@ def test_grouped_evidence_is_zone_then_name_order_and_drops_only_legacy_forms():
     assert task["evidence"]["defects_by_zone"] == expected
     assert "limitation_forms" not in task["evidence"]
     assert len(task["evidence"]["defect_positions"]) == 5
-    instruction, payload = task["prompt"].rsplit("\n주석: ", 1)
+    instruction, payload = split_v2_prompt(task["prompt"])
     assert set(parse_json(payload)) == {"defect_counts_by_name", "defects_by_zone", "observation_examples"}
     assert "合成材質" not in task["prompt"]
     assert G.LIMITATION_FORMS[0] not in task["prompt"]
     for example in G.observation_examples():
         assert example["글"] in payload and example["글"] not in instruction
+
+
+def test_model_visible_generation_prompt_contains_no_forbidden_characters():
+    from corpus.production.infer import GENERATE_SYSTEM
+
+    # 출력 규칙을 약하게 만들어 지시문 충돌을 숨기지 않는다.
+    assert G._HAN_OR_CHINESE_PUNCT.findall("〈〉") == ["〈", "〉"]
+    assert not G._HAN_OR_CHINESE_PUNCT.search(GENERATE_SYSTEM)
+    for key in sorted(load_label_map().defect_types):
+        for where in sorted(G.ZONE_DISPLAY):
+            task = make_task([(key, where, 2)])
+            # 본문뿐 아니라 모델에 함께 들어가는 JSON과 합성 예시까지 검사한다.
+            forbidden = sorted(set(G._HAN_OR_CHINESE_PUNCT.findall(task["prompt"])))
+            assert forbidden == [], (key, where, forbidden)
+            assert_symbol_free_instruction(task["prompt"])
+            payload = parse_json(split_v2_prompt(task["prompt"])[1])
+            assert payload["observation_examples"] == G.observation_examples()
+
+
+@pytest.mark.parametrize("symbol", ["〈", "〉", '"', "-", ":", "·", "/", "(", ")"])
+def test_instruction_symbol_guard_rejects_reintroduced_symbol(symbol):
+    task = make_task([("porosity", "가운데-가운데", 1)])
+    with pytest.raises(AssertionError):
+        assert_symbol_free_instruction(symbol + task["prompt"])
+
+
+def test_new_prompt_boundary_preserves_canonical_payload_and_legacy_prompt():
+    task = make_task([(key, where, 1) for key, where in
+                      zip(sorted(load_label_map().defect_types), sorted(G.ZONE_DISPLAY))])
+    _, payload = split_v2_prompt(task["prompt"])
+    assert parse_json(payload) == {key: task["evidence"][key] for key in
+                                  ("defect_counts_by_name", "defects_by_zone", "observation_examples")}
+    assert "\n주석: " not in task["prompt"]
+    assert_symbol_free_instruction(task["prompt"])
+    legacy_evidence = G.build_image_evidence(task)
+    legacy = G.build_image_prompt(legacy_evidence)
+    assert legacy.rsplit("\n주석: ", 1)[1] == canonical_bytes(legacy_evidence).decode("utf-8")
+    assert "\n주석은 다음 줄과 같다.\n" not in legacy
 
 
 @pytest.mark.parametrize("index,groups", [
@@ -124,7 +181,7 @@ def test_normal_template_passes_actual_leak_check():
     assert leak_problems(G.render_generation_row(task)["text"], task) == []
 
 
-@pytest.mark.parametrize("kind,expected", [("empty", "obs_empty"), ("one", "obs_sentence_count"),
+@pytest.mark.parametrize("kind,expected", [("empty", "obs_empty"),
                                          ("six", "obs_sentence_count"), ("long", "obs_length"),
                                          ("no_period", "obs_sentence_end"), ("polite", "obs_sentence_end"),
                                          ("alias", "obs_zone_word"), ("zone_missing", "obs_zone_missing"),
@@ -134,7 +191,6 @@ def test_diagnostic_reasons_preserve_invalid_model_rows(kind, expected):
     task = make_task([("slag_inclusion", "가운데-가운데", 1)])
     raw = sample_text(task)
     if kind == "empty": raw = " \n "
-    elif kind == "one": raw = raw.split(". ")[0] + "."
     elif kind == "six": raw += " 확인할 수 없다." * 4
     elif kind == "long": raw += " " + "가" * 301 + "다."
     elif kind == "no_period": raw = raw[:-1]
@@ -202,6 +258,7 @@ def test_policy_links_fail_closed(change):
 
 
 def test_v4_current_identity_and_legacy_detection_are_separate():
+    assert G.is_v2_run(make_run())
     G.validate_v2_policy(make_run())
     assert not G.is_v2_run({"config": {"recipe": G.LEGACY_POLICY_VERSION,
                                       "generation_policy": {"version": G.LEGACY_POLICY_VERSION,
@@ -210,7 +267,145 @@ def test_v4_current_identity_and_legacy_detection_are_separate():
     assert identity["version"] == "image_report_regeneration_v4"
     assert identity["renderer"]["version"] == "image_report_render_v2"
     assert identity["renderer"]["normalization"] == "linebreak_flatten_strip_v1"
-    assert identity["observation"]["min_sentences"] == 2
+    assert identity["spec_sha256"] == "43f94d60e0697efeda54655a24b2c6716c7141a996d7cff15f9f7f1e595e2867"
+    assert identity["observation"]["version"] == "image_report_observation_v5"
+    assert identity["observation"]["min_sentences"] == 1
+    assert identity["observation"]["max_sentences"] == 5
+
+
+@pytest.mark.parametrize("sentence_count,expected", [(0, True), (1, False), (5, False), (6, True)])
+def test_observation_sentence_boundary_is_one_to_five(sentence_count, expected):
+    task = make_task([("porosity", "가운데-가운데", 1)])
+    name = load_label_map().defect_types["porosity"].name_ko
+    raw = "" if sentence_count == 0 else (
+        f"{name} 1개가 영상 가운데에 표시되어 있다." + " 확인할 수 없다." * (sentence_count - 1))
+    row = G.render_generation_row(task, backend(task, raw))
+    assert ("obs_sentence_count" in row["observation_problems"]) is expected
+    if sentence_count in (1, 5):
+        assert row["observation_problems"] == []
+    assert row["raw_text"] == raw
+    assert row["text"] == raw + " " + G.LIMITATION_FORMS[0]
+
+
+def test_two_sentences_are_recommended_and_slash_frame_is_removed():
+    task = make_task([("porosity", "가운데-가운데", 1)])
+    instruction, _ = split_v2_prompt(task["prompt"])
+    assert instruction.splitlines()[1] == (
+        "주석의 결함 이름과 개수와 칸을 한국어 문장으로 옮겨 쓴다. 한 문단으로 쓰고 줄을 바꾸지 않는다. 문장은 다섯 개까지 쓴다.")
+    assert instruction.splitlines()[2] == (
+        "가능하면 두 문장 이상으로 쓴다. 첫 문장에는 이름별 총수를 쓴다.")
+    assert "문장 꼴의 틀:" not in instruction
+    assert "/" not in instruction
+    assert "문장을 늘리지 않는다" not in instruction and "렌더러" not in instruction
+    assert "주석에 있는 칸을 하나도 빠뜨리지 않는다" in instruction
+    assert "한 칸의 개수와 이름 전체의 개수를 섞지 않는다" in instruction
+    assert "칸이 여럿이면 칸마다 그 칸의 개수를 붙인다." not in instruction
+    assert "개수로 문장을 끝내지 않는다. 칸과 개수를 쓴 뒤에도 있다 또는 표시되어 있다로 문장을 맺는다." in instruction
+    assert "칸 이름은 두 낱말을 다 쓰고 줄이지 않는다. 영상 가운데를 가운데로 쓰지 않는다." in instruction
+    assert task["evidence"]["observation_examples"] == G.observation_examples()
+
+
+@pytest.mark.parametrize("multi_zone", [False, True])
+def test_recommended_frame_output_passes_actual_leak_check(multi_zone):
+    from corpus.production.quality import leak_problems
+
+    groups = [("porosity", "위-왼쪽", 2)]
+    if multi_zone:
+        groups.append(("porosity", "가운데-가운데", 1))
+    task = make_task(groups)
+    name = load_label_map().defect_types["porosity"].name_ko
+    raw = (f"{name} 3개가 표시되어 있다. 위쪽 왼쪽에 2개, 영상 가운데에 1개가 있다."
+           if multi_zone else f"{name} 2개가 위쪽 왼쪽에 표시되어 있다.")
+    row = G.render_generation_row(task, backend(task, raw))
+    assert row["observation_problems"] == []
+    assert leak_problems(row["text"], task) == []
+
+
+def test_single_sentence_does_not_bypass_missing_zone_or_semantic_judgment():
+    task = make_task([("porosity", "위-가운데", 1), ("porosity", "가운데-가운데", 2)])
+    name = load_label_map().defect_types["porosity"].name_ko
+    complete = f"{name} 3개가 위쪽 가운데에 1개, 영상 가운데에 2개 표시되어 있다."
+    assert G.observation_problems(task, complete) == []
+    missing = f"{name} 3개가 영상 가운데에 표시되어 있다."
+    assert G.observation_problems(task, missing) == ["obs_zone_missing"]
+    # 구조 진단이 통과해도 개수 사실의 승인은 아니다. 수 대조는 판정 단계에 남긴다.
+    wrong_count = complete.replace("3개", "9개")
+    assert G.observation_problems(task, wrong_count) == []
+
+
+def test_old_two_sentence_contract_cannot_be_reused_under_new_identity(monkeypatch):
+    with monkeypatch.context() as context:
+        context.setattr(G, "OBSERVATION_MIN_SENTENCES", 2)
+        context.setattr(G, "OBSERVATION_VERSION", "image_report_observation_v2")
+        previous = make_run()
+    task = make_task([("porosity", "가운데-가운데", 1)])
+    task["prompt"] = task["prompt"].replace(
+        "한 문단으로 쓰고 줄을 바꾸지 않는다. 문장은 다섯 개까지 쓴다.",
+        "문장은 2개에서 5개까지, 한 문단으로 쓰고 줄을 바꾸지 않는다.")
+    with pytest.raises(G.RegenerationRefused, match="generation_policy_changed"):
+        G.validate_v2_policy(previous)
+    with pytest.raises(G.RegenerationRefused, match="generation_prompt"):
+        G.validate_v2_task(task)
+
+
+def test_multiple_zones_do_not_require_explicit_counts_per_zone():
+    from corpus.production.judge_policy import deterministic_reasons_v7
+
+    task = make_task([("porosity", "위-가운데", 1), ("porosity", "가운데-가운데", 2)])
+    name = load_label_map().defect_types["porosity"].name_ko
+    raw = f"{name} 3개가 위쪽 가운데와 영상 가운데에 표시되어 있다."
+    row = G.render_generation_row(task, backend(task, raw))
+    assert row["observation_problems"] == []
+    assert deterministic_reasons_v7(task, row["text"]) == []
+
+
+def test_observation_v3_identity_and_prompt_cannot_be_reused(monkeypatch):
+    with monkeypatch.context() as context:
+        context.setattr(G, "OBSERVATION_VERSION", "image_report_observation_v3")
+        context.setattr(G, "SPEC_SHA256", "a9422662d23334d37c58063f4279a4df8405ef056fdc9fd886907407bff8c465")
+        previous = make_run()
+    with pytest.raises(G.RegenerationRefused, match="generation_policy_changed"):
+        G.validate_v2_policy(previous)
+    task = make_task([("porosity", "가운데-가운데", 1)])
+    task["prompt"] = task["prompt"].replace("\n주석은 다음 줄과 같다.\n", "\n주석: ")
+    with pytest.raises(G.RegenerationRefused, match="generation_prompt"):
+        G.validate_v2_task(task)
+
+
+def test_observation_v4_identity_and_prompt_cannot_be_reused(monkeypatch):
+    with monkeypatch.context() as context:
+        context.setattr(G, "OBSERVATION_VERSION", "image_report_observation_v4")
+        context.setattr(G, "SPEC_SHA256", "dc50ddc05352746c8f18d05472bd010e69cb1c5909ea20cbb12819883476139c")
+        previous = make_run()
+    with pytest.raises(G.RegenerationRefused, match="generation_policy_changed"):
+        G.validate_v2_policy(previous)
+    task = make_task([("porosity", "가운데-가운데", 1)])
+    task["prompt"] = task["prompt"].replace(
+        "가능하면 두 문장 이상으로 쓴다. 첫 문장에는 이름별 총수를 쓴다.",
+        "가능하면 두 문장 이상으로 쓴다. 첫 문장에는 이름별 총수를, 다음 문장에는 칸마다의 개수를 쓴다.")
+    with pytest.raises(G.RegenerationRefused, match="generation_prompt"):
+        G.validate_v2_task(task)
+
+
+def test_b17b4_second_example_has_complete_predicates_and_three_zones():
+    labels = load_label_map().defect_types
+    crack, slag = labels["crack"].name_ko, labels["slag_inclusion"].name_ko
+    example = G.observation_examples()[1]
+    assert example == {"주석": [
+        {"zone": "위쪽 오른쪽", "name": crack, "count": 1},
+        {"zone": "아래쪽 가운데", "name": slag, "count": 1},
+        {"zone": "아래쪽 오른쪽", "name": slag, "count": 1}],
+        "글": f"{crack} 1개와 {slag} 2개가 표시되어 있다. {crack} 1개는 위쪽 오른쪽에 있다. "
+              f"{slag} 2개는 아래쪽 가운데에 1개, 아래쪽 오른쪽에 1개가 있다. "
+              "주석만으로는 결함의 모양과 크기를 알 수 없다."}
+    task = make_task([("crack", "위-오른쪽", 1), ("slag_inclusion", "아래-가운데", 1),
+                      ("slag_inclusion", "아래-오른쪽", 1)])
+    assert G.observation_problems(task, example["글"]) == []
+    assert "obs_sentence_end" in G.observation_problems(
+        task, example["글"].replace("1개가 있다.", "1개."))
+    center_task = make_task([("porosity", "가운데-가운데", 1)])
+    assert "obs_zone_missing" in G.observation_problems(
+        center_task, sample_text(center_task).replace("영상 가운데", "가운데"))
 
 
 def test_label_cache_is_content_bound_bounded_and_returns_detached_names(tmp_path, monkeypatch):
@@ -254,9 +449,9 @@ _FORBIDDEN_SUPPLEMENT = (
 @pytest.mark.parametrize("word", _FORBIDDEN_SUPPLEMENT)
 def test_forbidden_supplement_is_in_instruction_and_diagnostic(word):
     task = make_task([("porosity", "가운데-가운데", 1)])
-    instruction = task["prompt"].rsplit("\n주석: ", 1)[0]
-    forbidden_line = next(line for line in instruction.splitlines() if line.startswith("쓰지 않는 말: "))
-    assert word in forbidden_line.removeprefix("쓰지 않는 말: ").removesuffix(".").split(", ")
+    instruction, _ = split_v2_prompt(task["prompt"])
+    forbidden_line = next(line for line in instruction.splitlines() if line.endswith(" 같은 말은 쓰지 않는다."))
+    assert word in forbidden_line.removesuffix(" 같은 말은 쓰지 않는다.").split(", ")
     raw = sample_text(task) + f" {word}이라는 주장을 한다."
     assert G.observation_problems(task, raw) == ["obs_forbidden"]
     row = G.render_generation_row(task, backend(task, raw))

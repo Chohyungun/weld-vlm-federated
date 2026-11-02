@@ -485,12 +485,16 @@ def test_엄격의_평가_정답_뷰는_데이터_쪽_판독기에_묶여_있다
 
 def test_진입점은_평가_id_를_검사_없는_뷰로_읽지_않는다() -> None:
     """검사 없는 뷰(`read_annotations_view`)를 부르는 자리는 정답 함수 하나다. 그 함수에 주는 목록은 에코 목록과 리허설의 생성 목록 —
-    둘 다 `val` 이고 분할 대조(`check_list_split`)가 정답 읽기 전에 막는다. 엄격 경로는 단계 5(에코)까지만 간다."""
+    둘 다 `val` 이고 분할 대조(`check_list_split`)가 정답 읽기 전에 막는다. 엄격 표본 모드의 평가 정답은 엄격 판독기(`EVAL_VIEW`)로만
+    읽고, 그 이름을 부르는 자리는 `_gold_eval` 하나다(35번 §1)."""
     tree = ast.parse(Path(SU.__file__).read_text(encoding="utf-8"))
-    callers = [f.name for f in ast.walk(tree) if isinstance(f, ast.FunctionDef)
-               and any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "read_annotations_view"
-                       for n in ast.walk(f))]
-    assert callers == ["_gold"]
+
+    def callers(name: str) -> list[str]:
+        return [f.name for f in ast.walk(tree) if isinstance(f, ast.FunctionDef)
+                and any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == name for n in ast.walk(f))]
+
+    assert callers("read_annotations_view") == ["_gold"]
+    assert callers("EVAL_VIEW") == ["_gold_eval"]
 
 
 # ---------------------------------------------------------------- 에코 전용 — 학습 전 관문(시도로 세지 않는다)

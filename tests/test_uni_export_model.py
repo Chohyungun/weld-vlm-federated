@@ -49,10 +49,13 @@ class Proc(FakeProcessor):
 
 
 class GenModel:
-    """peft 모델을 감싸 정해진 토큰을 내는 `generate` 를 더한다 — 나머지 속성은 peft 모델로 넘긴다."""
+    """peft 모델을 감싸 정해진 토큰을 내는 `generate` 를 더한다 — 나머지 속성은 peft 모델로 넘긴다. 묶음(배치 차원 B)을 받으면 행 i 는
+    `scripts[i]`(없으면 `script`)를 내고, 먼저 끝난 행은 pad(0)로 채운다 — HF 묶음 생성의 꼴(한 행의 출력은 종전과 같다)."""
 
-    def __init__(self, m, tok: Tok, script: str, *, eos: bool = True, short: bool = False):
-        self.m, self.tok, self.script, self.eos, self.short = m, tok, script, eos, short
+    PAD = 0
+
+    def __init__(self, m, tok: Tok, script: str, *, eos: bool = True, short: bool = False, scripts=None):
+        self.m, self.tok, self.script, self.eos, self.short, self.scripts = m, tok, script, eos, short, scripts
         self.generation_config = SimpleNamespace(eos_token_id=EOS)
         self.calls: list[dict] = []
 
@@ -63,16 +66,25 @@ class GenModel:
         self.m.eval()
         return self
 
-    def generate(self, input_ids, max_new_tokens, **kw):
-        self.calls.append({"max_new_tokens": max_new_tokens, **{k: v for k, v in kw.items() if k != "image_grid_thw"}})
-        ids = self.tok.ids(self.script)[:max_new_tokens]
+    def _row(self, i: int, max_new_tokens: int) -> list[int]:
+        ids = self.tok.ids(self.scripts[i] if self.scripts is not None else self.script)[:max_new_tokens]
         if self.short:
             ids = ids[: max(1, max_new_tokens // 2)]
         elif self.eos and len(ids) < max_new_tokens:
             ids = ids + [EOS]
-        V = max(ids + [EOS]) + 1
-        scores = tuple(torch.nn.functional.one_hot(torch.tensor([i]), V).float() * 30.0 for i in ids)
-        return SimpleNamespace(sequences=torch.cat([input_ids, torch.tensor([ids])], dim=1), scores=scores)
+        return ids
+
+    def generate(self, input_ids, max_new_tokens, **kw):
+        n = int(input_ids.shape[0])
+        self.calls.append({"max_new_tokens": max_new_tokens, "batch": n,
+                           **{k: v for k, v in kw.items() if k != "image_grid_thw"}})
+        rows = [self._row(i, max_new_tokens) for i in range(n)]
+        length = max(len(r) for r in rows)
+        V = max([t for r in rows for t in r] + [EOS]) + 1
+        padded = [r + [self.PAD] * (length - len(r)) for r in rows]
+        scores = tuple(torch.nn.functional.one_hot(torch.tensor([p[j] for p in padded]), V).float() * 30.0
+                       for j in range(length))
+        return SimpleNamespace(sequences=torch.cat([input_ids, torch.tensor(padded)], dim=1), scores=scores)
 
 
 class Loader:
@@ -84,7 +96,7 @@ class Loader:
         m, _ = fake_loader(model_id, init_seed=7, revision=revision, processor_kwargs=processor_kwargs)
         proc = Proc(**dict(processor_kwargs or {}))
         self.model = GenModel(m, proc.tokenizer, self.kw.get("script", TARGET), eos=self.kw.get("eos", True),
-                              short=self.kw.get("short", False))
+                              short=self.kw.get("short", False), scripts=self.kw.get("scripts"))
         return self.model, proc
 
 
@@ -160,11 +172,12 @@ def test_한도에_닿으면_length_이고_종료_토큰도_한도도_아니면_
 @pytest.mark.parametrize(("over", "msg"), [
     ({"decoding": {"do_sample": True}}, "greedy"),
     ({"decoding": {"do_sample": False, "num_beams": 4}}, "greedy"),
-    ({"batch_size": 2}, "배치"),
+    ({"batch_size": 0}, "배치"),
+    ({"batch_size": 2, "padding_side": "right"}, "채움"),
     ({"mode": "echo"}, "모델 모드"),
     ({"adapter_path": None}, "어댑터 경로"),
 ])
-def test_greedy_한_번_배치_1_이_아니면_모델을_올리기_전에_거부한다(tmp_path, over, msg):
+def test_greedy_한_번이_아니거나_배치_꼴이_틀리면_모델을_올리기_전에_거부한다(tmp_path, over, msg):
     from vlm.export_model import load_model_generator
 
     adapter_npz(tmp_path / "adapter_last.npz")

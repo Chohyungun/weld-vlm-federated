@@ -43,19 +43,28 @@ EVIDENCE = {"audit": "AUDIT.json", "review": "REVIEW.json", "rights": "RIGHTS.js
 _FENCE = re.compile(r"```(?:json)?\s*(\{.*\})\s*```", re.DOTALL)
 #: 판정 출처(B 05h) — run_config: RUN.json 의 판정 칸으로 돈 첫 판정, separate: 판정 신원을 따로 둔 새 판정. 한 릴리스 안에서 섞지 않는다
 JUDGE_SOURCES = ("run_config", "separate")
-#: 판정 출력의 꼴(B 의 quality `parser_schema`) — 옛 네 키 · 구조화 v5 · v6 · v7. 칸이 없으면 옛 네 키(이전 집계).
+#: 판정 출력의 꼴(B 의 quality `parser_schema`) — 옛 네 키 · 구조화 v5 · v6 · v7 · v8. 칸이 없으면 옛 네 키(이전 집계).
 #: 새 판은 앞 판을 대체하지 않는다 — 판 표지로 갈리고, 한 꼴을 다른 파서로 다시 읽지 않는다(B 05l · 05m)
-JUDGE_SCHEMAS = ("legacy_four_keys", "judge_structured_v5", "judge_structured_v6", "judge_structured_v7")
+JUDGE_SCHEMAS = ("legacy_four_keys", "judge_structured_v5", "judge_structured_v6", "judge_structured_v7",
+                 "judge_structured_v8")
 #: 구조화 꼴 → B 의 파서(`quality` 의 이름). 파서 판은 `quality.JUDGE_PARSER_VERSIONS` 의 같은 짝에서 읽는다(R-11 · R-13) —
-#: v7 은 B 의 집계 v7 소비(`quality_v9`)와 함께 그 표에 들어 열렸다. 표에서 빠진 꼴은 `judge_parser` 로 닫힌다
+#: v7 은 B 의 집계 v7 소비(`quality_v9`)와 함께 그 표에 들어 열렸다. v8 도 집계의 v8 갈래와 함께 열린다. 표에서 빠진 꼴은
+#: `judge_parser` 로 닫힌다
 STRUCTURED_PARSERS = {"judge_structured_v5": "parse_judge_v5", "judge_structured_v6": "parse_judge_v6",
-                      "judge_structured_v7": "parse_judge_v7"}
+                      "judge_structured_v7": "parse_judge_v7", "judge_structured_v8": "parse_judge_v8"}
 #: 생성 v4(생성 정책 `image_report_regeneration_v4`)의 템플릿 행 — 정상 행은 모델을 부르지 않고 고정 글을 쓴다(B 17b 2-3).
-#: 그 행의 데이터셋 행 출처 `provenance.generate` 는 이 네 칸뿐이다(모델 · 계열 칸이 없다 — 06k 의 꼴, B 의 집계와 맞춘다)
-TEMPLATE_GENERATE_KEYS = frozenset({"backend", "generator", "shard_sha256", "text_sha256"})
-#: 판정 모델을 부르지 않는 행이 있을 수 있는 꼴 — v7 정상 행(B 05m · 05p). 그 행의 판정 칸은 '적용 안 됨' 꼴
+#: 그 행의 데이터셋 행 출처 `provenance.generate` 는 이 여섯 칸뿐이고 모델 칸 둘(`family` · `model_id`)은 null 이다 —
+#: B 품질 집계(`quality_v10`, `_provenance`)의 확정 꼴(§137 I-01 — 06k 의 네 칸 제안을 거두고 집계의 꼴에 맞춘다)
+TEMPLATE_GENERATE_KEYS = frozenset({"backend", "generator", "family", "model_id", "shard_sha256", "text_sha256"})
+
+
+def _template_provenance(stage_row: dict) -> dict:
+    """생성 v4 템플릿 행(샤드 행)이 데이터셋에 실어야 하는 생성 출처 — 행 검사와 실행 대조가 이 한 정의를 쓴다."""
+    return {"backend": "template", "generator": "template", "family": None, "model_id": None,
+            "shard_sha256": stage_row["_shard_sha256"], "text_sha256": _sha_bytes(stage_row["text"].encode("utf-8"))}
+#: 판정 모델을 부르지 않는 행이 있을 수 있는 꼴 — v7 · v8 정상 행(B 05m · 05p). 그 행의 판정 칸은 '적용 안 됨' 꼴
 #: `{"applicable": false, "identity_sha256": <판정 신원>}` 두 칸뿐이다(B 의 집계 v7 소비 `quality_v9` 가 확정한 꼴)
-MODEL_OPTIONAL_SCHEMAS = ("judge_structured_v7",)
+MODEL_OPTIONAL_SCHEMAS = ("judge_structured_v7", "judge_structured_v8")
 #: 구조화 판정의 행 출처에서 판정 샤드를 다시 읽은 값과 맞대는 칸(B 05k · 05j R-9 · 05l)
 STRUCTURED_FIELDS = ("schema", "parser", "answers", "flags", "format_normalized")
 #: 판정 신원 읽기에 넘기는 외부 기대 핀(Codex 최종 API) — 운영 원천은 하나 이상 필요하다
@@ -123,7 +132,12 @@ def _image_path_ok(value: Any) -> bool:
 
 
 def _verdict_keys(jschema: str, kind: str) -> tuple[str, ...]:
-    """행 판정값의 물음 키(B 05n R-14b) — v7 영상 행(결함 행)은 B 의 v7 결함 물음 넷(참 = 문제 없음), 그 밖은 옛 셋."""
+    """행 판정값의 물음 키(B 05n R-14b) — v7 영상 행(결함 행)은 B 의 v7 결함 물음 넷(참 = 문제 없음), v8 영상 행은 v8 의
+    두 키(같은 극성), 그 밖은 옛 셋."""
+    if jschema == "judge_structured_v8" and kind == "image_report":
+        from . import quality
+
+        return tuple(quality.JUDGE_V8_VERDICT_KEYS.values())
     if jschema == "judge_structured_v7" and kind == "image_report":
         from . import quality
 
@@ -172,8 +186,9 @@ def check_row(row: Any, audit: dict) -> dict:
     template = gen.get("backend") == "template"
     if template:
         # 생성 v4 의 정상 행 — 모델 없이 고정 글(06k). 템플릿 바이트 대조는 실행 대조(check_against_run)가 한다
-        _need(row["kind"] == "image_report" and set(gen) == TEMPLATE_GENERATE_KEYS and gen.get("generator") == "template",
-              "row_backend", f"{rid}: 템플릿 생성 출처는 영상 행의 네 칸({sorted(TEMPLATE_GENERATE_KEYS)})뿐이다")
+        _need(row["kind"] == "image_report" and set(gen) == TEMPLATE_GENERATE_KEYS and gen.get("generator") == "template"
+              and gen.get("family") is None and gen.get("model_id") is None, "row_backend",
+              f"{rid}: 템플릿 생성 출처는 영상 행의 여섯 칸({sorted(TEMPLATE_GENERATE_KEYS)})뿐이고 family · model_id 는 null 이다")
     _need((template or gen.get("backend") == "transformers") and (not applicable or judge.get("backend") == "transformers"),
           "row_backend", f"{rid}: _backend 가 transformers 가 아니다(시험용 출력은 릴리스 금지)")
     _need((template or bool(_family(gen.get("family"))))
@@ -638,9 +653,7 @@ def check_against_run(audit: dict, audit_dir: Path, rows: list[dict], texts: lis
                 continue
             p = prov[side]
             if side == "generate" and stage_row["_backend"] == "template":
-                _need(p == {"backend": "template", "generator": "template", "shard_sha256": stage_row["_shard_sha256"],
-                            "text_sha256": _sha_bytes(stage_row["text"].encode("utf-8"))},
-                      "provenance_mismatch", f"{rid}: 템플릿 생성 출처가 샤드와 다르다")
+                _need(p == _template_provenance(stage_row), "provenance_mismatch", f"{rid}: 템플릿 생성 출처가 샤드와 다르다")
                 continue
             _need(p.get("backend") == stage_row["_backend"] and p.get("shard_sha256") == stage_row["_shard_sha256"]
                   and p.get("text_sha256") == _sha_bytes(stage_row["text"].encode("utf-8"))

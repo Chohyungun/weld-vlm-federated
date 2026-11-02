@@ -1,0 +1,73 @@
+{
+ "artifacts": [
+  {
+   "hash_rule": "raw_sha256",
+   "path": "evaluation/vectors/narrative_v4_list_probes.v2.json",
+   "role": "checker_vectors",
+   "sha256": "e983a0098e8bc75a71e262cc89e1f49ec481c6f7b7dccd742699134c0f14aafe"
+  },
+  {
+   "hash_rule": "raw_sha256",
+   "path": "evaluation/vectors/narrative_v4_confirm_cases.v1.json",
+   "role": "confirmation_cases",
+   "sha256": "8111533cd5685287a60d57b5272840e1b33d78c463b0ac9d5ae5617b4c7d1820"
+  },
+  {
+   "hash_rule": "raw_sha256",
+   "path": "evaluation/vectors/narrative_b_regression.v1.json",
+   "role": "regression",
+   "sha256": "d75253aedf68747dd478d02fe7ba7cd8d15fc4dc446b17aaaa02d309593e04c6"
+  },
+  {
+   "hash_rule": "raw_sha256",
+   "path": "evaluation/vectors/narrative_v4_expectation_changes.v3.json",
+   "role": "expectation_changes",
+   "sha256": "29f8b7764b4b289ca988824dc0ba3aa75a0062a06da7557af7e8f88a5c96343f"
+  },
+  {
+   "hash_rule": "raw_sha256",
+   "path": "docs/dev_log/2026-10-20-설계복구/13b_검사기v4_회귀_2회_D.json",
+   "role": "regression_receipt",
+   "sha256": "32e66d60b46a5332e6f51f0e74503c5cd957e5e786617da158fcb9e24d535314"
+  },
+  {
+   "hash_rule": "raw_sha256",
+   "path": "docs/dev_log/2026-10-20-설계복구/10_검사기v4_미니스펙_D.md",
+   "role": "holes_source",
+   "sha256": "c996555937ee61120d4963d4ff56a9d1da2aa084f30711bd89528efdea038f81"
+  },
+  {
+   "hash_rule": "raw_sha256",
+   "path": "docs/dev_log/2026-10-20-설계복구/07_허용치표_부분B_미니스펙_D.md",
+   "role": "disposition",
+   "sha256": "d20462a2568a280f86ca70a9dbc845d47e8e2a9309d98948d57ee1aad801bf42"
+  },
+  {
+   "hash_rule": "raw_sha256",
+   "path": "docs/dev_log/2026-10-20-설계복구/13c_검사기v4_확인배치_D.json",
+   "role": "confirmation_output",
+   "sha256": "4382c492fa73593e3d60dc60c068515e5e8999713309f3061f8ce0e89cde65e0"
+  },
+  {
+   "hash_rule": "raw_sha256",
+   "path": "docs/dev_log/2026-10-20-설계복구/13f_확인배치_uncertain_분류_D.json",
+   "role": "uncertain_classification",
+   "sha256": "8095d3dc16848257360ff555dfed7873562470dae750001e610967a5d778728f"
+  }
+ ],
+ "decision": {
+  "commit": "af44b4719c4eecd73e257c543216a9459e58d2ef",
+  "path": "docs/의사결정로그.md",
+  "section": "2026-10-28 판 6 연결 결정 D1 ~ D6 확정(D7 보류)",
+  "sha256": "d96dd9c4f6c42375e396bb4d046992811719d2ff5f934cb4249d92c3cbe57d3a"
+ },
+ "disclosure": {
+  "comparison_round": 2,
+  "sample_previously_observed": true
+ },
+ "eval_sha256": "06db7b0cb37b2645bfdb758b0bafcdc16fe72a470f7fbea4200166f1d33a03cf",
+ "kind": "v6_link_sources",
+ "profile_id": "regime2_v4",
+ "registration_sha256": "6f85648df519db727c169c5fc046fc6fac32f33e2ff731b940790656903d0c6d",
+ "version": 1
+}

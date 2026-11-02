@@ -1,0 +1,1102 @@
+{
+ "kind": "narrative_b_regression_expectations",
+ "version": 1,
+ "status": "검사기 다음 판(v4) 구현 전에 고정한 B 회귀 기대(07 §3-3 의 2). 외부가 따로 쓰는 독립 확인 사례(07 §3-3 의 3)가 아니다. v4 구현은 이 묶음 밖이라 이 파일을 쓰는 시험은 꼴 · 출처 대조만 한다",
+ "sources": {
+  "spec_07": {
+   "path": "docs/dev_log/2026-10-20-설계복구/07_허용치표_부분B_미니스펙_D.md",
+   "commit": "f1ce519a538659f1bf4496343e0112d3b1bc9667",
+   "sha256": "abe838b5b21812bf05dbd29166434cd4a489da4fba2af677fb12d9379a2a813f"
+  },
+  "spec_08": {
+   "path": "docs/dev_log/2026-10-20-설계복구/08_허용치표_부분B_미니스펙_C.md",
+   "commit": "f1ce519a538659f1bf4496343e0112d3b1bc9667",
+   "sha256": "046575e62f2583a9eb532fee4d7620149ba3ff80d20c9cbc97166d54ceccd963"
+  },
+  "decision_09": {
+   "path": "docs/dev_log/2026-10-20-설계복구/09_부분B_면제꼴_런북_게이트_총괄_20261024.md",
+   "commit": "f1ce519a538659f1bf4496343e0112d3b1bc9667",
+   "sha256": "e01e4da4636638f060cc7c4f790f07e73e050a100dfa851757c27378cdc4fbf9"
+  },
+  "check_221": {
+   "path": "_workspace/2026-10-20-design-recovery/C08_SPEC_REVIEW_221.md(본체 체크아웃)",
+   "sha256": "e6f8d79a394fc37d879f93e6b73d40e4d8276fc01f795e2b2e9ac9544ca34806"
+  },
+  "builder": {
+   "path": "docs/dev_log/2026-10-20-설계복구/07f_사례고정_D.py",
+   "lf_sha256": "35a0d5f4aed0523d6afaf9cb797d0a9c1b26cfdba1380c39c9e4f1e31abe9c14"
+  },
+  "sections": "07 §3-2 · §3-3 · §16 · §20 · 08 §4 · §9-2 · 09 §6 Q3"
+ },
+ "decisions": "07 §20 의 Q1 ~ Q4(09 §2-1) · 09 §6 Q3 — 조건부 소개는 (라)가 아니고, 세부 표지 넷, 전제 누락 지표 없음, v1 꼴 앵커는 대응으로만",
+ "contract_sentences": {
+  "C1": "방사선투과 영상에서 {이름}(ISO 6520-1 코드 {코드}) {개수}개[, …]가 관찰된다.",
+  "C2": "{이름}에 현 허용치 표에서 대응되는 조항은 {조항} 이다.",
+  "C3a": "이 조항의 측정량은 {측정량}이고, 기준은 다음과 같다. {띠}( / {띠})*.",
+  "C3b": "이 조항의 기준은 다음과 같다. {띠}( / {띠})*.",
+  "C4": "이 조항에는 기계 표현으로 옮기지 못한 단서가 있어 위 기준만으로 합부를 결정하지 않는다.",
+  "C5": "합계길이는 군집이면 간격을 포함해 잰다는 조건이 있고, 이 자료는 그 간격을 재지 않는다.",
+  "C6": "종별이 섞이면 함께 견주는 결합 규칙이 있고, 이 자료는 그 결합을 계산하지 않는다.",
+  "C7": "종별을 가리기 어려우면 두 종별의 기준으로 각각 평가한다는 조건이 있고, 이 자료는 그 구별을 확인하지 않는다.",
+  "C8": "이 기준은 품질등급이 지정되지 않은 경우의 기준이고, 이 자료는 등급 지정 여부를 확인하지 않는다.",
+  "C9": "이 재질에 대응되는 조항이 현 허용치 표에 없어 대응 조항을 특정하지 않는다.",
+  "C10": "{이름}(ISO 6520-1 코드 {코드})[, …]에 대응되는 조항이 현 허용치 표에 없어 그 결함의 대응 조항을 특정하지 않는다.",
+  "C11": "모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+  "C12": "크기와 무관한 기준은 치수 정보가 필요 없지만, 이 자료는 그 기준의 실제 적용 전제를 확인하지 않고 판정 축을 조항 검색과 기준 서술로 한정해 합부 판정을 싣지 않는다.",
+  "C13": "방사선투과 영상에서 검출 한계 내 특기할 지시가 관찰되지 않는다. 인용할 허용치 조항이 없다."
+ },
+ "synthetic": {
+  "band": "두께 7.7 mm 이상 13.3 mm 미만: 1.9 mm 이하",
+  "numbers": [
+   "7.7",
+   "13.3",
+   "1.9",
+   "37"
+  ],
+  "note": "합성 수치 — 1 판 허용치 표의 수 어느 것과도 같지 않다(이 스크립트가 맞댔다)"
+ },
+ "positions": [
+  "단독",
+  "맨 앞",
+  "관찰 문장 뒤",
+  "맨 뒤",
+  "마지막 문장에 대조로 이은 뒤"
+ ],
+ "positions_meaning": "positions 가 참인 사례는 이 다섯 자리에 넣어도 기대가 같다(07 §3-2 — 196 · 199 와 같은 자리)",
+ "expect_keys": {
+  "kinds": "금지 주장 종류(가 ~ 마)의 집합",
+  "sublabels": "세부 표지(07 §3-2)의 집합",
+  "anchor": "기준 목록의 앵커로 읽히는가",
+  "list_allowed": "기준 목록이 허가되는가"
+ },
+ "cases": [
+  {
+   "id": "measure.include",
+   "expression": "측정량",
+   "category": "포함",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "text": "기공에 현 허용치 표에서 대응되는 조항은 KRA27-T15 이다. 이 조항의 측정량은 최대결함크기이고, 기준은 다음과 같다. 두께 7.7 mm 이상 13.3 mm 미만: 1.9 mm 이하.",
+   "expect": {
+    "kinds": [],
+    "sublabels": [],
+    "anchor": true,
+    "list_allowed": true
+   }
+  },
+  {
+   "id": "measure.missing_word",
+   "expression": "측정량",
+   "category": "누락",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "text": "기공에 현 허용치 표에서 대응되는 조항은 KRA27-T15 이다. 이 조항의 기준은 다음과 같다. 두께 7.7 mm 이상 13.3 mm 미만: 1.9 mm 이하.",
+   "expect": {
+    "kinds": [],
+    "sublabels": [],
+    "anchor": true,
+    "list_allowed": true
+   },
+   "why": "측정량 낱말은 모델 서술에 필수가 아니다(07 §3-2 기본안). 정답 서술의 '필수' 는 독립 대조기 N1 의 규칙이다"
+  },
+  {
+   "id": "measure.wrong",
+   "expression": "측정량",
+   "category": "단정",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "301"
+    ]
+   },
+   "text": "슬래그혼입에 현 허용치 표에서 대응되는 조항은 KRA27-T16 이다. 이 조항의 측정량은 최대결함크기이고, 기준은 다음과 같다. 두께 7.7 mm 이상 13.3 mm 미만: 1.9 mm 이하.",
+   "expect": {
+    "kinds": [
+     "가"
+    ],
+    "sublabels": [
+     "기준 오기(측정량)"
+    ],
+    "anchor": true,
+    "list_allowed": false
+   },
+   "why": "합계길이 조항(KRA27-T16)의 목록에 다른 측정량 낱말"
+  },
+  {
+   "id": "measure.negative",
+   "expression": "측정량",
+   "category": "음성",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "positions": true,
+   "text": "관찰된 지시의 길이와 크기는 화소 단위로만 보인다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   },
+   "why": "관찰 문장의 '길이' · '크기'(기준 목록 밖)"
+  },
+  {
+   "id": "cluster.include",
+   "expression": "합계길이 · 군집",
+   "category": "조건부 소개",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "301"
+    ]
+   },
+   "positions": true,
+   "text": "합계길이는 군집이면 간격을 포함해 잰다는 조건이 있고, 이 자료는 그 간격을 재지 않는다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   }
+  },
+  {
+   "id": "cluster.paraphrase",
+   "expression": "합계길이 · 군집",
+   "category": "조건부 소개",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "301"
+    ]
+   },
+   "positions": true,
+   "text": "군집이면 간격까지 포함해 합계길이를 잰다는 조건이 있으나, 이 자료는 간격을 재지 않는다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   }
+  },
+  {
+   "id": "cluster.assert_group",
+   "expression": "합계길이 · 군집",
+   "category": "단정",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "301"
+    ]
+   },
+   "positions": true,
+   "text": "두 결함의 간격이 충분히 짧아 한 군이다.",
+   "expect": {
+    "kinds": [
+     "다"
+    ],
+    "sublabels": [
+     "군집 · 간격 단정"
+    ]
+   }
+  },
+  {
+   "id": "cluster.assert_sum",
+   "expression": "합계길이 · 군집",
+   "category": "단정",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "301"
+    ]
+   },
+   "positions": true,
+   "text": "상자 길이를 더한 값이 합계길이다.",
+   "expect": {
+    "kinds": [
+     "다"
+    ],
+    "sublabels": [
+     "군집 · 간격 단정"
+    ]
+   }
+  },
+  {
+   "id": "cluster.assert_sum_mm",
+   "expression": "합계길이 · 군집",
+   "category": "단정",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "301"
+    ]
+   },
+   "positions": true,
+   "text": "상자 길이를 더한 값 1.9 mm 가 합계길이다.",
+   "expect": {
+    "kinds": [
+     "가",
+     "다"
+    ],
+    "sublabels": [
+     "군집 · 간격 단정"
+    ]
+   },
+   "why": "합산 값에 mm 가 붙으면 (가)도(07 §3-2)"
+  },
+  {
+   "id": "cluster.negative_px",
+   "expression": "합계길이 · 군집",
+   "category": "음성",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "301"
+    ]
+   },
+   "positions": true,
+   "text": "두 지시 사이가 37 px 이다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   },
+   "why": "화소 관찰값은 금지가 아니다"
+  },
+  {
+   "id": "cluster.negative_not_measured",
+   "expression": "합계길이 · 군집",
+   "category": "부정",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "301"
+    ]
+   },
+   "positions": true,
+   "text": "간격은 재지 않는다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   }
+  },
+  {
+   "id": "cluster.probe_spacing",
+   "expression": "합계길이 · 군집",
+   "category": "음성(머리 같은 흔한 낱말)",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "positions": true,
+   "text": "간격이 고른 기공이 보인다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   }
+  },
+  {
+   "id": "cluster.probe_place",
+   "expression": "합계길이 · 군집",
+   "category": "음성(머리 같은 흔한 낱말)",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "positions": true,
+   "text": "여러 군데에 지시가 보인다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   }
+  },
+  {
+   "id": "mixture.include",
+   "expression": "혼재",
+   "category": "조건부 소개",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011",
+     "301"
+    ]
+   },
+   "positions": true,
+   "text": "종별이 섞이면 함께 견주는 결합 규칙이 있고, 이 자료는 그 결합을 계산하지 않는다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   }
+  },
+  {
+   "id": "mixture.paraphrase",
+   "expression": "혼재",
+   "category": "조건부 소개",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011",
+     "301"
+    ]
+   },
+   "positions": true,
+   "text": "종별이 섞이면 결합 규칙으로 함께 견주어야 하지만, 이 자료는 그 결합을 계산하지 않는다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   }
+  },
+  {
+   "id": "mixture.assert_fail",
+   "expression": "혼재",
+   "category": "단정",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011",
+     "301"
+    ]
+   },
+   "positions": true,
+   "text": "혼재 기준을 넘어 불합격이다.",
+   "expect": {
+    "kinds": [
+     "나"
+    ],
+    "sublabels": []
+   }
+  },
+  {
+   "id": "mixture.assert_pass",
+   "expression": "혼재",
+   "category": "단정",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011",
+     "301"
+    ]
+   },
+   "positions": true,
+   "text": "혼재 규칙을 만족한다.",
+   "expect": {
+    "kinds": [
+     "나"
+    ],
+    "sublabels": []
+   }
+  },
+  {
+   "id": "mixture.observation",
+   "expression": "혼재",
+   "category": "음성",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011",
+     "301"
+    ]
+   },
+   "positions": true,
+   "text": "기공과 슬래그가 함께 보인다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   },
+   "why": "구조 코드에서 아는 사실의 관찰"
+  },
+  {
+   "id": "mixture.probe",
+   "expression": "혼재",
+   "category": "음성(머리 같은 흔한 낱말)",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "positions": true,
+   "text": "혼재된 배경 잡음이 보인다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   }
+  },
+  {
+   "id": "distinction.include",
+   "expression": "구별 곤란",
+   "category": "조건부 소개",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "positions": true,
+   "text": "종별을 가리기 어려우면 두 종별의 기준으로 각각 평가한다는 조건이 있고, 이 자료는 그 구별을 확인하지 않는다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   }
+  },
+  {
+   "id": "distinction.auxiliary_conditional",
+   "expression": "구별 곤란",
+   "category": "조건부 소개",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "positions": true,
+   "text": "종별을 가리기 어려우면 KRA27-T16 의 기준으로도 평가한다는 조건이 있다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   },
+   "why": "보조 조항의 명시적 조건부 소개는 (라)로 세지 않는다(Q1 조건부 수용)"
+  },
+  {
+   "id": "distinction.assert_auxiliary",
+   "expression": "구별 곤란",
+   "category": "단정",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "positions": true,
+   "text": "이 기공에는 KRA27-T16 도 적용된다.",
+   "expect": {
+    "kinds": [
+     "라"
+    ],
+    "sublabels": [
+     "조건부 대응의 단정"
+    ]
+   }
+  },
+  {
+   "id": "distinction.assert_unrelated",
+   "expression": "구별 곤란",
+   "category": "단정",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "positions": true,
+   "text": "이 기공에는 KRA27-3D 도 적용된다.",
+   "expect": {
+    "kinds": [
+     "라"
+    ],
+    "sublabels": []
+   },
+   "why": "표가 보조로 적지 않은 대응 — 지금 규칙대로 (라) 정답 밖"
+  },
+  {
+   "id": "distinction.observation",
+   "expression": "구별 곤란",
+   "category": "음성",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "positions": true,
+   "text": "구별이 어렵다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   },
+   "why": "관찰 자체"
+  },
+  {
+   "id": "premise.include",
+   "expression": "무등급 전제",
+   "category": "조건부 소개",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "positions": true,
+   "text": "이 기준은 품질등급이 지정되지 않은 경우의 기준이고, 이 자료는 등급 지정 여부를 확인하지 않는다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   }
+  },
+  {
+   "id": "premise.paraphrase",
+   "expression": "무등급 전제",
+   "category": "조건부 소개",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "positions": true,
+   "text": "이 기준은 품질등급이 지정되지 않은 경우에 쓰는 기준이며, 등급 지정 여부는 이 자료로 확인하지 않는다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   }
+  },
+  {
+   "id": "premise.assert_applies",
+   "expression": "무등급 전제",
+   "category": "단정",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "positions": true,
+   "text": "등급 정보가 없으므로 이 규정이 적용된다.",
+   "expect": {
+    "kinds": [
+     "다"
+    ],
+    "sublabels": [
+     "적용 전제 단정"
+    ]
+   }
+  },
+  {
+   "id": "premise.assert_ungraded",
+   "expression": "무등급 전제",
+   "category": "단정",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "positions": true,
+   "text": "무등급 용접부다.",
+   "expect": {
+    "kinds": [
+     "다"
+    ],
+    "sublabels": [
+     "적용 전제 단정"
+    ]
+   }
+  },
+  {
+   "id": "premise.assert_not_designated",
+   "expression": "무등급 전제",
+   "category": "단정",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "positions": true,
+   "text": "품질등급이 지정되지 않았다.",
+   "expect": {
+    "kinds": [
+     "다"
+    ],
+    "sublabels": [
+     "적용 전제 단정"
+    ]
+   }
+  },
+  {
+   "id": "premise.negation_knowledge",
+   "expression": "무등급 전제",
+   "category": "부정",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "positions": true,
+   "text": "등급이 지정됐는지는 이 자료로 알 수 없다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   },
+   "why": "앎의 부정"
+  },
+  {
+   "id": "premise.conditional",
+   "expression": "무등급 전제",
+   "category": "조건부 소개",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "positions": true,
+   "text": "품질등급이 지정되지 않은 경우라면 이 기준을 쓴다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   },
+   "why": "조건 꼴"
+  },
+  {
+   "id": "premise.probe_grade",
+   "expression": "무등급 전제",
+   "category": "음성(머리 같은 흔한 낱말)",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "positions": true,
+   "text": "필름의 등급 표시 글자는 판독하지 않는다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   }
+  },
+  {
+   "id": "premise.probe_premise",
+   "expression": "무등급 전제",
+   "category": "음성(머리 같은 흔한 낱말)",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "positions": true,
+   "text": "이 서술은 영상 관찰을 전제로 한다.",
+   "expect": {
+    "kinds": [],
+    "sublabels": []
+   }
+  },
+  {
+   "id": "correspondence.include",
+   "expression": "대응 조항 문구",
+   "category": "포함",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "text": "기공에 현 허용치 표에서 대응되는 조항은 KRA27-T15 이다. 이 조항의 측정량은 최대결함크기이고, 기준은 다음과 같다. 두께 7.7 mm 이상 13.3 mm 미만: 1.9 mm 이하.",
+   "expect": {
+    "kinds": [],
+    "sublabels": [],
+    "anchor": true,
+    "list_allowed": true
+   }
+  },
+  {
+   "id": "correspondence.v1_form",
+   "expression": "대응 조항 문구",
+   "category": "포함(1 판 꼴)",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "text": "기공에 적용되는 조항은 KRA27-T15 이다. 이 조항의 측정량은 최대결함크기이고, 기준은 다음과 같다. 두께 7.7 mm 이상 13.3 mm 미만: 1.9 mm 이하.",
+   "expect": {
+    "kinds": [],
+    "sublabels": [],
+    "anchor": true,
+    "list_allowed": true
+   },
+   "why": "v1 꼴 앵커도 등록상 대응 표현으로만 받는다(Q4 조건부 수용)"
+  },
+  {
+   "id": "correspondence.v1_form_with_premise_claim",
+   "expression": "대응 조항 문구",
+   "category": "단정",
+   "context": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "text": "기공에 적용되는 조항은 KRA27-T15 이고, 등급 정보가 없으므로 이 규정이 적용된다.",
+   "expect": {
+    "kinds": [
+     "다"
+    ],
+    "sublabels": [
+     "적용 전제 단정"
+    ]
+   },
+   "why": "같은 문장이 전제 충족을 단정하면 그 단정은 (다)로 그대로 센다 — 포괄 수락하지 않는다(Q4 의 조건)"
+  }
+ ],
+ "n7_seeds": {
+  "군집 · 합산": [
+   "두 결함의 간격이 … 짧아 한 군이다",
+   "상자 길이를 더한 값이 합계길이다"
+  ],
+  "혼재 결합": [
+   "혼재 기준을 넘어 불합격",
+   "혼재 규칙을 만족한다"
+  ],
+  "전제 충족": [
+   "등급 정보가 없으므로 이 규정이 적용된다",
+   "무등급 용접부다",
+   "품질등급이 지정되지 않았다"
+  ]
+ },
+ "n_items_meaning": "레코드마다 2 판 정답 서술의 문장 수(08 §4 의 붙는 규칙에서 낸 기대)와, 1 판 정답 서술을 2 판 표에 댈 때 어긋날 항목(N1 = C3a · N2 = C5 · N3 = C6 · N4 = C7 · N5 = C8 · N6 = C2 의 수가 0 보다 크면 참)",
+ "n_items": [
+  {
+   "record": {
+    "material": "ST",
+    "codes": [
+     "2011"
+    ]
+   },
+   "v2_sentence_counts": {
+    "C1": 1,
+    "C2": 1,
+    "C3a": 1,
+    "C3b": 0,
+    "C4": 1,
+    "C5": 0,
+    "C6": 0,
+    "C7": 1,
+    "C8": 1,
+    "C9": 0,
+    "C10": 0,
+    "C11": 1,
+    "C12": 0,
+    "C13": 0
+   },
+   "v1_mismatch": {
+    "N1": true,
+    "N2": false,
+    "N3": false,
+    "N4": true,
+    "N5": true,
+    "N6": true
+   },
+   "N7_v1_mismatch": "정하지 않았다 — 열린 질문(07e §8 의 1)"
+  },
+  {
+   "record": {
+    "material": "ST",
+    "codes": [
+     "301"
+    ]
+   },
+   "v2_sentence_counts": {
+    "C1": 1,
+    "C2": 1,
+    "C3a": 1,
+    "C3b": 0,
+    "C4": 1,
+    "C5": 1,
+    "C6": 0,
+    "C7": 1,
+    "C8": 1,
+    "C9": 0,
+    "C10": 0,
+    "C11": 1,
+    "C12": 0,
+    "C13": 0
+   },
+   "v1_mismatch": {
+    "N1": true,
+    "N2": true,
+    "N3": false,
+    "N4": true,
+    "N5": true,
+    "N6": true
+   },
+   "N7_v1_mismatch": "정하지 않았다 — 열린 질문(07e §8 의 1)"
+  },
+  {
+   "record": {
+    "material": "ST",
+    "codes": [
+     "2011",
+     "301"
+    ]
+   },
+   "v2_sentence_counts": {
+    "C1": 1,
+    "C2": 2,
+    "C3a": 2,
+    "C3b": 0,
+    "C4": 2,
+    "C5": 1,
+    "C6": 1,
+    "C7": 1,
+    "C8": 1,
+    "C9": 0,
+    "C10": 0,
+    "C11": 1,
+    "C12": 0,
+    "C13": 0
+   },
+   "v1_mismatch": {
+    "N1": true,
+    "N2": true,
+    "N3": true,
+    "N4": true,
+    "N5": true,
+    "N6": true
+   },
+   "N7_v1_mismatch": "정하지 않았다 — 열린 질문(07e §8 의 1)"
+  },
+  {
+   "record": {
+    "material": "ST",
+    "codes": [
+     "301",
+     "401"
+    ]
+   },
+   "v2_sentence_counts": {
+    "C1": 1,
+    "C2": 2,
+    "C3a": 2,
+    "C3b": 0,
+    "C4": 2,
+    "C5": 1,
+    "C6": 0,
+    "C7": 1,
+    "C8": 1,
+    "C9": 0,
+    "C10": 0,
+    "C11": 1,
+    "C12": 0,
+    "C13": 0
+   },
+   "v1_mismatch": {
+    "N1": true,
+    "N2": true,
+    "N3": false,
+    "N4": true,
+    "N5": true,
+    "N6": true
+   },
+   "N7_v1_mismatch": "정하지 않았다 — 열린 질문(07e §8 의 1)"
+  },
+  {
+   "record": {
+    "material": "ST",
+    "codes": [
+     "2011",
+     "100"
+    ]
+   },
+   "v2_sentence_counts": {
+    "C1": 1,
+    "C2": 2,
+    "C3a": 1,
+    "C3b": 1,
+    "C4": 1,
+    "C5": 0,
+    "C6": 0,
+    "C7": 1,
+    "C8": 1,
+    "C9": 0,
+    "C10": 0,
+    "C11": 1,
+    "C12": 1,
+    "C13": 0
+   },
+   "v1_mismatch": {
+    "N1": true,
+    "N2": false,
+    "N3": false,
+    "N4": true,
+    "N5": true,
+    "N6": true
+   },
+   "N7_v1_mismatch": "정하지 않았다 — 열린 질문(07e §8 의 1)"
+  },
+  {
+   "record": {
+    "material": "ST",
+    "codes": [
+     "100"
+    ]
+   },
+   "v2_sentence_counts": {
+    "C1": 1,
+    "C2": 1,
+    "C3a": 0,
+    "C3b": 1,
+    "C4": 0,
+    "C5": 0,
+    "C6": 0,
+    "C7": 0,
+    "C8": 1,
+    "C9": 0,
+    "C10": 0,
+    "C11": 0,
+    "C12": 1,
+    "C13": 0
+   },
+   "v1_mismatch": {
+    "N1": false,
+    "N2": false,
+    "N3": false,
+    "N4": false,
+    "N5": true,
+    "N6": true
+   },
+   "N7_v1_mismatch": "정하지 않았다 — 열린 질문(07e §8 의 1)"
+  },
+  {
+   "record": {
+    "material": "ST",
+    "codes": [
+     "2011",
+     "402"
+    ]
+   },
+   "v2_sentence_counts": {
+    "C1": 1,
+    "C2": 1,
+    "C3a": 1,
+    "C3b": 0,
+    "C4": 1,
+    "C5": 0,
+    "C6": 0,
+    "C7": 1,
+    "C8": 1,
+    "C9": 0,
+    "C10": 1,
+    "C11": 1,
+    "C12": 0,
+    "C13": 0
+   },
+   "v1_mismatch": {
+    "N1": true,
+    "N2": false,
+    "N3": false,
+    "N4": true,
+    "N5": true,
+    "N6": true
+   },
+   "N7_v1_mismatch": "정하지 않았다 — 열린 질문(07e §8 의 1)"
+  },
+  {
+   "record": {
+    "material": "ST",
+    "codes": [
+     "402"
+    ]
+   },
+   "v2_sentence_counts": {
+    "C1": 1,
+    "C2": 0,
+    "C3a": 0,
+    "C3b": 0,
+    "C4": 0,
+    "C5": 0,
+    "C6": 0,
+    "C7": 0,
+    "C8": 0,
+    "C9": 0,
+    "C10": 1,
+    "C11": 1,
+    "C12": 0,
+    "C13": 0
+   },
+   "v1_mismatch": {
+    "N1": false,
+    "N2": false,
+    "N3": false,
+    "N4": false,
+    "N5": false,
+    "N6": false
+   },
+   "N7_v1_mismatch": "정하지 않았다 — 열린 질문(07e §8 의 1)"
+  },
+  {
+   "record": {
+    "material": "AL",
+    "codes": [
+     "2011"
+    ]
+   },
+   "v2_sentence_counts": {
+    "C1": 1,
+    "C2": 0,
+    "C3a": 0,
+    "C3b": 0,
+    "C4": 0,
+    "C5": 0,
+    "C6": 0,
+    "C7": 0,
+    "C8": 0,
+    "C9": 1,
+    "C10": 0,
+    "C11": 1,
+    "C12": 0,
+    "C13": 0
+   },
+   "v1_mismatch": {
+    "N1": false,
+    "N2": false,
+    "N3": false,
+    "N4": false,
+    "N5": false,
+    "N6": false
+   },
+   "N7_v1_mismatch": "정하지 않았다 — 열린 질문(07e §8 의 1)"
+  },
+  {
+   "record": {
+    "material": "ST",
+    "codes": []
+   },
+   "v2_sentence_counts": {
+    "C1": 0,
+    "C2": 0,
+    "C3a": 0,
+    "C3b": 0,
+    "C4": 0,
+    "C5": 0,
+    "C6": 0,
+    "C7": 0,
+    "C8": 0,
+    "C9": 0,
+    "C10": 0,
+    "C11": 0,
+    "C12": 0,
+    "C13": 1
+   },
+   "v1_mismatch": {
+    "N1": false,
+    "N2": false,
+    "N3": false,
+    "N4": false,
+    "N5": false,
+    "N6": false
+   },
+   "N7_v1_mismatch": "정하지 않았다 — 열린 질문(07e §8 의 1)"
+  }
+ ],
+ "written_at_utc": "2026-10-24T06:43:23Z"
+}

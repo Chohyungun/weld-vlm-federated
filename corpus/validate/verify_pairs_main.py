@@ -12,6 +12,7 @@ eval 의 어노테이션은 색인에 넣지 않는다(개발규약 1-4).
 | E 상자·좌표 | 레코드의 결함 목록이 원천 어노테이션(유효 기하, `ann_id` 문자열 순)과 코드·상자·크기까지 같다. 경계 안, 좌표 규약 명시 |
 | F 격리·귀속·회계 | eval 과의 이미지·묶음 교차 0(직접 재집계), 참여자·분할·재질·경로·크기 = 매니페스트, counts·메타의 건수 = 재집계, 폐기 = 투입 − 채택 |
 | G 결정론·바이트 | 계약서의 해시 = 파일, CR 0, 레코드마다 키 순서 고정, 줄 = 재직렬화 |
+| H 판 · 신원 | 메타의 `limits_table.path` 로 판 등록부(`make_pairs_main.EDITIONS`)에서 판을 찾는다. 1 판 메타는 신원 칸이 없어야 하고, 2 판 메타는 `text_contract` · `identity`(표 두 칸 추출 · 로더 묶음 · 생성 경로 묶음 · 조건 표지)가 실제 파일에서 다시 낸 값과 같아야 한다 |
 
 관점 C(빌더를 import 하지 않는 독립 재구현)는 E 가 맡는다 — 이 스크립트는 빌더와 같은 트랙의 검사다.
 
@@ -90,7 +91,63 @@ def first_seen(codes):
     return out
 
 
+#: 2 판 메타 `identity` 의 칸 — 정확히 이 집합(C 08 2 판 §9-4).
+IDENTITY_KEYS = ("contract_version", "limits", "limits_loader", "generator", "conditions")
+
+
+def identity_limits_problem(meta: dict) -> str | None:
+    """I-02 공동 계약 — "`limits_table` 의 기존 `status` 를 보존한다. `identity.limits` 는 `{path, sha256}` 의 닫힌 객체이며, 기존
+    `limits_table` 에서 그 두 필드만 추출한 값과 같아야 한다." 맞으면 None, 어긋나면 사유."""
+    lt, ident = meta.get("limits_table"), meta.get("identity")
+    if not isinstance(lt, dict) or not isinstance(ident, dict):
+        return "limits_table · identity 가 객체가 아니다"
+    if ident.get("limits") != {"path": lt.get("path"), "sha256": lt.get("sha256")}:
+        return "identity.limits ≠ limits_table 에서 추출한 {path, sha256}"
+    return None
+
+
+def identity_failures(meta: dict, ed, *, code_root: Path = REPO) -> list[tuple[str, str]]:
+    """판과 메타의 신원 칸 — (적발 종류, 예) 목록. 1 판은 신원 칸이 없어야 하고 2 판은 실제 파일에서 다시 낸 값과 같아야 한다.
+
+    묶음 칸은 `files` 의 경로 목록부터 맞대고, 목록이 다르면 해시를 보지 않는다(D 07 §18-3 · 217 D-S02)."""
+    from corpus.generate import make_pairs_main as MM
+
+    out: list[tuple[str, str]] = []
+    if ed.text_contract is None:
+        extra = sorted(k for k in ("identity", "text_contract") if k in meta)
+        if extra:
+            out.append(("H_meta_identity_unexpected", f"1 판 메타에 2 판 칸이 있다: {extra}"))
+        return out
+    lt = meta.get("limits_table")
+    if not isinstance(lt, dict) or not isinstance(lt.get("status"), str) or not lt.get("status"):
+        out.append(("H_meta_limits_status_missing", "limits_table.status — 2 판 메타도 보존한다(221 I-02)"))
+    if meta.get("text_contract") != ed.text_contract:
+        out.append(("H_meta_text_contract", repr(meta.get("text_contract"))))
+    ident = meta.get("identity")
+    if not isinstance(ident, dict) or tuple(sorted(ident)) != tuple(sorted(IDENTITY_KEYS)):
+        out.append(("H_meta_identity_form", sorted(ident) if isinstance(ident, dict) else repr(ident)))
+        return out
+    if type(ident["contract_version"]) is not int or ident["contract_version"] != MM.IDENTITY_CONTRACT_VERSION:
+        out.append(("H_meta_identity_version", repr(ident["contract_version"])))   # 참 · 거짓 값은 받지 않는다
+    why = identity_limits_problem(meta)
+    if why is not None:
+        out.append(("H_meta_identity_limits", why))
+    for key, files in (("limits_loader", MM.LIMITS_LOADER_FILES), ("generator", MM.GENERATOR_FILES)):
+        got, want = ident[key], MM.lf_bundle(files, code_root)
+        if not isinstance(got, dict) or set(got) != set(want):
+            out.append(("H_meta_identity_bundle", f"{key}: 묶음 꼴이 아니다"))
+        elif [e.get("path") if isinstance(e, dict) else e for e in got["files"]] != [e["path"] for e in want["files"]]:
+            out.append(("H_meta_identity_bundle", f"{key}: 파일 목록이 다르다"))
+        elif got != want:
+            bad = [w["path"] for g, w in zip(got["files"], want["files"]) if g != w]
+            out.append(("H_meta_identity_bundle", f"{key}: 실제 파일과 다르다 {bad or ['묶음 sha · 규칙']}"))
+    if ident["conditions"] != {"in_table": True}:
+        out.append(("H_meta_identity_conditions", repr(ident["conditions"])))
+    return out
+
+
 def verify(build: Path, snap: Path = SNAP, root: Path = REPO) -> dict:
+    from corpus.generate import make_pairs_main as MM
     from corpus.generate import make_pairs_pilot as P
     from corpus.generate.counts_builder import CountsError, validate_counts
     from corpus.generate.run_cycle_corpus import defect_names
@@ -183,6 +240,17 @@ def verify(build: Path, snap: Path = SNAP, root: Path = REPO) -> dict:
         well_formed.append(d)
     counts = json.loads(raw["counts.json"], **strict)
     meta = json.loads(raw["PAIRS_META.json"], **strict)
+    # ---------------------------------------------------------------- H 판 · 신원
+    # 판은 메타의 `limits_table.path` 로 등록부에서 찾는다. 등록부에 없는 표를 가리키면 어느 계약으로 맞댈지 모른다 — 적발하고
+    # 아래 대조는 1 판 규칙으로 이어 간다(적발이 이미 봉인을 막는다).
+    ed_name = MM.edition_for_limits_path((meta.get("limits_table") or {}).get("path")
+                                         if isinstance(meta.get("limits_table"), dict) else None)
+    if ed_name is None:
+        fail("H_meta_edition_unknown", (meta.get("limits_table") or {}).get("path")
+             if isinstance(meta.get("limits_table"), dict) else meta.get("limits_table"))
+    ed = MM.EDITIONS[ed_name or "v1"]
+    for kind, what in identity_failures(meta, ed):
+        fail(kind, what)
     extra = sorted(x.name for x in build.iterdir() if x.name not in (*MEMBERS, "SNAPSHOT.sha256"))
     if extra:
         fail("G_extra_files", extra)                # 계약 밖 파일이 봉인 디렉터리에 같이 들어가면 안 된다
@@ -242,10 +310,10 @@ def verify(build: Path, snap: Path = SNAP, root: Path = REPO) -> dict:
     except CountsError as e:
         fail("F_counts_invalid", str(e))
     # 원천 해시 선언. 어긋난 counts 가 여기를 지나면 학습 착수 시점에야 죽는다.
-    for key, path in (("manifest_snapshot", snap / "manifest.csv"), ("limits_snapshot", P.LIMITS_CSV)):
+    for key, path in (("manifest_snapshot", snap / "manifest.csv"), ("limits_snapshot", ed.limits_csv)):
         if counts.get(key) != "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest():
             fail("F_counts_snapshot_hash", key)
-    want_limits = hashlib.sha256(P.LIMITS_CSV.read_bytes()).hexdigest()
+    want_limits = hashlib.sha256(ed.limits_csv.read_bytes()).hexdigest()
     declared = meta.get("limits_table", {}).get("sha256")
     if declared is None:
         # 필수 선언이 **없는 것**은 대조 못 함이 아니라 계약 위반이다(검토 §27-19).
@@ -300,8 +368,13 @@ def verify(build: Path, snap: Path = SNAP, root: Path = REPO) -> dict:
     # 원천 행에서 레코드를 **다시 조립해 직렬화 바이트**로 맞댄다 — 키 집합·키 순서·수의 표기·verdict_mode 가
     # 한 번에 닫힌다. (빌더를 부르지 않는 독립 재구현은 따로 있다 — 이 검사는 "파일이 지금 코드의 산출과 같은가" 다.)
     names_for_build = defect_names()
-    table = limits_loader.load_limits(str(P.LIMITS_CSV), pilot=True)
+    table = limits_loader.load_limits(str(ed.limits_csv), pilot=True)
     bases = {mat: P.clause_basis(table, mat) for mat in sorted({m["material"] for m in tv.values()})}
+    if ed.version == "v2":
+        from corpus.generate.pairs_text_v2 import augment_basis
+
+        bases = {mat: augment_basis(b, table, mat) for mat, b in bases.items()}
+    edition_kw = {} if ed.version == "v1" else {"edition": ed.version}     # 1 판 호출은 예전 꼴 그대로
     src_combo: Counter = Counter()
     for iid, m in tv.items():
         rows = sorted(anns.get(iid, []), key=lambda a: a["ann_id"])
@@ -325,7 +398,8 @@ def verify(build: Path, snap: Path = SNAP, root: Path = REPO) -> dict:
         if src is not None:
             row = dict(src, width_px=int(src["width_px"]), height_px=int(src["height_px"]),
                        has_defect=_truth(src["has_defect"]))
-            want, skipped = P.assemble_record(row, anns.get(iid, []), names_for_build, bases[src["material"]])
+            want, skipped = P.assemble_record(row, anns.get(iid, []), names_for_build, bases[src["material"]],
+                                              **edition_kw)
             if want is None or json.dumps(want, ensure_ascii=False) != json.dumps(r, ensure_ascii=False):
                 fail("E_record_differs_from_source", iid)
             if r.get(SKIPPED_KEY, 0) != skipped:
@@ -356,9 +430,9 @@ def verify(build: Path, snap: Path = SNAP, root: Path = REPO) -> dict:
             continue
         row = dict(src, width_px=int(src["width_px"]), height_px=int(src["height_px"]),
                    has_defect=_truth(src["has_defect"]))
-        rec2, _ = P.assemble_record(row, anns.get(iid, []), names_for_build, bases[src["material"]])
+        rec2, _ = P.assemble_record(row, anns.get(iid, []), names_for_build, bases[src["material"]], **edition_kw)
         want = ([P.NO_VALID_GEOMETRY] if rec2 is None else
-                P.check_pair(rec2, names_for_build, PairRules(table.rows, names_for_build),
+                P.check_pair(rec2, names_for_build, PairRules(table.rows, names_for_build, edition=ed.version),
                              load_defect_lexicon(), wh=(row["width_px"], row["height_px"])))
         if not want:
             # 다시 조립했더니 **통과하는 레코드**다. 폐기 대상이 아니므로 사유가 무엇이든 부당 폐기다.
@@ -368,7 +442,7 @@ def verify(build: Path, snap: Path = SNAP, root: Path = REPO) -> dict:
 
     # ---------------------------------------------------------------- A 게이트 재검 · D 정상
     names, lexicon = names_for_build, load_defect_lexicon()
-    rules = PairRules(table.rows, names)
+    rules = PairRules(table.rows, names, edition=ed.version)
     seen_criteria: dict = defaultdict(set)
     n_defect = n_normal = 0
     for r in recs:
@@ -397,6 +471,7 @@ def verify(build: Path, snap: Path = SNAP, root: Path = REPO) -> dict:
 
     return {
         "build": str(build).replace("\\", "/"),
+        "edition": ed_name,
         "snapshot_digest": digest,
         "n_records": len(recs), "n_defect": n_defect, "n_normal": n_normal, "n_discarded": len(discarded),
         "n_train_val_in_manifest": len(tv), "n_eval_images": len(eval_ids), "n_eval_groups": len(eval_groups),

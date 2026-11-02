@@ -182,10 +182,25 @@ def _independent(rep: dict, code: int | None) -> dict:
     return {"findings": findings, "limited": limited, "broken": broken}
 
 
-def check(build: Path, snap: Path, root: Path, out_dir: Path) -> dict:
-    from corpus.generate.make_pairs_pilot import LIMITS_CSV
+def limits_for_build(build: Path) -> tuple[str | None, Path | None, str | None]:
+    """빌드 메타의 `limits_table.path` → (판, 그 판의 표, 못 찾은 사유). 판 등록부를 읽는 주체는 이 호출자다 — 독립 대조기는
+    여기서 넘긴 `--limits` 를 직접 읽고 등록부를 읽지 않는다(C 08 2 판 §5-1 · 221 M-01)."""
+    from corpus.generate.make_pairs_main import EDITIONS, edition_for_limits_path
 
+    try:
+        meta = json.loads((Path(build) / "PAIRS_META.json").read_text(encoding="utf-8"))
+        rel = meta["limits_table"]["path"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return None, None, f"빌드 메타에서 표의 판을 읽지 못했다: {type(exc).__name__}"
+    name = edition_for_limits_path(rel)
+    if name is None:
+        return None, None, f"빌드 메타의 표 {rel!r} 가 판 등록부에 없다"
+    return name, EDITIONS[name].limits_csv, None
+
+
+def check(build: Path, snap: Path, root: Path, out_dir: Path) -> dict:
     results: list[dict] = []
+    edition, limits_csv, why = limits_for_build(build)
 
     # ── 1. 같은 트랙의 산출물 검사
     code, rep, err = _run(["-m", "corpus.validate.verify_pairs_main", "--build", str(build),
@@ -215,8 +230,11 @@ def check(build: Path, snap: Path, root: Path, out_dir: Path) -> dict:
     elif out_dir.exists():
         results.append(_check("pairs_independent", None,
                               broken=[f"산출 경로가 이미 있다: {_rel(out_dir)}. 새 이름을 준다 — 지우지 않는다"]))
+    elif limits_csv is None:
+        # 어느 판의 표로 맞댈지 모르면 대조를 시작하지 않는다 — 1 판 표로 내려가면 2 판 빌드를 옛 계약으로 받는다.
+        results.append(_check("pairs_independent", None, broken=[why]))
     else:
-        code, rep, err = _run([str(INDEPENDENT), "--manifest-dir", str(snap), "--limits", str(LIMITS_CSV),
+        code, rep, err = _run([str(INDEPENDENT), "--manifest-dir", str(snap), "--limits", str(limits_csv),
                                "--label-map", str(LABEL_MAP), "--pairs", str(build), "--out", str(out_dir)])
         # 대조기가 입력 계약 위반(`InputContractError` — 계약서의 파일별 해시·지문·구성원·줄 꼴이 어긋남)으로
         # 멈추면 `main()` 이 예외를 잡지 않아 표준 출력에 보고가 없고 종료 1 로 끝난다. 그 경우가 **이 갈래**다 —
@@ -241,6 +259,8 @@ def check(build: Path, snap: Path, root: Path, out_dir: Path) -> dict:
     return {
         # 최상위 경로도 감추는 함수를 지난다. `--snapshot` 기본값이 절대경로라 그대로 실렸다(m-7).
         "build": _rel(build), "snapshot": _rel(snap),
+        # 독립 대조기에 넘긴 표 — 판 등록부에서 찾은 값이다(빌드 메타의 `limits_table.path`).
+        "판": edition, "표": None if limits_csv is None else _rel(limits_csv),
         "검사": results,
         "봉인_가능": passed,
         "판정": "통과" if passed else ("불통과" if blocked else "대조 범위 제한"),

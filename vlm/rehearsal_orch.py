@@ -104,7 +104,8 @@ def expected_stages(plan: Any) -> list[str]:
     tf, ef = faults.get("train") or {}, faults.get("export") or {}
     out = ["lists", "register", "echo_export", "echo_score"]
     out += train_stage_names("uni_central", "uni_central" in tf)
-    out += [f"negative_{c}" for c in plan.get("negatives") or []]
+    if "uni_central" in tf:                        # 구판은 중앙 칸 학습 중단 뒤의 체크포인트로만 합성한다 — 없으면 건너뛴다
+        out += [f"negative_{c}" for c in plan.get("negatives") or []]
     out += ["overwrite_same_stamp", "overwrite_other_stamp"]
     out += export_stage_names("uni_central", len(ef.get("uni_central") or [None]))
     out += ["rerun_uni_central"]

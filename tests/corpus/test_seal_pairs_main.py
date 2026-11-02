@@ -75,6 +75,15 @@ NOT_COMPARED_INDEP = {"mismatch": {}, "blocking": {}, "not_compared": ["pairs.*"
 관문은 늘 `--pairs` 를 주므로 **나오면 안 되는 보고다.**"""
 
 
+V1_LIMITS, V2_LIMITS = "corpus/rules/limits_v0_pilot.csv", "corpus/rules/limits_v2_pilot.csv"
+
+
+def _meta(build, limits_rel) -> None:
+    """관문이 판을 찾는 자리 — 빌드 메타의 `limits_table.path` 만 둔다(나머지 칸은 검사기 대역의 보고가 맡는다)."""
+    build.mkdir(parents=True, exist_ok=True)
+    (build / "PAIRS_META.json").write_text(json.dumps({"limits_table": {"path": limits_rel}}), encoding="utf-8")
+
+
 @pytest.fixture()
 def gate(tmp_path, monkeypatch):
     """`_run` 을 가로채 보고를 대신 넣는다. 호출 인자를 남겨 두어 무엇을 주고 무엇을 안 줬는지 본다."""
@@ -88,6 +97,7 @@ def gate(tmp_path, monkeypatch):
     monkeypatch.setattr(S, "_run", fake_run)
     monkeypatch.setattr(S, "INDEPENDENT", tmp_path / "pairs_independent.py")
     (tmp_path / "pairs_independent.py").write_text("# 자리만 있으면 된다", encoding="utf-8")
+    _meta(tmp_path / "build", V1_LIMITS)
 
     def run(*answers, out=None):
         replies.clear()
@@ -112,6 +122,7 @@ def gate_exit(tmp_path, monkeypatch):
     monkeypatch.setattr(S, "_run", fake_run)
     monkeypatch.setattr(S, "INDEPENDENT", tmp_path / "pairs_independent.py")
     (tmp_path / "pairs_independent.py").write_text("# 자리만 있으면 된다", encoding="utf-8")
+    _meta(tmp_path / "build", V1_LIMITS)
 
     def run(*answers):
         replies.clear()

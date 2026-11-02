@@ -103,7 +103,13 @@ def _server_main(grid: Grid, context: Context) -> None:
         split_hash=str(cfg["split_hash"]),
     )
 
-    from fl.server_app import _cell_from_metrics, _save_round, _with_uni_observer
+    from fl.server_app import (
+        ROUND_TIMEOUT_MAX,
+        _cell_from_metrics,
+        _save_round,
+        _with_uni_observer,
+        start_rounds,
+    )
 
     on_round_end = make_round_recorder(
         accounting=accounting, atomic=atomic, timer=RoundTimer(),
@@ -132,11 +138,13 @@ def _server_main(grid: Grid, context: Context) -> None:
         **_cell_train_config(cell, cfg, out_dir),
     })
     try:
-        strategy.start(
+        start_rounds(                                  # 응답 대기 상한 — flwr 기본 3600 초가 아니다(server_app 과 같다)
+            strategy,
             grid=grid,
             initial_arrays=ArrayRecord(list(cfg["initial_arrays"])),
             num_rounds=num_rounds,
             train_config=train_cfg,
+            timeout=ROUND_TIMEOUT_MAX,
         )
     finally:
         # 요약 출력 등 학습 밖 단계가 죽어도 회계는 남아야 한다. 파일럿의 산출물은

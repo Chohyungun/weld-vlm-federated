@@ -6,7 +6,11 @@
   step 어댑터 · 재개 상태 · 소비한 행 목록 · meta 를 쓰고(meta 가 마지막 — 완료 표지), `stop=True` 면 `CheckStepReached` 로 멈춘다.
 - **epoch 중간 재개** — 재개 상태에 epoch · 그 epoch 순열의 다음 표본 커서 · 순열 지문 · 누적 스텝 · 누적 감독 토큰 · 최적화기 ·
   난수를 싣는다. 수치 궤적의 동치는 요구하지 않지만 **소비 행 수열 · 누적 스텝 · 누적 감독 토큰 · 비용 누적은 같아야 한다**(T13).
-- **원장**(`ecc_ledger.csv`) — 시작 · step · 재개 · 멈춤 · 비용 가드 줄. 비용 누적(`cum_wall_s`)은 앞 줄에서 이어 가고 재개로 줄지 않는다.
+- **원장**(`ecc_ledger.csv`) — 시작 · step · 재개 · 멈춤 · 완료 줄(학습이 쓰는 줄만). 비용 누적(`cum_wall_s`)은 앞 줄에서 이어 가고
+  재개로 줄지 않는다. 점검 export 의 도장이 이 파일 전체의 sha256 을 묶는다 — 학습이 멈춰 있는 동안 바뀌지 않아야 한다.
+- **비용 저널**(`ecc_budget.jsonl`) — 비용 가드 줄(`budget_ok` · `ecc_budget_exceeded`)만 덧붙인다(append-only). 공식 CLI 는
+  학습 시작 · 재개 · export 를 부를 때마다 비용을 다시 보므로, 그 줄이 원장에 들면 같은 체크포인트의 export 를 이어 받을 수
+  없게 된다(외부 검토 §137 I-04). 이 판 앞에 원장에 들어간 옛 비용 줄은 옮기거나 지우지 않고 `budget_rows` 가 함께 읽는다.
 - **비용 가드**(`budget_check`) — 다음 일을 시작하기 전에 `쓴 시간 + 다음 일의 예상` 이 상한을 넘으면 시작하지 않는다. 상한의
   정본은 평가 쪽 규칙 파일의 `limits`(상한 · 단가 · 계수)이고 실행 인자는 그보다 좁히기만 한다 — 평가 쪽 `effective_limits` 를
   부른다. 금액은 시간 × 단가 × 계수다. 쓴 시간은 점검 원장의 누적 처리 시간보다 작을 수 없다. 단가를 코드 기본값 · 실행 인자로 두지 않는다.
@@ -43,6 +47,8 @@ import numpy as np
 
 __all__ = [
     "ATTEMPTS_FILE",
+    "BUDGET_EVENTS",
+    "BUDGET_FILE",
     "ECC_PARENT",
     "EVAL_SIDE",
     "LEDGER_FILE",
@@ -53,20 +59,28 @@ __all__ = [
     "ROOT_RE",
     "RULE_PATH",
     "STEP_EXIT",
+    "WAIVER_FIELDS",
+    "WAIVER_KEY_FILE",
+    "WAIVER_RECIPES",
     "CheckStepReached",
     "CheckStop",
     "EccRefused",
     "accept_permit",
     "action_for",
+    "append_budget",
     "append_ledger",
     "attempts_started",
     "budget_check",
+    "budget_rows",
+    "check_a3_substitute",
     "check_permit",
+    "check_waiver",
     "consumed_ids",
     "cum_wall_s",
     "effective_limits",
     "epoch_order",
     "identity_sha256",
+    "is_a3_substitute_file",
     "ledger_rows",
     "load_check_rules",
     "load_step_state",
@@ -84,6 +98,9 @@ ROOT_RE = re.compile(r"ecc-[0-9]{8}T[0-9]{6}")
 #: 점검 step 도달의 종료 코드(11번 §3-2).
 STEP_EXIT = 4
 LEDGER_FILE = "ecc_ledger.csv"
+#: 비용 가드 줄의 저널(append-only JSON 줄) — 원장과 같은 칸 폴더. 원장에는 학습 줄만 쓴다(§137 I-04).
+BUDGET_FILE = "ecc_budget.jsonl"
+BUDGET_EVENTS = ("budget_ok", "ecc_budget_exceeded")
 ATTEMPTS_FILE = "ecc_attempts.jsonl"
 #: 점검 루트의 준비 기록(`scripts/main_uni.py ecc-prepare`) — 시도 수를 세는 단위다.
 PREPARE_FILE = "ECC_PREPARE.json"
@@ -95,6 +112,14 @@ EVAL_SIDE = "evaluation.early_coord_check"
 PERMIT_KEY_FILE = "ECC_PERMIT_KEY.json"
 PERMIT_KEY_FIELDS = ("permit_sha256", "check_run_id", "seed", "pin_sha256", "start_adapter_digest",
                      "rules_sha256", "attempt", "ecc_root", "accepted_at")
+#: 착수 허가를 사용자 결정으로 비운 기록(1017a) — 처음 받은 면제 파일의 sha256 과 그때의 착수 고정 · 시드 · 출발 어댑터. 덮지 않는다.
+WAIVER_KEY_FILE = "ECC_PERMIT_WAIVER_KEY.json"
+#: 면제 파일(총괄이 쓰는 JSON)의 칸 — 정확히 이 다섯이다. `step100_geometry_sha256` 은 산출이 아직 없으면 null 이다.
+WAIVER_FIELDS = ("decision", "decision_log_section", "model_free_admission_sha256", "step100_geometry_sha256",
+                 "decided_at")
+#: 다섯 칸 꼴 면제를 받는 학습 레시피 — 1 차뿐이다(지시 1022c, 외부 검토 200 C-01). 그 꼴에는 승인 대상 착수 고정이 없다.
+#: 새 체제의 면제 꼴(승인 대상 착수 고정 sha256 칸)은 사용자 결정 뒤 별도 지시 — 그때까지 새 체제는 착수 허가(통과 파일)만 받는다.
+WAIVER_RECIPES = ("json_only",)
 CLOCK_FILE = "step_clock.csv"
 LEDGER_FIELDS = ("at", "event", "step", "epoch", "cursor", "optimizer_steps", "supervised_tokens", "consumed_rows",
                  "consumed_sha256", "adapter_sha256", "cum_wall_s", "detail")
@@ -206,6 +231,82 @@ def append_ledger(out_dir: Path, row: Mapping[str, Any]) -> None:
         os.fsync(fh.fileno())
 
 
+def _budget_row_problem(row: Any) -> str | None:
+    """비용 저널 한 줄의 꼴 — 쓰는 쪽(`append_budget`)과 읽는 쪽(`budget_rows`)이 같은 검사를 쓴다(쓰는 쪽이 받은 줄을
+    읽는 쪽이 영구히 거부하는 일이 없게)."""
+    import math
+
+    if not isinstance(row, Mapping):
+        return "사전이 아니다"
+    if row.get("event") not in BUDGET_EVENTS:
+        return f"줄 종류가 비용 가드가 아니다: {row.get('event')!r}"
+    at = row.get("at")
+    if isinstance(at, bool) or not isinstance(at, (int, float)) or not math.isfinite(at):
+        return f"at 이 유한 실수가 아니다: {at!r}"
+    if not isinstance(row.get("detail"), Mapping):
+        return "detail 이 사전이 아니다"
+    return None
+
+
+def append_budget(out_dir: Path, row: Mapping[str, Any]) -> None:
+    """비용 저널에 한 줄 — 정규 JSON 한 줄을 한 번에 쓰고 fsync 한다. 완결된 줄은 고치지 않는다.
+
+    파일이 줄바꿈 없이 끝나면(쓰다 죽은 꼬리) 그 꼬리 바이트를 `ecc_budget.truncated-<완결 길이>.bin` 에 그대로 남기고
+    잘라 낸 뒤 덧붙인다 — export writer 의 찢긴 꼬리와 같은 방식이다. 꼬리에 바로 이어 쓰면 두 줄이 한 줄로 붙어 저널 전체를
+    읽을 수 없게 된다(§137 반영의 적대 검증)."""
+    bad = _budget_row_problem(row)
+    if bad:
+        raise EccRefused("ecc_budget_row", f"비용 저널에 쓸 줄의 꼴이 아니다 — {bad}")
+    p = Path(out_dir) / BUDGET_FILE
+    line = json.dumps(dict(row), ensure_ascii=False, sort_keys=True).encode("utf-8") + b"\n"
+    if p.exists():
+        raw = p.read_bytes()
+        cut = raw.rfind(b"\n") + 1
+        if cut != len(raw):                                         # 쓰다 죽은 꼬리
+            side = p.with_name(f"{p.stem}.truncated-{cut}.bin")
+            with side.open("xb") as fh:                             # 같은 자리에서 두 번 찢기면 덮지 않고 멈춘다
+                fh.write(raw[cut:])
+                fh.flush()
+                os.fsync(fh.fileno())
+            with p.open("r+b") as fh:
+                fh.truncate(cut)
+                fh.flush()
+                os.fsync(fh.fileno())
+    with p.open("ab") as fh:
+        fh.write(line)
+        fh.flush()
+        os.fsync(fh.fileno())
+
+
+def budget_rows(out_dir: Path) -> list[dict[str, Any]]:
+    """비용 가드 줄 — 옛 원장의 비용 줄(이 판 앞) 다음에 저널의 줄. 줄마다 `{"at", "event", "detail"(사전)}`.
+
+    저널의 마지막 줄이 줄바꿈 없이 끝났으면(쓰다 죽은 꼬리) 세지 않는다. 그 밖의 깨진 줄은 거부한다."""
+    out: list[dict[str, Any]] = []
+    for r in ledger_rows(out_dir):
+        if r.get("event") in BUDGET_EVENTS:
+            out.append({"at": float(r["at"]), "event": r["event"], "detail": json.loads(r["detail"] or "{}"),
+                        "source": LEDGER_FILE})
+    p = Path(out_dir) / BUDGET_FILE
+    if p.exists():
+        raw = p.read_bytes()
+        lines = raw.split(b"\n")
+        if lines and lines[-1] == b"":
+            lines = lines[:-1]
+        elif lines:
+            lines = lines[:-1]                                     # 줄바꿈 없는 꼬리 — 쓰다 죽은 줄
+        for i, line in enumerate(lines, 1):
+            try:
+                row = json.loads(line.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                raise EccRefused("ecc_budget_journal", f"비용 저널 {i} 째 줄을 읽지 못한다") from None
+            bad = _budget_row_problem(row)
+            if bad:
+                raise EccRefused("ecc_budget_journal", f"비용 저널 {i} 째 줄의 꼴이 아니다 — {bad}")
+            out.append({**row, "source": BUDGET_FILE})
+    return out
+
+
 def ledger_rows(out_dir: Path) -> list[dict[str, str]]:
     p = Path(out_dir) / LEDGER_FILE
     if not p.exists():
@@ -307,11 +408,13 @@ def effective_limits(rules: Any, *, max_hours: float | None = None, max_won: flo
 def budget_check(out_dir: Path, *, spent_hours: float, next_hours: float, max_hours: float | None,
                  max_won: float | None, won_per_hour: float, what: str,
                  price_detail: Mapping[str, Any] | None = None) -> None:
-    """다음 일(`what` — 재개 · export)을 시작하기 전. 넘으면 원장에 세 수를 적고 `EccRefused("ecc_budget_exceeded")`.
+    """다음 일(`what` — 재개 · export)을 시작하기 전. 넘으면 비용 저널에 세 수를 적고 `EccRefused("ecc_budget_exceeded")`.
+
+    지나도 저널에 한 줄(`budget_ok`)을 남긴다. 점검 원장(`ecc_ledger.csv`)에는 쓰지 않는다 — 원장은 export 도장이 묶는다(§137 I-04).
 
     쓴 시간(`spent_hours`)은 운영자가 준다(인스턴스가 켜져 있던 시간). 점검 원장의 누적 처리 시간보다 작으면 받지 않는다(20b 의 m-3).
     `won_per_hour` 는 평가 쪽 `effective_limits` 의 `cost_krw_of_hour`(단가 × 계수)다 — 기본값이 없다(20b 의 I-2).
-    `price_detail`(단가 · 계수 · 출처)은 원장 줄에 함께 적는다.
+    `price_detail`(단가 · 계수 · 출처)은 비용 저널의 줄에 함께 적는다.
     """
     if won_per_hour is None or not _finite(won_per_hour, positive=True):
         raise EccRefused("ecc_rate_missing", "시간당 금액 단가가 없거나 유한 양수가 아니다 — 규칙 파일의 limits 에서 온다")
@@ -331,11 +434,9 @@ def budget_check(out_dir: Path, *, spent_hours: float, next_hours: float, max_ho
     detail = {"what": what, "spent_hours": round(float(spent_hours), 4), "next_hours": round(float(next_hours), 4),
               "max_hours": max_hours, "max_won": max_won, "won_per_hour": won_per_hour, **dict(price_detail or {})}
     if over_h or over_w:
-        append_ledger(out_dir, {"at": time.time(), "event": "ecc_budget_exceeded",
-                                "detail": json.dumps(detail, ensure_ascii=False, sort_keys=True)})
+        append_budget(out_dir, {"at": time.time(), "event": "ecc_budget_exceeded", "detail": detail})
         raise EccRefused("ecc_budget_exceeded", f"{what}: 쓴 {spent_hours:.3f} h + 예상 {next_hours:.3f} h 가 상한을 넘는다")
-    append_ledger(out_dir, {"at": time.time(), "event": "budget_ok",
-                            "detail": json.dumps(detail, ensure_ascii=False, sort_keys=True)})
+    append_budget(out_dir, {"at": time.time(), "event": "budget_ok", "detail": detail})
 
 
 def _finite(v: Any, *, positive: bool) -> bool:
@@ -564,6 +665,146 @@ def read_permit_key(seed_dir: Path) -> dict[str, Any]:
     return key
 
 
+def _hex64(v: Any) -> bool:
+    return isinstance(v, str) and len(v) == 64 and all(c in "0123456789abcdef" for c in v)
+
+
+def check_waiver(waiver_path: Path, *, seed_dir: Path, permit_path: Path | None, pin_sha256: str, seed: int,
+                 start_adapter_digest: str, recipe: str) -> dict[str, Any]:
+    """착수 허가(점검 통과 파일)를 **사용자 결정으로 비운다**(1017a) — 본 칸의 시작 · 재개마다 부른다.
+
+    본다:
+    - 학습 레시피가 `WAIVER_RECIPES`(1 차) 밖이면 무엇보다 먼저 거부한다 — 면제 파일을 읽거나 키 기록을 만들기 전이다(지시 1022c,
+      외부 검토 200 C-01). 다섯 칸 꼴에는 승인 대상 착수 고정이 없어, 새 체제의 새 시드 폴더에 처음 주면 과거 결정이 새 착수 고정에
+      결속되기 때문이다. 새 체제의 면제 꼴은 사용자 결정 뒤 별도 지시다.
+    - 허가와 면제를 함께 받지 않는다 — 시드 폴더에 통과 파일 사본이나 허가 키(`ECC_PERMIT_KEY.json`)가 있으면 거부한다.
+    - 면제 파일은 칸 다섯(`WAIVER_FIELDS`)이 정확히 있는 JSON 객체다 — 결정 문구 · 의사결정로그 절 제목(비지 않은 문자열),
+      모델 없는 통과 산출의 sha256(16 진 64 자리), step 100 기하 판정 산출의 sha256(16 진 64 자리 또는 null), 시각(ISO 8601).
+    - 처음 받은 때 시드 폴더에 키 기록(`WAIVER_KEY_FILE` — 면제 파일 sha256 · 착수 고정 · 시드 번호 · 출발 어댑터)을 원자적으로
+      한 번 쓴다(동시에 켜진 칸들이 겨뤄도 하나만 쓴다). 그 뒤에는 지금 값이 그 기록과 같아야 한다 — 면제 파일 바이트가 바뀌면 거부.
+
+    돌려주는 값: `{"waiver_sha256", "summary"}`. 학습 신원 · 등록 바이트는 바꾸지 않는다(ECC 는 신원 밖). 어긋나면 `EccRefused`.
+    """
+    import os
+    import tempfile
+    from datetime import datetime
+
+    if recipe not in WAIVER_RECIPES:
+        raise EccRefused("ecc_waiver_regime", f"학습 레시피 {recipe!r} 의 착수 고정은 면제를 받지 않는다 — 다섯 칸 꼴 면제는 1 차 체제"
+                                              f"({list(WAIVER_RECIPES)})만이다. 새 체제는 착수 허가(통과 파일)를 받는다(지시 1022c)")
+    seed_dir = Path(seed_dir)
+    if (permit_path is not None and Path(permit_path).exists()) or (seed_dir / PERMIT_KEY_FILE).exists():
+        raise EccRefused("ecc_permit_and_waiver", "착수 허가(통과 파일 · 키 기록)와 면제 파일을 함께 받지 않는다 — 하나만 준다")
+    p = Path(waiver_path)
+    if not p.is_file():
+        raise EccRefused("ecc_waiver_missing", f"착수 허가 면제 파일이 없다: {p.name}")
+    raw = p.read_bytes()
+    try:
+        body = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        body = None
+    if not isinstance(body, dict) or set(body) != set(WAIVER_FIELDS):
+        got = sorted(body) if isinstance(body, dict) else []
+        raise EccRefused("ecc_waiver_form", f"면제 파일의 칸이 {list(WAIVER_FIELDS)} 가 아니다 — 받은 칸 {got}")
+    bad = [k for k in ("decision", "decision_log_section") if not (isinstance(body[k], str) and body[k].strip())]
+    bad += [] if _hex64(body["model_free_admission_sha256"]) else ["model_free_admission_sha256"]
+    step = body["step100_geometry_sha256"]
+    bad += [] if step is None or _hex64(step) else ["step100_geometry_sha256"]
+    try:
+        datetime.fromisoformat(str(body["decided_at"]))
+    except ValueError:
+        bad.append("decided_at")
+    if bad:
+        raise EccRefused("ecc_waiver_form", f"면제 파일의 칸 값이 틀렸다: {bad}")
+    sha = hashlib.sha256(raw).hexdigest()
+    rec = {"waiver_sha256": sha, "seed": int(seed), "pin_sha256": pin_sha256, "start_adapter_digest": start_adapter_digest}
+    key = seed_dir / WAIVER_KEY_FILE
+    if not key.exists():
+        seed_dir.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=".waiver_key.", dir=seed_dir)
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write((json.dumps(rec, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8"))
+                fh.flush()
+                os.fsync(fh.fileno())
+            try:
+                os.link(tmp, key)                       # 있으면 FileExistsError — 덮지 않고 아래에서 맞댄다
+            except FileExistsError:
+                pass
+        finally:
+            Path(tmp).unlink(missing_ok=True)
+    got = json.loads(key.read_text(encoding="utf-8"))
+    differ = sorted(k for k in set(rec) | set(got) if rec.get(k) != got.get(k))
+    if differ:
+        raise EccRefused("ecc_waiver_changed", f"면제의 키 기록과 지금 값이 다르다 — {differ}(면제 파일 · 착수 고정 · 시드 · 출발 어댑터)")
+    summary = {k: body[k] for k in ("decision_log_section", "model_free_admission_sha256", "step100_geometry_sha256",
+                                    "decided_at")}
+    return {"waiver_sha256": sha, "summary": summary}
+
+
+def check_a3_substitute(approval_path: Path, *, seed_dir: Path, permit_path: Path | None, pin_sha256: str, seed: int,
+                        start_adapter_digest: str, repo: Path) -> dict[str, Any]:
+    """2 차 체제의 조기 좌표 점검을 A3 증거로 대신하는 승인서(D7, 사용자 결정 10-31)를 본 칸의 시작 · 재개마다 본다.
+
+    - 허가(통과 파일 · `ECC_PERMIT_KEY.json`)나 1 차 면제 키(`WAIVER_KEY_FILE`)가 시드 폴더에 있으면 거부(`substitute_conflict`).
+    - 검증은 평가 쪽 `evaluation.ecc_substitute.verify_substitute` 하나 — 실행 체크아웃의 HEAD(작업 트리 청결은 착수 고정이 본다) ·
+      A3 커밋 · 승인서 폴더의 증거. 채점도 같은 함수를 영수증 커밋으로 부른다.
+    - 처음 받은 때 시드 폴더에 키 기록(`ECC_A3_SUBSTITUTE_KEY.json` — 승인서 sha · 착수 고정 · 시드 · 출발 어댑터)을 원자적으로 한 번
+      쓰고, 그 뒤에는 지금 값이 같아야 한다(`substitute_changed`).
+
+    돌려주는 값: `{"approval_sha256", "summary"}`. 어긋나면 `EccRefused`(사유 코드 `substitute_*`).
+    """
+    import os
+    import tempfile
+
+    from evaluation import ecc_substitute as S
+
+    seed_dir = Path(seed_dir)
+    if (permit_path is not None and Path(permit_path).exists()) or (seed_dir / PERMIT_KEY_FILE).exists() \
+            or (seed_dir / WAIVER_KEY_FILE).exists():
+        raise EccRefused("substitute_conflict", "착수 허가 · 1 차 면제의 기록과 A3 대체 승인서를 함께 받지 않는다 — 하나만 준다")
+    p = Path(approval_path)
+    raw = p.read_bytes()
+    try:
+        summary = S.verify_substitute(raw, evidence_dir=p.parent, repo=Path(repo), rev="HEAD")
+    except S.SubstituteRefused as exc:
+        raise EccRefused(exc.code, " · ".join(exc.problems)) from None
+    sha = hashlib.sha256(raw).hexdigest()
+    rec = {"approval_sha256": sha, "seed": int(seed), "pin_sha256": pin_sha256, "start_adapter_digest": start_adapter_digest}
+    key = seed_dir / S.KEY_FILE
+    if not key.exists():
+        seed_dir.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=".a3_substitute_key.", dir=seed_dir)
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write((json.dumps(rec, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8"))
+                fh.flush()
+                os.fsync(fh.fileno())
+            try:
+                os.link(tmp, key)                       # 있으면 FileExistsError — 덮지 않고 아래에서 맞댄다
+            except FileExistsError:
+                pass
+        finally:
+            Path(tmp).unlink(missing_ok=True)
+    got = json.loads(key.read_text(encoding="utf-8"))
+    differ = sorted(k for k in set(rec) | set(got) if rec.get(k) != got.get(k))
+    if differ:
+        raise EccRefused("substitute_changed", f"A3 대체 승인의 키 기록과 지금 값이 다르다 — {differ}(승인서 · 착수 고정 · 시드 · 출발 어댑터)")
+    return {"approval_sha256": sha, "summary": {k: summary[k] for k in ("a3_commit", "decision_log_section", "decided_at",
+                                                                         "evidence", "a3_values", "batch_size")}}
+
+
+def is_a3_substitute_file(path: Path) -> bool:
+    """면제 자리에 온 파일이 A3 대체 승인서 꼴(`kind`)인가 — 1 차 면제 꼴 · 없는 파일 · 읽지 못하는 파일은 아니다."""
+    from evaluation.ecc_substitute import KIND
+
+    try:
+        doc = json.loads(Path(path).read_bytes().decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    return isinstance(doc, dict) and doc.get("kind") == KIND
+
+
 # ---------------------------------------------------------------- 점검 실행(중앙 칸 자체)
 def main_config_problems(spec: Any) -> list[str]:
     """점검 실행의 설정 대조 — **본실험 중앙과 같은 값**이어야 한다(`vlm.uni_config.main_run_problems` · 본실험 필수 칸).
@@ -583,7 +824,8 @@ def main_config_problems(spec: Any) -> list[str]:
         num_rounds=spec.num_rounds, local_epochs=spec.local_epochs, total_epochs=spec.total_epochs,
         seed_index=spec.seed_index, seed_value=spec.seed_value, snapshot_digest=spec.snapshot_digest,
         prompt_path=spec.prompt_path, coord_space=spec.coord_space, processor_kwargs=spec.processor_kwargs,
-        expected_supervised_tokens=spec.expected_supervised_tokens, output_paths=[])
+        expected_supervised_tokens=spec.expected_supervised_tokens, output_paths=[],
+        budget_fraction=getattr(spec, "budget_fraction", 1.0), recipe=getattr(spec, "recipe", "json_only"))
 
 
 def run_ecc_train(spec: Any, *, steps: Sequence[int], registered_steps: Sequence[int], pin_path: Path,
@@ -625,10 +867,22 @@ def run_ecc_train(spec: Any, *, steps: Sequence[int], registered_steps: Sequence
     if problems:
         raise EccRefused("config_mismatch", "본실험 중앙과 다른 설정이다: " + " · ".join(problems))
     try:                                                                                         # 착수 고정 — 시작 · 재개마다
-        pin_sha = check_pin(Path(pin_path), build_pin(init_adapter_path=spec.init_adapter_path,
-                                                      config_path=spec.config_path, probes=pin_probes))
+        current = build_pin(init_adapter_path=spec.init_adapter_path, config_path=spec.config_path, probes=pin_probes)
+        pin_sha = check_pin(Path(pin_path), current)
     except PinMismatch as exc:
         raise EccRefused("pin_mismatch", str(exc)) from None
+    # 등록과의 결속(§137 M-01 · M-02) — 본 칸의 시작 문(`main_start_gate`)과 같은 규칙. 실물 측정은 등록값을 늘 싣는다.
+    from vlm.registration import binding_problems
+
+    reg = (current.get("common") or {}).get("registration")
+    if reg is None and not (pin_probes and "common" in pin_probes):
+        raise EccRefused("registration_missing", "착수 고정의 공통 칸에 등록값이 없다")
+    if reg is not None:
+        bad = binding_problems(reg, seed_index=int(spec.seed_index),
+                               init_digest=(current.get("init_adapter") or {}).get("init_adapter_digest"),
+                               recipe=getattr(spec, "recipe", "json_only"))
+        if bad:
+            raise EccRefused("registration_binding", " · ".join(bad))
     resume_meta = None
     done = sorted(int(p.name[4:10]) for p in out.glob("step*.meta.json")) if out.exists() else []
     if resume_step is None:
@@ -661,7 +915,8 @@ def run_ecc_train(spec: Any, *, steps: Sequence[int], registered_steps: Sequence
     tc_args = {"model_id": spec.model_id, "model_revision": spec.model_revision, "pairs_digest": spec.pairs_digest,
                "chat_template_kwargs": dict(spec.chat_template_kwargs), "coord_space": spec.coord_space,
                "num_rounds": spec.num_rounds, "local_epochs": spec.local_epochs, "total_epochs": spec.total_epochs,
-               "prompt_sha256": prompt_sha, "init_digest": init_info["init_adapter_digest"]}
+               "prompt_sha256": prompt_sha, "init_digest": init_info["init_adapter_digest"],
+               "recipe": getattr(spec, "recipe", "json_only")}
     cs = CheckStop(steps=steps, out_dir=out, stop=stop, resume_from=resume_meta, pin_sha256=pin_sha,
                    prior_wall_s=prior, train_config_args=tc_args)
     try:
@@ -673,7 +928,8 @@ def run_ecc_train(spec: Any, *, steps: Sequence[int], registered_steps: Sequence
             chat_template_kwargs=dict(spec.chat_template_kwargs), coord_cfg=CoordCfg(coord_space=spec.coord_space),
             processor_kwargs=spec.processor_kwargs, model_loader=model_loader, purpose=PURPOSE,
             standin_allowed=spec.standin_allowed, tag=CENTRAL_TAG, seed_index=spec.seed_index,
-            pairs_digest=spec.pairs_digest, client_tag=client_of(CENTRAL_TAG), check_stop=cs)
+            pairs_digest=spec.pairs_digest, client_tag=client_of(CENTRAL_TAG), check_stop=cs,
+            recipe=getattr(spec, "recipe", "json_only"))
     except CheckStepReached as hit:
         meta = json.loads(hit.meta_path.read_text(encoding="utf-8"))
         append_ledger(out, {"at": time.time(), "event": "stop", "step": hit.step, "cum_wall_s": meta["cum_wall_s"],

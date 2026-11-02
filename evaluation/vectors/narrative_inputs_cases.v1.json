@@ -1,0 +1,1345 @@
+{
+ "kind": "narrative_inputs_cases",
+ "version": 1,
+ "status": "구현 전 고정 — 기대(사유 코드의 정확한 집합)는 사례 파일에서만 읽는다. 바꾸면 '기대 변경 표' 로 남긴다",
+ "sources": {
+  "spec_07": {
+   "path": "docs/dev_log/2026-10-20-설계복구/07_허용치표_부분B_미니스펙_D.md",
+   "commit": "f1ce519a538659f1bf4496343e0112d3b1bc9667",
+   "sha256": "abe838b5b21812bf05dbd29166434cd4a489da4fba2af677fb12d9379a2a813f"
+  },
+  "spec_08": {
+   "path": "docs/dev_log/2026-10-20-설계복구/08_허용치표_부분B_미니스펙_C.md",
+   "commit": "f1ce519a538659f1bf4496343e0112d3b1bc9667",
+   "sha256": "046575e62f2583a9eb532fee4d7620149ba3ff80d20c9cbc97166d54ceccd963"
+  },
+  "decision_09": {
+   "path": "docs/dev_log/2026-10-20-설계복구/09_부분B_면제꼴_런북_게이트_총괄_20261024.md",
+   "commit": "f1ce519a538659f1bf4496343e0112d3b1bc9667",
+   "sha256": "e01e4da4636638f060cc7c4f790f07e73e050a100dfa851757c27378cdc4fbf9"
+  },
+  "check_221": {
+   "path": "_workspace/2026-10-20-design-recovery/C08_SPEC_REVIEW_221.md(본체 체크아웃)",
+   "sha256": "e6f8d79a394fc37d879f93e6b73d40e4d8276fc01f795e2b2e9ac9544ca34806"
+  },
+  "builder": {
+   "path": "docs/dev_log/2026-10-20-설계복구/07f_사례고정_D.py",
+   "lf_sha256": "35a0d5f4aed0523d6afaf9cb797d0a9c1b26cfdba1380c39c9e4f1e31abe9c14"
+  },
+  "sections": "07 §17-2 · §17-3 · §17-6 · §17-7 · §18-2 · §18-5 · 08 §5-3 · §9-4 · 221 §2-가 · I-02"
+ },
+ "reason_codes": [
+  "contract_sha",
+  "contract_form",
+  "hash_rule",
+  "code_bytes",
+  "pairs_unverified",
+  "pairs_digest",
+  "pairs_meta_bytes",
+  "pairs_meta_identity",
+  "conditions",
+  "v6_form",
+  "v6_contract_sha",
+  "v6_identity",
+  "pin_bytes",
+  "pin_contract"
+ ],
+ "expect_meaning": "함수가 돌려준 줄마다 ':' 앞의 사유 코드를 모은 집합이 expect 와 같다(빈 목록 = 받음)",
+ "loader_files": [
+  "corpus/rules/clause_text.py",
+  "corpus/rules/limit_eval.py",
+  "corpus/rules/limits_loader.py",
+  "corpus/rules/schema.py"
+ ],
+ "generator_files": [
+  "corpus/generate/make_pairs_main.py",
+  "corpus/generate/make_pairs_pilot.py",
+  "corpus/generate/pairs_text_v2.py"
+ ],
+ "world": {
+  "note": "합성 저장소 — 파일 내용은 모두 시험용 합성이다(허용치 수치 없음). 표는 CRLF 줄끝이라 원시 sha 와 LF sha 가 갈린다 — 원시 ↔ LF 혼용 사례가 그 차이로 걸린다",
+  "limits_rel": "corpus/rules/limits_v2_pilot.csv",
+  "files": {
+   "corpus/rules/limits_v2_pilot.csv": "rule_id,clause_id,defect_code,material,measure,aggregation,defect_class,conditions\r\nSYN-01,SYN-A,갑,ST,최대결함크기,개별,제1종,구별곤란:제2종|무등급전제\r\nSYN-02,SYN-B,을,ST,합계길이,합계,제2종,구별곤란:제1종|군집간격|무등급전제\r\n",
+   "corpus/rules/limits_v0_pilot.csv": "rule_id,clause_id,defect_code,material\r\nSYN-01,SYN-A,갑,ST\r\nSYN-02,SYN-B,을,ST\r\n",
+   "corpus/rules/clause_text.py": "# 시험용 합성 파일 — corpus/rules/clause_text.py\n",
+   "corpus/rules/limit_eval.py": "# 시험용 합성 파일 — corpus/rules/limit_eval.py\n",
+   "corpus/rules/limits_loader.py": "# 시험용 합성 파일 — corpus/rules/limits_loader.py\n",
+   "corpus/rules/schema.py": "# 시험용 합성 파일 — corpus/rules/schema.py\n",
+   "corpus/generate/make_pairs_main.py": "# 시험용 합성 파일 — corpus/generate/make_pairs_main.py\n",
+   "corpus/generate/make_pairs_pilot.py": "# 시험용 합성 파일 — corpus/generate/make_pairs_pilot.py\n",
+   "corpus/generate/pairs_text_v2.py": "# 시험용 합성 파일 — corpus/generate/pairs_text_v2.py\n"
+  },
+  "texts": {
+   "table_v2_conditions_only": "rule_id,clause_id,defect_code,material,measure,aggregation,defect_class,conditions\r\nSYN-01,SYN-A,갑,ST,최대결함크기,개별,제1종,무등급전제\r\nSYN-02,SYN-B,을,ST,합계길이,합계,제2종,구별곤란:제1종|군집간격|무등급전제\r\n",
+   "generator_changed": "# 시험용 합성 파일 — 바뀐 생성 경로\n",
+   "other": "다른 바이트"
+  },
+  "pairs": {
+   "path": "data/processed/pairs_main_v2",
+   "path_v1": "data/processed/pairs_main_v1",
+   "snapshot_label": "synthetic-snapshot-v2",
+   "snapshot_label_v1": "synthetic-snapshot-v1"
+  },
+  "limits_status": "시험용 합성 상태 문장 — 2 판의 LIMITS_STATUS 자리",
+  "pairs_meta_extra": {
+   "asset": "synthetic_pairs_main_v2",
+   "built_on": "2026-10-24"
+  },
+  "pairs_meta_v1_extra": {
+   "asset": "synthetic_pairs_main_v1",
+   "built_on": "2026-10-01"
+  }
+ },
+ "world_pairs_meta": {
+  "asset": "synthetic_pairs_main_v2",
+  "built_on": "2026-10-24",
+  "limits_table": {
+   "path": "corpus/rules/limits_v2_pilot.csv",
+   "sha256": "dc72ca52224f81c201b2bb0b135ee107394e0275ae4c621e5c96fa9fe21f80fe",
+   "status": "시험용 합성 상태 문장 — 2 판의 LIMITS_STATUS 자리"
+  },
+  "identity": {
+   "contract_version": 1,
+   "limits": {
+    "path": "corpus/rules/limits_v2_pilot.csv",
+    "sha256": "dc72ca52224f81c201b2bb0b135ee107394e0275ae4c621e5c96fa9fe21f80fe"
+   },
+   "limits_loader": {
+    "rule": "lf_bundle_v1",
+    "files": [
+     {
+      "path": "corpus/rules/clause_text.py",
+      "sha256": "342fcbf636b7a3d3f704091c584c8013d8f4178858c02b0f72fb6f2a3905c86e"
+     },
+     {
+      "path": "corpus/rules/limit_eval.py",
+      "sha256": "1dd0ac3bad9d1227572a5b02b4338ebd8c7655b059c5ff3a2d180a1164282310"
+     },
+     {
+      "path": "corpus/rules/limits_loader.py",
+      "sha256": "817b69007285fb89ddc05c62d1ee689275833de9c384f7bde1e6528a4caf62fc"
+     },
+     {
+      "path": "corpus/rules/schema.py",
+      "sha256": "613c1c51c460729b3a218bbf12c9df72a131085330b07d13c1d23e1f9bf6f123"
+     }
+    ],
+    "sha256": "d9248f7ede31c5b56385ee877747893ae565e6cf01fdcbe39b65dccd842c23fc"
+   },
+   "generator": {
+    "rule": "lf_bundle_v1",
+    "files": [
+     {
+      "path": "corpus/generate/make_pairs_main.py",
+      "sha256": "a297c77a26f878e10a785461e8ade0c4a65e02ad4982d645e046522a87965a3f"
+     },
+     {
+      "path": "corpus/generate/make_pairs_pilot.py",
+      "sha256": "a6f95a75b16edc4c9f562ab2592079e41c2921da458b65342f6166736c3433a1"
+     },
+     {
+      "path": "corpus/generate/pairs_text_v2.py",
+      "sha256": "24412c7f262c6381ec458daed56bfa9c925eb461c4444cf9fdc290ca1acd8101"
+     }
+    ],
+    "sha256": "7da87a19acc8cc260397c30dace83d244afac3441ea12275d8e3e816883d277f"
+   },
+   "conditions": {
+    "in_table": true
+   }
+  },
+  "text_contract": "v2"
+ },
+ "world_pairs_meta_v1": {
+  "asset": "synthetic_pairs_main_v1",
+  "built_on": "2026-10-01",
+  "limits_table": {
+   "path": "corpus/rules/limits_v0_pilot.csv",
+   "sha256": "b1a7630b97bb2076dd2937e28abf2e2315c2fd93f2c0a0b506a3ef39c42e4a1f",
+   "status": "시험용 합성 상태 문장 — 2 판의 LIMITS_STATUS 자리"
+  }
+ },
+ "world_pairs_meta_meaning": "합성 세계의 PAIRS_META(2 판 · 1 판) — 시험이 지은 메타가 이 객체와 같아야 한다. I-02 공동 사례(joint_i02)는 `pairs_meta` 에 메타 객체를 그대로 싣는다 — 생성 쪽 시험 20 이 같은 입력을 쓴다",
+ "stages": [
+  "① contract_sha — 학습 등록이 묶은 sha256 ≠ 계약 바이트면 여기서 멈춘다",
+  "② 계약의 꼴 — contract_form · conditions · 꼴로 보이는 hash_rule(규칙 이름 · 묶음 sha 가 제 파일 하나의 sha)이 있으면 멈춘다",
+  "③ 실제 바이트 — code_bytes · 값으로 보이는 hash_rule(원시 칸에 LF sha)이 있으면 멈춘다",
+  "④ 호출자가 검증한 사실 — pairs_unverified · pairs_digest · pairs_meta_bytes(멈추지 않고 ⑤ 로)",
+  "⑤ PAIRS_META 신원 — pairs_meta_identity"
+ ],
+ "v6_stages": [
+  "① 판 6 의 꼴 — v6_form(판 6 이 아니다 · 블록이 없다 · 계약 sha 칸이 비었다)이면 멈춘다",
+  "② 넘긴 계약의 꼴 — contract_form · conditions · hash_rule 이면 멈춘다",
+  "③ 학습 PIN — pin_bytes(어댑터 meta 의 start_gate.pin_sha256 과 바이트) · pin_contract(PIN 의 계약 sha)",
+  "④ 판 6 의 계약 sha — v6_contract_sha",
+  "⑤ 판 6 의 신원 칸 ↔ 계약 — v6_identity · 꼴이 섞이면 hash_rule"
+ ],
+ "ops_meaning": {
+  "set": "경로의 값을 바꾼다 — value 또는 from({text_sha: 글 열쇠} · {lf_sha: 파일} · {raw_sha: 파일})",
+  "del": "경로의 칸을 지운다",
+  "copy": "한 경로의 값을 다른 경로에 통째로 옮긴다",
+  "reverse": "목록을 뒤집는다",
+  "duplicate_first": "목록의 첫 원소를 하나 더 붙인다(정렬은 그대로)",
+  "upper": "문자열을 대문자로",
+  "drop_first_file": "묶음 블록의 첫 파일을 빼고 그 블록의 sha 를 남은 목록으로 다시 낸다",
+  "contract_table · meta_table": "계약 · PAIRS_META 의 표 경로를 다른 판으로(값은 그 파일에서 잰다)",
+  "keep_registered": "학습 등록의 sha 는 ops 앞 계약의 값 그대로(옛 영수증)",
+  "verified_from_variant": "호출자의 검증 사실을 1 판 페어(경로 · digest · 1 판 메타)로",
+  "meta_variant": "PAIRS_META 를 1 판 꼴(신원 블록 · 문장 계약 칸 없음)으로",
+  "contract_noncanonical": "계약을 정규형이 아닌 바이트(들여쓰기 다름)로 쓴다",
+  "swap_contract": "학습 PIN 은 처음 계약으로 짓고, 파일을 바꾼 뒤 다시 지은 계약 · 판 6 을 함께 넘긴다",
+  "adapters": "어댑터 meta 다섯 칸의 start_gate.pin_sha256 — 기본은 PIN 바이트의 sha, other = 다른 값, empty = 빈 목록"
+ },
+ "contract_cases": [
+  {
+   "id": "accept",
+   "title": "모두 신판 — 받음",
+   "function": "narrative_inputs_problems",
+   "expect": []
+  },
+  {
+   "id": "old_receipt_sha",
+   "title": "옛 영수증 sha 끼우기 — 계약 파일을 바꾸고 학습 등록의 sha 는 옛 값",
+   "contract_ops": [
+    {
+     "set": [
+      "generator",
+      "files",
+      0,
+      "sha256"
+     ],
+     "from": {
+      "text_sha": "other"
+     }
+    }
+   ],
+   "keep_registered": true,
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "contract_sha"
+   ]
+  },
+  {
+   "id": "M1",
+   "title": "PAIRS_META 의 표 = 신판, 계약의 표 = 다른 판(v1)",
+   "contract_table": "corpus/rules/limits_v0_pilot.csv",
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "pairs_meta_identity"
+   ]
+  },
+  {
+   "id": "M2",
+   "title": "PAIRS_META 의 표 = 다른 판(v1), 계약의 표 = 신판",
+   "meta_table": "corpus/rules/limits_v0_pilot.csv",
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "pairs_meta_identity"
+   ]
+  },
+  {
+   "id": "M9",
+   "title": "같은 표인데 생성 경로 묶음이 다른 페어 — 메타를 지은 뒤 생성 경로가 바뀌고 계약은 바뀐 트리로",
+   "mid_files": [
+    {
+     "path": "corpus/generate/pairs_text_v2.py",
+     "text": "generator_changed"
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "pairs_meta_identity"
+   ]
+  },
+  {
+   "id": "M10",
+   "title": "조건만 바뀜(안 1) — 표의 conditions 칸만 바꾸고 메타 · 계약은 옛 표 해시 그대로",
+   "post_files": [
+    {
+     "path": "corpus/rules/limits_v2_pilot.csv",
+     "text": "table_v2_conditions_only"
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "code_bytes"
+   ]
+  },
+  {
+   "id": "M11",
+   "title": "계약의 조건 자료 칸을 생략",
+   "contract_ops": [
+    {
+     "del": [
+      "conditions"
+     ]
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "conditions",
+    "contract_form"
+   ]
+  },
+  {
+   "id": "M12_contract",
+   "title": "계약에 모르는 칸",
+   "contract_ops": [
+    {
+     "set": [
+      "extra"
+     ],
+     "value": 1
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "contract_form"
+   ]
+  },
+  {
+   "id": "M12_meta",
+   "title": "PAIRS_META 신원 블록에 모르는 칸",
+   "meta_ops": [
+    {
+     "set": [
+      "identity",
+      "extra"
+     ],
+     "value": 1
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "pairs_meta_identity"
+   ]
+  },
+  {
+   "id": "M13",
+   "title": "생성 경로 칸에 한 파일의 LF sha 를 묶음 규칙으로 적음(신구 해시 꼴 섞임)",
+   "contract_ops": [
+    {
+     "set": [
+      "generator",
+      "sha256"
+     ],
+     "from": {
+      "lf_sha": "corpus/generate/make_pairs_pilot.py"
+     }
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "hash_rule"
+   ]
+  },
+  {
+   "id": "M13_raw_lf",
+   "title": "원시 칸(표)에 LF sha 를 적음 — 표가 CRLF 라 둘이 갈린다",
+   "contract_ops": [
+    {
+     "set": [
+      "limits",
+      "sha256"
+     ],
+     "from": {
+      "lf_sha": "corpus/rules/limits_v2_pilot.csv"
+     }
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "hash_rule"
+   ]
+  },
+  {
+   "id": "M13_rule_name",
+   "title": "묶음 칸의 규칙 이름이 계약 판이 정한 것과 다르다",
+   "contract_ops": [
+    {
+     "set": [
+      "limits_loader",
+      "rule"
+     ],
+     "value": "raw_v1"
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "hash_rule"
+   ]
+  },
+  {
+   "id": "M14",
+   "title": "메타 문자열만 같음 — PAIRS_META 와 계약이 서로는 같은데 실제 코드 바이트와 다르다",
+   "post_files": [
+    {
+     "path": "corpus/generate/pairs_text_v2.py",
+     "text": "generator_changed"
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "code_bytes"
+   ]
+  },
+  {
+   "id": "M15",
+   "title": "v1 페어 + v2 계약으로 시작 — 실제로 읽을 페어가 v1",
+   "verified_from_variant": "v1",
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "pairs_digest",
+    "pairs_meta_bytes",
+    "pairs_meta_identity",
+    "pairs_unverified"
+   ]
+  },
+  {
+   "id": "M16",
+   "title": "스냅샷 검사 문제를 남긴 채 넘긴 호출",
+   "verified_ops": [
+    {
+     "set": "snapshot_problems",
+     "value": [
+      "합성 문제 — 계약의 파일 해시가 실물과 다르다"
+     ]
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "pairs_unverified"
+   ]
+  },
+  {
+   "id": "M16_missing_fact",
+   "title": "필수 검증 사실의 누락 — 스냅샷 검사 결과를 넘기지 않음(빈 목록과 다르다)",
+   "verified_ops": [
+    {
+     "set": "snapshot_problems",
+     "value": null
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "pairs_unverified"
+   ]
+  },
+  {
+   "id": "M17",
+   "title": "봉인 명부에 없는 페어 폴더",
+   "verified_ops": [
+    {
+     "set": "sealed_status",
+     "value": null
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "pairs_unverified"
+   ]
+  },
+  {
+   "id": "M17_lost",
+   "title": "봉인 명부의 상태가 expected 가 아니다",
+   "verified_ops": [
+    {
+     "set": "sealed_status",
+     "value": "lost"
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "pairs_unverified"
+   ]
+  },
+  {
+   "id": "pairs_path",
+   "title": "실제로 읽을 경로가 계약의 경로와 다르다",
+   "verified_ops": [
+    {
+     "set": "path",
+     "value": "data/processed/pairs_main_v2_tmp"
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "pairs_unverified"
+   ]
+  },
+  {
+   "id": "pairs_digest_config",
+   "title": "설정의 페어 digest 가 계약과 다르다",
+   "verified_ops": [
+    {
+     "set": "config_pairs_digest",
+     "from": {
+      "text_sha": "other"
+     }
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "pairs_digest"
+   ]
+  },
+  {
+   "id": "pairs_digest_token_table",
+   "title": "행별 토큰 표 출처의 페어 digest 가 계약과 다르다",
+   "verified_ops": [
+    {
+     "set": "token_table_pairs_digest",
+     "from": {
+      "text_sha": "other"
+     }
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "pairs_digest"
+   ]
+  },
+  {
+   "id": "pairs_meta_bytes_snapshot",
+   "title": "PAIRS_META 바이트가 스냅샷 계약에 적힌 해시와 다르다",
+   "verified_ops": [
+    {
+     "set": "snapshot_pairs_meta_sha256",
+     "from": {
+      "text_sha": "other"
+     }
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "pairs_meta_bytes"
+   ]
+  },
+  {
+   "id": "pairs_meta_bytes_contract",
+   "title": "PAIRS_META 바이트가 계약에 적힌 해시와 다르다",
+   "contract_ops": [
+    {
+     "set": [
+      "pairs",
+      "pairs_meta_sha256"
+     ],
+     "from": {
+      "text_sha": "other"
+     }
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "pairs_meta_bytes"
+   ]
+  },
+  {
+   "id": "form_not_json",
+   "title": "계약이 JSON 이 아니다",
+   "contract_raw_text": "계약이 아닌 바이트",
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "contract_form"
+   ]
+  },
+  {
+   "id": "form_kind",
+   "title": "계약의 kind 가 다르다",
+   "contract_ops": [
+    {
+     "set": [
+      "kind"
+     ],
+     "value": "pairs_meta"
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "contract_form"
+   ]
+  },
+  {
+   "id": "form_version",
+   "title": "모르는 계약 판",
+   "contract_ops": [
+    {
+     "set": [
+      "contract_version"
+     ],
+     "value": 2
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "contract_form"
+   ]
+  },
+  {
+   "id": "form_version_bool",
+   "title": "계약 판이 참 · 거짓 값",
+   "contract_ops": [
+    {
+     "set": [
+      "contract_version"
+     ],
+     "value": true
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "contract_form"
+   ]
+  },
+  {
+   "id": "form_path_parent",
+   "title": "경로에 '..' — 저장소 상대 posix 가 아니다",
+   "contract_ops": [
+    {
+     "set": [
+      "limits",
+      "path"
+     ],
+     "value": "corpus/rules/../rules/limits_v2_pilot.csv"
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "contract_form"
+   ]
+  },
+  {
+   "id": "form_path_absolute",
+   "title": "절대 경로",
+   "contract_ops": [
+    {
+     "set": [
+      "pairs",
+      "path"
+     ],
+     "value": "/data/processed/pairs_main_v2"
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "contract_form"
+   ]
+  },
+  {
+   "id": "form_files_unsorted",
+   "title": "묶음 파일 목록이 정렬되지 않았다",
+   "contract_ops": [
+    {
+     "reverse": [
+      "limits_loader",
+      "files"
+     ]
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "contract_form"
+   ]
+  },
+  {
+   "id": "form_files_duplicate",
+   "title": "묶음 파일 목록이 겹친다",
+   "contract_ops": [
+    {
+     "duplicate_first": [
+      "generator",
+      "files"
+     ]
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "contract_form"
+   ]
+  },
+  {
+   "id": "form_hex_upper",
+   "title": "해시가 소문자 16진 64 자가 아니다",
+   "contract_ops": [
+    {
+     "upper": [
+      "pairs",
+      "snapshot_digest"
+     ]
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "contract_form"
+   ]
+  },
+  {
+   "id": "form_bundle_inconsistent",
+   "title": "묶음 sha 가 그 파일 목록에서 낸 값과 다르다",
+   "contract_ops": [
+    {
+     "set": [
+      "limits_loader",
+      "sha256"
+     ],
+     "from": {
+      "text_sha": "other"
+     }
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "contract_form"
+   ]
+  },
+  {
+   "id": "form_not_canonical",
+   "title": "계약 바이트가 정규형이 아니다(손으로 고친 파일)",
+   "contract_noncanonical": true,
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "contract_form"
+   ]
+  },
+  {
+   "id": "conditions_plan2_form",
+   "title": "조건 자료 칸이 안 2 의 꼴(따로 둔 파일) — 이 계약 판은 안 1",
+   "contract_ops": [
+    {
+     "set": [
+      "conditions"
+     ],
+     "value": {
+      "path": "corpus/rules/limits_v2_conditions.yaml",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+     }
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "conditions"
+   ]
+  },
+  {
+   "id": "conditions_in_table_false",
+   "title": "조건 자료가 표 안이 아니라고 적음",
+   "contract_ops": [
+    {
+     "set": [
+      "conditions",
+      "in_table"
+     ],
+     "value": false
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "conditions"
+   ]
+  },
+  {
+   "id": "code_loader_list",
+   "title": "로더 묶음의 파일 목록이 채점 쪽 목록과 다르다(한 파일을 뺐다 — 목록 안의 sha 는 맞다)",
+   "contract_ops": [
+    {
+     "drop_first_file": [
+      "limits_loader"
+     ]
+    }
+   ],
+   "function": "narrative_inputs_problems",
+   "expect": [
+    "code_bytes"
+   ],
+   "why": "계약이 실제 코드와 어긋나면 그 계약으로 페어를 맞대지 않는다(단계 ③ 에서 멈춤) — PAIRS_META 대조는 돌지 않는다"
+  }
+ ],
+ "identity_cases": [
+  {
+   "id": "I02_accept_status",
+   "title": "limits_table 에 기존 status 가 있는 정상 2 판 메타 — 받음",
+   "joint_i02": true,
+   "function": "pairs_identity_problems",
+   "expect": [],
+   "pairs_meta": {
+    "asset": "synthetic_pairs_main_v2",
+    "built_on": "2026-10-24",
+    "limits_table": {
+     "path": "corpus/rules/limits_v2_pilot.csv",
+     "sha256": "dc72ca52224f81c201b2bb0b135ee107394e0275ae4c621e5c96fa9fe21f80fe",
+     "status": "시험용 합성 상태 문장 — 2 판의 LIMITS_STATUS 자리"
+    },
+    "identity": {
+     "contract_version": 1,
+     "limits": {
+      "path": "corpus/rules/limits_v2_pilot.csv",
+      "sha256": "dc72ca52224f81c201b2bb0b135ee107394e0275ae4c621e5c96fa9fe21f80fe"
+     },
+     "limits_loader": {
+      "rule": "lf_bundle_v1",
+      "files": [
+       {
+        "path": "corpus/rules/clause_text.py",
+        "sha256": "342fcbf636b7a3d3f704091c584c8013d8f4178858c02b0f72fb6f2a3905c86e"
+       },
+       {
+        "path": "corpus/rules/limit_eval.py",
+        "sha256": "1dd0ac3bad9d1227572a5b02b4338ebd8c7655b059c5ff3a2d180a1164282310"
+       },
+       {
+        "path": "corpus/rules/limits_loader.py",
+        "sha256": "817b69007285fb89ddc05c62d1ee689275833de9c384f7bde1e6528a4caf62fc"
+       },
+       {
+        "path": "corpus/rules/schema.py",
+        "sha256": "613c1c51c460729b3a218bbf12c9df72a131085330b07d13c1d23e1f9bf6f123"
+       }
+      ],
+      "sha256": "d9248f7ede31c5b56385ee877747893ae565e6cf01fdcbe39b65dccd842c23fc"
+     },
+     "generator": {
+      "rule": "lf_bundle_v1",
+      "files": [
+       {
+        "path": "corpus/generate/make_pairs_main.py",
+        "sha256": "a297c77a26f878e10a785461e8ade0c4a65e02ad4982d645e046522a87965a3f"
+       },
+       {
+        "path": "corpus/generate/make_pairs_pilot.py",
+        "sha256": "a6f95a75b16edc4c9f562ab2592079e41c2921da458b65342f6166736c3433a1"
+       },
+       {
+        "path": "corpus/generate/pairs_text_v2.py",
+        "sha256": "24412c7f262c6381ec458daed56bfa9c925eb461c4444cf9fdc290ca1acd8101"
+       }
+      ],
+      "sha256": "7da87a19acc8cc260397c30dace83d244afac3441ea12275d8e3e816883d277f"
+     },
+     "conditions": {
+      "in_table": true
+     }
+    },
+    "text_contract": "v2"
+   }
+  },
+  {
+   "id": "I02_path",
+   "title": "identity.limits.path 만 limits_table.path 와 다르다",
+   "joint_i02": true,
+   "meta_ops": [
+    {
+     "set": [
+      "identity",
+      "limits",
+      "path"
+     ],
+     "value": "corpus/rules/limits_v2_pilot_copy.csv"
+    }
+   ],
+   "function": "pairs_identity_problems",
+   "expect": [
+    "pairs_meta_identity"
+   ],
+   "pairs_meta": {
+    "asset": "synthetic_pairs_main_v2",
+    "built_on": "2026-10-24",
+    "limits_table": {
+     "path": "corpus/rules/limits_v2_pilot.csv",
+     "sha256": "dc72ca52224f81c201b2bb0b135ee107394e0275ae4c621e5c96fa9fe21f80fe",
+     "status": "시험용 합성 상태 문장 — 2 판의 LIMITS_STATUS 자리"
+    },
+    "identity": {
+     "contract_version": 1,
+     "limits": {
+      "path": "corpus/rules/limits_v2_pilot_copy.csv",
+      "sha256": "dc72ca52224f81c201b2bb0b135ee107394e0275ae4c621e5c96fa9fe21f80fe"
+     },
+     "limits_loader": {
+      "rule": "lf_bundle_v1",
+      "files": [
+       {
+        "path": "corpus/rules/clause_text.py",
+        "sha256": "342fcbf636b7a3d3f704091c584c8013d8f4178858c02b0f72fb6f2a3905c86e"
+       },
+       {
+        "path": "corpus/rules/limit_eval.py",
+        "sha256": "1dd0ac3bad9d1227572a5b02b4338ebd8c7655b059c5ff3a2d180a1164282310"
+       },
+       {
+        "path": "corpus/rules/limits_loader.py",
+        "sha256": "817b69007285fb89ddc05c62d1ee689275833de9c384f7bde1e6528a4caf62fc"
+       },
+       {
+        "path": "corpus/rules/schema.py",
+        "sha256": "613c1c51c460729b3a218bbf12c9df72a131085330b07d13c1d23e1f9bf6f123"
+       }
+      ],
+      "sha256": "d9248f7ede31c5b56385ee877747893ae565e6cf01fdcbe39b65dccd842c23fc"
+     },
+     "generator": {
+      "rule": "lf_bundle_v1",
+      "files": [
+       {
+        "path": "corpus/generate/make_pairs_main.py",
+        "sha256": "a297c77a26f878e10a785461e8ade0c4a65e02ad4982d645e046522a87965a3f"
+       },
+       {
+        "path": "corpus/generate/make_pairs_pilot.py",
+        "sha256": "a6f95a75b16edc4c9f562ab2592079e41c2921da458b65342f6166736c3433a1"
+       },
+       {
+        "path": "corpus/generate/pairs_text_v2.py",
+        "sha256": "24412c7f262c6381ec458daed56bfa9c925eb461c4444cf9fdc290ca1acd8101"
+       }
+      ],
+      "sha256": "7da87a19acc8cc260397c30dace83d244afac3441ea12275d8e3e816883d277f"
+     },
+     "conditions": {
+      "in_table": true
+     }
+    },
+    "text_contract": "v2"
+   }
+  },
+  {
+   "id": "I02_sha",
+   "title": "identity.limits.sha256 만 limits_table.sha256 과 다르다",
+   "joint_i02": true,
+   "meta_ops": [
+    {
+     "set": [
+      "identity",
+      "limits",
+      "sha256"
+     ],
+     "from": {
+      "text_sha": "other"
+     }
+    }
+   ],
+   "function": "pairs_identity_problems",
+   "expect": [
+    "pairs_meta_identity"
+   ],
+   "pairs_meta": {
+    "asset": "synthetic_pairs_main_v2",
+    "built_on": "2026-10-24",
+    "limits_table": {
+     "path": "corpus/rules/limits_v2_pilot.csv",
+     "sha256": "dc72ca52224f81c201b2bb0b135ee107394e0275ae4c621e5c96fa9fe21f80fe",
+     "status": "시험용 합성 상태 문장 — 2 판의 LIMITS_STATUS 자리"
+    },
+    "identity": {
+     "contract_version": 1,
+     "limits": {
+      "path": "corpus/rules/limits_v2_pilot.csv",
+      "sha256": "3876d2a10f8ba2e73e3ebd1181cca1588f5ac574f797a4954f986a87c5109f9c"
+     },
+     "limits_loader": {
+      "rule": "lf_bundle_v1",
+      "files": [
+       {
+        "path": "corpus/rules/clause_text.py",
+        "sha256": "342fcbf636b7a3d3f704091c584c8013d8f4178858c02b0f72fb6f2a3905c86e"
+       },
+       {
+        "path": "corpus/rules/limit_eval.py",
+        "sha256": "1dd0ac3bad9d1227572a5b02b4338ebd8c7655b059c5ff3a2d180a1164282310"
+       },
+       {
+        "path": "corpus/rules/limits_loader.py",
+        "sha256": "817b69007285fb89ddc05c62d1ee689275833de9c384f7bde1e6528a4caf62fc"
+       },
+       {
+        "path": "corpus/rules/schema.py",
+        "sha256": "613c1c51c460729b3a218bbf12c9df72a131085330b07d13c1d23e1f9bf6f123"
+       }
+      ],
+      "sha256": "d9248f7ede31c5b56385ee877747893ae565e6cf01fdcbe39b65dccd842c23fc"
+     },
+     "generator": {
+      "rule": "lf_bundle_v1",
+      "files": [
+       {
+        "path": "corpus/generate/make_pairs_main.py",
+        "sha256": "a297c77a26f878e10a785461e8ade0c4a65e02ad4982d645e046522a87965a3f"
+       },
+       {
+        "path": "corpus/generate/make_pairs_pilot.py",
+        "sha256": "a6f95a75b16edc4c9f562ab2592079e41c2921da458b65342f6166736c3433a1"
+       },
+       {
+        "path": "corpus/generate/pairs_text_v2.py",
+        "sha256": "24412c7f262c6381ec458daed56bfa9c925eb461c4444cf9fdc290ca1acd8101"
+       }
+      ],
+      "sha256": "7da87a19acc8cc260397c30dace83d244afac3441ea12275d8e3e816883d277f"
+     },
+     "conditions": {
+      "in_table": true
+     }
+    },
+    "text_contract": "v2"
+   }
+  },
+  {
+   "id": "I02_unknown_field",
+   "title": "identity.limits 에 모르는 칸 — limits_table 을 통째로 옮겨 status 가 생겼다",
+   "joint_i02": true,
+   "meta_ops": [
+    {
+     "copy": [
+      "limits_table"
+     ],
+     "to": [
+      "identity",
+      "limits"
+     ]
+    }
+   ],
+   "function": "pairs_identity_problems",
+   "expect": [
+    "pairs_meta_identity"
+   ],
+   "pairs_meta": {
+    "asset": "synthetic_pairs_main_v2",
+    "built_on": "2026-10-24",
+    "limits_table": {
+     "path": "corpus/rules/limits_v2_pilot.csv",
+     "sha256": "dc72ca52224f81c201b2bb0b135ee107394e0275ae4c621e5c96fa9fe21f80fe",
+     "status": "시험용 합성 상태 문장 — 2 판의 LIMITS_STATUS 자리"
+    },
+    "identity": {
+     "contract_version": 1,
+     "limits": {
+      "path": "corpus/rules/limits_v2_pilot.csv",
+      "sha256": "dc72ca52224f81c201b2bb0b135ee107394e0275ae4c621e5c96fa9fe21f80fe",
+      "status": "시험용 합성 상태 문장 — 2 판의 LIMITS_STATUS 자리"
+     },
+     "limits_loader": {
+      "rule": "lf_bundle_v1",
+      "files": [
+       {
+        "path": "corpus/rules/clause_text.py",
+        "sha256": "342fcbf636b7a3d3f704091c584c8013d8f4178858c02b0f72fb6f2a3905c86e"
+       },
+       {
+        "path": "corpus/rules/limit_eval.py",
+        "sha256": "1dd0ac3bad9d1227572a5b02b4338ebd8c7655b059c5ff3a2d180a1164282310"
+       },
+       {
+        "path": "corpus/rules/limits_loader.py",
+        "sha256": "817b69007285fb89ddc05c62d1ee689275833de9c384f7bde1e6528a4caf62fc"
+       },
+       {
+        "path": "corpus/rules/schema.py",
+        "sha256": "613c1c51c460729b3a218bbf12c9df72a131085330b07d13c1d23e1f9bf6f123"
+       }
+      ],
+      "sha256": "d9248f7ede31c5b56385ee877747893ae565e6cf01fdcbe39b65dccd842c23fc"
+     },
+     "generator": {
+      "rule": "lf_bundle_v1",
+      "files": [
+       {
+        "path": "corpus/generate/make_pairs_main.py",
+        "sha256": "a297c77a26f878e10a785461e8ade0c4a65e02ad4982d645e046522a87965a3f"
+       },
+       {
+        "path": "corpus/generate/make_pairs_pilot.py",
+        "sha256": "a6f95a75b16edc4c9f562ab2592079e41c2921da458b65342f6166736c3433a1"
+       },
+       {
+        "path": "corpus/generate/pairs_text_v2.py",
+        "sha256": "24412c7f262c6381ec458daed56bfa9c925eb461c4444cf9fdc290ca1acd8101"
+       }
+      ],
+      "sha256": "7da87a19acc8cc260397c30dace83d244afac3441ea12275d8e3e816883d277f"
+     },
+     "conditions": {
+      "in_table": true
+     }
+    },
+    "text_contract": "v2"
+   }
+  },
+  {
+   "id": "meta_v1_no_identity",
+   "title": "1 판 메타(신원 블록 없음)를 2 판 계약에 댄다",
+   "meta_variant": "v1",
+   "function": "pairs_identity_problems",
+   "expect": [
+    "pairs_meta_identity"
+   ]
+  },
+  {
+   "id": "meta_text_contract",
+   "title": "PAIRS_META 의 문장 계약 판이 v2 가 아니다",
+   "meta_ops": [
+    {
+     "set": [
+      "text_contract"
+     ],
+     "value": "v1"
+    }
+   ],
+   "function": "pairs_identity_problems",
+   "expect": [
+    "pairs_meta_identity"
+   ]
+  },
+  {
+   "id": "meta_conditions_missing",
+   "title": "PAIRS_META 신원 블록의 조건 칸을 생략",
+   "meta_ops": [
+    {
+     "del": [
+      "identity",
+      "conditions"
+     ]
+    }
+   ],
+   "function": "pairs_identity_problems",
+   "expect": [
+    "pairs_meta_identity"
+   ]
+  },
+  {
+   "id": "meta_bundle_list_first",
+   "title": "묶음 칸은 파일 목록부터 맞댄다 — 목록이 다르면 해시를 보기 전에 거부",
+   "meta_ops": [
+    {
+     "drop_first_file": [
+      "identity",
+      "generator"
+     ]
+    }
+   ],
+   "function": "pairs_identity_problems",
+   "expect": [
+    "pairs_meta_identity"
+   ]
+  },
+  {
+   "id": "meta_not_json",
+   "title": "PAIRS_META 바이트가 JSON 이 아니다",
+   "meta_raw_text": "메타가 아닌 바이트",
+   "function": "pairs_identity_problems",
+   "expect": [
+    "pairs_meta_identity"
+   ]
+  }
+ ],
+ "v6_cases": [
+  {
+   "id": "v6_accept",
+   "title": "판 6 · 계약 · 학습 PIN 이 한 계약을 가리킨다 — 받음",
+   "function": "v6_contract_problems",
+   "expect": []
+  },
+  {
+   "id": "M18",
+   "title": "학습 계약과 다른 계약으로 판 6 내부 값만 일치시킨 사례 — 판 6 · 넘긴 계약은 서로 같고 학습 PIN 과 다르다",
+   "swap_contract": {
+    "path": "corpus/generate/pairs_text_v2.py",
+    "text": "generator_changed"
+   },
+   "function": "v6_contract_problems",
+   "expect": [
+    "pin_contract"
+   ]
+  },
+  {
+   "id": "v6_missing",
+   "title": "판 6 의 계약 sha 칸이 비었다(누락)",
+   "v6_ops": [
+    {
+     "set": [
+      "narrative",
+      "inputs_contract_sha256"
+     ],
+     "value": null
+    }
+   ],
+   "function": "v6_contract_problems",
+   "expect": [
+    "v6_form"
+   ]
+  },
+  {
+   "id": "v6_contract_sha",
+   "title": "판 6 의 계약 sha 가 넘긴 계약 바이트와 다르다",
+   "v6_ops": [
+    {
+     "set": [
+      "narrative",
+      "inputs_contract_sha256"
+     ],
+     "from": {
+      "text_sha": "other"
+     }
+    }
+   ],
+   "function": "v6_contract_problems",
+   "expect": [
+    "v6_contract_sha"
+   ]
+  },
+  {
+   "id": "v6_identity_limits",
+   "title": "판 6 의 표 sha 가 계약의 표와 다르다(두 블록 모두)",
+   "v6_ops": [
+    {
+     "set": [
+      "narrative",
+      "limits_sha256"
+     ],
+     "from": {
+      "text_sha": "other"
+     }
+    },
+    {
+     "set": [
+      "clause_axis",
+      "limits_sha256"
+     ],
+     "from": {
+      "text_sha": "other"
+     }
+    }
+   ],
+   "function": "v6_contract_problems",
+   "expect": [
+    "v6_identity"
+   ]
+  },
+  {
+   "id": "v6_identity_loader",
+   "title": "판 6 의 로더 묶음 sha 가 계약과 다르다",
+   "v6_ops": [
+    {
+     "set": [
+      "narrative",
+      "limits_loader_sha256"
+     ],
+     "from": {
+      "text_sha": "other"
+     }
+    }
+   ],
+   "function": "v6_contract_problems",
+   "expect": [
+    "v6_identity"
+   ]
+  },
+  {
+   "id": "v6_generator_one_file",
+   "title": "판 6 의 생성 경로 칸이 한 파일의 LF sha — 계약은 묶음(신구 꼴 섞임)",
+   "v6_ops": [
+    {
+     "set": [
+      "narrative",
+      "generator_sha256"
+     ],
+     "from": {
+      "lf_sha": "corpus/generate/make_pairs_pilot.py"
+     }
+    }
+   ],
+   "function": "v6_contract_problems",
+   "expect": [
+    "hash_rule"
+   ]
+  },
+  {
+   "id": "v6_version5",
+   "title": "판 5 등록을 댄다",
+   "v6_ops": [
+    {
+     "set": [
+      "version"
+     ],
+     "value": "5"
+    }
+   ],
+   "function": "v6_contract_problems",
+   "expect": [
+    "v6_form"
+   ]
+  },
+  {
+   "id": "pin_swapped",
+   "title": "착수 고정을 바꿔 끼웠다 — 바이트의 sha 가 어댑터 meta 의 start_gate.pin_sha256 과 다르다",
+   "adapters": "other",
+   "function": "v6_contract_problems",
+   "expect": [
+    "pin_bytes"
+   ]
+  },
+  {
+   "id": "pin_no_adapters",
+   "title": "어댑터 meta 의 착수 고정 sha 를 받지 않았다",
+   "adapters": "empty",
+   "function": "v6_contract_problems",
+   "expect": [
+    "pin_bytes"
+   ]
+  },
+  {
+   "id": "pin_no_contract",
+   "title": "학습 PIN 의 등록값에 narrative_inputs 가 없다",
+   "pin_ops": [
+    {
+     "del": [
+      "common",
+      "registration",
+      "narrative_inputs"
+     ]
+    }
+   ],
+   "function": "v6_contract_problems",
+   "expect": [
+    "pin_contract"
+   ]
+  },
+  {
+   "id": "pin_contract_version",
+   "title": "학습 PIN 의 narrative_inputs.version 이 계약 판과 다르다",
+   "pin_ops": [
+    {
+     "set": [
+      "common",
+      "registration",
+      "narrative_inputs",
+      "version"
+     ],
+     "value": 2
+    }
+   ],
+   "function": "v6_contract_problems",
+   "expect": [
+    "pin_contract"
+   ]
+  },
+  {
+   "id": "pin_not_json",
+   "title": "착수 고정 바이트가 JSON 이 아니다(어댑터 sha 는 그 바이트와 같다)",
+   "pin_raw_text": "착수 고정이 아닌 바이트",
+   "function": "v6_contract_problems",
+   "expect": [
+    "pin_contract"
+   ]
+  },
+  {
+   "id": "v6_contract_not_json",
+   "title": "넘긴 계약이 JSON 이 아니다",
+   "contract_raw_text": "계약이 아닌 바이트",
+   "function": "v6_contract_problems",
+   "expect": [
+    "contract_form"
+   ]
+  }
+ ],
+ "written_at_utc": "2026-10-24T06:43:23Z"
+}

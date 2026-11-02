@@ -245,6 +245,43 @@ def test_한_바퀴가_단계_표를_기대대로_끝낸다(lap):
     assert fed_meta["identity"]["purpose"] == "rehearsal" and fed_meta["adapter_step"] == 2
 
 
+def test_중단이_없는_계획은_구판을_돌리지_않고_건너뜀을_적는다(tmp_path):
+    """중단 없는 계획(서버 smoke)이 구판 경우를 새 폴더에서 처음부터 학습했다(외부 검토 발견) — 합성한 구판이 없으면 돌지 않는다.
+    중앙 칸 학습 다음의 학습 단계(덮어쓰기 — 0 을 기대)를 종료 3 으로 바꿔 거기서 멈춘다. 구판이 돌았다면 그 앞에 `--negative` 가 있다."""
+    from tests import uni_rehearsal_world as RW
+    from vlm.rehearsal_orch import expected_stages
+    from vlm.rehearsal_plan import load_plan
+
+    w = RW.build(tmp_path)
+    raw = w.plan.read_text(encoding="utf-8")
+    head, rest = raw.split("faults:\n", 1)
+    w.plan.write_text(head + rest[rest.index("negatives:"):], encoding="utf-8")
+    real, calls = RW.child_cmd(tmp_path), []
+
+    def launcher(entry, argv):
+        calls.append((entry, list(argv)))
+        if entry == "train" and sum(e == "train" for e, _ in calls) >= 2:
+            return [sys.executable, "-c", "raise SystemExit(3)"]
+        return real(entry, argv)
+
+    code = RU.main(["run", "--plan", str(w.plan), "--snapshot", str(w.snap), "--device", "cpu:0"],
+                   checkout=w.repo, exposure_ledger=w.exposure, scoring_ledger=w.scoring, non_main_parent=w.parent,
+                   launcher=launcher, env=dict(CLEAN), now=datetime(2026, 10, 1, 12, 0, tzinfo=KST),
+                   flwr_procs=list, flwr_stop=lambda found: None)
+    root = w.parent / "reh-20261001T120000"
+    rows = _rows(root)
+    names = [r["name"] for r in rows if "seq" in r]
+    assert not [a for _e, a in calls if "--negative" in a]
+    assert [n for n in names if n.startswith("negative_")] == [] and not (root / "negative").exists()
+    assert code != RU.EXIT_OK and names[-2:] == ["train_uni_central", "overwrite_same_stamp"]
+    skipped = [r for r in rows if r.get("kind") == "negatives_skipped"]
+    assert len(skipped) == 1 and skipped[0]["cases"] == ["policy_blank", "identity_key_missing", "identity_key_extra",
+                                                         "format_mismatch"]
+    assert [r for r in rows if r.get("kind") == "negatives_made"] == []
+    plan = load_plan(root / "plan.yaml", purpose="rehearsal")
+    assert [n for n in expected_stages(plan) if n.startswith("negative_")] == []        # 판정기의 단계 정본도 같다
+
+
 def test_구판_넷은_적용_전에_거부되고_다른_스탬프는_모델_전에_거부된다(lap):
     _w, root, _ = lap
     rows = _rows(root)

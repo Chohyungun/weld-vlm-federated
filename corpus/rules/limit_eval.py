@@ -44,6 +44,7 @@ __all__ = [
     "rows_for_clause",
     "derive_chunk_meta",
     "derive_gold_clauses",
+    "derive_clause_roles",
 ]
 
 # ratio_basis=s 행을 모재 두께 t 로 평가했다는 표시 (열린 질문 3 — 완전용입 맞대기 가정).
@@ -335,3 +336,60 @@ def derive_gold_clauses(table: RowSource) -> tuple[dict, ...]:
             "rule_id": r.rule_id,
         })
     return tuple(sorted(out, key=lambda d: tuple(str(v) for v in d.values())))
+
+
+#: 보조 조항을 내는 조건 종류 — `구별곤란` 하나다. 혼재는 영상의 코드 조합에 걸리는 조건이라 보조 조항을 내지 않는다(C 08 2 판 §1-3).
+AUXILIARY_KIND = "구별곤란"
+
+
+def derive_clause_roles(table: RowSource, *, method: InspectionMethod | str = "RT") -> dict[tuple[str, str], dict]:
+    """(재질, 결함 코드) → 주 조항 · 보조 조항 · 종별 · 조건(C 08 2 판 §2 · §9-3 — D 07 의 T1 · T2 의 한 식).
+
+    - **주 조항(T1)**: 활성 ∧ 정본 ∧ 검사 방식이 `method` 또는 ALL ∧ 재질이 그 재질 또는 ALL ∧ 그 코드인 행의 조항이다. 신판 표에는
+      조건부 행이 없어 고른 행 전부가 '조건 없는 대응' 이다. 주 조항이 둘 이상이면 **멈춘다**(`ValueError`). 주 조항은 등록된
+      코드–조항 대응이고, 실제 적용 가능성을 입증한 조항이라는 뜻이 아니다(217 D-E01).
+    - **보조 조항(T2)**: 그 행의 `구별곤란:X` 토큰마다, 같은 거름으로 고른 그 재질의 X 종별 행의 조항이다. 골격의 `clauses` ·
+      `candidate_rules` 에 넣지 않는다 — 이미지 단위의 주 · 보조 집계는 평가 쪽의 일이다.
+    - 열쇠는 아는 재질(ALL 밖) × 거름을 지난 행의 코드다. 그 재질에 행이 없으면 주 조항은 None 이다(알루미늄 — 1 판 · 2 판 모두).
+    - 1 판 표는 조건 칸이 비어 보조가 모두 비고, 주 조항이 1 판 조항이다.
+
+    값: `{"main": 조항 ID 또는 None, "auxiliary": ((조항 ID, "구별곤란"), …), "defect_class": 종별 또는 None,
+    "conditions": (토큰, …)}` — 평가 쪽 07e §5 의 받는 꼴과 같다.
+    """
+    m_q = InspectionMethod(method)
+    if m_q is InspectionMethod.ALL:
+        raise ValueError("[derive_clause_roles] 질의 값 ALL 금지 — RT 또는 VT 를 지정하라")
+    picked = [r for r in _rows_of(table)
+              if r.scope is Scope.ACTIVE and r.canonical
+              and r.inspection_method in (m_q, InspectionMethod.ALL)]
+    materials = sorted(m.value for m in Material if m is not Material.ALL)
+    codes = sorted({r.defect_code for r in picked})
+
+    def rows_of(mat: str) -> list[LimitRow]:
+        return [r for r in picked if r.material.value in (mat, Material.ALL.value)]
+
+    out: dict[tuple[str, str], dict] = {}
+    for mat in materials:
+        pool = rows_of(mat)
+        for code in codes:
+            rows = [r for r in pool if r.defect_code == code]
+            mains = sorted({r.clause_id for r in rows})
+            if len(mains) > 1:
+                raise ValueError(f"[derive_clause_roles] ({mat}, {code}) 의 주 조항이 둘 이상이다: {mains} — 멈춘다")
+            classes = sorted({r.defect_class.value for r in rows if r.defect_class is not None})
+            if len(classes) > 1:
+                raise ValueError(f"[derive_clause_roles] ({mat}, {code}) 의 종별이 둘 이상이다: {classes}")
+            conds = tuple(sorted({t for r in rows for t in r.conditions}))
+            aux: set[str] = set()
+            for tok in conds:
+                kind, _, cls = tok.partition(":")
+                if kind == AUXILIARY_KIND:
+                    aux |= {s.clause_id for s in pool if s.defect_class is not None and s.defect_class.value == cls}
+            main = mains[0] if mains else None
+            if main is not None and main in aux:
+                raise ValueError(f"[derive_clause_roles] ({mat}, {code}) 의 보조 조항이 제 주 조항과 같다: {main}")
+            out[(mat, code)] = {"main": main,
+                                "auxiliary": tuple((c, AUXILIARY_KIND) for c in sorted(aux)),
+                                "defect_class": classes[0] if classes else None,
+                                "conditions": conds}
+    return out

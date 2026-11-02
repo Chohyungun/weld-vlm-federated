@@ -2,6 +2,8 @@
 
 벡터는 G150 합성 사례와 구조 사례(구역별 수 · 합 — `scripts/probe/grounded_v7_structural_cases.py`, 실물 id 없음)에서 평가 쪽 참조
 구현(`evaluation/grounded_v7_ref.py`)으로 만든 것이다. 정식 구현이 같은 벡터를 다시 내야 한다(총괄 계약 5).
+보강 7 에서 배분 서술 사례(`evaluation/vectors/grounded_v7_each_cases.json` — 합성 EA-xx 와 생성 v2 회수본 감사 행에서 글 · 주석만
+옮긴 GV-xx, 실물 id 없음)를 `extend` 로 더했다.
 """
 
 from __future__ import annotations
@@ -22,14 +24,28 @@ from scripts.probe import grounded_v7_structural_cases as S  # noqa: E402
 
 VEC = ROOT / "evaluation/vectors/grounded_v7_vectors.jsonl"
 STRUCT = ROOT / "evaluation/vectors/grounded_v7_structural_cases.json"
-N_ROWS = 150 + len(S.CASES) + len(S.NORMAL_CASES)
+EACH_FILE = ROOT / "evaluation/vectors/grounded_v7_each_cases.json"
+EACH = json.loads(EACH_FILE.read_text(encoding="utf-8"))["cases"]
+GAP_FILE = ROOT / "evaluation/vectors/grounded_v7_gap46_cases.json"
+GAP = json.loads(GAP_FILE.read_text(encoding="utf-8"))["cases"]
+GAP49_FILE = ROOT / "evaluation/vectors/grounded_v7_gap49_cases.json"
+GAP49 = json.loads(GAP49_FILE.read_text(encoding="utf-8"))["cases"]
+GAP50_FILE = ROOT / "evaluation/vectors/grounded_v7_gap50_cases.json"
+GAP50 = json.loads(GAP50_FILE.read_text(encoding="utf-8"))["cases"]
+GAP52_FILE = ROOT / "evaluation/vectors/grounded_v7_gap52_cases.json"
+GAP52 = json.loads(GAP52_FILE.read_text(encoding="utf-8"))["cases"]
+N_ROWS = 150 + len(S.CASES) + len(S.NORMAL_CASES) + len(EACH) + len(GAP) + len(GAP49) + len(GAP50) + len(GAP52)
 
 
 def test_벡터_파일의_머리와_행() -> None:
     meta, rows = H.read_vectors(VEC)
     assert meta["schema"] == H.SCHEMA and meta["n_rows"] == len(rows) == N_ROWS
     assert meta["fields"] == list(H.FIELDS)
-    assert {r["group"] for r in rows} == {"N+", "D+", "ADV1", "ADV2", "STRUCT+", "STRUCT-", "NORM+", "NORM-"}
+    assert {r["group"] for r in rows} == {"N+", "D+", "ADV1", "ADV2", "STRUCT+", "STRUCT-", "NORM+", "NORM-", "EACH+", "EACH-",
+                                          *(c["group"] for c in GAP), *(c["group"] for c in GAP49), *(c["group"] for c in GAP50),
+                                          *(c["group"] for c in GAP52)}
+    assert all(c["group"].startswith("GAP46-") for c in GAP) and all(c["group"].startswith("GAP49-") for c in GAP49)
+    assert all(c["group"].startswith("GAP50-") for c in GAP50) and all(c["group"].startswith("GAP52-") for c in GAP52)
     assert len({r["id"] for r in rows}) == len(rows)
     assert all("aihub" not in json.dumps(r, ensure_ascii=False) for r in rows), "실물 id 를 싣지 않는다"
 
@@ -237,3 +253,246 @@ def test_의존_정책이_바뀌어도_벡터는_낡지_않는다(tmp_path) -> N
     assert res["equal"] and res["stale"] == []
     assert "reference_sha256" not in res["deps_changed"] and set(res["deps_changed"]) <= set(H.DEPS)
     assert "generation_policy_sha256" in res["deps_changed"]
+
+
+SUPPLEMENT6_REFERENCE_SHA256 = "07ce544f974e95692800314413a1c87f4ad6d741a54cf239404e979713e00962"
+"""보강 6(256c40b)의 정본 바이트 — 판 4 벡터의 핀이었다(당시 값). 지금 값은 meta 의 reference_sha256 이다."""
+SUPPLEMENT6_VECTORS_SHA256 = "48523cc37b02a8196f3ce3dade0919f3ef44b2b651a6a83f8208467d8a84af08"
+SUPPLEMENT7_FIRST_REFERENCE_SHA256 = "7f80f90a0f9cb6e07dcd2c6e9d4f980346311e8d72ff8937b7b70b606e664518"
+"""보강 7 의 첫 핀(6판, 커밋 6b11185e)의 정본 바이트 — 독립 검수를 반영하며 다시 걸었다(당시 값)."""
+SUPPLEMENT7_FIRST_VECTORS_SHA256 = "fedc73171c1cd467c06dc47ff053d1f2a5f16a03dbb021885e1a77e35e3c1796"
+SUPPLEMENT7_REVIEWED_REFERENCE_SHA256 = "9aa88c939a341036031330f5354d8b927cb12208f8b3c230cd33a727a76f08ad"
+"""독립 검수를 반영한 7판(커밋 223b31b6)의 정본 바이트 — v8 결정적 층의 틈 정정(47)에서 다시 걸었다(당시 값)."""
+SUPPLEMENT7_REVIEWED_VECTORS_SHA256 = "aa02edddc4a405fa565984bf2f4eac7143729dacedc59eb65e7367d866abdde9"
+GAP46_REFERENCE_SHA256 = "ba291a24854699352f4e943cc99227a0b25734417a1b5c798551ec32ab7395ed"
+"""v8 결정적 층의 틈 정정(47, 커밋 8696585a)의 정본 바이트 — 49 독립 검수의 재정정에서 다시 걸었다(당시 값)."""
+GAP46_VECTORS_SHA256 = "093b6ed086e2b5777520d2cc4499a9c6411ffe2ceddddea34cbd936c8e1d7105"
+GAP49_REFERENCE_SHA256 = "7518fe04355c3615adcca0664d1da37a47705f087ad117d746e2cb5e73195da1"
+"""49 독립 검수의 재정정(커밋 b84a9901)의 정본 바이트 — 50 독립 검수의 '너무 넓음' 정정에서 다시 걸었다(당시 값)."""
+GAP49_VECTORS_SHA256 = "4590b60b290c156ebd97f7417fddb0ecb9d9256ef45ddd6c9c6e5505d6b0ecc0"
+GAP50_REFERENCE_SHA256 = "7e5e769f17c856ead270ac00d561300cef9a409d8b639af8218815462093cd1c"
+"""50 독립 검수의 '너무 넓음' 정정(커밋 6db5bbf1)의 정본 바이트 — 봉인 집합의 두 결함 음성 뒤 정정에서 다시 걸었다(당시 값)."""
+GAP50_VECTORS_SHA256 = "0314a3787e70598721b6400322c03439155bf76f7b6ade172b758c83ec322d5c"
+
+
+def test_핀의_당시_값과_지금_값을_함께_싣는다() -> None:
+    """보강 7(§137 I-02 · I-03 · 배분 서술)에서 핀을 다시 걸고 행을 더했다 — 보강 6 핀에서 6판으로 다시 건 핀의 바뀐 기대값은 0 행,
+    독립 검수를 반영해 7판으로 다시 건 핀은 배분 사례 세 행의 코드가 바뀌었다. 앞 핀들과 그때 벡터 파일의 해시가 meta 에 차례로
+    남는다. 더한 행은 배분 서술 사례 파일의 행이고, 그 파일의 해시와 까닭이 함께 남는다. v8 결정적 층의 틈 정정(47)으로 다시 건
+    핀의 바뀐 기대값은 0 행이고, 그 합성 사례(46 탐침 · 변형)를 둘째로 더했다. 49 독립 검수의 재정정으로 다시 건 핀의 바뀐 기대값도
+    0 행이고, 정본이 가르는 그 합성 사례(띠 예외어 · 부재 예외 · 이름 나열)를 셋째로 더했다. 50 독립 검수의 '너무 넓음' 정정으로
+    다시 건 핀의 바뀐 기대값도 0 행이고, 그 합성 사례(띠 예외어 · 이름만 뺀 부재 · 이웃 꼴)를 넷째로 더했다. 봉인 집합의 두 결함
+    음성 뒤 정정(부재 예외 나열 · 속성 이름씨)으로 다시 건 핀의 바뀐 기대값도 0 행이고, 그 합성 사례(이름 + 들 · 결함, 칸 + 영역 ·
+    부분, 구분자)를 다섯째로 더했다."""
+    meta, rows = H.read_vectors(VEC)
+    assert meta["version"] == H.VERSION == 6
+    assert meta["reference_sha256"] == H.lf_sha256(ROOT / "evaluation/grounded_v7_ref.py") not in (
+        SUPPLEMENT6_REFERENCE_SHA256, SUPPLEMENT7_FIRST_REFERENCE_SHA256, SUPPLEMENT7_REVIEWED_REFERENCE_SHA256,
+        GAP46_REFERENCE_SHA256, GAP49_REFERENCE_SHA256, GAP50_REFERENCE_SHA256)
+    first, past, reviewed, gap46, gap49, gap50 = meta["reference_history"]
+    assert (first["version"], first["reference_sha256"], first["vectors_sha256"]) == (
+        4, SUPPLEMENT6_REFERENCE_SHA256, SUPPLEMENT6_VECTORS_SHA256)
+    assert first["changed"] == [] and "보강 7" in first["note"]
+    assert (past["version"], past["reference_sha256"], past["vectors_sha256"]) == (
+        6, SUPPLEMENT7_FIRST_REFERENCE_SHA256, SUPPLEMENT7_FIRST_VECTORS_SHA256)
+    assert sorted(c["id"] for c in past["changed"]) == ["EA-13", "EA-14", "EA-18"] and "독립 검수" in past["note"]
+    assert (reviewed["version"], reviewed["reference_sha256"], reviewed["vectors_sha256"]) == (
+        6, SUPPLEMENT7_REVIEWED_REFERENCE_SHA256, SUPPLEMENT7_REVIEWED_VECTORS_SHA256)
+    assert reviewed["changed"] == [] and "47" in reviewed["note"]
+    assert (gap46["version"], gap46["reference_sha256"], gap46["vectors_sha256"]) == (
+        6, GAP46_REFERENCE_SHA256, GAP46_VECTORS_SHA256)
+    assert gap46["changed"] == [] and "49" in gap46["note"]
+    assert (gap49["version"], gap49["reference_sha256"], gap49["vectors_sha256"]) == (
+        6, GAP49_REFERENCE_SHA256, GAP49_VECTORS_SHA256)
+    assert gap49["changed"] == [] and "50" in gap49["note"]
+    assert (gap50["version"], gap50["reference_sha256"], gap50["vectors_sha256"]) == (
+        6, GAP50_REFERENCE_SHA256, GAP50_VECTORS_SHA256)
+    assert gap50["changed"] == [] and "봉인 집합" in gap50["note"]
+    ext = meta["extensions"]
+    assert [(e["cases"], e["previous_sha256"]) for e in ext] == [("grounded_v7_each_cases.json", None),
+                                                                ("grounded_v7_gap46_cases.json", None),
+                                                                ("grounded_v7_gap49_cases.json", None),
+                                                                ("grounded_v7_gap50_cases.json", None),
+                                                                ("grounded_v7_gap52_cases.json", None)]
+    assert [e["sha256"] for e in ext] == [H.lf_sha256(EACH_FILE), H.lf_sha256(GAP_FILE), H.lf_sha256(GAP49_FILE),
+                                          H.lf_sha256(GAP50_FILE), H.lf_sha256(GAP52_FILE)]
+    n46, n49, n50, n52 = len(GAP), len(GAP49), len(GAP50), len(GAP52)
+    tail = n52 + n50 + n49 + n46
+    assert ext[0]["added"] == [c["id"] for c in EACH] == [r["id"] for r in rows[-tail - len(EACH):-tail]]
+    assert "배분" in ext[0]["note"]
+    assert ext[1]["added"] == [c["id"] for c in GAP] == [r["id"] for r in rows[-tail:-n52 - n50 - n49]] and "47" in ext[1]["note"]
+    assert ext[2]["added"] == [c["id"] for c in GAP49] == [r["id"] for r in rows[-n52 - n50 - n49:-n52 - n50]] and "49" in ext[2]["note"]
+    assert ext[3]["added"] == [c["id"] for c in GAP50] == [r["id"] for r in rows[-n52 - n50:-n52]] and "50" in ext[3]["note"]
+    assert ext[4]["added"] == [c["id"] for c in GAP52] == [r["id"] for r in rows[-n52:]] and "봉인 집합" in ext[4]["note"]
+
+
+def test_rebase_는_앞_핀과_바뀐_기대값을_남긴다(tmp_path) -> None:
+    meta, rows = H.read_vectors(VEC)
+    first = rows[0]["id"]
+    rows[0] = {**rows[0], "expected": {**rows[0]["expected"], "grounded_codes": ["made_up_code"]}}
+    src = tmp_path / "old.jsonl"
+    H._write(src, {**meta, "reference_sha256": "0" * 64}, rows)
+    out = tmp_path / "new.jsonl"
+    res = H.rebase(src, out, "시험")
+    new_meta, new_rows = H.read_vectors(out)
+    assert res["previous_reference_sha256"] == "0" * 64 and new_meta["reference_sha256"] == meta["reference_sha256"]
+    assert new_meta["reference_history"][:-1] == meta["reference_history"]
+    last = new_meta["reference_history"][-1]
+    assert last["reference_sha256"] == "0" * 64 and last["note"] == "시험"
+    assert last["changed"] == [{"id": first, "field": "grounded_codes", "before": ["made_up_code"],
+                                "after": H.read_vectors(VEC)[1][0]["expected"]["grounded_codes"]}]
+    assert new_rows == H.read_vectors(VEC)[1]                       # 행의 입력은 그대로, 기대값은 지금 정본의 출력
+    assert H.check(out, None, None, {})["equal"] and H.check(out, None, None, {})["stale"] == []
+
+
+def test_rebase_는_정본이_그대로거나_까닭이_없으면_거부한다(tmp_path) -> None:
+    with pytest.raises(SystemExit):
+        H.rebase(VEC, tmp_path / "x.jsonl", "같은 정본")
+    meta, rows = H.read_vectors(VEC)
+    src = tmp_path / "old.jsonl"
+    H._write(src, {**meta, "reference_sha256": "0" * 64}, rows)
+    with pytest.raises(SystemExit):
+        H.rebase(src, tmp_path / "y.jsonl", "  ")
+    assert not (tmp_path / "x.jsonl").exists() and not (tmp_path / "y.jsonl").exists()
+
+
+@pytest.mark.parametrize("case", EACH, ids=[c["id"] for c in EACH])
+def test_배분_서술_사례의_의도(case) -> None:
+    """'A 와 B 에 각각 N개씩' 은 칸마다 N 이다 — 맞는 글은 지나고(EACH+), '각각' 이 들었지만 주석과 안 맞는 글은 기각된다(EACH-)."""
+    got = R.grounded_codes(case["task"], case["candidate"])
+    if case["intent"] is None:
+        assert got == [], (case["id"], got)
+    else:
+        assert got and set(case["intent"]) <= set(got), (case["id"], got)
+    assert R.contract_codes(case["task"], case["candidate"]) == [] and R.attribute_codes(case["task"], case["candidate"]) == []
+
+
+def test_배분_서술_사례는_회수본_행을_고루_싣는다() -> None:
+    """회수본 감사 행(GV-xx)은 맞는 행 10 개 이상(칸 둘 · 칸 셋), '각각' 이 들었지만 주석과 안 맞는 행 5 개 이상(이름 둘 이상 포함)이다.
+    실물 id 는 싣지 않는다."""
+    gv = [c for c in EACH if c["id"].startswith("GV-")]
+    good, bad = [c for c in gv if c["intent"] is None], [c for c in gv if c["intent"] == []]
+    zones = lambda c: len({(p["where"]) for p in c["task"]["evidence"]["defect_positions"]})
+    names = lambda c: len(c["task"]["evidence"]["defect_counts_by_name"])
+    assert len(good) >= 10 and {zones(c) for c in good} >= {2, 3} and len(bad) >= 5 and any(names(c) >= 2 for c in bad)
+    assert all("각각" in c["candidate"] for c in gv)
+    assert "aihub" not in EACH_FILE.read_text(encoding="utf-8")
+
+
+def test_extend_는_새_id_만_덧붙이고_기존_행은_그대로다(tmp_path) -> None:
+    meta, rows = H.read_vectors(VEC)
+    src = tmp_path / "cut.jsonl"
+    H._write(src, {**meta, "n_rows": len(rows) - 2}, rows[:-2])
+    out = tmp_path / "full.jsonl"
+    res = H.extend(src, GAP52_FILE, out, "시험")
+    new_meta, new_rows = H.read_vectors(out)
+    assert res["added"] == [r["id"] for r in rows[-2:]] and new_rows == rows
+    assert new_meta["extensions"][-1]["added"] == res["added"] and new_meta["extensions"][-1]["note"] == "시험"
+    assert H.check(out, None, None, {})["equal"]
+
+
+def test_extend_는_핀이_다르거나_입력이_다르거나_까닭이_없거나_더할_행이_없으면_거부한다(tmp_path) -> None:
+    meta, rows = H.read_vectors(VEC)
+    stale = tmp_path / "stale.jsonl"
+    H._write(stale, {**meta, "n_rows": len(rows) - 1, "reference_sha256": "0" * 64}, rows[:-1])
+    changed = tmp_path / "changed.jsonl"
+    bad = [dict(r) for r in rows[:-1]]
+    bad[-1] = {**bad[-1], "candidate": bad[-1]["candidate"] + " "}            # 틈 사례의 같은 id, 다른 입력
+    H._write(changed, {**meta, "n_rows": len(bad)}, bad)
+    cut = tmp_path / "cut.jsonl"
+    H._write(cut, {**meta, "n_rows": len(rows) - 1}, rows[:-1])
+    for src, note in ((stale, "시험"), (changed, "시험"), (cut, "  "), (VEC, "더할 행 없음")):
+        with pytest.raises(SystemExit):
+            H.extend(src, GAP50_FILE, tmp_path / "out.jsonl", note)
+    assert not (tmp_path / "out.jsonl").exists()
+
+
+@pytest.mark.parametrize("case", GAP49, ids=[c["id"] for c in GAP49])
+def test_재정정_사례의_의도(case) -> None:
+    """49 독립 검수의 재정정에서 정본이 가르는 사례 — 띠 예외어는 띠 주어 바로 앞에 붙은 것만(H), 예외어가 든 부재는 예외로 든 칸 ·
+    이름을 뺀 나머지로 대조(A), 칸 바로 뒤의 이름은 다른 칸의 나열에 끌려가지 않는다(I). 의도 null 은 통과, 코드 목록은 그 기각."""
+    got = R.grounded_codes(case["task"], case["candidate"])
+    if case["intent"] is None:
+        assert got == [], (case["id"], got)
+    else:
+        assert got and set(case["intent"]) <= set(got), (case["id"], got)
+
+
+def test_예외어는_붙은_자리와_뺀_것을_읽는다() -> None:
+    """넓힌 예외어가 너무 넓지 않은가 — 덧붙임('외에도 · 말고도' · '…외에 용입불량도 있으며, 결함은') · 띠 소견 뒤의 예외 마디는
+    띠 예외가 아니고, 무엇을 뺐는지 읽지 못하는 부재('다른 칸에는')는 고치기 전처럼 대조하지 않는다. 뺀 것을 읽으면 여집합으로
+    대조한다('위쪽 왼쪽 칸을 뺀 칸에는 결함이 없다' — 아래 오른쪽에 균열이 있다)."""
+    assert R._BAND_EXCEPT.search("용입불량을 뺀 결함은 모두 위쪽 높이의 칸에 있다")
+    assert R._BAND_EXCEPT.search("기공 말고 다른 결함은 모두 위쪽 높이의 칸에 있다")
+    for s in ("기공 외에 용입불량도 있으며, 결함은 모두 아래쪽 높이의 칸에 있다", "용입불량 외에도 결함은 모두 위쪽 높이의 칸에 있다",
+              "용입불량 말고도 결함은 모두 위쪽 높이의 칸에 있다", "결함은 모두 아래쪽 높이의 칸에 있고 기공을 뺀 나머지도 그렇다"):
+        assert not R._BAND_EXCEPT.search(s), s
+    names, zones, _ = R._excepted("위쪽 높이와 아래 가운데를 뺀 칸에는 표시된 결함이 없다")
+    assert names == set() and zones == {("위", c) for c in ("왼쪽", "가운데", "오른쪽")} | {("아래", "가운데")}
+    assert R._excepted("기공을 뺀 위 왼쪽 칸에는 결함이 없다")[:2] == ({"기공"}, set())
+    assert R._excepted("다른 칸에는 결함이 없다") is None and R._excepted("기공 외에도 균열이 없다") is None
+    task = S.task_of([("기공", "위 왼쪽"), ("균열", "아래 오른쪽")])
+    head = "기공 1개가 위쪽 왼쪽 칸에, 균열 1개가 아래쪽 오른쪽 칸에 표시되어 있다. "
+    assert R.grounded_codes(task, head + S.L) == []
+    assert "absence_contradicts_locked" in R.grounded_codes(task, head + "위쪽 왼쪽 칸을 뺀 칸에는 결함이 없다. " + S.L)
+    assert "absence_contradicts_locked" in R.grounded_codes(task, head + "위쪽 왼쪽 칸을 제외한 칸에는 결함이 없다. " + S.L)
+    assert R.grounded_codes(task, head + "위쪽 왼쪽 칸과 아래쪽 오른쪽 칸을 뺀 칸에는 결함이 없다. " + S.L) == []
+    assert R.grounded_codes(task, head + "다른 칸에는 결함이 없다. " + S.L) == []
+
+
+@pytest.mark.parametrize("case", GAP50, ids=[c["id"] for c in GAP50])
+def test_50_사례의_의도(case) -> None:
+    """50 독립 검수의 '너무 넓음' 정정에서 정본이 가르는 사례 — 띠 예외어(B)와 부재 예외(X: 이름만 뺀 부재는 영상 전체로 대조하고, 뺀
+    것을 칸 · 이름으로 읽지 못하면 대조하지 않는다)와 그 이웃 꼴. 의도 null 은 통과, 코드 목록은 그 기각."""
+    got = R.grounded_codes(case["task"], case["candidate"])
+    if case["intent"] is None:
+        assert got == [], (case["id"], got)
+    else:
+        assert got and set(case["intent"]) <= set(got), (case["id"], got)
+
+
+def test_이름만_뺀_부재는_영상_전체로_대조한다() -> None:
+    """'기공을 뺀 결함은 없다' — 남은 칸이 비면 뺀 칸 밖 모두, 뺀 칸도 없으면 영상 전체로 대조한다(아래 오른쪽에 균열이 잠김). 예외로
+    든 이름이 잠긴 이름을 다 덮으면 참이고, 뺀 것이 칸도 이름도 아니면('영상 밖에는') 무엇을 뺐는지 모르니 대조하지 않는다."""
+    task = S.task_of([("기공", "위 왼쪽"), ("균열", "아래 오른쪽")])
+    head = "기공 1개가 위쪽 왼쪽 칸에, 균열 1개가 아래쪽 오른쪽 칸에 표시되어 있다. "
+    for s in ("기공을 뺀 결함은 없다.", "기공 외에는 결함이 없다.", "기공 말고 다른 결함은 없다.", "균열을 뺀 결함은 없다.",
+              "기공을 빼면 결함은 없다."):
+        assert "absence_contradicts_locked" in R.grounded_codes(task, head + s + " " + S.L), s
+    for s in ("기공과 균열을 뺀 결함은 없다.", "기공과 균열 외에는 결함이 없다.", "영상 밖에는 결함이 없다.",
+              "기공 외에는 아래 왼쪽 칸에 결함이 없다."):
+        assert R.grounded_codes(task, head + s + " " + S.L) == [], s
+    assert R._excepted("영상 밖에는 결함이 없다")[:2] == (set(), set())
+    assert not R._excepted_absence(set(), {"균열": {("아래", "오른쪽")}}, (set(), set(), [(0, 2)]))
+    assert R._excepted_absence(set(), {"균열": {("아래", "오른쪽")}}, ({"기공"}, set(), [(0, 2)]))
+
+
+@pytest.mark.parametrize("case", GAP52, ids=[c["id"] for c in GAP52])
+def test_52_사례의_의도(case) -> None:
+    """부재 예외 나열의 정정에서 정본이 가르는 사례 — 이름 + 들 · 이름 + 결함, 칸 + 영역 · 부분, 구분자 · ㆍ / 이나와 이웃 꼴.
+    의도 null 은 통과, 코드 목록은 그 기각."""
+    got = R.grounded_codes(case["task"], case["candidate"])
+    if case["intent"] is None:
+        assert got == [], (case["id"], got)
+    else:
+        assert got and set(case["intent"]) <= set(got), (case["id"], got)
+
+
+def test_부재_예외_나열은_이름_들_결함_칸_영역_부분_구분자를_읽는다() -> None:
+    """'기공들을 · 기공 결함을 뺀', '위쪽 왼쪽 영역 외에는', '기공·균열 · 기공/균열 · 기공이나 균열 외에는' — 나열을 읽어 뺀 것 밖으로
+    대조한다(뺀 이름이 잠긴 이름을 다 덮으면 참). '영역 · 부분' 앞이 칸이 아니면('표시된 부분 외에는') 무엇을 뺐는지 모르니 대조하지 않는다."""
+    assert R._excepted("기공들을 뺀 결함은 없다")[:2] == ({"기공"}, set())
+    assert R._excepted("기공 결함을 뺀 결함은 없다")[:2] == ({"기공"}, set())
+    for s in ("기공·균열 외에는 결함이 없다", "기공ㆍ균열 외에는 결함이 없다", "기공/균열 외에는 결함이 없다", "기공이나 균열 외에는 결함이 없다",
+              "기공들·균열 외에는 결함이 없다", "기공 결함·균열 결함 외에는 결함이 없다"):
+        assert R._excepted(s)[:2] == ({"기공", "균열"}, set()), s
+    assert R._excepted("위쪽 왼쪽 영역 외에는 결함이 없다")[:2] == (set(), {("위", "왼쪽")})
+    assert R._excepted("표시된 부분 외에는 결함이 없다")[:2] == (set(), set())
+    task = S.task_of([("기공", "위 왼쪽"), ("균열", "아래 오른쪽")])
+    head = "기공 1개가 위쪽 왼쪽 칸에, 균열 1개가 아래쪽 오른쪽 칸에 표시되어 있다. "
+    for s in ("기공들을 뺀 결함은 없다.", "기공 결함 외에는 결함이 없다.", "위쪽 왼쪽 영역 외에는 결함이 없다.",
+              "아래쪽 오른쪽 부분을 뺀 곳에는 결함이 없다.", "기공·용입불량 외에는 결함이 없다."):
+        assert "absence_contradicts_locked" in R.grounded_codes(task, head + s + " " + S.L), s
+    for s in ("기공·균열 외에는 결함이 없다.", "기공/균열 외에는 결함이 없다.", "기공이나 균열 외에는 결함이 없다.",
+              "기공들과 균열 외에는 결함이 없다.", "위쪽 왼쪽 영역과 아래쪽 오른쪽 영역 외에는 결함이 없다.", "표시된 부분 외에는 결함이 없다."):
+        assert R.grounded_codes(task, head + s + " " + S.L) == [], s

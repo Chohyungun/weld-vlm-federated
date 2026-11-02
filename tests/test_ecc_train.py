@@ -318,10 +318,12 @@ def test_T3_점검_목적은_대역을_허용하지_않으면_부르기_전에_�
     assert loader.n == 0
 
 
-def test_T3_본실험_실행기는_점검_인자를_받지_않는다(tmp_path, capsys):
+def test_T3_본실험_실행기는_점검_인자를_받지_않는다(tmp_path, capsys, monkeypatch):
     import scripts.main_uni as M
     from tests.test_main_uni import _cfg_yaml
+    from tests.uni_fakes import use_registration
 
+    use_registration(monkeypatch, tmp_path)                             # 시드 경계는 임시 등록으로(저장소 파일에 묶지 않는다)
     p = _cfg_yaml(tmp_path)
     for argv in (["local", "--seed", "1", "--resume-step", "2"], ["central", "--seed", "1", "--ecc-root", "x"],
                  ["fed", "--seed", "1", "--spent-hours", "1"]):
@@ -483,15 +485,16 @@ def test_상한과_단가는_규칙_파일에서_오고_실행_인자는_좁히�
 
 
 # ================================================================ T9 · T10
-def test_T9_상한을_넘을_예상이면_시작_재개하지_않고_세_수를_원장에_적는다(tmp_path):
+def test_T9_상한을_넘을_예상이면_시작_재개하지_않고_세_수를_비용_저널에_적는다(tmp_path):
     w = _world(tmp_path)
     budget = {"spent_hours": 9.0, "next_hours": 2.0, "max_hours": 10.0, "max_won": None, "won_per_hour": 2500}
     with pytest.raises(E.EccRefused) as exc:
         _run(w, budget=budget)
     assert exc.value.code == "ecc_budget_exceeded" and w.loader.n == 1
-    rows = E.ledger_rows(w.out)
-    assert rows[-1]["event"] == "ecc_budget_exceeded"
-    detail = json.loads(rows[-1]["detail"])
+    rows = E.budget_rows(w.out)
+    assert rows[-1]["event"] == "ecc_budget_exceeded" and rows[-1]["source"] == E.BUDGET_FILE
+    assert not any(r["event"] in E.BUDGET_EVENTS for r in E.ledger_rows(w.out))   # 원장에는 학습 줄만(§137 I-04)
+    detail = rows[-1]["detail"]
     assert (detail["spent_hours"], detail["next_hours"], detail["max_hours"]) == (9.0, 2.0, 10.0)
     ok = {**budget, "spent_hours": 1.0}
     assert _run(w, budget=ok)["step"] == 2
@@ -704,9 +707,12 @@ def _export_world(tmp: Path):
     assert _run(w)["step"] == 2
     m = _meta(w, 2)
     ident = m["identity"]
+    # 시드는 등록의 시드표 값(실제 시드)과 번호로 — 점검 신원은 번호가 아니라 실제 시드를 싣는다(§137 C-01). 값은 이 세계의
+    # 칸 설정(`_spec` 의 seed_value 7)에서 오며, 검사 대상인 체크포인트에서 거꾸로 읽지 않는다.
     kw = {"measured": {"processor_config_sha256": ident["processor_config_sha256"]}, "coord_hash": ident["coord_cfg_hash"],
           "cfg": SimpleNamespace(pairs_path=w.spec.pairs_path),
-          "reg": SimpleNamespace(generation=SimpleNamespace(train_rows_digest=None)), "run_root": tmp / ECC_ROOT}
+          "reg": SimpleNamespace(generation=SimpleNamespace(train_rows_digest=None), seeds={"1": w.spec.seed_value}),
+          "run_root": tmp / ECC_ROOT, "seed_index": 1}
     return w, kw
 
 

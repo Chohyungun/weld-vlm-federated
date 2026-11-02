@@ -24,7 +24,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from fl.uni_run_config import (PURPOSES, UNI_RUN_DEFAULTS, UNI_RUN_KEYS,  # noqa: E402
+from fl.uni_run_config import (PURPOSES, UNI_RUN_DEFAULTS, UNI_RUN_KEYS, UNI_RUN_UNDECLARED,  # noqa: E402
                                client_run_cfg, down_config)
 from vlm.uni_config import UniConfigIncomplete, load_uni_config, uni_config_from  # noqa: E402
 
@@ -221,6 +221,8 @@ def test_학습_루프가_받은_값을_신원과_인코딩에_쓴다():
 # ================================================================ 연합 키
 def test_연합_키의_선언이_목록과_기본값까지_같다():
     decl = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["flwr"]["app"]["config"]
+    assert UNI_RUN_UNDECLARED == ()
+    assert set(UNI_RUN_DEFAULTS) - set(decl) == set(UNI_RUN_UNDECLARED)
     for k, d in UNI_RUN_DEFAULTS.items():
         assert k in decl, f"pyproject 가 {k} 를 선언하지 않았다 — flwr run 이 덮어쓰기를 거부한다"
         assert decl[k] == d, f"{k} 의 선언 기본값 {decl[k]!r} ≠ 목록 {d!r}"

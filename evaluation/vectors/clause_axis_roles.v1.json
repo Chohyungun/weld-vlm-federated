@@ -1,0 +1,636 @@
+{
+ "kind": "clause_axis_roles_cases",
+ "version": 1,
+ "status": "구현 전 고정 — 기대는 사례 파일에서만 읽는다. 바꾸면 '기대 변경 표' 로 남긴다",
+ "policy": "(나) 주 조항 하나 + 보조 조항의 분해 — 정답 쌍 = 주, 보조 전용 = 이미지의 보조 합집합 − 주 합집합(발생 횟수로 센다)",
+ "sources": {
+  "spec_07": {
+   "path": "docs/dev_log/2026-10-20-설계복구/07_허용치표_부분B_미니스펙_D.md",
+   "commit": "f1ce519a538659f1bf4496343e0112d3b1bc9667",
+   "sha256": "abe838b5b21812bf05dbd29166434cd4a489da4fba2af677fb12d9379a2a813f"
+  },
+  "spec_08": {
+   "path": "docs/dev_log/2026-10-20-설계복구/08_허용치표_부분B_미니스펙_C.md",
+   "commit": "f1ce519a538659f1bf4496343e0112d3b1bc9667",
+   "sha256": "046575e62f2583a9eb532fee4d7620149ba3ff80d20c9cbc97166d54ceccd963"
+  },
+  "decision_09": {
+   "path": "docs/dev_log/2026-10-20-설계복구/09_부분B_면제꼴_런북_게이트_총괄_20261024.md",
+   "commit": "f1ce519a538659f1bf4496343e0112d3b1bc9667",
+   "sha256": "e01e4da4636638f060cc7c4f790f07e73e050a100dfa851757c27378cdc4fbf9"
+  },
+  "check_221": {
+   "path": "_workspace/2026-10-20-design-recovery/C08_SPEC_REVIEW_221.md(본체 체크아웃)",
+   "sha256": "e6f8d79a394fc37d879f93e6b73d40e4d8276fc01f795e2b2e9ac9544ca34806"
+  },
+  "builder": {
+   "path": "docs/dev_log/2026-10-20-설계복구/07f_사례고정_D.py",
+   "lf_sha256": "35a0d5f4aed0523d6afaf9cb797d0a9c1b26cfdba1380c39c9e4f1e31abe9c14"
+  },
+  "sections": "07 §13-3 · §13-5 · §14-3 · 08 §2 · §7 · §9-3"
+ },
+ "roles_form": "(재질, 코드) → {main: 조항 ID 또는 null, auxiliary: [[조항 ID, 조건 종류], …]} — 조건 종류는 '구별곤란' 하나. 생성 쪽 `derive_clause_roles` 출력의 대역(인터페이스 문서 07e 의 §5)",
+ "worlds": {
+  "synthetic": {
+   "index": [
+    "P",
+    "Q",
+    "R"
+   ],
+   "roles": [
+    {
+     "material": "ST",
+     "code": "갑",
+     "main": "P",
+     "auxiliary": [
+      [
+       "Q",
+       "구별곤란"
+      ]
+     ]
+    },
+    {
+     "material": "ST",
+     "code": "을",
+     "main": "Q",
+     "auxiliary": []
+    },
+    {
+     "material": "ST",
+     "code": "병",
+     "main": null,
+     "auxiliary": [
+      [
+       "P",
+       "구별곤란"
+      ]
+     ]
+    },
+    {
+     "material": "ST",
+     "code": "정",
+     "main": "R",
+     "auxiliary": []
+    }
+   ],
+   "note": "07 §13-3 의 합성 코드 넷 — 갑(주 P · 보조 Q), 을(주 Q), 병(주 없음 · 보조 P), 정(주 R)"
+  },
+  "edition2": {
+   "index": [
+    "KRA27-3D",
+    "KRA27-S",
+    "KRA27-T15",
+    "KRA27-T16"
+   ],
+   "roles": [
+    {
+     "material": "ST",
+     "code": "2011",
+     "main": "KRA27-T15",
+     "auxiliary": [
+      [
+       "KRA27-T16",
+       "구별곤란"
+      ]
+     ]
+    },
+    {
+     "material": "ST",
+     "code": "301",
+     "main": "KRA27-T16",
+     "auxiliary": [
+      [
+       "KRA27-T15",
+       "구별곤란"
+      ]
+     ]
+    },
+    {
+     "material": "ST",
+     "code": "401",
+     "main": "KRA27-T16",
+     "auxiliary": [
+      [
+       "KRA27-T15",
+       "구별곤란"
+      ]
+     ]
+    },
+    {
+     "material": "ST",
+     "code": "100",
+     "main": "KRA27-3D",
+     "auxiliary": []
+    }
+   ],
+   "note": "신판 코드로 같은 꼴(08 §7 시험 5 의 표). 색인은 1 판 표의 조항 넷과 같다(신판은 행 · 조항을 더하지 않는다)"
+  }
+ },
+ "count_keys": [
+  "n_gold_pairs",
+  "match_hits",
+  "skipped",
+  "n_citations",
+  "correct",
+  "nonexistent",
+  "irrelevant",
+  "auxiliary_only"
+ ],
+ "count_meaning": "n_gold_pairs · match_hits = 일치율의 분모 · 분자, n_citations · correct = 정밀도의 분모 · 분자, nonexistent · irrelevant = 무근거의 지어냄 · 무관, auxiliary_only = 무관 가운데 보조 전용(발생 횟수), skipped = 정답 쌍을 만들지 않은 사유별 수",
+ "cases": [
+  {
+   "id": "rule1_primary_union_first",
+   "rule": 1,
+   "title": "주 합집합 우선",
+   "d07_row": "| 1 | **주 합집합 우선.**",
+   "d07_expect": [
+    "일치 2/2",
+    "정밀도 2/2",
+    "무관 0",
+    "보조 전용 0"
+   ],
+   "c08_same_form": "강재 2011 + 301 이 [KRA27-T15, KRA27-T16] 을 인용",
+   "images": {
+    "synthetic": [
+     {
+      "image": "i1",
+      "material": "ST",
+      "gt_codes": [
+       "갑",
+       "을"
+      ],
+      "cited": [
+       "P",
+       "Q"
+      ]
+     }
+    ],
+    "edition2": [
+     {
+      "image": "i1",
+      "material": "ST",
+      "gt_codes": [
+       "2011",
+       "301"
+      ],
+      "cited": [
+       "KRA27-T15",
+       "KRA27-T16"
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "n_gold_pairs": 2,
+    "match_hits": 2,
+    "skipped": {},
+    "n_citations": 2,
+    "correct": 2,
+    "nonexistent": 0,
+    "irrelevant": 0,
+    "auxiliary_only": 0
+   }
+  },
+  {
+   "id": "rule2_auxiliary_only_fails_primary_match",
+   "rule": 2,
+   "title": "보조만 인용하면 주 조항 일치 실패",
+   "d07_row": "| 2 | **보조만 인용하면 주 조항 일치 실패.**",
+   "d07_expect": [
+    "일치 0/1",
+    "정밀도 0/1",
+    "무관 1(그 가운데 보조 전용 1)"
+   ],
+   "c08_same_form": "강재 2011 이 [KRA27-T16] 만 인용",
+   "images": {
+    "synthetic": [
+     {
+      "image": "i1",
+      "material": "ST",
+      "gt_codes": [
+       "갑"
+      ],
+      "cited": [
+       "Q"
+      ]
+     }
+    ],
+    "edition2": [
+     {
+      "image": "i1",
+      "material": "ST",
+      "gt_codes": [
+       "2011"
+      ],
+      "cited": [
+       "KRA27-T16"
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "n_gold_pairs": 1,
+    "match_hits": 0,
+    "skipped": {},
+    "n_citations": 1,
+    "correct": 0,
+    "nonexistent": 0,
+    "irrelevant": 1,
+    "auxiliary_only": 1
+   }
+  },
+  {
+   "id": "rule3a_no_primary_with_auxiliary",
+   "rule": 3,
+   "title": "정답 쌍 분모와 인용 분모를 따로 둔다 — 주 없음 · 보조 있음",
+   "d07_row": "| 3 | **정답 쌍 분모와 인용 분모를 따로 둔다.**",
+   "d07_expect": [
+    "병: 정답 쌍 0(제외 사유 '정답 조항 없음' 1) · 정밀도 0/1 · 무관 1(보조 전용 1)"
+   ],
+   "images": {
+    "synthetic": [
+     {
+      "image": "i1",
+      "material": "ST",
+      "gt_codes": [
+       "병"
+      ],
+      "cited": [
+       "P"
+      ]
+     }
+    ],
+    "edition2": null
+   },
+   "edition2_absent": "안 1 의 신판 표에서는 나지 않는다 — 보조는 그 코드 행의 `구별곤란:<종별>` 에서 나므로 주 조항 행이 없는 코드는 보조도 없다(08 §7). 현 표에 없어도 합성 시험으로 유지한다",
+   "expect": {
+    "n_gold_pairs": 0,
+    "match_hits": 0,
+    "skipped": {
+     "정답 조항 없음": 1
+    },
+    "n_citations": 1,
+    "correct": 0,
+    "nonexistent": 0,
+    "irrelevant": 1,
+    "auxiliary_only": 1
+   }
+  },
+  {
+   "id": "rule3b_al_image",
+   "rule": 3,
+   "title": "정답 쌍 분모와 인용 분모를 따로 둔다 — AL 이미지",
+   "d07_row": "| 3 | **정답 쌍 분모와 인용 분모를 따로 둔다.**",
+   "d07_expect": [
+    "AL: 정답 쌍 0 · 정밀도 0/1 · 무관 1(보조 전용 0)"
+   ],
+   "c08_same_form": "AL 은 알루미늄 2011 이 [KRA27-T15] 를 인용",
+   "images": {
+    "synthetic": [
+     {
+      "image": "i1",
+      "material": "AL",
+      "gt_codes": [
+       "갑"
+      ],
+      "cited": [
+       "P"
+      ]
+     }
+    ],
+    "edition2": [
+     {
+      "image": "i1",
+      "material": "AL",
+      "gt_codes": [
+       "2011"
+      ],
+      "cited": [
+       "KRA27-T15"
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "n_gold_pairs": 0,
+    "match_hits": 0,
+    "skipped": {
+     "정답 조항 없음": 1
+    },
+    "n_citations": 1,
+    "correct": 0,
+    "nonexistent": 0,
+    "irrelevant": 1,
+    "auxiliary_only": 0
+   },
+   "note": "AL 의 제외 사유 1 은 07 §13-3 의 표에 적지 않았던 칸이다 — 같은 규칙(재질을 덮는 행이 없으면 '정답 조항 없음')에서 낸 값"
+  },
+  {
+   "id": "rule4_occurrence_denominator",
+   "rule": 4,
+   "title": "인용 발생 횟수를 분모로 둔다",
+   "d07_row": "| 4 | **인용 발생 횟수를 분모로 둔다.**",
+   "d07_expect": [
+    "정밀도 0/2 · 무관 2 · 보조 전용 2"
+   ],
+   "c08_same_form": "강재 2011 이 [KRA27-T16, KRA27-T16] 을 인용",
+   "images": {
+    "synthetic": [
+     {
+      "image": "i1",
+      "material": "ST",
+      "gt_codes": [
+       "갑"
+      ],
+      "cited": [
+       "Q",
+       "Q"
+      ]
+     }
+    ],
+    "edition2": [
+     {
+      "image": "i1",
+      "material": "ST",
+      "gt_codes": [
+       "2011"
+      ],
+      "cited": [
+       "KRA27-T16",
+       "KRA27-T16"
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "n_gold_pairs": 1,
+    "match_hits": 0,
+    "skipped": {},
+    "n_citations": 2,
+    "correct": 0,
+    "nonexistent": 0,
+    "irrelevant": 2,
+    "auxiliary_only": 2
+   },
+   "note": "일치 0/1 은 07 §13-3 의 표에 적지 않았던 칸이다 — 정답 쌍(갑 → P)이 인용되지 않았다"
+  },
+  {
+   "id": "rule5_structured_citation_takes_no_narrative_exception",
+   "rule": 5,
+   "title": "Q1 의 예외를 구조화 인용으로 옮기지 않는다",
+   "d07_row": "| 5 | **Q1 의 예외를 구조화 인용으로 옮기지 않는다.**",
+   "d07_expect": [
+    "구조: 일치 1/1 · 정밀도 1/2 · 무관 1(보조 전용 1)"
+   ],
+   "c08_same_form": "강재 2011 의 구조 필드 [KRA27-T15, KRA27-T16]",
+   "images": {
+    "synthetic": [
+     {
+      "image": "i1",
+      "material": "ST",
+      "gt_codes": [
+       "갑"
+      ],
+      "cited": [
+       "P",
+       "Q"
+      ]
+     }
+    ],
+    "edition2": [
+     {
+      "image": "i1",
+      "material": "ST",
+      "gt_codes": [
+       "2011"
+      ],
+      "cited": [
+       "KRA27-T15",
+       "KRA27-T16"
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "n_gold_pairs": 1,
+    "match_hits": 1,
+    "skipped": {},
+    "n_citations": 2,
+    "correct": 1,
+    "nonexistent": 0,
+    "irrelevant": 1,
+    "auxiliary_only": 1
+   },
+   "narrative_v4": {
+    "text": "Q 는 종별 구별이 어려울 때만 함께 본다",
+    "expect": "(라) 아님 — Q1 · 조건 꼴. 검사기 다음 판의 몫이라 이 묶음의 시험은 구조 필드 쪽만 잰다"
+   }
+  },
+  {
+   "id": "nonexistent_citation_kept_apart",
+   "rule": null,
+   "title": "색인 밖 인용은 지어냄 — 보조 분해에 넣지 않는다",
+   "images": {
+    "synthetic": [
+     {
+      "image": "i1",
+      "material": "ST",
+      "gt_codes": [
+       "갑"
+      ],
+      "cited": [
+       "P",
+       "Z"
+      ]
+     }
+    ],
+    "edition2": [
+     {
+      "image": "i1",
+      "material": "ST",
+      "gt_codes": [
+       "2011"
+      ],
+      "cited": [
+       "KRA27-T15",
+       "KRA27-T99"
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "n_gold_pairs": 1,
+    "match_hits": 1,
+    "skipped": {},
+    "n_citations": 2,
+    "correct": 1,
+    "nonexistent": 1,
+    "irrelevant": 0,
+    "auxiliary_only": 0
+   },
+   "note": "07 §13-2 — 지어냄(색인 밖)은 무관과 따로 센다. 보조 전용은 무관 안의 분해다"
+  }
+ ],
+ "stop_cases": [
+  {
+   "id": "two_primary_stop",
+   "title": "한 (재질, 코드)에 조건 없는 대응이 둘이면 멈춘다(T1)",
+   "entries": [
+    {
+     "material": "ST",
+     "code": "갑",
+     "clause": "P"
+    },
+    {
+     "material": "ST",
+     "code": "갑",
+     "clause": "Q"
+    }
+   ],
+   "gt": {
+    "i1": {
+     "material": "ST",
+     "gt_codes": [
+      "갑"
+     ]
+    }
+   },
+   "expect": {
+    "error": "multiple_main"
+   }
+  },
+  {
+   "id": "roles_malformed_main_list",
+   "title": "역할의 주 조항 칸이 조항 하나가 아니면 받지 않는다",
+   "roles": [
+    {
+     "material": "ST",
+     "code": "갑",
+     "main": [
+      "P",
+      "Q"
+     ],
+     "auxiliary": []
+    }
+   ],
+   "expect": {
+    "error": "roles_form"
+   }
+  },
+  {
+   "id": "roles_auxiliary_equals_main",
+   "title": "한 코드의 보조가 제 주 조항과 같으면 받지 않는다(역할 꼴의 모순)",
+   "roles": [
+    {
+     "material": "ST",
+     "code": "갑",
+     "main": "P",
+     "auxiliary": [
+      [
+       "P",
+       "구별곤란"
+      ]
+     ]
+    }
+   ],
+   "expect": {
+    "error": "roles_form"
+   }
+  },
+  {
+   "id": "roles_unknown_condition",
+   "title": "보조의 조건 종류는 `구별곤란` 하나다 — 혼재는 보조를 내지 않는다(08 §1-3)",
+   "roles": [
+    {
+     "material": "ST",
+     "code": "갑",
+     "main": "P",
+     "auxiliary": [
+      [
+       "Q",
+       "혼재"
+      ]
+     ]
+    }
+   ],
+   "expect": {
+    "error": "roles_form"
+   }
+  }
+ ],
+ "baseline_case": {
+  "id": "baseline_primary_only",
+  "title": "무화소 대조선은 코드의 주 조항만 인용한다(07 §14-3 의 '대조선')",
+  "codes_by_image": {
+   "synthetic": {
+    "i1": [
+     "갑",
+     "을"
+    ],
+    "i2": [
+     "갑"
+    ],
+    "i3": [
+     "병"
+    ],
+    "i4": [
+     "정",
+     "갑"
+    ]
+   },
+   "edition2": {
+    "i1": [
+     "2011",
+     "301"
+    ],
+    "i2": [
+     "2011"
+    ],
+    "i3": [
+     "402"
+    ],
+    "i4": [
+     "401",
+     "100"
+    ]
+   }
+  },
+  "material_of": {
+   "i1": "ST",
+   "i2": "ST",
+   "i3": "ST",
+   "i4": "ST"
+  },
+  "expect": {
+   "synthetic": {
+    "i1": [
+     "P",
+     "Q"
+    ],
+    "i2": [
+     "P"
+    ],
+    "i3": [],
+    "i4": [
+     "P",
+     "R"
+    ]
+   },
+   "edition2": {
+    "i1": [
+     "KRA27-T15",
+     "KRA27-T16"
+    ],
+    "i2": [
+     "KRA27-T15"
+    ],
+    "i3": [],
+    "i4": [
+     "KRA27-3D",
+     "KRA27-T16"
+    ]
+   }
+  }
+ },
+ "written_at_utc": "2026-10-24T06:43:23Z"
+}

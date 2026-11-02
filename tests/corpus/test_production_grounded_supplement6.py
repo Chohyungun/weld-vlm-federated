@@ -15,7 +15,20 @@ from corpus.production import judge_grounded_v7 as grounded
 from data.label_map import load_label_map
 
 
-REFERENCE_SHA256 = "07ce544f974e95692800314413a1c87f4ad6d741a54cf239404e979713e00962"
+SUPPLEMENT6_SHA256 = "07ce544f974e95692800314413a1c87f4ad6d741a54cf239404e979713e00962"
+"""Supplement-6 bytes (then-value). The expectations below were written for them and still hold."""
+SUPPLEMENT7_FIRST_SHA256 = "7f80f90a0f9cb6e07dcd2c6e9d4f980346311e8d72ff8937b7b70b606e664518"
+"""First supplement-7 bytes (then-value, commit 6b11185e), before the independent review."""
+SUPPLEMENT7_REVIEWED_SHA256 = "9aa88c939a341036031330f5354d8b927cb12208f8b3c230cd33a727a76f08ad"
+"""Supplement-7 bytes after the independent review (then-value, commit 223b31b6)."""
+GAP_FIXED_SHA256 = "ba291a24854699352f4e943cc99227a0b25734417a1b5c798551ec32ab7395ed"
+"""Bytes after the v8 deterministic-gap fixes (then-value, commit 8696585a)."""
+REVIEWED_FIX_SHA256 = "7518fe04355c3615adcca0664d1da37a47705f087ad117d746e2cb5e73195da1"
+"""Bytes after the independent review of those fixes (then-value, commit b84a9901)."""
+OVERWIDE_FIX_SHA256 = "7e5e769f17c856ead270ac00d561300cef9a409d8b639af8218815462093cd1c"
+"""Bytes after the over-wide probes of that review (then-value, commit 6db5bbf1)."""
+REFERENCE_SHA256 = "be4439797a54d347af81ee4055774cf985d75af13f0fba8d1390e906404494f7"
+"""Bytes after the exception-list and attribute-noun widening (now-value)."""
 LABELS = load_label_map().defect_types
 
 
@@ -49,8 +62,10 @@ def _three_description():
     return f"{_name()} 2개가 위쪽 왼쪽에 있고 {_name()} 1개가 아래쪽 오른쪽에 있다."
 
 
-def test_transplanted_file_is_the_approved_supplement6_bytes():
+def test_transplanted_file_is_the_approved_reference_bytes():
     assert hashlib.sha256(Path(grounded.__file__).read_bytes()).hexdigest() == REFERENCE_SHA256
+    assert REFERENCE_SHA256 not in (SUPPLEMENT6_SHA256, SUPPLEMENT7_FIRST_SHA256, SUPPLEMENT7_REVIEWED_SHA256,
+                                    GAP_FIXED_SHA256, REVIEWED_FIX_SHA256, OVERWIDE_FIX_SHA256)
 
 
 @pytest.mark.parametrize("template", [

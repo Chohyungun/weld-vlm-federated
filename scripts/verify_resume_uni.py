@@ -47,7 +47,7 @@ import numpy as np
 
 STAGES = ("baseline", "baseline2", "crash", "resume")
 DEFAULT_ROOT = Path("outputs/probe_c/resume_verify_uni")
-DEFAULT_ROWS = 72          # 누적 32 → epoch 당 3 스텝(마지막은 8 행의 부분 창)
+DEFAULT_ROWS = 76          # 누적 8 → epoch 당 10 스텝(마지막은 4 행의 부분 창). 누적 32 에서도 부분 창(12 행)이 남는다
 DEFAULT_EPOCHS = 3
 DEFAULT_DIE_AFTER = 1
 BASE_SEED = 20260828

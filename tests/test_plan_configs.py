@@ -87,21 +87,21 @@ REHEARSAL_ONLY_NULLS = {"gen.max_target_tokens"}
 #: 시간 제한의 단계 다섯 — 학습 쪽 오케스트레이터가 읽는 키다. 값은 적재 시간을 잰 뒤 채운다.
 TIMEOUT_STAGES = ("lists", "register", "train", "export", "score")
 #: 값이 있는 통합형 키 — 통합형 학습 구현 보고 6절 8 에서 기계로 뽑았다. `null` 이 아니라 이 값이어야 한다.
-UNI_VALUES: dict[str, str] = {'uni_prompt_path': 'vlm/prompts/unified_v2_absorig.txt', 'uni_coord_space': 'ABS_ORIG'}
+UNI_VALUES: dict[str, str] = {'uni_prompt_path': 'vlm/prompts/unified_v3_1_basis.txt', 'uni_coord_space': 'ABS_ORIG'}
 #: 값이 사전인 통합형 키 — 사전 안은 키 목록 대조에서 펼치지 않는다(안의 꼴은 따로 본다).
 UNI_DICT_VALUED = frozenset({"uni_processor_kwargs", "uni_expected_supervised_tokens"})
 #: 감독 토큰 기대값의 출처 — 학습 쪽 계측 산출 파일. 설정의 주석이 이 경로와 해시를 적는다.
-TOKENS_SOURCE = "outputs/B_seal_20261001/tokens/supervised_tokens.json"
-TOKENS_SOURCE_SHA256 = "10e62663b0297557832d290ea04f7a3c9a7d49156b9fe9ef7df2b11071f9c190"
+TOKENS_SOURCE = "outputs/target_tokens_v3_20261027/per_row.csv.provenance.json"
+TOKENS_SOURCE_SHA256 = "40cbc43da0377d95dce03fc227abe7e782c441e1f51c0997997f3ca7fa2605f3"
 #: 총괄 결정 19 로 채운 키 — 모델 판과 봉인 페어. 값은 결정 원문 · 봉인 계약서에서 읽어 넣었다.
 UNI_DECIDED = frozenset({"uni_model.revision", "uni_pairs.path", "uni_pairs.digest"})
 #: 결정 19 가 승인한 모델 판(파일럿 · 프로세서 확인 · 감독 토큰 계측이 쓴 캐시 판)
 UNI_REVISION = "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"
 #: 봉인 페어 — 동결 명부의 자리. path 는 그 안의 페어 파일이다(학습 쪽 판독기가 부모 폴더의 계약서를 맞댄다)
-UNI_PAIRS_DIR = "data/processed/pairs_main_v1"
-#: 본실험 등록 조건으로 채운 키 — 의사결정로그 2026-10-13 13:5x「본실험 등록 조건 확정」(N = E = R = 1 · L = 512)
+UNI_PAIRS_DIR = "data/processed/pairs_main_v2"
+#: 학습량은 1차 등록을 유지한다. 생성 한도는 봉인 페어의 S13 계측과 현재 학습 등록에 맞춘다.
 UNI_REGISTERED: dict[str, int] = {"uni_train_budget.num_rounds": 1, "uni_train_budget.local_epochs": 1,
-                                  "uni_train_budget.total_epochs": 1, "uni_max_new_tokens": 512}
+                                  "uni_train_budget.total_epochs": 1, "uni_max_new_tokens": 1280}
 UNI_NULLS = (UNI_KEYS - {"uni_model.id", "uni_chat_template_kwargs.enable_thinking", "uni_batch_size"}
              - set(UNI_VALUES) - UNI_DICT_VALUED - UNI_DECIDED - set(UNI_REGISTERED))
 FAULT_POINTS = {"train": {"after_ckpt", "before_ckpt"}, "export": {"after_lines", "torn_line", "after_all_lines"}}
@@ -315,7 +315,7 @@ def test_정하지_않은_통합형_값은_null_이고_검출_예산을_가리�
     fb = _base()["fixed_before_main_runs"]
     for k in UNI_NULLS:
         assert _get(fb, k) is None, k
-    assert fb["uni_model"]["id"] == "Qwen/Qwen3.5-4B" and fb["uni_batch_size"] == 1
+    assert fb["uni_model"]["id"] == "Qwen/Qwen3.5-4B" and fb["uni_batch_size"] == 1      # 11-01 8 → 1 — r3c 묶음 확인 토큰 열 일치 10/21
     text = (CONFIGS / "base.yaml").read_text(encoding="utf-8")
     block = text[text.index("  uni_train_budget:"):text.index("  uni_model:")]
     assert "*" not in block and "&" not in block
@@ -323,9 +323,11 @@ def test_정하지_않은_통합형_값은_null_이고_검출_예산을_가리�
 
 
 def test_등록_조건으로_채운_통합형_값은_결정의_값이다():
-    """N = E = R = 1 · L = 512 — 결정 문장이 의사결정로그의 그 항목에 있고, 설정은 그 값이며 N = R × E 다."""
-    fb = _base()["fixed_before_main_runs"]
-    for k, v in UNI_REGISTERED.items():
+    """학습량은 1차 결정을 유지하고, 생성 한도는 새 계측과 등록에 결속한다. 옛 결정 기록은 바꾸지 않는다."""
+    from tests.registration_history import historical_base
+
+    fb = _load(historical_base())["fixed_before_main_runs"]
+    for k, v in {**UNI_REGISTERED, "uni_max_new_tokens": 512}.items():
         assert _get(fb, k) == v and type(_get(fb, k)) is int, k
     b = fb["uni_train_budget"]
     assert b["total_epochs"] == b["num_rounds"] * b["local_epochs"]
@@ -334,7 +336,24 @@ def test_등록_조건으로_채운_통합형_값은_결정의_값이다():
     assert "N = E = R = 1" in entry and "L = 512" in entry
 
 
-def test_모델_판과_봉인_페어는_결정_19_의_값이고_계약서와_맞는다():
+def test_현재_등록_조건은_봉인_계측값과_같다():
+    import hashlib
+    import json
+
+    fb = _base()["fixed_before_main_runs"]
+    for k, v in UNI_REGISTERED.items():
+        assert _get(fb, k) == v and type(_get(fb, k)) is int, k
+
+    measured = REPO / "outputs/diag_20261027/02a_sealed.json"
+    assert hashlib.sha256(measured.read_bytes()).hexdigest() == "d1d06d7d42cd1e6987f4ec3a0bc5f57b0a578061e80d2fa85f3a7f78f46fe9e3"
+    m = json.loads(measured.read_bytes())
+    reg = _load(CONFIGS / "train_registration.yaml")
+    assert fb["uni_max_new_tokens"] == m["recommended_limit"]["value"] == reg["eval_gen_limit"]
+    assert m["checks"]["v1_f_1_clients_equal_base_yaml_expected"] is True
+    assert reg["recipe"] == "json_line_then_basis" and reg["version"] == 1
+
+
+def test_모델_판은_유지하고_봉인_페어_2판은_명부와_계약서에_맞는다():
     """revision 은 감독 토큰 계측이 쓴 캐시 판과 같아야 한다(다르면 기대값을 다시 잰다). 페어는 봉인 계약서와 내용으로 맞댄다."""
     from data.frozen_guard import EXPECTED_SEALED
     from vlm.uni_config import pairs_snapshot_problems
@@ -371,8 +390,8 @@ def test_감독_토큰_기대값은_참여자_셋의_정수이고_출처를_적�
     if not src.is_file():
         pytest.skip("계측 산출 파일이 이 트리에 없다 — 값 대조를 건너뛴다")
     assert hashlib.sha256(src.read_bytes()).hexdigest() == TOKENS_SOURCE_SHA256
-    per = json.loads(src.read_text(encoding="utf-8"))["참여자별"]
-    assert exp == {c: per[c]["supervised_tokens_per_epoch"] for c in TOKEN_KEYS}
+    per = json.loads(src.read_text(encoding="utf-8"))["per_client"]
+    assert exp == {c: per[c]["supervised_tokens"] for c in TOKEN_KEYS}
 
 
 def test_프로세서_설정은_파일럿의_해상도를_채점_입구가_아는_키로_적는다():
@@ -439,11 +458,13 @@ def test_리허설의_간선은_동결된_판본의_파일이고_계약서와_�
 
 
 def test_평가_등록_파일은_출처_지문과_같고_기본_설정_표본_추출기와_맞물린다():
-    """`configs/eval_registration.yaml` — 평가 쪽 28 의 바이트 그대로다(지문이 출처 문서 `configs/README.md` 의 줄과 같다).
-    스냅샷 다이제스트 · 생성 한도는 기본 설정과, 시드 · 봉인 크기는 표본 추출기(`data.eval_sample`)와 같아야 한다."""
+    """`configs/eval_registration.yaml` — 평가 쪽 후보의 바이트 그대로다(지문이 출처 문서 `configs/README.md` 의 줄과 같다).
+    1차 평가 기록의 스냅샷 다이제스트 · 생성 한도는 보존 설정과, 시드는 표본 추출기(`data.eval_sample`)와 같아야 한다. 봉인 크기는 추출기의
+    크기에 평가 쪽 판독기가 더 봉인한 크기(`EXTRA_SEALED_SIZES`, D 1017c)를 더한 것이고, 주 크기는 그 가운데 하나다."""
     import hashlib
 
     from data import eval_sample
+    from evaluation.eval_registration import EXTRA_SEALED_SIZES
 
     raw = (CONFIGS / "eval_registration.yaml").read_bytes()
     readme = (CONFIGS / "README.md").read_text(encoding="utf-8")
@@ -451,38 +472,47 @@ def test_평가_등록_파일은_출처_지문과_같고_기본_설정_표본_�
     assert hashlib.sha256(raw).hexdigest() in row
     reg = yaml.safe_load(raw)
     assert (reg["kind"], reg["version"]) == ("eval_registration", 1)
-    fb = _base()["fixed_before_main_runs"]
+    from tests.registration_history import historical_base
+
+    fb = _load(historical_base())["fixed_before_main_runs"]
     assert reg["population"]["snapshot_digest"] == fb["snapshot_digest"]
     assert reg["generation"]["max_new_tokens"] == fb["uni_max_new_tokens"]
     sample = reg["population"]["sample"]
     assert sample["seed"] == eval_sample.SEED
     eval_sample.check_seed_digest(sample["seed"], fb["snapshot_digest"])
-    assert set(sample["sealed"]) == {str(s) for s in eval_sample.SIZES} and str(sample["main_size"]) in sample["sealed"]
+    sealed_sizes = {str(s) for s in (*eval_sample.SIZES, *EXTRA_SEALED_SIZES)}             # 판독기가 받는 봉인 키 집합 그대로
+    assert set(sample["sealed"]) == sealed_sizes and str(sample["main_size"]) in sample["sealed"]
     assert sample["min_groups_per_stratum"] == 2 == eval_sample.allocate(100, 1, 10**6)       # 배분 식의 최소 둘
     assert sample["side_file_header"] == ",".join(eval_sample.SIDE_HEADER)                  # 곁 파일 머리줄(G 30 I-3)
 
 
-#: 학습 등록 파일의 칸 — 학습 쪽 26b 의 키 표(열넷). 판독은 학습 쪽 `vlm.registration` 이 한다
+#: 학습 등록 파일의 칸 — 학습 쪽 26b 의 키 표(열넷)와 학습 쪽이 지시 1016j 로 더한 `budget_fraction`.
+#: 판독은 학습 쪽 `vlm.registration` 이 한다
 TRAIN_REGISTRATION_KEYS = frozenset({"kind", "version", "seed_indices", "num_rounds", "local_epochs", "total_epochs", "recipe",
                                      "eval_gen_limit", "quantization", "micro_batch", "grad_accum", "lr",
-                                     "early_coord_check_rules", "init_adapter_digest"})
+                                     "early_coord_check_rules", "init_adapter_digest", "budget_fraction"})
 
 
 def test_학습_등록_파일은_출처_지문과_같고_기본_설정_평가_등록과_맞물린다():
-    """`configs/train_registration.yaml` — 학습 쪽 초안에서 규칙의 두 칸만 채웠다(출처는 `configs/README.md`).
-    예산 · 생성 한도 · 시드는 기본 설정 · 평가 등록과 같아야 한다. 규칙 파일 4판과의 맞댐은 학습 쪽 판독기가 한다."""
+    """`configs/train_registration.yaml` — 학습 쪽 초안에서 규칙의 두 칸만 채웠고, 공통 학습 예산 비율 `budget_fraction` 은
+    학습 쪽이 더했다(출처는 `configs/README.md`). 예산 · 생성 한도 · 시드는 기본 설정 · 평가 등록과 같아야 한다.
+    규칙 파일 4판과의 맞댐은 학습 쪽 판독기가 한다."""
     import hashlib
 
-    raw = (CONFIGS / "train_registration.yaml").read_bytes()
+    from tests.registration_history import historical_base, historical_registration
+
+    raw = historical_registration()
     row = next(ln for ln in (CONFIGS / "README.md").read_text(encoding="utf-8").splitlines()
                if ln.startswith("| `train_registration.yaml`"))
     assert hashlib.sha256(raw).hexdigest() in row
     reg = yaml.safe_load(raw)
     assert set(reg) == TRAIN_REGISTRATION_KEYS and (reg["kind"], reg["version"]) == ("train_registration", 1)
-    fb = _base()["fixed_before_main_runs"]
+    fb = _load(historical_base())["fixed_before_main_runs"]
     ev = yaml.safe_load((CONFIGS / "eval_registration.yaml").read_bytes())
     assert {k: reg[k] for k in ("num_rounds", "local_epochs", "total_epochs")} == fb["uni_train_budget"]
     assert reg["eval_gen_limit"] == fb["uni_max_new_tokens"] == ev["generation"]["max_new_tokens"]
     assert reg["seed_indices"] == ev["seeds"]
     rules = reg["early_coord_check_rules"]
     assert type(rules["version"]) is int and rules["version"] >= 4 and re.fullmatch(r"[0-9a-f]{64}", rules["sha256"])
+    f = reg["budget_fraction"]  # N = 1/8 — 의사결정로그 2026-10-17 01:0x, 다섯 칸 같은 비율. 뜻과 식은 vlm/budget.py
+    assert type(f) is float and 0 < f <= 1 and f == 0.125, f

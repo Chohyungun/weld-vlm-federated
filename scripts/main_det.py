@@ -331,19 +331,40 @@ FEDERATION_CONFIG = ("num-supernodes=3 "
                      "client-resources-num-gpus=1.0")
 
 
+def _flwr_exe() -> Path:
+    """이 인터프리터 venv 의 flwr 실행 파일. 찾는 순서 — `sys.prefix` 의 실행 파일 폴더(`fl.flwr_procs.venv_scripts`,
+    Windows `Scripts` · 그 밖 `bin`) → 인터프리터 경로의 폴더(링크를 풀지 않은 것) → `shutil.which("flwr")` 가운데 `sys.prefix`
+    아래의 것. 셋 다 없으면 `[flwr_missing]` 으로 멈춘다 — 다른 환경의 flwr 를 쓰지 않는다.
+
+    앞 판은 `Path(sys.executable).resolve().parent` 에서 찾았다. Linux venv 의 `bin/python` 은 base 인터프리터로 가는
+    심볼릭 링크라 그 경로가 venv 밖이 되어 `venv/bin/flwr` 를 못 찾았다(서버 선제 발견 2026-10-17)."""
+    import os
+    import shutil
+
+    from fl.flwr_procs import venv_scripts
+
+    name = "flwr.exe" if os.name == "nt" else "flwr"
+    prefix = Path(sys.prefix).absolute()
+    cands = [venv_scripts() / name, Path(sys.executable).parent / name]
+    found = shutil.which("flwr")
+    if found and Path(found).absolute().is_relative_to(prefix):
+        cands.append(Path(found))
+    for c in cands:
+        if c.is_file():
+            return c
+    raise SystemExit(f"[flwr_missing] flwr 실행 파일이 이 인터프리터의 venv 에 없다 — 본 자리 {sorted({str(c.parent) for c in cands})}")
+
+
 def _flwr_run(run_config: str, log_path: Path) -> None:
     """정식 진입점. pyproject [tool.flwr] 의 등록 앱을 CLI 로 띄운다."""
     import os
-    import sys
 
-    # 실행 파일은 **이 인터프리터의 venv** 에서 찾는다. 분리 launcher 는 venv 의
+    # 실행 파일은 **이 인터프리터의 venv** 에서 찾는다(`_flwr_exe`). 분리 launcher 는 venv 의
     # python.exe 를 직접 띄우므로 Scripts 디렉터리가 PATH 에 없고, 맨 이름 "flwr" 는
     # FileNotFoundError(WinError 2)로 죽는다 — 시드 1 ③ 완주 직후 ④ 진입에서 실측.
     # preflight 는 `uv run` 이 PATH 를 채워 줘서 지나갔다(환경 차이가 숨긴 결함).
-    scripts_dir = Path(sys.executable).resolve().parent
-    flwr_exe = scripts_dir / ("flwr.exe" if os.name == "nt" else "flwr")
-    if not flwr_exe.exists():
-        raise SystemExit(f"flwr 실행 파일이 인터프리터 venv 에 없다: {flwr_exe}")
+    flwr_exe = _flwr_exe()
+    scripts_dir = flwr_exe.parent
     cmd = [str(flwr_exe), "run", ".", "local-sim", "--run-config", run_config,
            "--federation-config", FEDERATION_CONFIG, "--stream"]
     print("  $", " ".join(cmd[:5]), "…", flush=True)

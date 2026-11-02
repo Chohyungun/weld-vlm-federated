@@ -4,7 +4,7 @@
 
 | 줄의 값 | 에코에서의 뜻 |
 |---|---|
-| `text` | `vlm.pilot_vlm.build_target(행, 이미지 크기, 좌표 규약)` — 학습이 쓰는 함수 그대로 |
+| `text` | `vlm.pilot_vlm.build_target(행, 이미지 크기, 좌표 규약, recipe=설정의 target_recipe)` — 학습이 쓰는 함수 그대로 |
 | `n_new_tokens` | 타깃을 토크나이저로 센 수 + 종료 토큰 1 |
 | `gen_stop` | `eos` |
 | `model_input_wh` · 격자 | 프로세서가 그 이미지에 실제로 쓴 격자 `(t, h, w)` 와 `[w × patch_size, h × patch_size]` |
@@ -48,7 +48,8 @@ def load_echo_generator(gen_cfg: Any, *, processor: Any = None):
         row = rows.get(str(image_id))
         if row is None:
             raise EchoUnavailable(f"페어의 val 행에 없는 id 다: {image_id}")
-        target = build_target(row, ImageGeom(orig_w=img.size[0], orig_h=img.size[1]), cfg)
+        target = build_target(row, ImageGeom(orig_w=img.size[0], orig_h=img.size[1]), cfg,
+                              recipe=getattr(gen_cfg, "target_recipe", "json_only"))
         n = len(processor.tokenizer(target, add_special_tokens=False)["input_ids"]) + 1
         grid = ip(images=[img.convert("RGB")], return_tensors="np")["image_grid_thw"][0]
         t, h, w = (int(v) for v in grid)

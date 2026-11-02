@@ -125,7 +125,9 @@ def build_ecc_world(tmp: Path) -> SimpleNamespace:
     np.savez(paths["adapter"], **{"a.lora_A.weight": np.full((2, 2), 3.0, dtype=np.float32)})
     paths["consumed"].write_text("".join(i + "\n" for i in ids), encoding="utf-8")
     meta = {"purpose": PURPOSE, "step": STEP, "registered_steps": [STEP, 4],
-            "identity": {"cell": CENTRAL_TAG, "run_id": ECC_RUN, "seed_index": 1,    # 시드 번호(학습 쪽 계약 — 사전 점검이 맞댄다)
+            "identity": {"cell": CENTRAL_TAG, "run_id": ECC_RUN,
+                         # 실제 작성자(`UniResumeIdentity`)의 칸 — 시드 번호가 아니라 실제 시드 · 라운드 0 · 참여자 0(§137 C-01)
+                         "seed": w.reg.seeds["1"], "round_idx": 0, "client_idx": 0,
                          "processor_config_sha256": W.MEASURED["processor_config_sha256"],
                          "coord_cfg_hash": coord_cfg_hash(CoordCfg(coord_space="ABS_ORIG")), "input_adapter_digest": W.hx("init")},
             "adapter": {"file": paths["adapter"].name, "sha256": _sha(paths["adapter"])},
@@ -189,16 +191,16 @@ def test_점검_사전_점검은_step_을_빼면_받지_않는다(ecc):
     assert exc.value.code == "check_step_scope"
 
 
-@pytest.mark.xfail(strict=True, reason="학습 쪽 vlm/export_writer.py 의 STAMP_KEYS 에 check_step 이 없다 — 같은 쪽 "
-                                       "_training_check_step 이 도장에 넣는 키다(학습 쪽 두 파일의 불일치, 1013o 보고). "
-                                       "키가 더해지면 이 표지를 뗀다")
 def test_점검_export_전체가_묶음을_봉인한다(ecc):
+    """1013o 보고의 strict xfail 을 뗐다 — writer 가 조기 점검 도장의 `check_step` 을 받고(§137 C-01), 곁 파일의 채점 step 이
+    도장의 값과 같다."""
     from vlm.train_cell import CENTRAL_TAG
 
     res = W.run(ecc, purpose="early_coord_check", tag=CENTRAL_TAG, adapter_dir=ecc.adapter, check_step=STEP,
                 folder=ecc.root / "export", standin_allowed=True, clock=_clock())
     assert res.sealed and res.n_written == len(W.IDS)
     assert res.meta["purpose"] == "early_coord_check"
+    assert res.meta["scored_adapter_step"] == STEP and type(res.meta["scored_adapter_step"]) is int
 
 
 def test_점검_목적의_영수증은_등록_모듈이_받고_본채점은_거부한다():

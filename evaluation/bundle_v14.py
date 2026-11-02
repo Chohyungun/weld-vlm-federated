@@ -154,6 +154,14 @@ _FRACTIONAL = re.compile(r"\d\.\d")
 _DEVICE = re.compile(r"^(?P<name>[^:]+(?::[^:]+)*):(?P<index>\d+)$")
 """`"{이름}:{인덱스}"`(§28-3 나). 인덱스만으로는 다른 장비가 같은 값이 된다."""
 
+DEVICE_LABEL_NONCANONICAL = "DEVICE_LABEL_NONCANONICAL"
+"""장비 문자열이 정본 꼴(`_DEVICE`)이 아닌 묶음의 표지 — 거부하지 않고 그 문자열과 함께 산출에 싣는다(2026-10-18).
+**비지 않은 문자열이고 도장 · 모든 시작 줄 · 곁 파일에서 한 문자열일 때만** 선다(`_device_label_ok`). 묶음 사이에서는 같은 무리(모델끼리 ·
+에코끼리)의 묶음이 모두 그 한 문자열이어야 한다(`check_env_consistency`). 출처 기록의 꼴 문제다 — 몇 번 장치인지는 이 문자열이 말하지
+않으므로 걸친 장비의 보고(`devices_spanned`)는 정본 꼴 묶음에서만 뜻이 있다."""
+DEVICE_LABEL_CANONICAL = "DEVICE_LABEL_CANONICAL"
+"""산출의 장비 표지 — 채점한 묶음이 모두 정본 꼴이다."""
+
 HASH_FIELDS: tuple[str, ...] = (
     "generations_sha256", "eval_list_file_sha256", "eval_list_set_sha256", "start_stamp_sha256",
     "snapshot_digest", "coord_cfg_hash", "generation_sha256", "prompt_sha256", "gen_prefix_sha256",
@@ -938,8 +946,24 @@ def _sub_second(value) -> bool:
 
 
 def _device_ok(value) -> bool:
-    """`"{이름}:{인덱스}"`(§28-3 나)."""
+    """`"{이름}:{인덱스}"`(§28-3 나) — 정본 꼴."""
     return isinstance(value, str) and _DEVICE.match(value) is not None
+
+
+def _noncanonical_label(value) -> bool:
+    """정본 꼴이 아닌, 비지 않은 문자열인가 — `DEVICE_LABEL_NONCANONICAL` 의 후보. 빈 값 · 공백 · 문자열 아닌 값은 아니다."""
+    return isinstance(value, str) and value.strip() != "" and not _device_ok(value)
+
+
+def _device_label_ok(value, sidecar_device, *more) -> bool:
+    """도장 · 시작 줄의 장비 문자열을 받는가. **곁 파일의 값이 묶음의 꼴을 정한다.**
+
+    곁 파일이 정본 꼴이거나 비었으면 자리마다 정본 꼴이어야 한다(앞 판 그대로 — 빈 곁 파일은 마지막 시작 줄 대조가 거부한다). 곁 파일이
+    정본 꼴이 아닌 비지 않은 문자열이면 이 자리 · 맞댈 자리(`more` — 시작 줄에는 도장)가 모두 그 문자열과 같아야 한다.
+    """
+    if not _noncanonical_label(sidecar_device):
+        return _device_ok(value)
+    return value == sidecar_device and all(m == sidecar_device for m in more)
 
 
 def _strict_int(value) -> bool:
@@ -994,7 +1018,7 @@ def _check_start_stamp(text: str, meta, mode: str, registration, files, rej) -> 
     elif not _sub_second(stamp["started_at"]):
         rej.append(Rejection(RejectCode.START_STAMP_SCHEMA, where,
                              {"item": "started_at", "reason": "초 아래 자릿수가 없다"}))
-    if not _device_ok(stamp["device"]):
+    if not _device_label_ok(stamp["device"], meta.get("device")):
         rej.append(Rejection(RejectCode.START_STAMP_SCHEMA, where,
                              {"item": "device", "reason": "이름과 번호를 함께 적는다"}))
 
@@ -1150,7 +1174,7 @@ def _check_attempts(text: str, meta, name_tag: str, name_seed: int,
             rej.append(Rejection(RejectCode.ATTEMPTS_ROW_MISMATCH, f"{where}#{k}",
                                  {"item": "reason", "value": row["reason"], "attempt_no": k}))
             ok = False
-        if not _device_ok(row["device"]):
+        if not _device_label_ok(row["device"], meta.get("device"), stamp.get("device") if stamp else None):
             rej.append(Rejection(RejectCode.ATTEMPTS_SCHEMA, f"{where}#{k}",
                                  {"item": "device", "reason": "이름과 번호를 함께 적는다"}))
             ok = False
@@ -1247,6 +1271,9 @@ def _check_attempts(text: str, meta, name_tag: str, name_seed: int,
         ],
         "devices": sorted(set(devices)),
         "devices_spanned": len(set(devices)) > 1,
+        # 정본 꼴이 아닌 한 문자열이면 표지를 싣는다 — 여기까지 왔으면 도장 · 시작 줄 · 곁 파일이 그 문자열 하나다
+        **({"device_label": {"status": DEVICE_LABEL_NONCANONICAL, "value": meta["device"]}}
+           if _noncanonical_label(meta["device"]) else {}),
     }
 
 
@@ -1487,6 +1514,13 @@ def check_env_consistency(bundles: Sequence[VerifiedBundle]) -> list[Rejection]:
         if len(values) != 1:
             out.append(Rejection(RejectCode.ENV_MISMATCH, first.files.stem,
                                  {"item": key, "n_distinct": len(values)}))
+    if any(b.notes.get("device_label") for b in bundles):
+        # 정본 꼴이 아닌 장비 문자열은 묶음 사이에서도 한 문자열이어야 한다(2026-10-18) — 정본 꼴 묶음끼리는 장비가 달라도 된다(앞 판 그대로)
+        values = {json.dumps(b.sidecar.get("device"), ensure_ascii=False) for b in bundles}
+        if len(values) != 1:
+            out.append(Rejection(RejectCode.ENV_MISMATCH, first.files.stem,
+                                 {"item": "device", "n_distinct": len(values),
+                                  "reason": "정본 꼴이 아닌 장비 문자열은 묶음 사이에서도 같아야 한다"}))
     return out
 
 

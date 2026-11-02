@@ -1252,7 +1252,7 @@ def test_v6_파서의_폐쇄는_v5_파서를_담지_않고_정책이_그것을_�
     assert P.policy_identity()["parser_implementation"] == report and P.model_parser_ready() is True
     assert J.require_v6_parser() is parse_judge_v6
     assert Q.JUDGE_PARSER_VERSIONS == {"judge_structured_v5": "parse_judge_v5_1", "judge_structured_v6": "parse_judge_v6",
-                                      "judge_structured_v7": "parse_judge_v7"}
+                                      "judge_structured_v7": "parse_judge_v7", "judge_structured_v8": "parse_judge_v8"}
 
 
 # --------------------------------------------------------------------------- 판정 탐침의 진입(가짜 판정기 — GPU 아님)
@@ -1700,7 +1700,7 @@ def test_v7_판독_결과의_꼴과_판_이름():
         assert parse_judge_v7(task, bad)["errors"] == ["judge_row_invalid"]
     # 집계가 읽는 꼴의 표 — v7 은 v7 파서의 판으로 든다
     assert Q.JUDGE_PARSER_VERSIONS == {"judge_structured_v5": "parse_judge_v5_1", "judge_structured_v6": "parse_judge_v6",
-                                      "judge_structured_v7": "parse_judge_v7"}
+                                      "judge_structured_v7": "parse_judge_v7", "judge_structured_v8": "parse_judge_v8"}
 
 
 def test_v7_파서의_폐쇄는_v5_v6_의_것에_닿지_않는다():
@@ -2072,8 +2072,8 @@ V4_DEFECTS = (("porosity", "가운데-가운데", "영상 가운데"), ("crack",
 def _v4_obs(i, form="good"):
     key, _, zone = V4_DEFECTS[i]
     name = LABELS[key].name_ko
-    if form == "one_sentence":                          # 결정적 정책은 지나지만 관찰 문장 하한(2)에 걸린다
-        return f"{name} 1개가 {zone}에 표시되어 있다."
+    if form == "risk":                                  # 결정적 정책은 지나지만 관찰 금지 어휘(위험 추측)에 걸린다 — 문장 수 하한과 상관없다
+        return f"{name} 1개가 {zone}에 표시되어 있다. 이 부분이 더 취약할 수 있다."
     if form == "polite":                                # 결정적 정책은 지나지만 "-다." 로 끝나지 않는다
         return f"{name} 1개가 {zone}에 표시되어 있습니다. 주석만으로는 결함의 모양과 크기를 알 수 없습니다."
     return f"{name} 1개가 {zone}에 표시되어 있다. 주석만으로는 결함의 모양과 크기를 알 수 없다."
@@ -2172,7 +2172,7 @@ def test_v4_정상_템플릿과_통과한_관찰은_수락되고_템플릿_행�
 
 
 @needs_v4
-@pytest.mark.parametrize("form,code", [("one_sentence", "generation:obs_sentence_count"),
+@pytest.mark.parametrize("form,code", [("risk", "generation:obs_forbidden"),
                                        ("polite", "generation:obs_sentence_end")])
 def test_v4_관찰_구조_진단에_걸린_결함_행은_결정적_정책을_지나도_수락되지_않는다(tmp_path, form, code):
     tasks, a, st, rows = _v4_audit(tmp_path, ("good", form, "good"))
@@ -2187,7 +2187,7 @@ def test_v4_관찰_구조_진단에_걸린_결함_행은_결정적_정책을_지
 def test_v4_다시_만든_행과_바이트가_다른_생성_행은_수락되지_않는다(tmp_path, monkeypatch, breaks):
     """생성 읽기는 이미 렌더를 맞대지만, 집계는 그것을 믿지 않고 다시 맞댄다 — 읽기를 지나 들어온 행을 고쳐 쓴다.
     글(`text`)은 그대로 두어 판정 영수증은 맞는 채로, 집계 자신의 대조만 시험한다."""
-    run_dir, config, tasks, src = _v4_run(tmp_path, ("good", "one_sentence", "good"))
+    run_dir, config, tasks, src = _v4_run(tmp_path, ("good", "risk", "good"))
     normal = next(t["id"] for t in tasks if t["evidence"]["row_class"] == "defect_free")
     hidden = next(t["id"] for t in tasks if t["id"].endswith("-003"))
     real = Q.read_stage_rows
@@ -2211,7 +2211,7 @@ def test_v4_다시_만든_행과_바이트가_다른_생성_행은_수락되지_
     st, rows = _status(out), {r["id"]: r for r in iter_jsonl(out / "dataset.jsonl")}
     target = hidden if breaks == "model_problems_hidden" else normal
     expected = {"template_raw_text": ["generation:template_mismatch"], "template_tokens": ["generation:template_mismatch"],
-                "model_problems_hidden": ["generation:render_mismatch", "generation:obs_sentence_count"],
+                "model_problems_hidden": ["generation:render_mismatch", "generation:obs_forbidden"],
                 "generator_swapped": ["generation:render_mismatch"]}[breaks]
     assert st[target]["status"] == "rejected" and st[target]["reasons"][:len(expected)] == expected and target not in rows
 

@@ -207,6 +207,16 @@ def clause_text(rows: Sequence, defect_names: dict[str, str] | None = None) -> s
         parts.append("기준: " + " ; ".join(
             f"{names.get(c, '코드 ' + c)} {per_code[c]}" for c in codes) + ".")
 
+    # 2 판 칸(측정량 · 종별 · 조건) — 값이 있는 행 묶음에만 붙는다. 1 판 행은 칸이 비어 있어 이 줄이 없고 출력 바이트가 같다.
+    # 칸 값은 닫힌 어휘(구조 필드)라 원천 표기를 옮기지 않는다(규약 2-5). 같은 조항의 행은 네 칸이 같다(V13).
+    for label, field in (("측정량", "measure"), ("종별", "defect_class")):
+        vals = sorted({val(getattr(r, field, None)) for r in rows} - {""})
+        if vals:
+            parts.append(f"{label}: {', '.join(vals)}.")
+    conds = sorted({t for r in rows for t in (getattr(r, "conditions", ()) or ())})
+    if conds:
+        parts.append(f"조건: {', '.join(conds)}.")
+
     scopes = sorted({val(r.scope) for r in rows})
     if scopes != ["active"]:
         parts.append(

@@ -36,6 +36,19 @@ from vlm.train_cell import (
     close_ledger,
 )
 
+
+@pytest.fixture(autouse=True)
+def _budget_fraction_one(monkeypatch, tmp_path):
+    """예산 비율은 저장소 등록 파일(지금 1/8)이 아니라 1.0 으로 — 합성 페어가 행별 토큰 표와 맞지 않는다(배선은 tests/test_budget_fraction.py ·
+    tests/test_main_uni.py 가 본다)."""
+    import vlm.registration as reg
+    from tests.registration_history import legacy_default
+
+    # 이 파일의 합성 설정은 1차 프롬프트·레시피다. 운영 2차 등록과 섞지 않는다.
+    legacy_default(monkeypatch, tmp_path)
+
+    monkeypatch.setattr(reg, "registered_budget_fraction", lambda path=None: 1.0)
+
 NONCE = "0123456789abcdef0123456789abcdef"
 fed = FC.fed          # 연합 칸 시험의 합성 세계(리허설 루트 · 페어 · 공통 초기 어댑터)를 그대로 쓴다
 
@@ -241,8 +254,10 @@ class _FakeStrategy:
     def __init__(self, *, expected_nodes, canonical_keys, reference_state_dict, on_round_end):
         self.keys, self.cb = list(canonical_keys), on_round_end
 
-    def start(self, *, grid, initial_arrays, num_rounds, train_config):
+    def start(self, *, grid, initial_arrays, num_rounds, train_config, timeout):    # flwr Strategy.start 의 꼴
         from fl.client_app import uni_client_round
+
+        assert timeout > 3600                       # 응답 대기 상한을 넘긴다 — flwr 기본 3600 초가 아니다(06 §8)
 
         glob = initial_arrays.to_numpy_ndarrays()
         cfg = dict(train_config)

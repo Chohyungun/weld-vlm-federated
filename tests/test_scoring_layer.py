@@ -72,6 +72,8 @@ KWARGS = {
     "judge_rehearsal_gates": {"coupling_rule": RULE, "known_iso_codes": KNOWN, "scoring_iso_codes": CLASSES},
     "adversarial_probe": {"coupling_rule": RULE, "known_iso_codes": KNOWN, "scoring_iso_codes": CLASSES},
     "rehearsal_metric_smoke": {"gold": {}, "classes": CLASSES, "coupling_rule": RULE, "known_iso_codes": KNOWN},
+    "score_registered": {"gold": {}, "population": [], "classes": CLASSES, "coupling_rule": RULE,
+                         "known_iso_codes": KNOWN, "sensitivity_variant": "fp_per_class_every_failed_record"},
 }
 
 
@@ -288,3 +290,48 @@ def test_검사가_안_걸리면_적대적_한_장이_그렇게_적는다(tmp_pa
     assert out["status"] == "fail"
     assert out["fired"] == {"missing_required_field": False, "parse_error_out_of_vocab": False,
                             "coord_space_mismatch": False}
+
+
+# ---------------------------------------------------------------- 6 엄격 경로의 등록 지표(35번 §1)
+
+SENS = "fp_per_class_every_failed_record"
+
+
+def test_등록_지표는_모집단의_주_민감도_계수표와_실패_회계를_낸다(tmp_path) -> None:
+    rows = [gen_row(IDS[0]), gen_row(IDS[1], boxes=(("2011", [500.0, 500.0, 520.0, 520.0]),)),
+            gen_row(IDS[2], parse_error="json_decode")]
+    vb = verified(tmp_path, rows)
+    gold = gold_of(IDS[:2]) | {IDS[2]: []}
+    sc = L.score_registered(vb, gold, population=IDS, classes=CLASSES, coupling_rule=RULE, known_iso_codes=KNOWN,
+                            sensitivity_variant=SENS)
+    k = CLASSES.index("2011")
+    assert sc.table.image_ids == tuple(sorted(IDS))
+    assert (int(sc.table.tp[:, k].sum()), int(sc.table.fp[:, k].sum()), int(sc.table.fn[:, k].sum())) == (1, 1, 1)
+    assert sc.failed == (IDS[2],) and sc.gold_codes[IDS[2]] == frozenset()
+    assert int(sc.sens.fp.sum()) == int(sc.table.fp.sum()) + len(CLASSES)   # 실패 레코드(정상 이미지)마다 클래스별 오탐 1
+    f = sc.failures
+    assert (f["n_records"], f["n_record_failures"], f["normal_images"]["n_failed"], f["defect_images"]["n_failed"]) == (3, 1, 1, 0)
+
+
+def test_등록_지표는_에코_묶음을_받지_않는다(tmp_path) -> None:
+    vb = verified(tmp_path, [gen_row(i) for i in IDS], echo=True)
+    with pytest.raises(ValueError, match="모델 묶음"):
+        L.score_registered(vb, gold_of(IDS), population=IDS, classes=CLASSES, coupling_rule=RULE,
+                           known_iso_codes=KNOWN, sensitivity_variant=SENS)
+
+
+def test_등록_지표는_모집단에_레코드가_빠지면_멈춘다(tmp_path) -> None:
+    vb = verified(tmp_path, [gen_row(i) for i in IDS])
+    with pytest.raises(ValueError, match="레코드가 없다"):
+        L.score_registered(vb, gold_of(IDS) | {"aihub999999": []}, population=[*IDS, "aihub999999"], classes=CLASSES,
+                           coupling_rule=RULE, known_iso_codes=KNOWN, sensitivity_variant=SENS)
+
+
+def test_등록_지표는_이미지_수준_코드로_정상_결함을_가른다(tmp_path) -> None:
+    """상자 없는 주석 행의 이미지 — 상자 계수에는 들지 않지만 결함 이미지로 센다(공통 채점기의 정답 판독과 같다)."""
+    vb = verified(tmp_path, [gen_row(i, parse_error="json_decode") if i == IDS[2] else gen_row(i) for i in IDS])
+    gold = gold_of(IDS[:2]) | {IDS[2]: []}
+    sc = L.score_registered(vb, gold, population=IDS, classes=CLASSES, coupling_rule=RULE, known_iso_codes=KNOWN,
+                            sensitivity_variant=SENS, gold_codes={IDS[2]: {"301"}})
+    assert sc.gold_codes[IDS[2]] == frozenset({"301"}) and int(sc.table.fn.sum()) == 0
+    assert (sc.failures["defect_images"]["n_failed"], sc.failures["normal_images"]["n_failed"]) == (1, 0)

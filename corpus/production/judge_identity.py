@@ -21,6 +21,13 @@ from . import infer as I
 
 _SCHEMA = 1
 _SCHEMA_V7 = 2
+_SCHEMA_V8 = 3
+# Structured judge contracts that share the v7 writer/reader path. Each binds its own
+# policy, parser, record schema and final blinded approval protocol.
+_CONTRACTS = {
+    "v7": {"schema": "judge_structured_v7", "record": _SCHEMA_V7, "final_protocol": "judge_v7_g150_b_v2"},
+    "v8": {"schema": "judge_structured_v8", "record": _SCHEMA_V8, "final_protocol": "judge_v8_g150_b_v2"},
+}
 _SHARD = re.compile(r"[0-9]{6}\.json")
 
 
@@ -219,17 +226,17 @@ def _runtime(model, spec: dict, *, policy_version="v6") -> dict:
             "actual_chat_template_sha256": _sha_text(template),
             "decoding": _decoding(spec),
         }
-    if policy_version == "v7":
+    if policy_version in _CONTRACTS:
         from . import judge_stopping as stop
         if spec["max_new_tokens"] != stop.JUDGE_MAX_NEW_TOKENS:
-            raise I.StageRefused("judge_runtime", "v7 requires exactly 160 tokens")
+            raise I.StageRefused("judge_runtime", f"{policy_version} requires exactly 160 tokens")
         if result["backend"] != "fake" and (
                 getattr(model, "json_object_stopping", False) is not True or
                 result.get("json_stop_protocol") != stop.JSON_STOP_PROTOCOL or
                 result.get("json_stop_implementation_sha256") != I._file_sha(Path(stop.__file__))):
-            raise I.StageRefused("judge_runtime", "v7 backend JSON stopper was not explicitly enabled")
-        result["judge_runtime"].update(policy_version="v7", decoding=_decoding_v7(spec),
-            json_stop_protocol=stop.JSON_STOP_PROTOCOL,
+            raise I.StageRefused("judge_runtime", f"{policy_version} backend JSON stopper was not explicitly enabled")
+        result["judge_runtime"].update(policy_version=policy_version, decoding=_decoding_v7(spec, policy_version),
+            json_stop_protocol=stop.CONTRACT_STOP_PROTOCOLS[policy_version],
             json_stop_implementation_sha256=I._file_sha(Path(stop.__file__)))
     elif policy_version != "v6":
         raise I.StageRefused("judge_policy", "unknown judge policy version")
@@ -239,19 +246,22 @@ def _runtime(model, spec: dict, *, policy_version="v6") -> dict:
 def _check_runtime(runtime: dict, spec: dict):
     I._check_model(runtime, spec)
     details = runtime.get("judge_runtime")
-    v7 = isinstance(details, dict) and details.get("policy_version") == "v7"
-    decoding = _decoding_v7(spec) if v7 else _decoding(spec)
+    version = details.get("policy_version") if isinstance(details, dict) else None
+    v7 = version in _CONTRACTS
+    decoding = _decoding_v7(spec, version) if v7 else _decoding(spec)
     if not isinstance(details, dict) or details.get("decoding") != decoding:
         raise I.StageRefused("judge_runtime", "missing effective decoding identity")
     v7_extra = {}
     if v7:
         from . import judge_stopping as stop
-        v7_extra = {"policy_version": "v7", "json_stop_protocol": stop.JSON_STOP_PROTOCOL,
+        v7_extra = {"policy_version": version, "json_stop_protocol": stop.CONTRACT_STOP_PROTOCOLS[version],
                     "json_stop_implementation_sha256": I._file_sha(Path(stop.__file__))}
         if spec["max_new_tokens"] != 160 or any(details.get(k) != v for k, v in v7_extra.items()):
             raise I.StageRefused("judge_runtime", "v7 decoding/stopping implementation differs")
-        if runtime["backend"] != "fake" and any(runtime.get(k) != v7_extra[k] for k in
-                ("json_stop_protocol", "json_stop_implementation_sha256")):
+        # The backend binds the shared first-object stop mechanism (the v7 protocol name).
+        mechanism = {"json_stop_protocol": stop.JSON_STOP_PROTOCOL,
+                     "json_stop_implementation_sha256": v7_extra["json_stop_implementation_sha256"]}
+        if runtime["backend"] != "fake" and any(runtime.get(k) != v for k, v in mechanism.items()):
             raise I.StageRefused("judge_runtime", "v7 runtime lacks the enabled stopping identity")
     if runtime["backend"] == "fake":
         if details != {"test_only": True, "decoding": decoding, **v7_extra}:
@@ -336,19 +346,20 @@ def _approval_binding(approval, run, spec, policy, implementation):
             "writer_role": "separate-judge-not-a-probe", "gpu_model_verified": True}
 
 
-def _approval_binding_v7(approval, run, spec, policy, implementation):
-    """Only a verified, externally pinned final blinded receipt admits v7 writing."""
+def _approval_binding_v7(approval, run, spec, policy, implementation, version="v7"):
+    """Only a verified, externally pinned final blinded receipt of the same contract admits writing."""
     basis = approval["identity_basis"]
     inputs = basis.get("input_basis", {})
     registration = inputs.get("registration", {})
-    final_protocol = "judge_v7_g150_b_v2"
+    final_protocol = _CONTRACTS[version]["final_protocol"]
     if (basis.get("protocol") != final_protocol or inputs.get("protocol") != final_protocol or
             basis.get("approval_scope") != "final_blinded" or
             basis.get("final_blinded_approval") is not True or
             not isinstance(registration, dict) or
             registration.get("expected_protocol") != final_protocol or
             registration.get("expected_approval_scope") != "final_blinded"):
-        raise I.StageRefused("final_blinded_approval", "v7 production requires registered final G150-B v2 approval")
+        raise I.StageRefused("final_blinded_approval",
+                             f"{version} production requires registered final G150-B v2 approval of the same contract")
     # read_probe_approval has already recomputed these pins from both preserved
     # calls. Bind them into the writer identity so readers/audits cannot lose scope.
     binding = _approval_binding(approval, run, spec, policy, implementation)
@@ -460,7 +471,7 @@ def _inspect(root, target, config, judge_config=None, *, owned_locks=False,
 
 def _unchanged(context, model=None):
     version = context.get("policy_version", "v6")
-    (require_v7_parser if version == "v7" else require_v6_parser)()
+    (_require_contract_parser(version) if version in _CONTRACTS else require_v6_parser())
     for path, token in context.get("lock_tokens", []):
         _safe_path(path)
         if not path.is_file() or path.is_symlink() or path.read_bytes() != token:
@@ -468,7 +479,7 @@ def _unchanged(context, model=None):
     if (_source_pins(context["root"]) != context["source_pins"] or
             _output_pins(context["target"]) != context["output_pins"]):
         raise I.StageRefused("judge_snapshot_changed", "input or completed output bytes changed")
-    _, system, policy = (_policy_v7() if version == "v7" else _policy())
+    _, system, policy = (_policy_v7(version) if version in _CONTRACTS else _policy())
     if system != context["system"] or policy != context["basis"]["policy_identity"]:
         raise I.StageRefused("judge_policy_changed", "new policy requires a new identity")
     from .judge_probe import approval_files, _code_pins
@@ -530,13 +541,15 @@ def read_judge_source(run_dir, config: dict, judge_dir, *, judge_config=None,
         if selected_genesis.exists():
             I._plain_file(selected_genesis)
             selected = I._json(selected_genesis.read_bytes())
-            policy_version = "v7" if isinstance(selected, dict) and selected.get("schema_version") == _SCHEMA_V7 else "v6"
+            records = {c["record"]: name for name, c in _CONTRACTS.items()}
+            policy_version = (records.get(selected.get("schema_version"), "v6")
+                              if isinstance(selected, dict) else "v6")
         else:
             policy_version = "v6"
-    if policy_version == "v7":
+    if policy_version in _CONTRACTS:
         return _read_judge_source_v7(run_dir, config, judge_dir, judge_config=judge_config,
             expected_judge_identity_sha256=expected_judge_identity_sha256,
-            expected_probe_approval_sha256=expected_probe_approval_sha256)
+            expected_probe_approval_sha256=expected_probe_approval_sha256, version=policy_version)
     if policy_version != "v6":
         raise I.StageRefused("judge_policy", "unknown judge policy version")
     caller_pins = {"expected_judge_identity_sha256": expected_judge_identity_sha256,
@@ -580,10 +593,10 @@ def run_judge(run_dir, config: dict, judge_dir, *, judge_config=None,
               max_shards=None, backend_factory=None, probe_approval=None,
               probe_approval_sha256=None, policy_version="v6") -> dict:
     """Append only to one separate identity; legacy run_stage remains unchanged."""
-    if policy_version == "v7":
+    if policy_version in _CONTRACTS:
         return _run_judge_v7(run_dir, config, judge_dir, judge_config=judge_config,
             max_shards=max_shards, backend_factory=backend_factory, probe_approval=probe_approval,
-            probe_approval_sha256=probe_approval_sha256)
+            probe_approval_sha256=probe_approval_sha256, version=policy_version)
     if policy_version != "v6":
         raise I.StageRefused("judge_policy", "unknown judge policy version")
     if max_shards is not None and (type(max_shards) is not int or max_shards < 0):
@@ -728,19 +741,26 @@ def run_judge(run_dir, config: dict, judge_dir, *, judge_config=None,
                 if model is not None:
                     model.close()
 
-def _decoding_v7(spec: dict) -> dict:
-    from .judge_stopping import JSON_STOP_PROTOCOL
-    return {**_decoding(spec), "json_stop_protocol": JSON_STOP_PROTOCOL,
+def _decoding_v7(spec: dict, version="v7") -> dict:
+    from .judge_stopping import CONTRACT_STOP_PROTOCOLS
+    return {**_decoding(spec), "json_stop_protocol": CONTRACT_STOP_PROTOCOLS[version],
             "clean_up_tokenization_spaces": False, "num_return_sequences": 1,
             "return_dict_in_generate": False}
 
 
-def _policy_v7():
+def _policy_v7(version="v7"):
     from . import judge_policy as policy
-    system, identity = policy.JUDGE_SYSTEM_V7, _clone(policy.policy_identity_v7())
-    if not isinstance(system, str) or not system or identity.get("output_schema") != "judge_structured_v7":
-        raise I.StageRefused("judge_policy", "v7 system/policy schema is unavailable")
+    if version == "v8":
+        system, identity = policy.JUDGE_SYSTEM_V8, _clone(policy.policy_identity_v8())
+    else:
+        system, identity = policy.JUDGE_SYSTEM_V7, _clone(policy.policy_identity_v7())
+    if not isinstance(system, str) or not system or identity.get("output_schema") != _CONTRACTS[version]["schema"]:
+        raise I.StageRefused("judge_policy", f"{version} system/policy schema is unavailable")
     return policy, system, identity
+
+
+def _policy_v8():
+    return _policy_v7("v8")
 
 
 def require_v7_parser():
@@ -762,20 +782,43 @@ def require_v7_parser():
     return parser
 
 
-def _check_runtime_v7(runtime, spec):
+def require_v8_parser():
+    from . import judge_policy as policy, quality
+    parser = getattr(quality, "parse_judge_v8", None)
+    if (getattr(quality, "JUDGE_V8_SCHEMA_VERSION", None) != "judge_structured_v8" or
+            not callable(parser)):
+        raise I.StageRefused("parser_missing", "structured-v8 parser must be explicitly connected")
+    try:
+        identity = policy.parser_identity_v8()
+        bound = policy.policy_identity_v8()
+        if (identity.get("selected_schema") != "judge_structured_v8" or
+                bound.get("output_schema") != "judge_structured_v8" or
+                bound.get("structured_parser_ready") is not True or bound.get("parser_implementation") != identity):
+            raise ValueError("policy does not bind the active structured-v8 parser closure")
+    except Exception as exc:
+        raise I.StageRefused("parser_missing", str(exc)) from exc
+    return parser
+
+
+def _require_contract_parser(version="v7"):
+    return require_v8_parser() if version == "v8" else require_v7_parser()
+
+
+def _check_runtime_v7(runtime, spec, version="v7"):
     _check_runtime(runtime, spec)
-    if runtime["judge_runtime"].get("policy_version") != "v7":
-        raise I.StageRefused("judge_runtime", "v7 cannot reuse a legacy runtime")
+    if runtime["judge_runtime"].get("policy_version") != version:
+        raise I.StageRefused("judge_runtime", f"{version} cannot reuse a legacy or other-contract runtime")
 
 
-def _v7_row_receipt(policy, task, generated, identity):
+def _v7_row_receipt(policy, task, generated, identity, version="v7"):
+    evaluate = policy.evaluate_v8 if version == "v8" else policy.evaluate_v7
     return {"id": task["id"], "candidate_sha256": _sha_text(generated["text"]),
             "candidate_finish_reason": generated["finish_reason"],
             "policy_identity_sha256": I._digest(identity),
-            **policy.evaluate_v7(task, generated["text"], generation_contract=True)}
+            **evaluate(task, generated["text"], generation_contract=True)}
 
 
-def _read_done_v7(target, record, tasks, generated, spec, config, deterministic, model_ids):
+def _read_done_v7(target, record, tasks, generated, spec, config, deterministic, model_ids, version="v7"):
     result = {}
     names = _files(target / "judged", absent_ok=True)
     if names and record is None:
@@ -794,7 +837,7 @@ def _read_done_v7(target, record, tasks, generated, spec, config, deterministic,
         chunk = tasks[index * config["shard_size"]:(index + 1) * config["shard_size"]]
         ids = [t["id"] for t in chunk]
         basis = record["identity_basis"]
-        if (shard.get("schema_version") != _SCHEMA_V7 or
+        if (shard.get("schema_version") != _CONTRACTS[version]["record"] or
                 shard.get("judge_identity_sha256") != record["identity_sha256"] or
                 shard.get("identity_sha256") != basis["run_identity_sha256"] or
                 shard.get("config_sha256") != basis["run_config_sha256"]):
@@ -820,8 +863,8 @@ def _read_done_v7(target, record, tasks, generated, spec, config, deterministic,
     return result
 
 def _inspect_v7(root, target, config, judge_config=None, *, owned_locks=False,
-             probe_approval=None, probe_approval_sha256=None):
-    require_v7_parser()
+             probe_approval=None, probe_approval_sha256=None, version="v7"):
+    _require_contract_parser(version)
     root, target = _paths(root, target)
     if not owned_locks:
         _unlocked(root, target)
@@ -835,7 +878,7 @@ def _inspect_v7(root, target, config, judge_config=None, *, owned_locks=False,
     record = None
     if output_before["JUDGE.json"] is not None:
         record = I._json((target / "JUDGE.json").read_bytes())
-        if (not isinstance(record, dict) or record.get("schema_version") != _SCHEMA_V7 or
+        if (not isinstance(record, dict) or record.get("schema_version") != _CONTRACTS[version]["record"] or
                 not isinstance(record.get("identity_basis"), dict) or
                 record.get("identity_sha256") != I._digest(record["identity_basis"])):
             raise I.StageRefused("judge_genesis", "invalid JUDGE identity")
@@ -849,7 +892,7 @@ def _inspect_v7(root, target, config, judge_config=None, *, owned_locks=False,
     if (I._family(spec["family"]) == I._family(generation_spec["family"]) or
             spec["model_id"] == generation_spec["model_id"]):
         raise I.StageRefused("self_judging", "judge must have a different model family")
-    policy, system, policy_identity = _policy_v7()
+    policy, system, policy_identity = _policy_v7(version)
     from .judge_probe import read_probe_approval
     approval, approval_paths = None, []
     stored_approval = record["identity_basis"].get("probe_approval") if record else None
@@ -868,22 +911,23 @@ def _inspect_v7(root, target, config, judge_config=None, *, owned_locks=False,
         approval_paths.append((target / "probe_approval", local["files_sha256"]))
     elif stored_approval is not None:
         raise I.StageRefused("probe_approval_missing", "writer's portable approval is missing")
-    binding = (_approval_binding_v7(approval, run, spec, policy_identity, before["implementation"])
+    binding = (_approval_binding_v7(approval, run, spec, policy_identity, before["implementation"], version)
                if approval is not None else None)
     prompts, rendered, deterministic, model_ids = {}, [], {}, {}
     for index, shard in generated.items():
         chunk = tasks[index * config["shard_size"]:(index + 1) * config["shard_size"]]
-        decisions = [_v7_row_receipt(policy, t, r, policy_identity) for t, r in zip(chunk, shard["rows"])]
+        decisions = [_v7_row_receipt(policy, t, r, policy_identity, version) for t, r in zip(chunk, shard["rows"])]
         deterministic[index] = decisions
         applicable = [(t, r) for t, r, d in zip(chunk, shard["rows"], decisions) if d["model_applicable"]]
         model_ids[index] = [t["id"] for t, _ in applicable]
-        values = [policy.render_judge_v7(t, r) for t, r in applicable]
+        render = policy.render_judge_v8 if version == "v8" else policy.render_judge_v7
+        values = [render(t, r) for t, r in applicable]
         if not all(isinstance(value, str) and value for value in values):
             raise I.StageRefused("judge_render", "renderer must produce nonempty strings")
         prompts[index] = values
         rendered.append(I._digest([{"system": system, "user": value} for value in values]))
     basis = {
-        "policy_version": "v7", "output_schema": "judge_structured_v7",
+        "policy_version": version, "output_schema": _CONTRACTS[version]["schema"],
         "run_identity_sha256": run["identity_sha256"], "run_config_sha256": run["config_sha256"],
         "run_file_sha256": before["RUN.json"], "tasks_sha256": run["tasks_sha256"],
         "generate_shard_sha256": sorted(s["payload_sha256"] for s in generated.values()),
@@ -893,18 +937,18 @@ def _inspect_v7(root, target, config, judge_config=None, *, owned_locks=False,
         "judge_model": {"model_id": spec["model_id"], "family": I._family(spec["family"])},
         "judge_model_config": spec, "system_prompt_sha256": _sha_text(system),
         "rendered_shard_sha256": rendered, "policy_identity": policy_identity,
-        "implementation_sha256": before["implementation"], "decoding": _decoding_v7(spec),
+        "implementation_sha256": before["implementation"], "decoding": _decoding_v7(spec, version),
         "probe_approval": binding,
     }
     if record:
         runtime = record["identity_basis"].get("runtime_model")
-        _check_runtime_v7(runtime, spec)
+        _check_runtime_v7(runtime, spec, version)
         _check_approved_runtime(approval, runtime, backend_injected=False)
         _check_generator_separation(runtime, generated)
         if record["identity_basis"] != {**basis, "runtime_model": runtime}:
             raise I.StageRefused("judge_identity_changed", "source, render, policy or implementation differs")
-    done = _read_done_v7(target, record, tasks, generated, spec, config, deterministic, model_ids)
-    context = dict(policy_version="v7", deterministic=deterministic, model_ids=model_ids,
+    done = _read_done_v7(target, record, tasks, generated, spec, config, deterministic, model_ids, version)
+    context = dict(policy_version=version, deterministic=deterministic, model_ids=model_ids,
                    root=root, target=target, config=config, run=run, tasks=tasks,
                    generated=generated, spec=spec, system=system, prompts=prompts,
                    basis=basis, record=record, done=done,
@@ -915,8 +959,8 @@ def _inspect_v7(root, target, config, judge_config=None, *, owned_locks=False,
         _unlocked(root, target)
     return context
 
-def _write_genesis_v7(target, basis):
-    record = {"schema_version": _SCHEMA_V7, "identity_basis": basis,
+def _write_genesis_v7(target, basis, version="v7"):
+    record = {"schema_version": _CONTRACTS[version]["record"], "identity_basis": basis,
               "identity_sha256": I._digest(basis), "created_at": datetime.now(UTC).isoformat()}
     final, temp = target / "JUDGE.json", target / "JUDGE.json.tmp"
     if final.exists():
@@ -934,7 +978,8 @@ def _write_genesis_v7(target, basis):
     return record
 
 def _read_judge_source_v7(run_dir, config: dict, judge_dir, *, judge_config=None,
-                      expected_judge_identity_sha256=None, expected_probe_approval_sha256=None) -> dict:
+                      expected_judge_identity_sha256=None, expected_probe_approval_sha256=None,
+                      version="v7") -> dict:
     """Return the verified 05h source object, without model loading or writes.
 
     ``judge_dir`` is a locator, not authority. Production reads require at least
@@ -947,7 +992,7 @@ def _read_judge_source_v7(run_dir, config: dict, judge_dir, *, judge_config=None
     for name, value in caller_pins.items():
         if value is not None and (not isinstance(value, str) or not I._HEX64.fullmatch(value)):
             raise I.StageRefused("judge_source_pin", f"invalid external SHA256: {name}")
-    context = _inspect_v7(run_dir, judge_dir, _clone(config), judge_config)
+    context = _inspect_v7(run_dir, judge_dir, _clone(config), judge_config, version=version)
     record = context["record"]
     if record is None:
         raise I.StageRefused("judge_genesis_missing", "JUDGE.json is required")
@@ -964,7 +1009,7 @@ def _read_judge_source_v7(run_dir, config: dict, judge_dir, *, judge_config=None
     if expected_probe_approval_sha256 is not None and expected_probe_approval_sha256 != approval_sha:
         raise I.StageRefused("judge_source_pin", "selected approval differs from the caller's expected approval")
     result = {"identity_sha256": record["identity_sha256"],
-              "policy_version": "v7", "output_schema": "judge_structured_v7",
+              "policy_version": version, "output_schema": _CONTRACTS[version]["schema"],
               "all_task_ids": [tid for shard in context["done"].values() for tid in shard["task_ids"]],
               "model_task_ids": [tid for shard in context["done"].values() for tid in shard["model_task_ids"]],
               "deterministic_receipts": [{**r, "_shard_sha256": shard["payload_sha256"],
@@ -986,20 +1031,20 @@ def _read_judge_source_v7(run_dir, config: dict, judge_dir, *, judge_config=None
 
 def _run_judge_v7(run_dir, config: dict, judge_dir, *, judge_config=None,
               max_shards=None, backend_factory=None, probe_approval=None,
-              probe_approval_sha256=None) -> dict:
+              probe_approval_sha256=None, version="v7") -> dict:
     """Append only to one separate identity; legacy run_stage remains unchanged."""
     if max_shards is not None and (type(max_shards) is not int or max_shards < 0):
         raise I.StageRefused("invalid_max_shards", "must be a nonnegative integer")
-    require_v7_parser()
+    _require_contract_parser(version)
     config = _clone(config)
     context = _inspect_v7(run_dir, judge_dir, config, judge_config,
-                       probe_approval=probe_approval, probe_approval_sha256=probe_approval_sha256)
+                       probe_approval=probe_approval, probe_approval_sha256=probe_approval_sha256, version=version)
     started, newly_done = time.monotonic(), 0
 
     def result(status, exit_code):
         count = sum(len(s["task_ids"]) for s in context["done"].values())
         record = context["record"]
-        return {"stage": "judge", "policy_version": "v7", "status": status, "exit_code": exit_code,
+        return {"stage": "judge", "policy_version": version, "status": status, "exit_code": exit_code,
                 "planned_tasks": len(context["tasks"]), "completed_tasks": count,
                 "pending_tasks": len(context["tasks"]) - count,
                 "completed_shards": len(context["done"]), "new_shards": newly_done,
@@ -1029,7 +1074,7 @@ def _run_judge_v7(run_dir, config: dict, judge_dir, *, judge_config=None,
     root, target = context["root"], context["target"]
     deadline = started + context["spec"]["wall_seconds"]
     with I._writer_lock(root):
-        require_v7_parser()
+        _require_contract_parser(version)
         root_lock = (root / ".inference.lock", (root / ".inference.lock").read_bytes())
         context["lock_tokens"] = [root_lock]
         _unchanged(context)
@@ -1038,7 +1083,8 @@ def _run_judge_v7(run_dir, config: dict, judge_dir, *, judge_config=None,
         with I._writer_lock(target):
             target_lock = (target / ".inference.lock", (target / ".inference.lock").read_bytes())
             fresh = _inspect_v7(root, target, config, judge_config, owned_locks=True,
-                             probe_approval=probe_approval, probe_approval_sha256=probe_approval_sha256)
+                             probe_approval=probe_approval, probe_approval_sha256=probe_approval_sha256,
+                             version=version)
             if (fresh["source_pins"] != context["source_pins"] or
                     fresh["output_pins"] != context["output_pins"] or fresh["basis"] != context["basis"]):
                 raise I.StageRefused("judge_snapshot_changed", "changed while acquiring writer locks")
@@ -1059,7 +1105,7 @@ def _run_judge_v7(run_dir, config: dict, judge_dir, *, judge_config=None,
                     if time.monotonic() >= deadline:
                         return result("time_limit", 3)
                     _unchanged(context, model)
-                    require_v7_parser()
+                    _require_contract_parser(version)
                     model_load_seconds = 0.0
                     size = config["shard_size"]
                     chunk = context["tasks"][index * size:(index + 1) * size]
@@ -1067,10 +1113,11 @@ def _run_judge_v7(run_dir, config: dict, judge_dir, *, judge_config=None,
                     model_ids = context["model_ids"][index]
                     if context["record"] is None and not model_ids:
                         runtime = _clone(context["approval"]["identity_basis"]["runtime_model"])
-                        _check_runtime_v7(runtime, spec)
+                        _check_runtime_v7(runtime, spec, version)
                         _check_approved_runtime(context["approval"], runtime, backend_injected=False)
                         _check_generator_separation(runtime, context["generated"])
-                        context["record"] = _write_genesis_v7(target, {**context["basis"], "runtime_model": runtime})
+                        context["record"] = _write_genesis_v7(target, {**context["basis"], "runtime_model": runtime},
+                                                              version)
                         context["output_pins"]["JUDGE.json"] = hashlib.sha256(
                             I._canonical(context["record"]) + b"\n").hexdigest()
                         _unchanged(context)
@@ -1083,13 +1130,14 @@ def _run_judge_v7(run_dir, config: dict, judge_dir, *, judge_config=None,
                             enable()
                         elif getattr(model, "identity", {}).get("backend") != "fake":
                             raise I.StageRefused("judge_json_stopping", "v7 backend requires explicit JSON stopper")
-                        runtime = judge_runtime_identity(model, spec, policy_version="v7")
+                        runtime = judge_runtime_identity(model, spec, policy_version=version)
                         _check_approved_runtime(context["approval"], runtime,
                                                 backend_injected=backend_factory is not None)
                         _check_generator_separation(runtime, context["generated"])
                         _unchanged(context)
                         if context["record"] is None:
-                            context["record"] = _write_genesis_v7(target, {**context["basis"], "runtime_model": runtime})
+                            context["record"] = _write_genesis_v7(target, {**context["basis"], "runtime_model": runtime},
+                                                                  version)
                             context["output_pins"]["JUDGE.json"] = hashlib.sha256(
                                 I._canonical(context["record"]) + b"\n").hexdigest()
                         elif runtime != context["record"]["identity_basis"]["runtime_model"]:
@@ -1119,7 +1167,7 @@ def _run_judge_v7(run_dir, config: dict, judge_dir, *, judge_config=None,
                     I._check_rows(rows, model_ids, spec, allow_json_closed=True)
                     _unchanged(context, model)
                     basis, record = context["basis"], context["record"]
-                    payload = {"schema_version": _SCHEMA_V7, "stage": "judge", "index": index,
+                    payload = {"schema_version": _CONTRACTS[version]["record"], "stage": "judge", "index": index,
                                "identity_sha256": context["run"]["identity_sha256"],
                                "config_sha256": context["run"]["config_sha256"],
                                "judge_identity_sha256": record["identity_sha256"],

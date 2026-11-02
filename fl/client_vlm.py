@@ -82,6 +82,14 @@ def adapter_exchange_contract(
     return (not failures), failures
 
 
+def _recipe_of(uni: dict[str, Any]) -> str:
+    """서버가 내려보낸 학습 레시피(`client_run_cfg` 가 늘 채운다). 칸이 없거나 비었으면 1 차로 채우지 않고 거부한다(지시 1022c 덧붙임 C)."""
+    recipe = uni.get("recipe")
+    if not isinstance(recipe, str) or not recipe:
+        raise ValueError(f"서버가 학습 레시피를 내려보내지 않았다 — 1 차 레시피로 채우지 않는다: {recipe!r}")
+    return recipe
+
+
 def run_client_round(
     *,
     adapter_in: list,
@@ -99,6 +107,7 @@ def run_client_round(
     from vlm.coords import CoordCfg
     from vlm.fault import assert_no_fault_env
     from vlm.init_adapter import assert_injected_matches
+    from vlm.midrun_loss import observe as observe_midrun_loss
     from vlm.pilot_vlm import load_pairs, train_rounds
 
     # 연합 클라이언트는 목적과 무관하게 고의 중단 변수를 받지 않는다(2판 §1-3 의 연합 ③) — 데몬의 환경을 물려받는다.
@@ -115,28 +124,37 @@ def run_client_round(
                                run_root=uni.get("rehearsal_root"))
     else:
         rows = load_pairs("train", client=str(cfg["client_tag"]), pairs_path=uni.get("pairs_path"))
-    arrays, keys, m, _ref = train_rounds(
-        rows=rows,
-        epochs=int(cfg["local_epochs"]),
-        round_idx=round_idx,
-        client_idx=client_idx,
-        base_seed=int(cfg["base_seed"]),
-        adapter_in=adapter_in,
-        adapter_keys=canonical_keys,
-        resume_dir=str(Path(cfg["resume_root"]) / f"r{round_idx:03d}_c{client_idx}")
-        if cfg.get("resume_root") else None,
-        run_id=str(cfg.get("run_id", "")),
-        num_rounds=int(cfg["num_rounds"]),
-        model_id=uni.get("model_id"),
-        model_revision=uni.get("model_revision"),
-        pairs_path=uni.get("pairs_path"),
-        prompt_path=uni.get("prompt_path"),
-        chat_template_kwargs=uni.get("chat_template_kwargs"),
-        coord_cfg=CoordCfg(coord_space=uni["coord_space"]) if uni.get("coord_space") else None,
-        processor_kwargs=uni.get("processor_kwargs"),
-        purpose=str(uni.get("purpose") or "main"),
-        tag="uni_fed", client_tag=str(cfg["client_tag"]), pairs_digest=uni.get("pairs_digest"),
-    )
+        # 공통 학습 예산 비율 — 로컬 칸과 같은 시드 · 같은 몫(`vlm.budget`). 1.0 이면 그대로.
+        from vlm.budget import apply_budget
+
+        rows = apply_budget(rows, fraction=float(uni.get("budget_fraction", 1.0)), seed_value=int(cfg["base_seed"]),
+                            pairs_path=uni.get("pairs_path"))
+    with observe_midrun_loss(f"uni_fed_r{round_idx:03d}_c{client_idx}_{cfg['client_tag']}"):   # 학습 중 창 손실(환경 변수가 있을 때만)
+        arrays, keys, m, _ref = train_rounds(
+            rows=rows,
+            epochs=int(cfg["local_epochs"]),
+            round_idx=round_idx,
+            client_idx=client_idx,
+            base_seed=int(cfg["base_seed"]),
+            adapter_in=adapter_in,
+            adapter_keys=canonical_keys,
+            resume_dir=str(Path(cfg["resume_root"]) / f"r{round_idx:03d}_c{client_idx}")
+            if cfg.get("resume_root") else None,
+            run_id=str(cfg.get("run_id", "")),
+            num_rounds=int(cfg["num_rounds"]),
+            model_id=uni.get("model_id"),
+            model_revision=uni.get("model_revision"),
+            pairs_path=uni.get("pairs_path"),
+            prompt_path=uni.get("prompt_path"),
+            chat_template_kwargs=uni.get("chat_template_kwargs"),
+            coord_cfg=CoordCfg(coord_space=uni["coord_space"]) if uni.get("coord_space") else None,
+            processor_kwargs=uni.get("processor_kwargs"),
+            purpose=str(uni.get("purpose") or "main"),
+            tag="uni_fed", client_tag=str(cfg["client_tag"]), pairs_digest=uni.get("pairs_digest"),
+            # 학습 레시피 — 서버가 내려보낸 값(`client_run_cfg` 의 `recipe`)으로 타깃을 만든다. 지표의 계약 해시도 이 값에서 나와
+            # 서버가 등록 레시피의 계약과 맞댄다(`UniFedRun` 의 클라이언트 보고 대조). 값이 없으면 1 차로 채우지 않고 거부한다(아래 앞).
+            recipe=_recipe_of(uni),
+        )
 
     # G2-5 — 주입이 **서버가 보낸 것과** 같은지 대조한다. 클라이언트끼리 비교하면
     # 셋 모두 no-op 일 때 통과한다.

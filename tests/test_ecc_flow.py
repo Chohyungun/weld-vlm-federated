@@ -175,11 +175,13 @@ def test_한_흐름_pin_준비_점검_재개_통과_시작문(world: World):
     # ② 점검 — 설정 대조 · 착수 고정 대조는 실물, step 2 에서 멈춘다(종료 4)
     res = world.ecc(root)
     assert res["exit_code"] == 4 and res["step"] == 2 and world.loader.n >= 1
-    # ③ 재개 — step 4 까지. 원장은 비용 줄 → 시작 · step · 멈춤 → 비용 줄 → 재개 · step · 멈춤
+    # ③ 재개 — step 4 까지. 원장은 학습 줄만(시작 · step · 멈춤 · 재개 · step · 멈춤), 비용 줄은 저널에(§137 I-04)
     res = world.ecc(root, resume_step=2, spent_hours=1.0)
     assert res["exit_code"] == 4 and res["step"] == 4
-    events = [r["event"] for r in E.ledger_rows(cell_dir(world.ecc_spec(root), CENTRAL_TAG))]
-    assert events == ["budget_ok", "start", "step", "stop", "budget_ok", "resume", "step", "stop"]
+    cdir = cell_dir(world.ecc_spec(root), CENTRAL_TAG)
+    assert [r["event"] for r in E.ledger_rows(cdir)] == ["start", "step", "stop", "resume", "step", "stop"]
+    assert [(r["event"], r["detail"]["what"], r["source"]) for r in E.budget_rows(cdir)] == \
+        [("budget_ok", "start", E.BUDGET_FILE), ("budget_ok", "resume", E.BUDGET_FILE)]
     # ④ 통과 — 평가 쪽 build_output 의 통과 파일을 평가 쪽 verify_permit 으로 받는다
     key = world.accept(root, world.permit(root))
     seed_dir = Path(world.main.pin_path).parent
@@ -263,14 +265,15 @@ def test_상한_실행_인자는_유한_양수만_받는다(world: World, bad):
         E.effective_limits(rules, max_hours=bad)
     assert exc.value.code == "ecc_budget_args"
     led = world.tmp / "led"
+    led.mkdir()                                                         # 폴더가 있어야 '거부 전에 쓰기' 변이가 흔적을 남긴다
     with pytest.raises(E.EccRefused) as exc:                            # §119 I-09 — NaN 둘로 상한이 사라지지 않는다
         E.budget_check(led, spent_hours=100.0, next_hours=1.0, max_hours=float("nan"), max_won=float("nan"),
                        won_per_hour=3000.0, what="start")
-    assert exc.value.code == "ecc_budget_args" and not (led / E.LEDGER_FILE).exists()
+    assert exc.value.code == "ecc_budget_args" and not (led / E.LEDGER_FILE).exists() and not (led / E.BUDGET_FILE).exists()
     with pytest.raises(E.EccRefused) as exc:
         E.budget_check(led, spent_hours=float("nan"), next_hours=1.0, max_hours=1.0, max_won=3000.0,
                        won_per_hour=3000.0, what="start")
-    assert exc.value.code == "ecc_budget_args" and not (led / E.LEDGER_FILE).exists()
+    assert exc.value.code == "ecc_budget_args" and not (led / E.LEDGER_FILE).exists() and not (led / E.BUDGET_FILE).exists()
 
 
 def test_점검_export_는_모델을_올리기_전에_비용_가드를_지난다(world: World, tmp_path):
@@ -283,14 +286,280 @@ def test_점검_export_는_모델을_올리기_전에_비용_가드를_지난다
     base = ["--purpose", "early_coord_check", "--check-step", "2", "--mode", "model", "--tag", "uni_central",
             "--seed-index", "1", "--receipt", str(tmp_path / "r.json"), "--list", str(world.target),
             "--snapshot", str(tmp_path / "s"), "--folder", str(tmp_path / "f"), "--run-root", str(root),
-            "--adapter-dir", str(adir), "--device", "cpu"]
+            "--adapter-dir", str(adir), "--device", "cpu:0"]
     loaded = []
     seams = {"load_generator": lambda *a, **k: loaded.append(1), "measure_env": lambda *a, **k: {}}
     assert X.main(base, **seams) == X.EXIT_REFUSED                      # 비용 인자 없이는 돌지 않는다
     assert X.main([*base, "--spent-hours", "40", "--next-hours", "1"], **seams) == X.EXIT_REFUSED   # 상한 30 h 초과
-    assert [r["event"] for r in E.ledger_rows(adir)][-1] == "ecc_budget_exceeded" and loaded == []
+    assert E.budget_rows(adir)[-1]["event"] == "ecc_budget_exceeded" and loaded == []
     assert X.main([*base, "--spent-hours", "1", "--next-hours", "1"], **seams) == X.EXIT_REFUSED  # 가드를 지나고 영수증에서 멈춘다
-    assert [r["event"] for r in E.ledger_rows(adir)][-1] == "budget_ok" and loaded == []
+    assert E.budget_rows(adir)[-1]["event"] == "budget_ok" and loaded == []
     assert X.main(["--purpose", "main", "--mode", "model", "--tag", "uni_central", "--seed-index", "1",
-                   "--receipt", "r", "--list", "l", "--snapshot", "s", "--folder", "f", "--device", "cpu",
+                   "--receipt", "r", "--list", "l", "--snapshot", "s", "--folder", "f", "--device", "cpu:0",
                    "--spent-hours", "1"], **seams) == X.EXIT_REFUSED   # 본실험은 비용 인자를 받지 않는다
+
+
+# ================================================================ §137 I-04 — 비용 줄은 저널로, 원장은 학습 줄만
+def _sha_of(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_비용_검사를_다시_불러도_점검_원장의_바이트가_같아_export_도장의_원장_지문이_흔들리지_않는다(world: World, tmp_path):
+    """공식 CLI 는 export 를 부를 때마다 비용을 다시 본다. 그 줄이 원장에 들면 원장 전체 sha256(도장의
+    `train_ledger_sha256`)이 바뀌어, 체크포인트가 그대로여도 writer 가 이어 받기를 거부했다(§137 I-04)."""
+    import scripts.export_uni as X
+
+    root = world.root()
+    world.prepare(root)
+    world.ecc(root)
+    adir = cell_dir(world.ecc_spec(root), CENTRAL_TAG)
+    led = adir / E.LEDGER_FILE
+    before = _sha_of(led)
+    base = ["--purpose", "early_coord_check", "--check-step", "2", "--mode", "model", "--tag", "uni_central",
+            "--seed-index", "1", "--receipt", str(tmp_path / "r.json"), "--list", str(world.target),
+            "--snapshot", str(tmp_path / "s"), "--folder", str(tmp_path / "f"), "--run-root", str(root),
+            "--adapter-dir", str(adir), "--device", "cpu:0", "--spent-hours", "1", "--next-hours", "1"]
+    seams = {"load_generator": lambda *a, **k: pytest.fail("모델을 올렸다"), "measure_env": lambda *a, **k: {}}
+    for _ in range(3):                                                  # 중단 뒤 이어 받는 재호출 셋 — 비용 가드는 지난다
+        assert X.main(base, **seams) == X.EXIT_REFUSED                  # (영수증이 없어 그 뒤에서 멈춘다)
+    assert _sha_of(led) == before                                       # 원장 바이트가 그대로다
+    exports = [r for r in E.budget_rows(adir) if r["detail"]["what"] == "export"]
+    assert [r["event"] for r in exports] == ["budget_ok"] * 3 and all(r["source"] == E.BUDGET_FILE for r in exports)
+    assert not any(r["event"] in E.BUDGET_EVENTS for r in E.ledger_rows(adir))
+
+
+def test_옛_원장의_비용_줄은_옮기지_않고_함께_읽으며_새_줄은_저널에_쓴다(tmp_path):
+    out = tmp_path / "cell"
+    out.mkdir()
+    E.append_ledger(out, {"at": 1.0, "event": "budget_ok", "detail": json.dumps({"what": "start", "spent_hours": 0.5})})
+    E.append_ledger(out, {"at": 2.0, "event": "start", "cum_wall_s": 0.0})
+    legacy = _sha_of(out / E.LEDGER_FILE)
+    E.budget_check(out, spent_hours=1.25, next_hours=0.5, max_hours=10.0, max_won=None, won_per_hour=2500.0, what="export")
+    assert _sha_of(out / E.LEDGER_FILE) == legacy                       # 옛 원장은 이관 · 삭제 · 재작성하지 않는다
+    rows = E.budget_rows(out)
+    assert [(r["source"], r["detail"]["spent_hours"]) for r in rows] == [(E.LEDGER_FILE, 0.5), (E.BUDGET_FILE, 1.25)]
+
+
+_KW = {"next_hours": 0.5, "max_hours": 10.0, "max_won": None, "won_per_hour": 2500.0}
+
+
+def test_비용_저널의_찢긴_꼬리는_떼어_남기고_다음_줄을_온전히_덧붙인다(tmp_path):
+    """실제 생산자 순서 — 비용 검사 → 쓰다 죽은 꼬리 → (공식 CLI 의) 다음 비용 검사 → 읽기. 꼬리에 바로 이어 쓰면 두 줄이
+    한 줄로 붙어 저널 전체가 읽히지 않았다(§137 반영의 적대 검증)."""
+    out = tmp_path / "cell"
+    out.mkdir()
+    E.budget_check(out, spent_hours=1.0, what="start", **_KW)
+    j = out / E.BUDGET_FILE
+    good = j.read_bytes()
+    torn = b'{"at": 9.0, "event": "budget_ok", "detail": {"wh'
+    j.write_bytes(good + torn)                                          # 쓰다 죽은 꼬리
+    assert len(E.budget_rows(out)) == 1                                 # 꼬리는 세지 않는다
+    E.budget_check(out, spent_hours=2.0, what="export", **_KW)          # 다음 덧쓰기
+    assert [r["detail"]["spent_hours"] for r in E.budget_rows(out)] == [1.0, 2.0]
+    assert j.read_bytes().startswith(good)                              # 완결된 줄은 고치지 않는다
+    assert (out / f"{Path(E.BUDGET_FILE).stem}.truncated-{len(good)}.bin").read_bytes() == torn   # 꼬리 바이트는 그대로 남긴다
+
+
+@pytest.mark.parametrize("line", [b'{"at": 1.0, "event": "step", "detail": {}}\n',
+                                  b'{"at": 1.0, "event": "budget_ok", "detail": "x"}\n',
+                                  b'{"event": "budget_ok", "detail": {}}\n',
+                                  b'{"at": NaN, "event": "budget_ok", "detail": {}}\n',
+                                  b"not json\n"])
+def test_비용_저널을_읽는_쪽도_종류와_꼴을_본다(tmp_path, line):
+    out = tmp_path / "cell"
+    out.mkdir()
+    (out / E.BUDGET_FILE).write_bytes(line)
+    with pytest.raises(E.EccRefused) as exc:
+        E.budget_rows(out)
+    assert exc.value.code == "ecc_budget_journal"
+
+
+@pytest.mark.parametrize("row", [{"at": 1.0, "event": "step", "detail": {}}, {"at": 1.0, "event": "budget_ok", "detail": "x"},
+                                 {"event": "budget_ok", "detail": {}}, {"at": True, "event": "budget_ok", "detail": {}}])
+def test_비용_저널에_쓰는_쪽은_읽는_쪽과_같은_꼴만_쓴다(tmp_path, row):
+    out = tmp_path / "cell"
+    out.mkdir()
+    with pytest.raises(E.EccRefused) as exc:
+        E.append_budget(out, row)
+    assert exc.value.code == "ecc_budget_row" and not (out / E.BUDGET_FILE).exists()
+
+
+def test_ecc_accept_는_깨진_비용_저널을_사유_코드로_거부한다(world: World):
+    root = world.root()
+    world.prepare(root)
+    world.ecc(root)
+    cdir = cell_dir(world.ecc_spec(root), CENTRAL_TAG)
+    with (cdir / E.BUDGET_FILE).open("ab") as fh:
+        fh.write(b"not json\n")
+    with pytest.raises(SystemExit) as exc:
+        world.accept(root, world.permit(root))
+    assert exc.value.reason == "ecc_budget_journal"
+
+
+def test_중단된_점검_export_를_비용_검사_뒤에_writer_가_이어_받는다(world: World, tmp_path):
+    """§137 I-04 의 직접 증거(writer 수준). 도장의 원장 지문은 export 사전 점검과 같은 식(원장 파일 전체의 sha256)으로 낸다.
+    공식 CLI 처럼 시도 사이에 비용 검사를 해도 같은 값으로 만든 새 writer 가 이어 받는다. 대조 — 비용 줄이 원장에 들던
+    옛 동작이면 지문이 바뀌어 이어 받지 못한다. 도장에는 조기 점검의 `check_step` 도 싣는다(C-01 — 37번; 종단 판은
+    tests/test_ecc_export_chain.py)."""
+    from datetime import datetime, timedelta, timezone
+
+    from evaluation.eval_list import canonical_bytes, validate_eval_list
+    from vlm.export_writer import REASON_RESUME, ExportRefused, ExportWriter
+
+    root = world.root()
+    world.prepare(root)
+    world.ecc(root)
+    adir = cell_dir(world.ecc_spec(root), CENTRAL_TAG)
+    meta = json.loads(E.step_paths(adir, 2)["meta"].read_text(encoding="utf-8"))
+
+    def fields() -> dict:
+        return {"purpose": E.PURPOSE, "export_commit": "c" * 40, "parser_sha256": "p" * 64, "generation_sha256": "g" * 64,
+                "train_run_id": meta["identity"]["run_id"], "train_ledger_sha256": _sha_of(adir / E.LEDGER_FILE),
+                "scored_adapter_sha256": meta["adapter"]["sha256"], "check_step": 2}
+
+    t0 = datetime(2026, 10, 14, 12, 0, tzinfo=timezone(timedelta(hours=9)))
+    ticks = (t0 + timedelta(seconds=i) for i in range(10_000))
+    el = validate_eval_list(canonical_bytes(list(TGT.ids)))
+    folder = tmp_path / "export"
+
+    def writer() -> ExportWriter:
+        return ExportWriter(folder, tag=CENTRAL_TAG, seed_index=1, mode="model", eval_list=el, stamp_fields=fields(),
+                            device="cpu:0", clock=lambda: next(ticks))
+
+    first = writer()
+    first.begin()
+    first.open_generations()
+    for iid in list(TGT.ids)[:2]:
+        first.write({"image_id": iid, "text": "{}"})
+    first._gen_fh.close()                                               # 프로세스가 죽었다 — end() 없이
+    for _ in range(2):                                                  # 공식 CLI 의 재호출 — 비용 가드
+        E.budget_check(adir, spent_hours=1.0, what="export", **_KW)
+    again = writer()
+    plan = again.begin()
+    assert plan.reason == REASON_RESUME and plan.m == 2 and plan.first_id == list(TGT.ids)[2]
+    again.end()
+    E.append_ledger(adir, {"at": 1.0, "event": "budget_ok", "detail": "{}"})   # 대조 — 옛 동작(원장에 비용 줄)
+    with pytest.raises(ExportRefused) as exc:
+        writer().begin()
+    assert exc.value.code == "stamp_mismatch" and "train_ledger_sha256" in str(exc.value)
+
+
+# ================================================================ §137 M-01 · M-02 — 등록과 실행의 결속
+def _second_seed_pin(world: World, n: int = 2):
+    """등록에 없는 시드의 공통 초기 어댑터와 착수 고정 — 실행기를 거치지 않고 직접 쓴다(이 판 앞에 쓰인 고정 같은 것)."""
+    from vlm.init_adapter import build_initial_adapter
+
+    spec = M.spec_for(world.cfg, n, out=world.out, config_path=world.cfg_path)
+    build_initial_adapter(model_id=spec.model_id, seed=spec.seed_value, cache_path=spec.init_adapter_path,
+                          revision=spec.model_revision, purpose=E.PURPOSE, model_loader=world.loader, standin_allowed=True)
+    pin.write_pin(spec.pin_path, pin.build_pin(init_adapter_path=spec.init_adapter_path, config_path=world.cfg_path))
+    return spec
+
+
+def test_착수_고정은_등록하지_않은_시드로_쓰지_않는다(world: World):
+    from vlm.init_adapter import build_initial_adapter
+
+    spec = M.spec_for(world.cfg, 2, out=world.out, config_path=world.cfg_path)
+    build_initial_adapter(model_id=spec.model_id, seed=spec.seed_value, cache_path=spec.init_adapter_path,
+                          revision=spec.model_revision, purpose=E.PURPOSE, model_loader=world.loader, standin_allowed=True)
+    with pytest.raises(SystemExit) as exc:
+        M.stage_pin(world.cfg, 2, out=world.out, config_path=world.cfg_path)
+    assert exc.value.reason == "registration_binding" and not Path(spec.pin_path).exists()
+
+
+def test_착수_고정은_등록의_초기_어댑터_digest_가_실물과_다르면_쓰지_않는다(world: World):
+    Path(world.main.pin_path).unlink()                                  # 세계가 쓴 시드 1 의 고정을 걷고 다시 쓴다
+    reg_p = world.tmp / "configs" / "train_registration.yaml"
+    body = yaml.safe_load(reg_p.read_text(encoding="utf-8"))
+    real = pin.init_probe(world.main.init_adapter_path)["init_adapter_digest"]
+    reg_p.write_text(yaml.safe_dump({**body, "init_adapter_digest": "0" * 64}, allow_unicode=True, sort_keys=False),
+                     encoding="utf-8")
+    with pytest.raises(SystemExit) as exc:
+        M.stage_pin(world.cfg, 1, out=world.out, config_path=world.cfg_path)
+    assert exc.value.reason == "registration_binding" and not Path(world.main.pin_path).exists()
+    reg_p.write_text(yaml.safe_dump({**body, "init_adapter_digest": real}, allow_unicode=True, sort_keys=False),
+                     encoding="utf-8")
+    assert len(M.stage_pin(world.cfg, 1, out=world.out, config_path=world.cfg_path)) == 64
+
+
+def test_본_칸의_시작_문은_착수_고정에_든_등록값으로_시드와_초기_어댑터를_다시_본다(world: World):
+    """실행기를 거치지 않고 쓴 고정(이 판 앞의 고정)도 시작 · 재개 문에서 멈춘다 — 등록 밖 시드 · 다른 초기 어댑터."""
+    from vlm.train_cell import CellRejected, main_start_gate
+
+    spec2 = _second_seed_pin(world)
+    with pytest.raises(CellRejected) as exc:
+        main_start_gate(spec2, init_digest=pin.init_probe(spec2.init_adapter_path)["init_adapter_digest"])
+    assert exc.value.code == "registration_binding" and "seed_indices" in str(exc.value)
+    reg_p = world.tmp / "configs" / "train_registration.yaml"
+    body = yaml.safe_load(reg_p.read_text(encoding="utf-8"))
+    reg_p.write_text(yaml.safe_dump({**body, "init_adapter_digest": "0" * 64}, allow_unicode=True, sort_keys=False),
+                     encoding="utf-8")
+    Path(world.main.pin_path).unlink()                                  # 새 등록값으로 다시 쓴 시드 1 의 고정(직접)
+    pin.write_pin(world.main.pin_path, pin.build_pin(init_adapter_path=world.main.init_adapter_path,
+                                                     config_path=world.cfg_path))
+    with pytest.raises(CellRejected) as exc:
+        main_start_gate(world.main, init_digest=pin.init_probe(world.main.init_adapter_path)["init_adapter_digest"])
+    assert exc.value.code == "registration_binding" and "init_adapter_digest" in str(exc.value)
+
+
+def test_착수_고정은_등록의_레시피가_실행의_레시피와_다르면_쓰지_않는다(world: World, monkeypatch):
+    """실행기의 `stage_pin` 이 실행의 레시피(`spec.recipe`)를 측정한 착수 고정에 든 등록의 레시피와 맞댄다 — 다르면 고정을 쓰지
+    않는다(지시 1023a — `tests/test_main_uni.py` 의 소스 문자열 개수 시험을 이 행동 시험으로 바꿨다). 세계의 등록 · 실행은 1 차
+    레시피다 — 측정한 고정의 등록 레시피만 바꿔 갈린 경우를 만든다."""
+    Path(world.main.pin_path).unlink()                                  # 세계가 쓴 시드 1 의 고정을 걷고 다시 쓴다
+    real = pin.build_pin
+
+    def other_recipe(**kw):
+        got = real(**kw)
+        reg = {**got["common"]["registration"], "recipe": "json_line_then_basis"}
+        return {**got, "common": {**got["common"], "registration": reg}}
+
+    monkeypatch.setattr(pin, "build_pin", other_recipe)
+    with pytest.raises(SystemExit) as exc:
+        M.stage_pin(world.cfg, 1, out=world.out, config_path=world.cfg_path)
+    assert exc.value.reason == "registration_binding" and not Path(world.main.pin_path).exists()
+    monkeypatch.setattr(pin, "build_pin", real)
+    assert len(M.stage_pin(world.cfg, 1, out=world.out, config_path=world.cfg_path)) == 64       # 같은 레시피면 쓴다
+
+
+def test_점검_준비는_착수_고정에_든_등록의_레시피가_실행과_다르면_루트를_만들지_않는다(world: World, capsys):
+    """실행기의 `stage_ecc_prepare` 가 실행의 레시피(`main_spec.recipe`)를 디스크의 착수 고정에 든 등록의 레시피와 맞댄다 — 다르면
+    점검 루트 · 노출 원장의 planned 줄을 만들지 않는다."""
+    p = Path(world.main.pin_path)
+    body = json.loads(p.read_text(encoding="utf-8"))
+    body["common"]["registration"]["recipe"] = "json_line_then_basis"
+    p.write_text(json.dumps(body, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    root = world.root("ecc-20261023T000001")
+    with pytest.raises(SystemExit) as exc:
+        world.prepare(root)
+    assert exc.value.reason == "registration_binding" and "레시피" in capsys.readouterr().err
+    assert not root.exists()
+    assert find_planned(world.ledger, run_id=root.name, list_kind="gen", list_file_sha256=TGT.file_sha256) is None
+
+
+def test_점검_준비와_점검_학습도_착수_고정에_든_등록값으로_시드를_다시_본다(world: World):
+    """명령줄을 거치지 않고 단계 함수 · 라이브러리를 직접 불러도 — 등록 밖 시드의 고정으로는 점검 루트를 만들지 않고,
+    루트가 이미 있어도 점검 학습이 모델을 올리기 전에 멈춘다."""
+    import shutil
+
+    spec2 = _second_seed_pin(world)
+    root = world.root("ecc-20261013T000002")
+    with pytest.raises(SystemExit) as exc:
+        M.stage_ecc_prepare(world.cfg, 2, root, target_list=world.target, out=world.out, config_path=world.cfg_path,
+                            non_main_parent=world.parent, exposure_ledger=world.ledger)
+    assert exc.value.reason == "registration_binding" and not root.exists()
+    assert find_planned(world.ledger, run_id=root.name, list_kind="gen", list_file_sha256=TGT.file_sha256) is None
+    ecc2 = M.spec_for_ecc(world.cfg, 2, root, config_path=world.cfg_path,
+                          non_main_parent=world.parent)                 # 준비를 거치지 않고 꾸민 시드 2 의 루트(사본 둘)
+    Path(ecc2.init_adapter_path).parent.mkdir(parents=True)
+    for src, dst in ((spec2.init_adapter_path, ecc2.init_adapter_path),          # 준비가 옮기는 것과 같은 셋 —
+                     (spec2.init_adapter_path.with_suffix(".proof.json"),       # 초기 어댑터 · proof(고정이 지문을 묶는다)
+                      Path(ecc2.init_adapter_path).with_suffix(".proof.json")),
+                     (spec2.pin_path, root / M.PIN_FILE)):                    # · 착수 고정
+        shutil.copyfile(src, dst)
+    n_before = world.loader.n
+    with pytest.raises(E.EccRefused) as exc:
+        E.run_ecc_train(ecc2, steps=STEPS, registered_steps=STEPS, pin_path=root / M.PIN_FILE, model_loader=world.loader,
+                        rows=world.rows)
+    assert exc.value.code == "registration_binding" and world.loader.n == n_before
+    assert not (cell_dir(ecc2, CENTRAL_TAG) / E.BUDGET_FILE).exists()

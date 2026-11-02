@@ -45,7 +45,14 @@ from typing import Any
 from vlm.export_generator import load_generator as _generator_real
 from vlm.export_generator import model_generator_available
 from vlm.export_measure import measure_env as _measure_env_real
-from vlm.export_writer import MODES, ExportRefused, ExportWriter, StartPlan
+from vlm.export_writer import (
+    MODES,
+    ExportRefused,
+    ExportWriter,
+    StartPlan,
+    check_new_device,
+    stem_of,
+)
 
 __all__ = [
     "APPROVED_GENERATOR_LOADERS",
@@ -64,7 +71,7 @@ PURPOSES = ("main", "rehearsal", "frame_diag", "early_coord_check")
 APPROVED_MEASURES: tuple = (_measure_env_real,)
 APPROVED_GENERATOR_LOADERS: dict[str, tuple] = {"model": (_generator_real,) if model_generator_available() else (),
                                                  "echo": (_generator_real,)}
-#: 등록하는 생성 조건 — greedy 1회 · 배치 1 의 왼쪽 채움(07번 §13-3 다-7). 등록 단계가 이 값을 적고 모델 생성기가 이 값으로 돈다.
+#: 등록하는 생성 조건 — greedy 1회 · 왼쪽 채움(07번 §13-3 다-7). 배치는 등록의 `generation.batch_size`(설정 `uni_batch_size`)가 정하고 모델 생성기가 그 값으로 돈다 — 묶음이면 대화 목록 렌더 + 왼쪽 채움(묶음 생성 1 판).
 DECODING: dict[str, Any] = {"do_sample": False, "num_beams": 1}
 PADDING_SIDE = "left"
 
@@ -82,6 +89,8 @@ class GenOut:
     token_ids: Sequence[int] | None = None
     token_logprobs: Sequence[float] | None = None
     latency_ms: float | None = None
+    batch_n: int | None = None
+    """그 줄을 낸 호출의 묶음 크기(모델 생성기의 묶음 경로 — 묶음 생성 1 판 B-3). 단일 생성기 · 에코는 None."""
 
 
 @dataclass
@@ -175,7 +184,8 @@ def run_export(*, folder: str | Path, tag: str, seed_index: int, mode: str, purp
                with_tokens: bool = False, stop_after_lines: int | None = None, abort_mismatched: bool = False,
                clock: Callable | None = None, standin_allowed: bool = False, env: Mapping[str, str] | None = None,
                repo: str | Path | None = None, code_repo: str | Path | None = None,
-               exposure_ledger: str | Path | None = None, check_step: int | None = None) -> ExportResult:
+               exposure_ledger: str | Path | None = None, check_step: int | None = None,
+               side_path: str | Path | None = None) -> ExportResult:
     """한 묶음을 쓴다. `stop_after_lines` 는 계획된 멈춤이다(이 시도에서 K 줄을 쓰고 끝 줄을 적는다 — 중단이 아니다).
 
     `repo` · `code_repo` · `exposure_ledger` · `non_main_parent` 는 시험의 이음새다(파이썬 인자로만) — 정본은 본체 체크아웃 ·
@@ -199,6 +209,8 @@ def run_export(*, folder: str | Path, tag: str, seed_index: int, mode: str, purp
         raise ExportRefused("mode", f"모드는 {MODES} 가운데 하나다: {mode!r}")
     cell, client = tag_parts(tag)
     folder = Path(folder)
+    if not (folder / f"{stem_of(tag, int(seed_index), mode)}.export_start.json").exists():
+        check_new_device(device)                 # 새 시작의 장비 꼴 — 측정 · 사전 점검 전에(재개는 쓰기 객체가 도장으로 정한다)
     # 2 고의 중단 변수 — 본실험 · 진단은 보이면 거부, 리허설은 계획 기록과 같을 때만 켠다
     armed = check_fault_env(purpose, run_root=run_root, stage="export", tags=[tag], env=env)
     # 3 이음새 — 부르기 전에 목적과 맞댄다
@@ -226,7 +238,8 @@ def run_export(*, folder: str | Path, tag: str, seed_index: int, mode: str, purp
         if rc0.kind in COMMITTED_KINDS and is_ancestor(main_checkout(), rc0.main_commit):
             raise ExportRefused("seam_on_committed_receipt", "진짜 진단 등록(커밋된 영수증)은 대역 이음새를 받지 않는다")
     # 4 루트와 경로 — 출력과 모든 입력
-    paths = [folder, Path(receipt_path), Path(list_path)] + [Path(p) for p in (adapter_dir, plan_path) if p is not None]
+    paths = [folder, Path(receipt_path), Path(list_path)] + [Path(p) for p in (adapter_dir, plan_path, side_path)
+                                                              if p is not None]
     problems = _root_problems(purpose, paths, run_root, non_main_parent)
     if problems:
         raise ExportRefused("run_root", " · ".join(problems))
@@ -242,7 +255,8 @@ def run_export(*, folder: str | Path, tag: str, seed_index: int, mode: str, purp
                            plan_path=None if plan_path is None else Path(plan_path),
                            run_root=None if run_root is None else Path(run_root), measure_env=measure_env,
                            impl_ids=impl_ids, parser_sha256=parser_sha256(), repo=repo, code_repo=code_repo,
-                           exposure_ledger=exposure_ledger, now=now, check_step=check_step)
+                           exposure_ledger=exposure_ledger, now=now, check_step=check_step,
+                           side_path=None if side_path is None else Path(side_path))
     # 점검 export 는 루트 안의 원 체크포인트 · 원장을 바꾸지 않는다 — 전후의 파일 해시 목록이 같다(묶음 폴더만 는다, 11번 T5).
     root_before = _root_files(Path(run_root), Path(folder)) if purpose == "early_coord_check" else None
 
@@ -270,6 +284,9 @@ def run_export(*, folder: str | Path, tag: str, seed_index: int, mode: str, purp
     coord_cfg = CoordCfg(coord_space=pre.gen_cfg.coord_space)
     chash = coord_cfg_hash(coord_cfg)
     loaded = False
+    n_batch = int(getattr(pre.gen_cfg, "batch_size", 1) or 1)
+    batched = mode == "model" and n_batch > 1
+    latency_basis = "per_call" if batched else "per_image"   # 채점기 ⑤-4 — 배치 > 1 이면 장당 지연의 정의를 곁 파일로 받는다
     if plan.first_id is not None:
         generator = load_generator(pre.gen_cfg)          # 쓸 줄이 있을 때만 올린다
         loaded = True
@@ -278,42 +295,61 @@ def run_export(*, folder: str | Path, tag: str, seed_index: int, mode: str, purp
         if used is not None and (impl_ids.get("export_generator_model") or {}).get("approved") \
                 and used != impl_ids.get("model_loader"):
             raise ExportRefused("impl_drift", "생성기가 부른 모델 적재기가 이음새 단계에 적은 식별자와 다르다")
+        gen_batch = getattr(generator, "generate_batch", None) if batched else None
+        if batched and gen_batch is None:
+            raise ExportRefused("batch_unsupported", f"등록의 생성 배치 {n_batch} 를 이 생성기가 묶어 돌리지 못한다 — generate_batch 가 없다")
         w.open_generations()
+        from PIL import Image
+
         while (image_id := w.next_id()) is not None:
             if stop_after_lines is not None and w.n_written >= stop_after_lines:
                 break
-            raw = Path(paths_of[image_id]).read_bytes()             # 바이트를 읽어 해시하고 같은 바이트로 연다
-            from PIL import Image
-
-            img = Image.open(io.BytesIO(raw))
-            img.load()
+            # 묶음의 경계는 목록의 절대 위치다(묶음 생성 1 판 B-2): k 번째 묶음 = ids[k·N : (k+1)·N]. 재개는 다음 미기록 id 가 든 묶음의
+            # 남은 부분만 먼저 돈 뒤 경계에 맞춘다. 계획된 멈춤(stop_after_lines)은 남는 생성을 만들지 않게 묶음을 자른다. 단일 경로는 1 장.
+            pos = plan.m + w.n_written
+            k = (n_batch - pos % n_batch) if gen_batch is not None else 1
+            k = min(k, len(w.ids) - pos)
+            if stop_after_lines is not None:
+                k = min(k, stop_after_lines - w.n_written)
+            batch_ids = list(w.ids[pos:pos + k])
+            raws = [Path(paths_of[i]).read_bytes() for i in batch_ids]     # 바이트를 읽어 해시하고 같은 바이트로 연다
+            imgs = []
+            for raw in raws:
+                img = Image.open(io.BytesIO(raw))
+                img.load()
+                imgs.append(img)
             t0 = time.perf_counter()
-            out = generator(img, image_id)
+            outs = gen_batch(list(zip(imgs, batch_ids))) if gen_batch is not None else [generator(imgs[0], batch_ids[0])]
             t1 = time.perf_counter()
-            fields = line_fields(parse_generation(out.text), ImageGeom(orig_w=img.size[0], orig_h=img.size[1]),
-                                 coord_cfg)
-            t2 = time.perf_counter()
-            if mode == "echo":
-                latency = (t2 - t1) * 1e3
-            else:
-                latency = out.latency_ms if out.latency_ms is not None else (t1 - t0) * 1e3
-            row = {"image_id": image_id, "image_sha256": hashlib.sha256(raw).hexdigest(), "text": out.text,
-                   **fields, "model_input_wh": [int(v) for v in out.model_input_wh],
-                   "coord_space": coord_cfg.coord_space, "coord_cfg_hash": chash,
-                   "latency_ms": round(float(latency), 3), "gen_stop": out.gen_stop,
-                   "n_new_tokens": int(out.n_new_tokens)}
-            if out.grid_thw is not None:
-                # 관측 격자 — 줄에 싣고, 곁 파일은 생성 파일 **전체**에서 센다(이어 쓴 묶음도 앞 시도의 줄을 센다).
-                row["image_grid_thw"] = [int(v) for v in out.grid_thw]
-            tok = None
-            if with_tokens:
-                tok = {"image_id": image_id, "token_ids": [int(t) for t in (out.token_ids or [])],
-                       "token_logprobs": [round(float(x), 6) for x in (out.token_logprobs or [])]}
-            line_no = plan.m + w.n_written + 1                       # 생성 파일 전체의 줄 번호(1부터)
-            if armed is not None and armed.spec.point == "torn_line" and armed.spec.k == line_no:
-                fire("torn_line", line_no, effect=lambda r=row, k=tok: w.write_half(r, k))
-            w.write(row, tok)
-            fire("after_lines", line_no)
+            if len(outs) != len(batch_ids):
+                raise ExportRefused("batch_shape", f"묶음 생성이 {len(batch_ids)} 장에 {len(outs)} 줄을 냈다")
+            for image_id, raw, img, out in zip(batch_ids, raws, imgs, outs):
+                fields = line_fields(parse_generation(out.text), ImageGeom(orig_w=img.size[0], orig_h=img.size[1]),
+                                     coord_cfg)
+                t2 = time.perf_counter()
+                if mode == "echo":
+                    latency = (t2 - t1) * 1e3
+                else:
+                    latency = out.latency_ms if out.latency_ms is not None else (t1 - t0) * 1e3
+                row = {"image_id": image_id, "image_sha256": hashlib.sha256(raw).hexdigest(), "text": out.text,
+                       **fields, "model_input_wh": [int(v) for v in out.model_input_wh],
+                       "coord_space": coord_cfg.coord_space, "coord_cfg_hash": chash,
+                       "latency_ms": round(float(latency), 3), "gen_stop": out.gen_stop,
+                       "n_new_tokens": int(out.n_new_tokens)}
+                if out.grid_thw is not None:
+                    # 관측 격자 — 줄에 싣고, 곁 파일은 생성 파일 **전체**에서 센다(이어 쓴 묶음도 앞 시도의 줄을 센다).
+                    row["image_grid_thw"] = [int(v) for v in out.grid_thw]
+                if out.batch_n is not None:
+                    row["batch_n"] = int(out.batch_n)                # 그 줄을 낸 호출의 묶음 크기 — 내용 해시 밖(content_key)
+                tok = None
+                if with_tokens:
+                    tok = {"image_id": image_id, "token_ids": [int(t) for t in (out.token_ids or [])],
+                           "token_logprobs": [round(float(x), 6) for x in (out.token_logprobs or [])]}
+                line_no = plan.m + w.n_written + 1                   # 생성 파일 전체의 줄 번호(1부터)
+                if armed is not None and armed.spec.point == "torn_line" and armed.spec.k == line_no:
+                    fire("torn_line", line_no, effect=lambda r=row, k=tok: w.write_half(r, k))
+                w.write(row, tok)
+                fire("after_lines", line_no)
         if w.next_id() is None:
             fire("after_all_lines", None)
     w.end()
@@ -326,7 +362,8 @@ def run_export(*, folder: str | Path, tag: str, seed_index: int, mode: str, purp
             grid[grid_key(g)] = grid.get(grid_key(g), 0) + 1
     measured = {"cell": cell, "client": client, "seed_value": pre.seed_value, "coord_space": coord_cfg.coord_space,
                 "coord_cfg_hash": chash, "image_grid_thw_observed": grid, "impl_ids": impl_ids,
-                "fault_events": [] if purpose == "main" else _export_fault_events(run_root, tag, w)}
+                "fault_events": [] if purpose == "main" else _export_fault_events(run_root, tag, w),
+                "latency_basis": latency_basis}
     if purpose != "main" and run_root is not None:
         measured["rehearsal_id"] = Path(run_root).name
     meta = w.seal(pre.sidecar_values, measured)

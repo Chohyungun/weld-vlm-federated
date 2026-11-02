@@ -318,3 +318,40 @@ def check_main_full_eval(gen, pop, meta: ManifestMeta) -> None:
         raise EntryRejected("MAIN_LIST_NOT_FULL_EVAL", f"본실험 생성 목록이 동결 매니페스트의 평가 행 전체가 아니다 — "
                                                        f"빠짐 {missing}개 · 평가 행 밖 {extra}개 · 목록 {len(gen)}개 · "
                                                        f"평가 행 {len(want)}개")
+
+
+def check_main_sample(gen, pop, meta: ManifestMeta, *, sealed: Mapping, side: Mapping) -> None:
+    """본실험 주 분석의 **표본 계약**(25번 §2 · 실험설계 8-5, 2026-10-13 등록). 모집단 가중이 `stratified_g_over_n` 인 등록만 이
+    길로 온다 — 가중이 `none` 이면 `check_main_full_eval`(전량 계약)이다. 둘 중 하나만 부른다.
+
+    `sealed` 는 평가 등록 설정의 `population.sample.sealed[main_size]`(영수증의 커밋에서 읽은 것), `side` 는 그 봉인의 곁 파일을
+    `sample_weights.read_side` 로 읽은 것이다. 본다: 채점 목록 = 생성 목록(같은 파일) · 목록 = 봉인한 목록(두 해시 · 장수) ·
+    **뽑힌 묶음의 평가 이미지 전부**(묶음이 쪼개지지 않았다) · 묶음 수 = 봉인 · 곁 파일의 층이 묶음 단위이고 층마다 뽑힌 묶음 수가
+    곁 파일의 `n_h` 와 같다. 사유에는 건수만 싣고 id 는 싣지 않는다.
+    """
+    from evaluation.sample_bootstrap import SampleDesignError, strata_groups
+
+    if pop.file_sha256 != gen.file_sha256:
+        raise EntryRejected("MAIN_LIST_NOT_IDENTICAL", "본실험의 주채점 목록은 생성 목록과 같은 파일이어야 한다 — "
+                                                       "표본에서도 부분집합 · 다른 순서는 주 분석의 목록이 아니다")
+    if (gen.file_sha256, gen.set_sha256) != (sealed.get("file_sha256"), sealed.get("set_sha256")):
+        raise EntryRejected("MAIN_SAMPLE_NOT_SEALED", "본실험 표본 목록이 평가 등록 설정에 봉인한 목록이 아니다(해시)")
+    if len(gen) != sealed.get("images"):
+        raise EntryRejected("MAIN_SAMPLE_COUNT", f"표본 목록 {len(gen)}장 ≠ 봉인한 장수 {sealed.get('images')!r}")
+    members: dict[str, set[str]] = {}
+    for i, s in meta.split_of.items():
+        if s == "eval":
+            members.setdefault(meta.group_of[i], set()).add(i)
+    groups = {meta.group_of[i] for i in gen.ids}
+    split_groups = sum(1 for g in groups if not members.get(g, set()) <= gen.id_set)
+    if split_groups:
+        raise EntryRejected("MAIN_SAMPLE_GROUP_SPLIT", f"뽑힌 묶음 {split_groups}개의 평가 이미지가 표본에 다 들지 않았다 — "
+                                                       "표본은 묶음의 평가 이미지 전부다(25번 §2-4)")
+    if len(groups) != sealed.get("groups"):
+        raise EntryRejected("MAIN_SAMPLE_GROUPS", f"표본의 묶음 {len(groups)}개 ≠ 봉인한 묶음 수 {sealed.get('groups')!r}")
+    if list(side) != list(gen.ids):
+        raise EntryRejected("MAIN_SAMPLE_SIDE", "곁 파일의 id 가 표본 목록과 같은 순서로 같지 않다")
+    try:
+        strata_groups(gen.ids, meta.group_of, side)
+    except SampleDesignError as exc:
+        raise EntryRejected("MAIN_SAMPLE_STRATA", str(exc)) from None

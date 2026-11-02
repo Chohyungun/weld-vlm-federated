@@ -9,6 +9,7 @@
 | 내용 | `image_id` · `image_sha256` · `text` · `bbox_px_parsed` · `parse_error` · `gen_stop` · `n_new_tokens` · `n_bad_items_dropped` · `model_input_wh` |
 | 내용 — 있으면 | `image_grid_thw`(프로세서가 그 이미지에 낸 격자 `[t, h, w]` — 같은 이미지 · 같은 프로세서 설정이면 같은 값이고 실행마다 바뀌지 않는다. `model_input_wh` 가 그 격자에서 나온다). 줄에 격자가 없으면 해시는 내지만, **격자 없는 묶음은 묶음 검증이 모든 목적에서 거부한다** — 격자는 생성 시점에만 나오고 사후 보충을 받지 않는다(07번 §37) |
 | 제외 | `latency_ms`(실행마다 다르다) · `raw_output_ref`(경로다) · `coord_space` · `coord_cfg_hash`(코드의 표지와 작업 트리 지문이다 — 출력이 같아도 주석 한 줄에 바뀐다) |
+| 제외 | `batch_n`(그 줄을 낸 호출의 묶음 크기 — 묶음 생성 1 판) |
 
 **분류는 닫혀 있다.** 줄에 세 목록 밖의 키가 있으면 해시를 내지 않는다 — 새 키가 조용히 열쇠 밖으로 새지 않게.
 내용 키가 빠진 줄도 멈춘다(값이 null 이면 null 로 남긴다). "있으면" 의 키는 있을 때만 내용에 들고, 없으면 없는 대로 — 있는 줄과 없는 줄은 열쇠가 다르다.
@@ -25,7 +26,8 @@ CONTENT_KEYS: tuple[str, ...] = (
 )
 OPTIONAL_CONTENT_KEYS: tuple[str, ...] = ("image_grid_thw",)
 """있으면 내용에 드는 키. 쓰는 쪽은 생성기가 격자를 낼 때만 줄에 싣는다(실제 생성기와 에코는 늘 낸다)."""
-EXCLUDED_KEYS: tuple[str, ...] = ("latency_ms", "raw_output_ref", "coord_space", "coord_cfg_hash")
+EXCLUDED_KEYS: tuple[str, ...] = ("latency_ms", "raw_output_ref", "coord_space", "coord_cfg_hash", "batch_n")
+"""`batch_n` 은 그 줄을 낸 호출의 묶음 크기다(묶음 생성 1 판 B-3) — 실행 구성이지 내용이 아니다. 없는 줄(옛 산출 · 에코)과 있는 줄의 열쇠가 같다."""
 
 
 class ContentKeyError(ValueError):

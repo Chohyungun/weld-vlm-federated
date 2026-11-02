@@ -30,9 +30,10 @@ from typing import Any, Callable, Mapping, Sequence
 
 from fl.atomic_log import END_METRIC, last_data_row
 from fl.uni_run_config import client_run_cfg, down_config
+from vlm.budget import budget_identity
 
 __all__ = ["UniFedRejected", "CLIENT_STRINGS", "client_strings", "assert_fresh_ledger",
-           "check_fed_ledger", "check_fed_prior", "fed_identity", "UniFedRun", "FED_TAG"]
+           "check_fed_ledger", "check_fed_prior", "fed_identity", "main_token_table", "UniFedRun", "FED_TAG"]
 
 FED_TAG = "uni_fed"
 
@@ -128,15 +129,15 @@ def fed_identity(*, run_id: str, seed_index: int | None, seed_value: int, purpos
                  pairs_digest: str | None, prompt_sha256: str, chat_template_kwargs: Mapping[str, Any],
                  coord_space: str, init_digest: str, snapshot_digest: str, plan_sha256: str | None,
                  client_tags: Sequence[str], processor_kwargs: Mapping[str, Any] | None,
-                 expected_supervised_tokens: Mapping[str, int] | None) -> dict[str, Any]:
+                 expected_supervised_tokens: Mapping[str, int] | None, budget_fraction: float = 1.0,
+                 recipe: str = "json_only") -> dict[str, Any]:
     """연합 칸 meta 의 `identity` — **서버가 쓰고 실행기가 되짚는** 한 함수다(검수 14번 I-1).
 
     값은 모두 등록값(설정 · 실행 설정)과 서버가 낸 값에서 온다. 클라이언트가 보고한 값은 `finish` 가 이것과 맞댄 뒤에만
     기록에 오른다 — 그래서 실행기는 모델을 올리지 않고 설정만으로 같은 신원을 다시 낼 수 있다.
     """
     from vlm.coords import CoordCfg, coord_cfg_hash
-    from vlm.pilot_vlm import (GRAD_ACCUM, LR, MICRO_BATCH, SHUFFLE_POLICY, TARGET_CONTRACT_SHA256,
-                               template_mode_of)
+    from vlm.pilot_vlm import GRAD_ACCUM, LR, MICRO_BATCH, SHUFFLE_POLICY, target_contract_sha256, template_mode_of
     from vlm.schedule import LRF
 
     return {
@@ -148,7 +149,7 @@ def fed_identity(*, run_id: str, seed_index: int | None, seed_value: int, purpos
         "pairs_digest": pairs_digest, "prompt_sha256": prompt_sha256,
         "template_mode": template_mode_of(chat_template_kwargs), "shuffle_policy": SHUFFLE_POLICY,
         "coord_cfg_hash": coord_cfg_hash(CoordCfg(coord_space=coord_space)),
-        "target_contract_sha256": TARGET_CONTRACT_SHA256,
+        "target_contract_sha256": target_contract_sha256(recipe),
         "init_adapter_digest": init_digest,
         "micro_batch": MICRO_BATCH, "grad_accum": GRAD_ACCUM, "lr0": LR, "lrf": LRF,
         "snapshot_digest": snapshot_digest, "plan_sha256": plan_sha256,
@@ -156,6 +157,7 @@ def fed_identity(*, run_id: str, seed_index: int | None, seed_value: int, purpos
         "processor_kwargs": None if processor_kwargs is None else dict(processor_kwargs),
         "expected_supervised_tokens": (None if expected_supervised_tokens is None
                                        else {str(k): int(v) for k, v in expected_supervised_tokens.items()}),
+        **budget_identity(budget_fraction),
     }
 
 
@@ -193,6 +195,29 @@ def check_fed_prior(out_dir: str | Path, *, identity: Mapping[str, Any], run_id:
     return meta
 
 
+def main_token_table(purpose: str, budget_fraction: float, repo_root: str, recipe: str = "json_only") -> Path | None:
+    """연합 서버가 행별 토큰 표를 읽을 자리 — 1 차 레시피는 예산 비율이 1 이 아닌 본실험만, 새 레시피는 본실험이면 비율과 무관하게
+    표를 읽는다(전량에서도 표 합과 설정 기대값을 맞댄다 — `vlm.budget.expected_tokens`).
+
+    서버 앱은 풀어 놓은 FAB 폴더(`$FLWR_HOME/apps/…`)에서 돈다. 그 `REPO_ROOT` 아래에는 표가 없고 csv 는 FAB 에 넣을 수 없다.
+    그래서 실행기가 넘긴 저장소 뿌리(`uni-repo-root`, 절대 경로) 아래의 레시피 표를 쓴다 — 지문은 그 레시피의 고정값과 맞댄다
+    (`vlm.uni_config.main_run_problems`). 그 밖이면 None(표를 읽지 않는다). 뿌리가 없거나 상대 경로면
+    `UniFedRejected("uni_repo_root_missing")`."""
+    if purpose != "main" or (float(budget_fraction) == 1.0 and recipe == "json_only"):
+        return None
+    from vlm.budget import BudgetRejected, token_table_of
+
+    try:
+        rel, _sha = token_table_of(recipe)
+    except BudgetRejected as exc:
+        raise UniFedRejected("recipe_unknown", str(exc)) from None
+    if not repo_root or not Path(repo_root).is_absolute():
+        raise UniFedRejected("uni_repo_root_missing",
+                             "행별 토큰 표를 읽는 본실험 연합은 저장소 뿌리의 절대 경로(uni-repo-root)가 있어야 한다 — 표를 "
+                             "풀어 놓은 앱 폴더가 아니라 거기서 읽는다")
+    return Path(repo_root) / rel
+
+
 class UniFedRun:
     """통합형 연합 서버 한 실행의 앞뒤. `get(key, default)` 는 서버 설정을 대시 키로 읽는 함수다.
 
@@ -202,11 +227,13 @@ class UniFedRun:
     def __init__(self, *, get: Callable[[str, Any], Any], out_dir: Path, run_id: str, base_seed: int,
                  split_hash: str, num_rounds: int, local_epochs: int, total_epochs: int,
                  client_tags: Sequence[str], config_path: Path | None = None,
-                 non_main_parent: Path | None = None):
+                 non_main_parent: Path | None = None, registration_path: Path | None = None):
         """초기 어댑터를 읽기 **전에** 만든다 — 목적과 계획의 검사(2판 §1-4 의 순서 5)와 본실험의 설정 대조가
         모델 적재보다 앞선다. 본실험은 필수 키가 비면(`client_run_cfg`) · 값이 설정 파일과 다르면 · 출력이 비본실험
         부모 아래면 시작하지 않는다 — 실행 설정의 옛 기본값(파일럿의 R/E/N · 시드 · 출력 루트)으로 내려가지 않는다.
-        `config_path` · `non_main_parent` 는 시험이 임시 설정 · 임시 부모를 줄 자리다(파이썬 인자로만).
+        `config_path` · `non_main_parent` · `registration_path` 는 시험이 임시 설정 · 임시 부모 · 임시 학습 등록을 줄 자리다(파이썬 인자로만).
+        본실험은 실행 설정의 학습 레시피를 **학습 등록과도** 맞댄다 — 등록은 출력 뿌리(`uni-train-root` 의 부모)의 실행 묶음이 묶은 벌,
+        없으면 기본 등록이다(실행기와 같은 판독기 `vlm.registration.read_run_profile`). 체제 짝(레시피 × 프롬프트)도 본다(지시 1022c 덧붙임).
 
         **무엇보다 먼저** 고의 중단 변수를 본다 — 연합의 서버는 목적과 무관하게 거부한다(2판 §1-3 의 연합 ③). 상주 SuperLink 의
         자식은 띄운 쪽이 아니라 데몬의 환경을 물려받으므로 받는 쪽에서도 막는다."""
@@ -218,6 +245,8 @@ class UniFedRun:
             raise UniFedRejected(exc.code, str(exc)) from None
         self.uni = client_run_cfg(down_config(get))
         self.purpose = self.uni["purpose"]
+        # 학습 레시피 — 실행기가 등록에서 채운 값(비면 1 차 레시피). 신원 · 학습 설정 원문 · 클라이언트 보고 대조가 이 값을 쓴다.
+        self.recipe = self.uni["recipe"]
         plan = self.uni["plan"]
         if self.purpose == "main" and plan:
             raise UniFedRejected("main_with_plan", "본실험은 계획 파일을 받지 않는다")
@@ -257,8 +286,34 @@ class UniFedRun:
         self.model_revision = self.uni["model_revision"]
         _, self.prompt_sha256 = load_prompt(self.uni["prompt_path"])
         if self.purpose == "main":
+            from vlm.registration import (
+                RegistrationRejected,
+                read_run_profile,
+                regime_problems,
+                registered_recipe,
+            )
             from vlm.uni_config import load_uni_config, main_run_problems
 
+            # 학습 등록 — 실행 설정의 레시피만 믿지 않는다(지시 1022c 덧붙임 B). 표 · 설정 대조보다 먼저다.
+            try:
+                if registration_path is None:
+                    train_root = str(get("uni-train-root", "") or "")
+                    prof = read_run_profile(Path(train_root).parent) if train_root else None
+                    registration_path = None if prof is None else prof["train_registration"]
+                reg_recipe = registered_recipe(registration_path)
+            except RegistrationRejected as exc:
+                raise UniFedRejected("registration", str(exc)) from None
+            if reg_recipe != self.recipe:
+                raise UniFedRejected("recipe_vs_registration",
+                                     f"실행 설정의 학습 레시피 {self.recipe!r} 가 학습 등록의 recipe {reg_recipe!r} 와 다르다")
+            bad = regime_problems(self.recipe, prompt_sha256=self.prompt_sha256)
+            if bad:
+                raise UniFedRejected("regime_mismatch", " · ".join(bad))
+
+            repo_root = str(get("uni-repo-root", "") or "")
+            token_table = main_token_table(self.purpose, self.uni["budget_fraction"], repo_root, recipe=self.recipe)
+            # 학습 전 계약(등록의 `narrative_inputs` 칸)은 앱 묶음이 아니라 저장소 뿌리에서 표 · 로더 · 생성 경로 · 페어 · 계약 파일을 읽고,
+            # 위에서 맞댄 그 등록을 쓴다(C 08 2 판 §5-3 · 09 §10 I2). 뿌리가 없으면 이 모듈의 뿌리 — 칸이 있으면 닫힌 쪽으로 거부된다.
             bad = main_run_problems(
                 load_uni_config(config_path), model_id=self.uni["model_id"],
                 model_revision=self.uni["model_revision"], pairs_path=self.uni["pairs_path"],
@@ -268,7 +323,10 @@ class UniFedRun:
                 prompt_path=self.uni["prompt_path"], coord_space=self.uni["coord_space"],
                 output_paths=[self.out_dir] + ([self.resume_root] if self.resume_root else []),
                 processor_kwargs=self.uni["processor_kwargs"],
-                expected_supervised_tokens=self.uni["expected_supervised_tokens"])
+                expected_supervised_tokens=self.uni["expected_supervised_tokens"],
+                budget_fraction=self.uni["budget_fraction"], token_table=token_table, recipe=self.recipe,
+                registration_path=registration_path,
+                repo=Path(repo_root) if repo_root and Path(repo_root).is_absolute() else None)
             if bad:
                 raise UniFedRejected("main_config_mismatch", "본실험 설정과 다르다: " + " · ".join(bad))
         exp = self.uni["expected_supervised_tokens"]
@@ -302,7 +360,8 @@ class UniFedRun:
             coord_space=self.uni["coord_space"] or "ABS_ORIG", init_digest=init_digest,
             snapshot_digest=self.split_hash, plan_sha256=self.plan_sha256, client_tags=self.client_tags,
             processor_kwargs=self.uni["processor_kwargs"],
-            expected_supervised_tokens=self.uni["expected_supervised_tokens"])
+            expected_supervised_tokens=self.uni["expected_supervised_tokens"],
+            budget_fraction=self.uni["budget_fraction"], recipe=self.recipe)
 
     # -- 라운드마다 ------------------------------------------------------------
     def observe(self, server_round: int, cells: Sequence[Mapping[str, Any]], agg: Any) -> None:
@@ -369,9 +428,13 @@ class UniFedRun:
             raise UniFedRejected("client_tags", f"참여자 태그 {tags} ≠ 서버의 {self.client_tags}")
         # 클라이언트가 **실제로 학습한 것**을 서버의 등록값과 맞댄다(검수 14번 I-2). `_one` 은 참여자 사이 · 라운드 사이의
         # 일치만 본다 — 셋이 같은 값으로 등록값과 다르면 여기서 걸린다. 기록에는 맞댄 뒤의 등록값이 오른다.
+        from vlm.pilot_vlm import target_contract_sha256
+
         for key, want in (("uni-model-id", self.model_id),
                           ("uni-model-revision", "" if self.model_revision is None else str(self.model_revision)),
-                          ("uni-prompt-sha256", self.prompt_sha256)):
+                          ("uni-prompt-sha256", self.prompt_sha256),
+                          # 실제 학습 타깃의 계약 — 클라이언트가 학습한 레시피의 계약 해시가 등록 레시피의 것이어야 한다.
+                          ("uni-target-contract-sha256", target_contract_sha256(self.recipe))):
             got = self._one(key)
             if got != want:
                 raise UniFedRejected("client_registration_mismatch", f"클라이언트가 보고한 {key} {got!r} ≠ 서버의 {want!r}")
@@ -390,7 +453,7 @@ class UniFedRun:
             model_id=model_id, model_revision=self.uni["model_revision"],
             pairs_digest=self.uni["pairs_digest"], chat_template_kwargs=kwargs, coord_space=coord_space,
             num_rounds=R, local_epochs=self.local_epochs, total_epochs=self.total_epochs,
-            prompt_sha256=self.prompt_sha256, init_digest=self.init_digest, metrics=metrics_like)
+            prompt_sha256=self.prompt_sha256, init_digest=self.init_digest, metrics=metrics_like, recipe=self.recipe)
         tc_text = _canonical(train_config)
 
         grids = {i: json.loads(g) for i, g in self._one("uni-grid-observed", per_client=True).items()}

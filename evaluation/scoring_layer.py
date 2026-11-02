@@ -13,8 +13,10 @@
 | `judge_rehearsal_gates` | 리허설 통과 조건 ③(스키마 · 실패율 기록) · ⑤(지연 · 실제 생성 길이) |
 | `rehearsal_metric_smoke` | 리허설의 모델 묶음에 M1 계산을 끝까지 돌리고 **끝났는가 · 키 목록 · 미정의 사유만** 낸다 — 값은 싣지 않는다(4-2) |
 | `adversarial_probe` | ③ 의 "0 이 나오면 의심한다" — 고의로 위반하는 한 장 셋이 **실제로 거부되는지**(3판 2-1). 리허설 표본이 아니라 합성이고 실패율에 넣지 않는다 |
+| `score_registered` | 엄격 경로(표본 모드)의 등록 지표 — 모델 묶음 하나의 주 · 민감도 계수표와 실패 회계(35번 §1). 값은 `evaluation.strict_main` 이 낸다 |
 
-**리허설 산출물에 지표 값을 싣지 않는다**(4-2). 이 목록의 함수가 내는 수는 배관의 검사(에코의 다섯 수 · 실패율 · 지연 요약)뿐이다.
+**리허설 산출물에 지표 값을 싣지 않는다**(4-2). 리허설 쪽 함수가 내는 수는 배관의 검사(에코의 다섯 수 · 실패율 · 지연 요약)뿐이다.
+엄격 경로의 `score_registered` 는 계수표를 내고, 지표 값은 본채점 산출에만 실린다.
 """
 
 from __future__ import annotations
@@ -34,9 +36,9 @@ from evaluation.metrics.box_f1 import build_counts
 from evaluation.reject_v14 import RejectCode
 
 SCORING_LAYER: tuple[str, ...] = ("records_from_verified", "score_echo", "check_literal", "judge_rehearsal_gates",
-                                  "adversarial_probe", "rehearsal_metric_smoke")
-"""채점 층의 함수 이름. 진입점의 프레임 진단(`run_frame_diag`) · 엄격의 등록 지표(`score_registered`) · 규칙 ⑤(`judge_rule5_for`)는
-그 구현이 들어오는 회차에 여기에 더한다 — 없는 함수를 목록에 두지 않는다."""
+                                  "adversarial_probe", "rehearsal_metric_smoke", "score_registered")
+"""채점 층의 함수 이름. 진입점의 프레임 진단(`run_frame_diag`)은 그 구현이 들어오는 회차에 여기에 더한다 — 없는 함수를 목록에
+두지 않는다. 규칙 ⑤ 는 묶음을 받지 않는다 — `score_registered` 가 낸 계수표에서 나온 수만 받는다(`evaluation.rule5`)."""
 
 LENGTH_ALERT_RATIO = 0.05
 """한도에 닿은 비율이 이것을 넘으면 **경보**다 — 불통과가 아니다(쓰는 쪽 2판 3절 ⑤). 사람이 본다."""
@@ -348,3 +350,69 @@ def rehearsal_metric_smoke(vb: VerifiedBundle, gold: Mapping[str, Sequence[tuple
     return {"metric": "M1", "completed": True, "keys": keys,
             "undefined_reason": report.undefined_reason,
             "note": "값을 싣지 않는다 — 리허설은 계산이 끝났는지와 산출의 모양만 본다(진입점 미니스펙 3판 4-2)"}
+
+
+# ── 엄격 경로의 등록 지표 — 표본 모드(35번 §1) ─────────────────────────────────
+
+@dataclass(frozen=True)
+class RegisteredScore:
+    """모델 묶음 하나의 등록 지표 재료. 계수표의 모집단은 채점 목록 전부다(정상 이미지 포함)."""
+
+    tag: str
+    seed_index: int
+    table: object
+    """주 채점 — 레코드 실패는 빈 예측(`decoupled_v2`)."""
+    sens: object
+    """민감도 — 실패 레코드마다 평가 클래스별 오탐 1(등록 변형)."""
+    gold_codes: Mapping[str, frozenset]
+    failed: tuple[str, ...]
+    failures: Mapping
+
+
+def score_registered(vb: VerifiedBundle, gold: Mapping[str, Sequence[tuple[str, Sequence[float]]]], *,
+                     population: Sequence[str], classes: Sequence[str], coupling_rule: str,
+                     known_iso_codes: Iterable[str], sensitivity_variant: str,
+                     gold_codes: Mapping[str, Iterable[str]] | None = None) -> RegisteredScore:
+    """검증을 지난 **모델** 묶음 → 주 · 민감도 계수표와 실패 회계. 모집단의 이미지마다 레코드가 정확히 하나여야 한다.
+
+    정답은 부르는 쪽이 평가 정답 뷰(엄격 판독기)로 읽어 넘긴다 — 이 함수는 파일을 열지 않는다. 채점 클래스 밖의 정답 상자는
+    계수에 들지 않는다(평가 4클래스). `gold_codes`(이미지 수준 코드 — 상자 없는 주석 행 포함)를 주면 정상 · 결함 갈래가 그것을 따르고,
+    없으면 상자의 코드에서 낸다.
+    """
+    from evaluation.metrics.box_f1 import sensitivity_counts
+
+    vb = require_verified(vb)
+    if vb.mode != MODE_MODEL:
+        raise ValueError("등록 지표는 모델 묶음만 받는다 — 에코는 배관 검사다")
+    rep = records_from_verified(vb, coupling_rule=coupling_rule, known_iso_codes=known_iso_codes,
+                                scoring_iso_codes=list(classes))
+    pop = list(population)
+    popset = set(pop)
+    cls = set(classes)
+    pred: dict[str, list] = {}
+    for r in rep.records:
+        if r.image_id not in popset:
+            continue
+        if r.image_id in pred:
+            raise ValueError("모집단의 한 이미지에 레코드가 둘이다")
+        pred[r.image_id] = [(d.iso_code, list(d.bbox_px)) for d in r.defects
+                            if d.bbox_px is not None and d.iso_code in cls]
+    if set(pred) != popset:
+        raise ValueError(f"모집단 {len(popset - set(pred))} 장에 레코드가 없다 — 묶음 검증의 모집단 대조와 어긋난다")
+    sub = {i: [(c, list(b)) for c, b in gold.get(i, ()) if c in cls] for i in pop}
+    table = build_counts(pred, sub, list(classes))
+    if gold_codes is None:
+        gold_codes = {i: frozenset(c for c, _ in sub[i]) for i in pop}
+    else:
+        gold_codes = {i: frozenset(c for c in gold_codes.get(i, ()) if c in cls) for i in pop}
+    failed = tuple(sorted(r.image_id for r in rep.records if r.image_id in popset and not r.parse_ok))
+    sens = sensitivity_counts(table, gold_codes=gold_codes, failed_image_ids=failed, variant=sensitivity_variant)
+    n_def = sum(1 for i in pop if gold_codes[i])
+    f_def = sum(1 for i in failed if gold_codes[i])
+    failures = {"n_records": len(pop), "n_record_failures": len(failed),
+                "record_failure_rate": len(failed) / len(pop) if pop else None,
+                "defect_images": {"n": n_def, "n_failed": f_def, "rate": f_def / n_def if n_def else None},
+                "normal_images": {"n": len(pop) - n_def, "n_failed": len(failed) - f_def,
+                                  "rate": (len(failed) - f_def) / (len(pop) - n_def) if len(pop) - n_def else None},
+                "adapter_report": rep.as_dict()}
+    return RegisteredScore(vb.tag, vb.seed_index, table, sens, gold_codes, failed, failures)

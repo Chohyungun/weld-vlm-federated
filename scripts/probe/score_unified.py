@@ -42,32 +42,47 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+import pandas as pd
 import yaml
 
+from data import manifest_view as _MV
+from data.manifest_io import ManifestError
 from data.manifest_view import read_annotations_view, read_annotations_view_eval
 from evaluation.actuals import registered_values
 from evaluation.adapters_v14 import UpstreamContractError
-from evaluation.bundle_v14 import (MODE_ECHO, MODE_MODEL, BundleFiles, Registration, TrainingArtifact,
-                                   check_env_consistency, verify_bundle)
+from evaluation.bundle_v14 import (DEVICE_LABEL_CANONICAL, DEVICE_LABEL_NONCANONICAL, MODE_ECHO, MODE_MODEL, BundleFiles,
+                                   Registration, TrainingArtifact, check_env_consistency, verify_bundle)
 from evaluation.content_key import ContentKeyError, generations_content_sha256
+from evaluation import known_answer as KA
 from evaluation.coord_check import coord_fixture_digest
-from evaluation.entry_gate import (COMMITTED_KINDS, STRICT_OUT_REL, EntryRejected, blob_at, check_anchor, check_list_split,
-                                   check_main_full_eval, check_mode, check_processor, check_receipt_kind, check_snapshot, guard_seam,
+from evaluation.early_coord_check import EarlyCheckRejected, load_rules
+from evaluation.ecc_frame_check import frame_check_by_a3_substitute, frame_check_by_model_free, frame_check_by_permit
+from evaluation.entry_gate import (COMMITTED_KINDS, STRICT_OUT_REL, EntryRejected, anchor_rev, blob_at, check_anchor,
+                                   check_list_split, check_main_full_eval, check_main_sample, check_mode, check_processor,
+                                   check_receipt_kind, check_snapshot, guard_seam,
                                    canonical_ledger, load_anchor, load_processor_kwargs, load_registration_for,
                                    main_checkout, read_manifest_meta)
+from evaluation import strict_main as SM
 from evaluation.eval_list import validate_eval_list
+from evaluation.eval_registration import AUXILIARY_V6, EvalBindingRefused, load_bound_eval
 from evaluation.ledger_v14 import FED_CLIENTS, LedgerRejected, read_ledger_view
-from evaluation.prereg_unified import (EchoGateFailed, ReceiptMissing, RegistrationIncomplete, RegistrationInvalid,
-                                       check_echo_gate, read_receipt, require_probe_scoring, require_receipt)
+from evaluation.prereg_unified import (MAIN_FRAME_DIAG_A3_SUBSTITUTE, MAIN_FRAME_DIAG_MEANING, MAIN_FRAME_DIAG_MODEL_FREE,
+                                       EchoGateFailed, ReceiptMissing,
+                                       RegistrationIncomplete, RegistrationInvalid, check_echo_gate, read_receipt,
+                                       require_probe_scoring, require_receipt)
 from evaluation.provenance import scorer_code_digest, write_new_text
 from evaluation.reject_v14 import BundleRejected
+from evaluation.recovery_interval import registered_mismatches as ci_convention_mismatches
+from evaluation.rule5 import VERDICT_AUTHORITY as RULE5_REGISTERED
+from evaluation.rule5 import registered_inputs as rule5_inputs
+from evaluation.sample_weights import WEIGHTING_NONE, WEIGHTING_SAMPLE, SampleSideError, read_side
 from evaluation.scoring_layer import (adversarial_probe, check_literal, judge_rehearsal_gates, rehearsal_metric_smoke,
-                                      score_echo)
+                                      records_from_verified, score_echo, score_registered)
 from evaluation.frame_diag import PASS as FRAME_PASS
 from evaluation.frame_diag import FrameImage, judge, mutual_pairs
 from evaluation.axis_ratio_canary import axis_ratio_canary
 from evaluation.frame_diag_rules import RulesFileError, load_rules_file, requirement_status
-from evaluation.scoring_ledger import LedgerBusy, append_line, find_verdicts, ledger_lock, read_ledger
+from evaluation.scoring_ledger import LedgerBusy, LedgerChainBroken, append_line, find_verdicts, ledger_lock, read_ledger
 
 EXIT_OK, EXIT_REJECTED, EXIT_ENTRY = 0, 2, 3
 REHEARSAL_OUT_REL = "outputs/rehearsal_u"
@@ -100,13 +115,30 @@ EVAL_VIEW = read_annotations_view_eval
 """엄격 경로의 평가 정답 뷰 — 데이터 쪽 판독기(판정 10 의 1절, A `40c1316` 이 본줄기에 들였다). 엄격 채점(단계 6)의 정답은
 **이것으로만** 읽는다 — 영수증 **파일 경로**를 `receipt=` 로 준다. 부르는 조건(영수증 종류 `main` · 커밋이 본줄기의 조상 · 등록의
 목적 `main` · 기준 분할 `eval` · 닻 · 평가 id 만)은 판독기가 코드로 걸고, 어기면 주석 파일을 열기 전에 거부한다.
-단계 6 이 아직 없어 지금 부르는 자리는 없다 — 그 단계가 설 때 이 이름을 부른다."""
+부르는 자리는 `_gold_eval` 하나다(표본 모드의 단계 6, 35번 §1)."""
 EVAL_VIEW_READER = f"{EVAL_VIEW.__module__}.{EVAL_VIEW.__qualname__}"
 EVAL_VIEW_CONDITIONS = ("영수증 종류가 main", "영수증 커밋이 본체 refs/heads/main 의 조상", "등록의 목적이 main")
 """그 뷰를 부르는 조건 — 셋이 모두 설 때만 부른다. 판독기도 같은 조건(과 그 밖의 넷)을 코드로 건다(판정 10 의 1절)."""
-STRICT_PENDING = ("등록 지표의 구현(주 지표 1b)", "규칙 ⑤ 등록 판정 모듈(07번 §29-5)",
-                  "축 배율 카나리아의 진단 규칙 판(07번 §31-1 의 6)")
-"""엄격 채점(단계 6 · 7)이 서지 않는 까닭. 구간 규약(지시 j)과 평가 정답 뷰(데이터 쪽)는 들어왔다."""
+STRICT_PENDING = ("전량 모드의 채점 단계 — 전량의 재표집 층(07번 §39-4-1)이 정해지지 않았다",
+                  "축 배율 카나리아의 진단 규칙 판(07번 §31-1 의 6) — 엄격에서는 사람 확인 대기로 싣고 막지 않는다(3판 1-1-다)")
+"""엄격 채점에 아직 없는 것. 등록 지표(M1) · 규칙 ⑤ 등록 판정 · 구간 규약 · 평가 정답 뷰 · 표본 모드는 들어왔다(35번 §1).
+첫째가 남아 있는 동안 전량 모드(가중 `none`)의 엄격 채점은 카나리아 뒤에서 종료 3 이다. 둘째는 산출에 `not_run` 으로 적는다."""
+MODE_FULL, MODE_SAMPLE = "full", "sample"
+"""엄격 · 본실험의 모집단 모드 — 등록의 `population.weighting` 이 정한다(`none` → 전량, `stratified_g_over_n` → 표본)."""
+STRICT_OUT_PREFIX = "score/main_"
+"""엄격 산출의 이름 — `score/main_<population_id>_<채점 지문 앞 12자>.json`. 배타 생성이라 같은 등록의 두 번째 산출은 쓰지 않는다 —
+채점 규칙만 고쳐 다시 등록하면(채점 지문이 바뀐다) 새 이름이 된다(실험설계 8-5 의 채점 규칙 개정 재채점)."""
+_POPULATION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+ECC_RULES_REL = "configs/early_coord_check.yaml"
+"""조기 좌표 점검의 규칙 파일. 본실험 산출의 프레임 표지는 등록 `canary.frame_diag_sha256` 이 가리키는 허가 파일(`--ecc-permit`)을
+**영수증 커밋의** 이 규칙으로 다시 본다(`evaluation.ecc_frame_check` — 의사결정로그 10-07, 등록 판 5 추기 10-17).
+산출의 표지는 `FRAME_CHECKED_BY_ECC` 다(앞 판의 `FRAME_NOT_CHECKED` — 칸이 있는지만 보던 것 — 를 대신한다). 허가가 사용자 결정으로
+면제되면 모델 없는 통과 산출 · 면제 파일(`--frame-admission` · `--ecc-waiver`)의 묶음을 보고 `FRAME_CHECKED_MODEL_FREE_ONLY` 를 싣는다."""
+DECISION_LOG_REL = "docs/의사결정로그.md"
+"""면제 파일의 절 제목을 찾는 의사결정로그 — **영수증 커밋의** 것을 읽는다."""
+GOLD_READER_REL = "data/manifest_view.py"
+"""엄격 정답 판독기의 자리. 채점 지문(`provenance.SCORER_FILES`) 밖이라 산출에 그 파일의 해시를 따로 싣는다 — 지문 목록에 더하는 것은
+고정 해시 파일(`provenance.py`)을 고치는 일이라 따로 묻는다(35번 §1)."""
 
 _NAME = re.compile(r"^(?P<tag>[A-Za-z0-9_]+)_s(?P<seed>\d+)(?P<echo>\.echo)?\.generations\.jsonl$")
 
@@ -135,6 +167,24 @@ class Ctx:
     diag_rules_body: dict | None = None
     content_errors: dict = field(default_factory=dict)
     """내용 해시를 낼 수 없는 묶음 → 사유. 그 묶음은 검증 · 채점으로 가지 않는다."""
+    mode: str | None = None
+    """엄격 · 본실험의 모집단 모드(`MODE_FULL` · `MODE_SAMPLE`). 단계 1 이 등록의 가중으로 정한다."""
+    eval_doc: dict | None = None
+    eval_doc_sha256: str | None = None
+    eval_bound: object = None
+    """네 소비자 공통 판독의 결과(`evaluation.eval_registration.BoundEval`) — 경로 · 바이트 · 프로필. 단계 1 이 정한다."""
+    sealed: dict | None = None
+    side_raw: bytes | None = None
+    side: dict | None = None
+    baseline_raw: bytes | None = None
+    out_rel: str | None = None
+    """엄격 산출의 자리(`--out` 아래) — 단계 1 이 정하고 원장 줄 전에 비어 있는지 본다."""
+    frame: dict | None = None
+    """본실험 산출의 프레임 표지(`FRAME_CHECKED_BY_ECC` · 허가 sha) — 단계 1 이 허가 파일을 본 뒤 정한다."""
+    known_answer: dict | None = None
+    """기지답 재현의 기록 — 단계 1 이 영수증 커밋의 픽스처로 다시 낸 계수표 sha 가 등록과 같을 때만 선다."""
+    call_scorer: str | None = None
+    """원장 `call` 줄에 적은 채점기 지문 — 산출을 쓸 때의 지문과 맞대 `code_drift` 를 싣는다(3판 3-4)."""
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -144,9 +194,30 @@ def _parser() -> argparse.ArgumentParser:
     for name in ("receipt", "snapshot", "bundles", "generation-list", "scoring-list", "echo-list", "train-root", "out"):
         ap.add_argument(f"--{name}", required=True, type=Path)
     ap.add_argument("--plan", type=Path, default=None, help="계획 파일 — 등록에 plan_sha256 이 있으면 필수")
+    ap.add_argument("--side", type=Path, default=None,
+                    help="표본 곁 파일(image_id,stratum,G_h,n_h) — 엄격 표본 모드에서 필수, 봉인한 side_sha256 과 맞댄다")
+    ap.add_argument("--baseline", type=Path, default=None,
+                    help="등록 대조선의 예측(JSON 줄) — 엄격 표본 모드에서 필수, 등록의 baseline.prediction_sha256 과 맞댄다")
+    ap.add_argument("--ecc-permit", type=Path, default=None,
+                    help="조기 좌표 점검 허가 파일(시드 폴더의 ecc_permit.json) — 엄격 표본 모드에서 필수, 등록의 "
+                         "canary.frame_diag_sha256 과 맞대고 영수증 커밋의 규칙으로 통과를 다시 낸다")
+    ap.add_argument("--frame-admission", type=Path, default=None,
+                    help="허가 면제 때 — 모델 없는 네 검사 통과 산출(ECC_MODEL_FREE_ADMISSION.json). --ecc-waiver 와 함께, --ecc-permit 과 함께 받지 않는다")
+    ap.add_argument("--ecc-waiver", type=Path, default=None,
+                    help="허가 면제 파일(학습 쪽 --ecc-permit-waiver 의 그 파일) — --frame-admission 과 함께")
+    ap.add_argument("--ecc-substitute", type=Path, default=None,
+                    help="2 차 체제 — A3 대체 승인서(ecc_a3_substitute.json, 증거는 같은 폴더). 등록 canary.frame_diag_sha256 과 맞대고 "
+                         "영수증 커밋 · A3 커밋 · 증거로 다시 검증한다. --ecc-permit · --frame-admission · --ecc-waiver 와 함께 받지 않는다")
     ap.add_argument("--device", required=True)
     ap.add_argument("--echo-only", action="store_true",
                     help="학습 전 에코 관문만 — 원장에 쓰지 않는다(리허설 · 진단 목적만)")
+    ap.add_argument("--aux-train-extractor", type=Path, default=None,
+                    help="판 6 보조 지표 — 학습 쪽 추출기 파일(vlm/narrative.py). 주면 식별자(EXTRACTOR_ID) · LF sha256 을 등록과 맞댄다")
+    ap.add_argument("--aux-prompt", type=Path, default=None,
+                    help="판 6 보조 지표 — 생성 프롬프트 파일. 주면 generation.prompt_sha256 과 맞댄다")
+    ap.add_argument("--aux-vectors", type=Path, default=None,
+                    help="판 6 보조 지표 — 확인 파일(정본 추출 벡터 narrative_extract.v1.json). 주면 실제 바이트를 "
+                         "narrative.extract_vectors_sha256 과 맞댄다")
     return ap
 
 
@@ -195,10 +266,14 @@ def _stage0(ctx: Ctx) -> None:
     if a.registration == "strict":
         if out.resolve() != (co / STRICT_OUT_REL).resolve():
             raise EntryRejected("OUT_ROOT", "엄격의 출력 루트는 outputs/main_u 뿐이다(가-4′)")
-        for name in ("bundles", "generation_list", "scoring_list", "echo_list", "train_root", "receipt"):
-            if _under(getattr(a, name), co / REHEARSAL_OUT_REL):
+        for name in ("bundles", "generation_list", "scoring_list", "echo_list", "train_root", "receipt", "side", "baseline",
+                     "ecc_permit", "frame_admission", "ecc_waiver", "ecc_substitute"):
+            if getattr(a, name) is not None and _under(getattr(a, name), co / REHEARSAL_OUT_REL):
                 raise EntryRejected("INPUT_UNDER_REHEARSAL", f"엄격의 입력({name})이 리허설 루트 아래다(가-4)")
     else:
+        if any(getattr(a, n) is not None for n in ("side", "baseline", "ecc_permit", "frame_admission", "ecc_waiver",
+                                                   "ecc_substitute")):
+            raise EntryRejected("STRICT_ONLY_INPUT", "표본 곁 파일 · 대조선 예측 · 조기 점검 허가 파일은 엄격 본채점의 입력이다")
         if _under(out, co / STRICT_OUT_REL) or not _under(out, co / REHEARSAL_OUT_REL) \
                 or out.resolve() == (co / REHEARSAL_OUT_REL).resolve():
             raise EntryRejected("OUT_ROOT", "탐색 채점의 산출은 outputs/rehearsal_u/<id>/ 아래다 — main_u 에는 원장 한 줄뿐")
@@ -261,6 +336,130 @@ def _stage1(ctx: Ctx) -> None:
     ctx.provisional = _provisional(ctx)
     if a.registration == "strict" and ctx.provisional:
         raise EntryRejected("PROVISIONAL", "엄격 경로는 잠정 입력을 받지 않는다: " + ", ".join(p["id"] for p in ctx.provisional))
+    if a.registration == "strict" and a.purpose == "main":
+        _strict_population(ctx)
+
+
+def _strict_population(ctx: Ctx) -> None:
+    """엄격 · 본실험의 모집단 모드(35번 §1). 등록의 `population.weighting` 이 정한다 — 원장 줄 전이라 거부는 시도가 아니다.
+
+    - `none` → **전량 모드**. 목록은 `check_main_full_eval`(전량 계약)로 본다. 곁 파일을 주면 거부한다.
+    - `stratified_g_over_n` → **표본 모드**. 평가 등록 설정(`configs/eval_registration.yaml`)과 base 설정을 **영수증의 커밋에서**
+      읽어(작업 트리를 읽지 않는다) 코드 상수 · base · 등록 객체와 맞댄다. 곁 파일의 바이트가 봉인한 `side_sha256` 이고, 대조선
+      예측의 바이트가 등록의 `baseline.prediction_sha256` 이어야 한다.
+
+    표본 모드의 관문 순서 — 아래 일곱이 이 함수(원장 줄 전)이고, 표본 관문 `check_main_sample` 은 그 **뒤** 목록 단계다. 생성 쪽 사전
+    점검이 1 · 2 를 돌지 않으면 결속이 어긋난 등록이 생성(다섯 칸 × 표본 전부)을 다 쓴 뒤 여기서 거부된다 — 본실험 등록 짓기
+    (`vlm.main_registration`)는 짓기 · 영수증에서 같은 2 를 미리 돈다.
+
+    | # | 검사 | 사유 코드 |
+    |---|---|---|
+    | 1 | 평가 등록 설정의 꼴 · 코드 상수 · base(`registration_problems`) | `EVAL_REGISTRATION` |
+    | 2 | 등록 ↔ 설정 결속 — 봉인 주 표본의 목록 두 해시 · 장수 · 묶음 수, 묶음 단위, 시드, 대표 지표 칸, 생성 한도
+    |   | (`strict_binding_problems`) | `EVAL_REGISTRATION` |
+    | 3 | 곁 파일 바이트 = 봉인 `side_sha256` | `SIDE_MISSING` · `SIDE_HASH` |
+    | 4 | 대조선 예측 바이트 = 등록 `baseline.prediction_sha256` | `BASELINE_MISSING` · `BASELINE_HASH` |
+    | 5 | 규칙 ⑤ 의 등록 입력 · 구간 규약 · 모집단 id 꼴 · 산출 자리 | `RULE5_REGISTRATION` · `CI_CONVENTION` · `POPULATION_ID` ·
+    |   |   | `OUT_EXISTS` |
+    | 6 | 기지답 — 영수증 커밋의 픽스처로 다시 낸 계수표 sha = 등록 `canary.known_answer_sha256` | `KNOWN_ANSWER_FIXTURE` ·
+    |   |   | `KNOWN_ANSWER_MISMATCH` |
+    | 7 | 프레임 — 허가 파일(`--ecc-permit`) sha = 등록 `canary.frame_diag_sha256`, 영수증 커밋의 규칙으로 통과를 다시 낸다. 허가 면제면 |
+    |   | 통과 산출 · 면제 파일(`--frame-admission` · `--ecc-waiver`)의 묶음 sha = 등록 칸, 네 검사 통과 · 규칙 지문 · 면제 칸 · 절 제목 |
+    |   | (`evaluation.ecc_frame_check`) | `FRAME_PERMIT_MISSING` · `FRAME_INPUT_CONFLICT` · `FRAME_PERMIT` |
+    | 뒤 | 표본 관문 — 생성 목록 = 채점 목록 = 봉인 주 표본, 묶음이 쪼개지지 않음, 곁 파일이 목록과 같은 행 | `MAIN_*` |
+    """
+    a, reg, rc = ctx.args, ctx.reg, ctx.receipt
+    weighting = reg.population.weighting
+    if weighting == WEIGHTING_NONE:
+        if a.side is not None:
+            raise EntryRejected("SIDE_IN_FULL_MODE", "전량 모드(가중 none)의 등록에 표본 곁 파일이 주어졌다")
+        if a.baseline is not None:
+            raise EntryRejected("BASELINE_IN_FULL_MODE", "전량 모드는 채점 단계가 없다 — 대조선 예측을 받지 않는다")
+        ctx.mode = MODE_FULL
+        return
+    if weighting != WEIGHTING_SAMPLE:
+        raise EntryRejected("WEIGHTING", f"모집단 가중 {weighting!r} 은 엄격 본채점의 어휘가 아니다")
+    rev = anchor_rev(rc)
+    # 네 소비자 공통 판독(판 6 연결 2 판 §2-2) — 영수증 커밋의 blob 만: 판 5 는 configs/eval_registration.yaml, 신판 판 6 은 같은
+    # 줄기의 .eval.yaml(없으면 거부 — 옛 경로 · 작업 트리 · 명령줄로 대신하지 않는다). 꼴 · 코드 상수 · base · 등록 결속 · 출처까지.
+    try:
+        bound = load_bound_eval(repo=ctx.repo, anchor_rev=rev, registration_rel=rc.registration_path, registration=reg)
+    except EvalBindingRefused as exc:
+        raise EntryRejected("EVAL_REGISTRATION", f"[{exc.code}] 영수증 커밋의 평가 설정 결속 — {len(exc.problems)}건: "
+                                                 + " · ".join(exc.problems[:3])) from None
+    doc = dict(bound.doc)
+    sample = doc["population"]["sample"]
+    sealed = dict(sample["sealed"][str(sample["main_size"])])
+    if a.side is None or not a.side.is_file():
+        raise EntryRejected("SIDE_MISSING", "표본 모드는 봉인한 곁 파일(--side)이 있어야 한다 — 없거나 파일이 아니다")
+    side_raw = a.side.read_bytes()
+    if hashlib.sha256(side_raw).hexdigest() != sealed["side_sha256"]:
+        raise EntryRejected("SIDE_HASH", "곁 파일의 바이트가 봉인한 side_sha256 과 다르다")
+    if a.baseline is None or not a.baseline.is_file():
+        raise EntryRejected("BASELINE_MISSING", "표본 모드는 등록 대조선의 예측(--baseline)이 있어야 한다(규칙 ⑤) — 없거나 파일이 아니다")
+    baseline_raw = a.baseline.read_bytes()
+    if hashlib.sha256(baseline_raw).hexdigest() != reg.baseline.prediction_sha256:
+        raise EntryRejected("BASELINE_HASH", "대조선 예측의 바이트가 등록의 baseline.prediction_sha256 과 다르다")
+    try:
+        rule5_inputs(reg)
+    except ValueError as exc:
+        raise EntryRejected("RULE5_REGISTRATION", f"규칙 ⑤ 의 등록 입력이 쓸 수 없다: {exc}") from None
+    bad_ci = ci_convention_mismatches(reg.ci)
+    if bad_ci:
+        raise EntryRejected("CI_CONVENTION", f"등록의 구간 규약이 구현과 다르다 — {len(bad_ci)}칸: " + " · ".join(bad_ci[:3]))
+    pid = reg.population.population_id
+    if not isinstance(pid, str) or not _POPULATION_ID.match(pid):
+        raise EntryRejected("POPULATION_ID", "population_id 가 산출 이름에 쓸 수 있는 꼴이 아니다([A-Za-z0-9_.-])")
+    rel = f"{STRICT_OUT_PREFIX}{pid}_{reg.scoring_sha256()[:12]}.json"
+    if _out_file(ctx, rel).exists():
+        raise EntryRejected("OUT_EXISTS", f"같은 모집단의 엄격 산출({rel})이 이미 있다 — 덮지 않고 시도로 세지 않는다")
+    try:                                 # 기지답 — 영수증 커밋의 픽스처를 지금 채점기로 다시 센다(07번 597행)
+        ka_raw = blob_at(ctx.repo, rev, KA.FIXTURE_REL)
+        ka_sha = KA.known_answer_sha256(ka_raw)
+    except (EntryRejected, KA.KnownAnswerError) as exc:
+        raise EntryRejected("KNOWN_ANSWER_FIXTURE", f"영수증 커밋의 기지답 픽스처를 읽지 못했다: {exc}") from None
+    if ka_sha != reg.canary.known_answer_sha256:
+        raise EntryRejected("KNOWN_ANSWER_MISMATCH", "기지답 픽스처로 다시 낸 계수표의 sha256 이 등록 canary.known_answer_sha256 과 "
+                                                    "다르다 — 매칭 · 경계 규약이 등록 때와 다르다")
+    waived = (a.frame_admission, a.ecc_waiver)
+    sub = getattr(a, "ecc_substitute", None)
+    if sum(x is not None for x in (a.ecc_permit, sub)) + (1 if any(x is not None for x in waived) else 0) > 1:
+        raise EntryRejected("FRAME_INPUT_CONFLICT", "허가 파일 · 허가 면제(통과 산출 · 면제 파일) · A3 대체 승인서는 하나만 준다")
+    use_permit = a.ecc_permit is not None
+    if sub is not None:
+        if not sub.is_file():
+            raise EntryRejected("FRAME_PERMIT_MISSING", "A3 대체 승인서(--ecc-substitute)가 없다")
+        try:
+            frame = frame_check_by_a3_substitute(sub.read_bytes(), evidence_dir=sub.parent,
+                                                 registered_sha256=reg.canary.frame_diag_sha256, repo=ctx.repo, rev=rev)
+        except EarlyCheckRejected as exc:
+            raise EntryRejected("FRAME_PERMIT", f"A3 대체 승인서가 등록 · 영수증 커밋 · 증거와 맞지 않는다 — {exc}") from None
+        meaning = MAIN_FRAME_DIAG_A3_SUBSTITUTE
+    elif not all(x is not None and x.is_file() for x in ((a.ecc_permit,) if use_permit else waived)):
+        raise EntryRejected("FRAME_PERMIT_MISSING", "표본 모드는 등록이 가리키는 조기 좌표 점검 허가 파일(--ecc-permit), 허가 "
+                                                   "면제의 통과 산출 · 면제 파일(--frame-admission · --ecc-waiver), 또는 A3 대체 "
+                                                   "승인서(--ecc-substitute)가 있어야 한다")
+    else:
+        meaning = MAIN_FRAME_DIAG_MEANING if use_permit else MAIN_FRAME_DIAG_MODEL_FREE
+    try:
+        if sub is not None:
+            pass                                                    # 위에서 판정했다 — 규칙 파일을 읽지 않는다(점검 규칙 밖)
+        elif use_permit:
+            rules = load_rules(blob_at(ctx.repo, rev, ECC_RULES_REL))
+            frame = frame_check_by_permit(a.ecc_permit.read_bytes(), registered_sha256=reg.canary.frame_diag_sha256, rules=rules)
+        else:
+            rules = load_rules(blob_at(ctx.repo, rev, ECC_RULES_REL))
+            frame = frame_check_by_model_free(a.frame_admission.read_bytes(), a.ecc_waiver.read_bytes(),
+                                              registered_sha256=reg.canary.frame_diag_sha256, rules=rules,
+                                              decision_log=blob_at(ctx.repo, rev, DECISION_LOG_REL).decode("utf-8"))
+    except EarlyCheckRejected as exc:
+        raise EntryRejected("FRAME_PERMIT", f"좌표 진단 칸의 파일이 등록 · 규칙 · 의사결정로그와 맞지 않는다 — {exc}") from None
+    ctx.frame = {**frame, "meaning": meaning}
+    ctx.known_answer = {"status": "reproduced", "sha256": ka_sha, "fixture": KA.FIXTURE_REL,
+                        "fixture_sha256": hashlib.sha256(ka_raw).hexdigest()}
+    ctx.mode, ctx.eval_doc, ctx.sealed, ctx.out_rel = MODE_SAMPLE, doc, sealed, rel
+    ctx.eval_doc_sha256, ctx.eval_bound = bound.sha256, bound
+    ctx.side_raw, ctx.baseline_raw = side_raw, baseline_raw
 
 
 # ── 2 원장 · 2′ 목록 ─────────────────────────────────────────────────────────
@@ -300,18 +499,24 @@ def _write_call(ctx: Ctx, gens: list[Path], now: datetime) -> str:
     inputs = {str(p.name): _sha(p) for p in gens}
     for name in ("generation_list", "scoring_list", "echo_list", "receipt"):
         inputs[name] = _sha(getattr(a, name))
+    if ctx.mode == MODE_SAMPLE:
+        inputs["side"] = hashlib.sha256(ctx.side_raw).hexdigest()
+        inputs["baseline"] = hashlib.sha256(ctx.baseline_raw).hexdigest()
+        inputs["eval_registration"] = ctx.eval_doc_sha256
     payload = {"registration_mode": a.registration, "run_kind": a.purpose, "purpose": a.purpose,
                "generation_sha256": ctx.reg.generation_sha256(),
                "scoring_sha256": "미완" if ctx.scoring_gaps else ctx.receipt.scoring_sha256,
                "bundles": bundles, "generation_list_file_sha256": inputs["generation_list"], "inputs": inputs,
                "scorer_code": scorer_code_digest(ctx.checkout, include_files=False)["combined"], "device": a.device}
+    ctx.call_scorer = payload["scorer_code"]
     return append_line(canonical_ledger(ctx.checkout), "call", payload, at=now)
 
 
 def _read_lists(ctx: Ctx):
     a, g, p = ctx.args, ctx.reg.generation, ctx.reg.population
     gen = validate_eval_list(a.generation_list.read_bytes(), where="generation_list")
-    pop = validate_eval_list(a.scoring_list.read_bytes(), where="scoring_list")
+    pop_raw = a.scoring_list.read_bytes()
+    pop = validate_eval_list(pop_raw, where="scoring_list")
     echo = validate_eval_list(a.echo_list.read_bytes(), where="echo_list")
     if (g.eval_list_file_sha256, g.eval_list_set_sha256) != (gen.file_sha256, gen.set_sha256):
         raise EntryRejected("LIST_BINDING", "생성 쪽 등록의 목록 해시가 생성 목록과 다르다")
@@ -332,7 +537,15 @@ def _read_lists(ctx: Ctx):
     check_list_split(pop.ids, meta, a.purpose, where="채점 목록")
     check_list_split(echo.ids, meta, a.purpose, where="에코 목록", echo=True)
     if a.purpose == "main":
-        check_main_full_eval(gen, pop, meta)
+        if getattr(ctx, "mode", None) == MODE_SAMPLE:
+            try:
+                side = read_side(ctx.side_raw, pop_raw)
+            except SampleSideError as exc:
+                raise EntryRejected("SIDE_FILE", f"곁 파일을 읽지 못했다: {exc}") from None
+            check_main_sample(gen, pop, meta, sealed=ctx.sealed, side=side)
+            ctx.side = side
+        else:
+            check_main_full_eval(gen, pop, meta)
     return gen, pop, echo, meta
 
 
@@ -687,6 +900,319 @@ def _write(ctx: Ctx, call_sha: str, verified, rejected, canaries, rehearsal, sta
         write_new_text(path, json.dumps(body, ensure_ascii=False, indent=1, sort_keys=True, default=str) + "\n")
 
 
+# ── 6 · 7 엄격 · 표본 모드 ─────────────────────────────────────────────────────
+
+def _gold_eval(ctx: Ctx, ids) -> tuple[dict, dict, int]:
+    """엄격 정답 — 평가 정답 뷰(`EVAL_VIEW`)로만 읽는다. `(상자, 이미지 수준 코드, 상자 없는 주석 행 수)`. 정상 이미지는 빈 목록.
+
+    상자 네 칸 가운데 하나라도 비면(판독기는 정수 열의 빈 칸을 `NA` 로 준다) 그 행은 상자로 세지 않고 이미지 수준 코드에만 남긴다 —
+    공통 채점기의 정답 판독(`evaluation.eval_set.read_gold`)과 같은 처리다. 센 수는 산출에 싣는다.
+    """
+    ids = list(ids)
+    df = EVAL_VIEW(ctx.args.snapshot, ids, receipt=ctx.args.receipt)
+    boxes: dict[str, list] = {i: [] for i in ids}
+    codes: dict[str, set] = {i: set() for i in ids}
+    no_box = 0
+    for row in df.itertuples(index=False):
+        codes[row.image_id].add(str(row.iso_code))
+        vals = (row.bbox_x1_px, row.bbox_y1_px, row.bbox_x2_px, row.bbox_y2_px)
+        if any(pd.isna(v) for v in vals):
+            no_box += 1
+            continue
+        boxes[row.image_id].append((str(row.iso_code), [float(v) for v in vals]))
+    return boxes, codes, no_box
+
+
+def _json_default(o):
+    import numpy as np
+
+    if isinstance(o, np.integer):
+        return int(o)
+    if isinstance(o, np.floating):
+        return float(o)
+    if isinstance(o, np.bool_):
+        return bool(o)
+    raise TypeError(f"JSON 으로 쓸 수 없는 값: {type(o).__name__}")
+
+
+def _prior_calls(ctx: Ctx, call_sha: str) -> list[str] | dict:
+    """같은 영수증 · 같은 생성 목록으로 앞서 남은 `call` 줄 — 시도가 몇 번이었는지 산출이 스스로 말하게(07번 §12-5).
+    원장은 잠금 안에서 읽는다. 읽지 못하면 수를 지어내지 않고 상태로 적는다."""
+    want = (_sha(ctx.args.receipt), _sha(ctx.args.generation_list))
+    path = canonical_ledger(ctx.checkout)
+    try:
+        with ledger_lock(path):
+            rows = read_ledger(path)
+    except (LedgerBusy, LedgerChainBroken) as exc:
+        return {"status": "unreadable", "reason": type(exc).__name__}
+    out = []
+    for sha, row in rows:
+        inp = row.get("inputs") or {}
+        if row.get("kind") == "call" and sha != call_sha and (inp.get("receipt"), inp.get("generation_list")) == want:
+            out.append(sha)
+    return out
+
+
+def _gold_reader_identity(ctx: Ctx) -> dict:
+    """정답을 실제로 읽은 판독기 모듈의 바이트 — 본체 체크아웃의 같은 이름 파일이 아니라 불러온 파일을 잰다(검토 F8)."""
+    src = Path(_MV.__file__)
+    here = ctx.checkout / GOLD_READER_REL
+    return {"name": EVAL_VIEW_READER, "path": GOLD_READER_REL,
+            "file_sha256_lf": hashlib.sha256(src.read_bytes().replace(b"\r\n", b"\n")).hexdigest(),
+            "loaded_from_checkout": here.is_file() and src.resolve() == here.resolve(),
+            "note": "채점 지문 밖의 정답 판독기 — 지문 목록에 더할지는 따로 묻는다(35번 §1)"}
+
+
+def _device_label(verified) -> dict:
+    """산출의 장비 표지 — 정본 꼴이 아닌 장비 문자열(`bundle_v14.DEVICE_LABEL_NONCANONICAL`)이면 그 문자열과 묶음을 싣는다(2026-10-18)."""
+    rows = {vb.files.stem: vb.notes["device_label"]["value"] for vb in verified if vb.notes.get("device_label")}
+    if not rows:
+        return {"status": DEVICE_LABEL_CANONICAL}
+    return {"status": DEVICE_LABEL_NONCANONICAL, "values": sorted(set(rows.values())), "bundles": sorted(rows),
+            "scope": "출처 기록(도장 · 시작 줄 · 곁 파일)의 장비 문자열이 '{이름}:{인덱스}' 꼴이 아니다 — 한 문자열임만 확인했고 몇 번 장치인지는 모른다"}
+
+
+def _aux_scoring(ctx: Ctx, verified, scores, ids, gold_codes, b_pred, known, classes):
+    """2 차 보조 지표(서술 · 조항 축)의 입력 — 판 6 등록에 블록이 있고 평가 등록 `auxiliary` 에 그 이름이 있을 때만(03 2판 §5a). 아니면 None.
+
+    검사기 · 닫힌 목록 · 추출기 · 허용치 표 · 로더 · 정답 서술 생성기 · 잔여 한계 · 탐색적 종류의 신원은 **지금 불러 쓰는 모듈의
+    파일**로 등록과 맞대고(`narrative_registration.identity_problems`), 선택 검사 인자(`--aux-train-extractor` · `--aux-prompt` ·
+    `--aux-vectors`)를 주면 그 파일도 맞댄다. 다르면 보조 지표를 내지 않고 사유를 싣는다(`AuxRefused` — M1 산출은 그대로). 무엇을
+    맞댔는지는 `identity_checks` 에 적는다. 묶음 · 정답 · 대조선은 이미 검증 · 판독한 것을 그대로 쓴다. 1.4 레코드는 채점 층과 같은
+    함수(`records_from_verified`)로 같은 줄에서 다시 낸다. 판 5 등록이면 보조 모듈을 불러오기 **전에** None 을 낸다(203 §2).
+    """
+    # 판 5 길도 쓰는 모듈 — 새 모듈이 아니다
+    from evaluation.prereg_unified import CLAUSE_AXIS_METRICS, REGISTRATION_VERSION_V6
+
+    reg = ctx.reg
+    if reg.version != REGISTRATION_VERSION_V6:
+        return None
+    # 판 6 — 여기서부터 보조 모듈을 부른다
+    from corpus.rules import limits_loader
+    from evaluation import narrative_checker as NCK
+    from evaluation import narrative_registration as NR
+    from evaluation import strict_narrative as SN
+    from evaluation.clause_axis import entries_from_limits
+    from evaluation.sample_bootstrap import design_weights
+    names = set(ctx.eval_doc.get("auxiliary") or [])
+    wanted = set()
+    if reg.narrative is not None:
+        wanted |= names & set(SN.NARRATIVE_NAMES)
+    if reg.clause_axis is not None:
+        wanted |= names & set(CLAUSE_AXIS_METRICS)
+    if not wanted:
+        return None
+    code_root = Path(NCK.__file__).resolve().parents[1]
+    opt = {"train_extractor_path": getattr(ctx.args, "aux_train_extractor", None),
+           "prompt_path": getattr(ctx.args, "aux_prompt", None), "vectors_path": getattr(ctx.args, "aux_vectors", None)}
+    checks = {"code_tree": "checked",
+              **{k.removesuffix("_path"): "checked" if v is not None else "not_given" for k, v in opt.items()}}
+    profile = _aux_profile(ctx)                 # 신판이면 regime2_v4 프로필, 구판이면 None(옛 동작), 섞였으면 거부 사유 문자열
+    if isinstance(profile, str):
+        return SN.AuxRefused(wanted=frozenset(wanted), problems=(profile,), identity_checks=checks)
+    pkw = {} if profile is None else {"profile": profile}
+    problems = NR.identity_problems(reg, repo=code_root, **opt, **pkw)
+    if problems:
+        return SN.AuxRefused(wanted=frozenset(wanted), problems=tuple(problems), identity_checks=checks)
+    if profile is None:
+        checker, limits_rel = NCK.load_checker(code_root), NCK.LIMITS_REL
+    else:                                       # 실제 검사기 · 표 · 신원이 같은 프로필 — 닫힌 사상 · 핀 · 실행 모듈 대조
+        try:
+            checker = NR.load_profile_checker(profile, repo=code_root)
+        except NR.ProfileRefused as exc:
+            return SN.AuxRefused(wanted=frozenset(wanted), problems=(f"{exc.code}: " + " · ".join(exc.problems),),
+                                 identity_checks=checks)
+        limits_rel = profile.checker_pin.limits_rel
+    material_of = SN.material_of_side(ctx.side, ids, SM.MATERIALS)
+    w0 = design_weights(ids, ctx.side)
+    models = {}
+    for vb in verified:
+        key = (vb.tag, vb.seed_index)
+        if vb.mode != MODE_MODEL or key not in scores:
+            continue
+        rep = records_from_verified(vb, coupling_rule=reg.metric.coupling_rule, known_iso_codes=known,
+                                    scoring_iso_codes=list(classes))
+        models[key] = SN.model_inputs(vb.tag, vb.seed_index, vb.lines, rep.records, image_ids=ids,
+                                      material_of=material_of, gold_codes=gold_codes, weights=w0)
+    entries = entries_from_limits(limits_loader.load_limits(code_root / limits_rel, pilot=True))
+    act = NR.actual_identity(code_root, **pkw)
+    identity = {k: act[k] for k in ("checker_id", "checker_sha256", "lists_sha256", "extractor_id", "extractor_sha256")}
+    return SN.AuxScoring(models=models, checker=checker, checker_identity=identity, entries=entries,
+                         index_clause_ids=frozenset(checker.t.clause_ids), material_of=material_of,
+                         gold_codes={i: frozenset(gold_codes.get(i, ())) for i in ids},
+                         baseline_codes={i: sorted({c for c, _ in b_pred.get(i, ())}) for i in ids},
+                         wanted=frozenset(wanted), image_weights={i: float(w) for i, w in zip(ids, w0, strict=True)},
+                         exploratory_kinds=tuple(reg.narrative.exploratory_kinds or ()) if reg.narrative is not None else (),
+                         identity_checks=checks)
+
+
+def _aux_profile(ctx: Ctx):
+    """판 6 등록의 프로필 — 영수증 커밋의 학습 등록으로 고른다(평가 쪽 `profile_for`, 판 6 연결 2 판 §3-2). 신판(`regime2_v4`)이면 그
+    프로필, 구판(역사적 판 6 · 학습 등록 없음)이면 None(옛 동작 — 산출 바이트 보존), 조합이 섞였으면 `profile_mismatch: …` 문자열."""
+    from evaluation import narrative_registration as NR
+    from vlm.registration import REG_PATH, RegistrationRejected, registration_from_bytes
+
+    try:
+        entry = registration_from_bytes(blob_at(ctx.repo, anchor_rev(ctx.receipt), REG_PATH.as_posix()))
+    except (EntryRejected, RegistrationRejected):
+        entry = None
+    try:
+        profile = NR.profile_for(ctx.reg, train_entry=entry)
+    except NR.ProfileRefused as exc:
+        pin, n = NR.NARRATIVE_PROFILES[NR.PROFILE_REGIME2].checker_pin, ctx.reg.narrative
+        if n is not None and (n.checker_id == pin.checker_id or n.limits_sha256 == pin.limits_sha256
+                              or n.lists_sha256 == pin.lists_sha256):
+            return f"{exc.code}: " + " · ".join(exc.problems)          # 신판 단서가 섞였다 — 거부 사유로
+        return None                                                     # 신판 단서 0 — 구판 신원 대조가 칸 이름으로 사유를 낸다
+    return profile if profile.profile_id == NR.PROFILE_REGIME2 else None
+
+
+def v6_completion(*, profile_id: str, required_cells, verified_cells, aux, report: dict) -> dict:
+    """신판 판 6 산출의 완료 표지(판 6 연결 2 판 §5 · D4) — 필수 칸 전량 검증과 보조 다섯 이름의 **실제 계산**을 모두 요구한다.
+
+    `wanted` 만 채운 것은 계산이 아니다 — 계산된 이름 · 결과의 모델 포함 범위 · 대응 비교의 산출 여부를 report 블록과 맞댄다. 수학적으로
+    분모가 없는 값의 기존 '정의 불가' 처리는 그대로이고 0 으로 메우지 않는다. `aux is None` → aux_not_computed, 신원 거부 →
+    aux_identity_refused, 일부 이름 · 모델 · 비교가 빠짐 → aux_incomplete, 칸 거부 → cells_missing. `complete` 는 보조 계산의 완료
+    표지이지 성능 성공 · 가설 채택이 아니다. 별도 문턱 · 채택 기준을 두지 않는다."""
+    from evaluation.strict_main import cell_name
+
+    reasons: list[str] = []
+    missing = sorted(set(required_cells) - set(verified_cells))
+    if missing:
+        reasons.append(f"cells_missing:{len(missing)}")
+    if aux is None:
+        reasons.append("aux_not_computed")
+    elif getattr(aux, "problems", None):
+        reasons.append("aux_identity_refused")
+    else:
+        names = set(aux.computed_names())
+        cells = {cell_name(*k) for k in verified_cells}
+        incomplete = not set(AUXILIARY_V6) <= names
+        for key in ("narrative", "clause_axis"):
+            block = report.get(key)
+            if not isinstance(block, dict) or set(block.get("models") or {}) != cells:
+                incomplete = True
+                continue
+            paired = block.get("paired")
+            if not isinstance(paired, dict) or paired.get("status") == "산출 불가":
+                incomplete = True
+        if incomplete:
+            reasons.append("aux_incomplete")
+    return {"profile_id": profile_id, "complete": not reasons, "reasons": reasons, "required_names": list(AUXILIARY_V6),
+            "note": "보조 계산의 완료 표지 — 성능 성공 · 연구 가설 채택이 아니다. 정의 불가 값은 그대로 두고 0 으로 메우지 않는다"}
+
+
+def _strict_sample(ctx: Ctx, call_sha: str, gens: list[Path], verified, rejected: dict, canaries: dict, gen, pop,
+                   meta) -> int:
+    """표본 모드의 단계 6(등록 지표 · 회복률 · 참여자 · 규칙 ⑤) · 7(배타 생성). 거부된 칸이 있으면 산출은 쓰고 종료 2 다(3판 1-4)."""
+    reg = ctx.reg
+    pid, rel = reg.population.population_id, ctx.out_rel
+    classes = [str(c) for c in reg.metric.class_codes]
+    known = list(_known_codes())
+    try:                                 # 대조선 예측은 정답보다 먼저 읽는다 — 꼴이 틀린 등록 입력으로 평가 정답을 열지 않는다
+        b_pred, b_info = SM.read_baseline_predictions(
+            ctx.baseline_raw, population=pop.ids, allowed_ids={i for i, s in meta.split_of.items() if s == "eval"},
+            known_codes=set(known), classes=classes)
+    except SM.BaselineFileError as exc:
+        print(f"채점 단계에서 멈췄다(산출 없음): 대조선 예측 — {exc}", file=sys.stderr)
+        return EXIT_ENTRY
+    try:
+        _out_file(ctx, rel)
+        gold, gold_codes, n_no_box = _gold_eval(ctx, pop.ids)
+    except (EntryRejected, ManifestError, OSError) as exc:       # 판독기의 거부 · 스냅샷 검증 · 읽기 실패
+        print(f"채점 단계에서 멈췄다(산출 없음): {type(exc).__name__}: {exc}", file=sys.stderr)
+        return EXIT_ENTRY
+    seeds = {int(k) for k in reg.seeds}
+    rej = {k: list(v) for k, v in rejected.items()}
+    scores = {}
+    for vb in verified:
+        if vb.mode != MODE_MODEL:
+            continue
+        name = SM.cell_name(vb.tag, vb.seed_index)
+        if vb.seed_index not in seeds:
+            rej.setdefault(name, []).append("unregistered_seed")
+            continue
+        try:
+            scores[(vb.tag, vb.seed_index)] = score_registered(
+                vb, gold, population=pop.ids, classes=classes, coupling_rule=reg.metric.coupling_rule,
+                known_iso_codes=known, sensitivity_variant=reg.metric.sensitivity_variant_id, gold_codes=gold_codes)
+        except (UpstreamContractError, ValueError) as exc:
+            rej.setdefault(name, []).append(f"score_failed:{type(exc).__name__}")
+    for tag in SM.TAGS:                  # 등록한 칸인데 묶음이 없으면 그것도 거부된 칸이다(검토 F1) — 분모를 조용히 줄이지 않는다
+        for s in sorted(seeds):
+            name = SM.cell_name(tag, s)
+            if (tag, s) not in scores and name not in rej:
+                rej[name] = ["missing_bundle"]
+    env = sorted(k for k in rej if k == f"env:{MODE_MODEL}")      # 에코 묶음의 환경은 모델 비교를 무효로 하지 않는다
+    try:
+        aux = _aux_scoring(ctx, verified, scores, list(pop.ids), gold_codes, b_pred, known, classes)
+    except (ValueError, OSError) as exc:  # 보조 입력의 계약 위반 — 산출을 쓰지 않는다(신원 어긋남은 아래 거부 — 보조 지표만 뺀다)
+        print(f"채점 단계에서 멈췄다(산출 없음): 보조 지표 — {type(exc).__name__}: {exc}", file=sys.stderr)
+        return EXIT_ENTRY
+    if getattr(aux, "problems", None):   # strict_narrative.AuxRefused — 보조 지표만 빼고 M1 은 그대로 낸다
+        print("보조 지표를 내지 않는다 — 판 6 블록의 신원이 맞지 않는다(산출의 aux_identity): " + " · ".join(aux.problems),
+              file=sys.stderr)
+    try:
+        gold_sub = {i: [(c, b) for c, b in gold[i] if c in set(classes)] for i in pop.ids}
+        report = SM.compute(scores=scores, baseline=SM.baseline_table(b_pred, gold_sub, classes), side=ctx.side,
+                            group_of=meta.group_of, reg=reg, eval_doc=ctx.eval_doc, rejected=rej,
+                            invalid_comparison=env, aux_scoring=aux)
+    except (ValueError, AssertionError) as exc:  # 대조선 파일 · 등록 규약 · 재표집 항등 · 추첨 회계 — 산출을 쓰지 않는다
+        print(f"채점 단계에서 멈췄다(산출 없음): {type(exc).__name__}: {exc}", file=sys.stderr)
+        return EXIT_ENTRY
+    r5 = report.get("rule5") or {}
+    if r5.get("status") == "computed" and r5.get("verdict_authority") != RULE5_REGISTERED:
+        print("규칙 ⑤ 가 등록 판정이 아니다 — 산출을 쓰지 않는다(3판 1-1-라)", file=sys.stderr)
+        return EXIT_ENTRY
+    completion = None
+    if getattr(ctx.eval_bound, "profile_id", None) == "regime2_v4":     # 신판 판 6 산출에만 — 판 5 · 역사적 판 6 의 바이트는 그대로
+        completion = v6_completion(profile_id=ctx.eval_bound.profile_id,
+                                   required_cells=[(t, s) for t in SM.TAGS for s in sorted(seeds)],
+                                   verified_cells=list(scores), aux=aux, report=report)
+    status = "pass" if not rej and (completion is None or completion["complete"]) else "partial"
+    scorer = scorer_code_digest(ctx.checkout)
+    inputs = {p.name: _sha(p) for p in gens}
+    for name in ("generation_list", "scoring_list", "echo_list", "receipt", "ecc_permit", "frame_admission", "ecc_waiver",
+                 "ecc_substitute"):
+        if getattr(ctx.args, name, None) is not None:
+            inputs[name] = _sha(getattr(ctx.args, name))
+    body = {"run_kind": "main", "registration_mode": "strict", "purpose": "main", "mode": MODE_SAMPLE, "status": status,
+            "population_id": pid, "call_sha256": call_sha, "prior_calls": _prior_calls(ctx, call_sha),
+            "fingerprints": {"generation_sha256": reg.generation_sha256(), "scoring_sha256": ctx.receipt.scoring_sha256,
+                             "registration_file_sha256": ctx.receipt.registration_file_sha256,
+                             "eval_registration_sha256": ctx.eval_doc_sha256, "eval_registration_rev": anchor_rev(ctx.receipt),
+                             "side_sha256": hashlib.sha256(ctx.side_raw).hexdigest(),
+                             "baseline_prediction_sha256": hashlib.sha256(ctx.baseline_raw).hexdigest(),
+                             "generation_list_file_sha256": gen.file_sha256, "scoring_list_file_sha256": pop.file_sha256,
+                             "sealed": ctx.sealed},
+            "gold_reader": _gold_reader_identity(ctx),
+            "bundles": {"verified": [vb.files.stem for vb in verified], "rejected": rej}, "inputs": inputs,
+            "device_label": _device_label(verified),
+            "canaries": {**canaries, "axis_ratio": {"status": "not_run", "reason": STRICT_PENDING[1]},
+                         "frame": ctx.frame, "known_answer": ctx.known_answer},
+            "gold": {"n_annotation_rows_without_box": n_no_box,
+                     "rule": "상자 네 칸 가운데 하나라도 빈 행은 상자로 세지 않고 이미지 수준 코드에만 남긴다(eval_set.read_gold 와 같다)"},
+            "baseline_file": b_info, "scorer_code": scorer,
+            "code_drift": {"call": ctx.call_scorer, "write": scorer["combined"], "drifted": ctx.call_scorer != scorer["combined"]},
+            "notes": ctx.notes, "report": report}
+    if completion is not None:
+        body["v6_completion"] = completion
+        body["fingerprints"]["eval_registration_path"] = ctx.eval_bound.relative_path
+    text = json.dumps(body, ensure_ascii=False, indent=1, sort_keys=True, allow_nan=False, default=_json_default) + "\n"
+    try:
+        path = _out_file(ctx, rel)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _out_file(ctx, rel)
+        write_new_text(path, text)
+    except FileExistsError:
+        print(f"산출을 쓰지 않았다: {rel} 가 이미 있다 — 덮지 않는다", file=sys.stderr)
+        return EXIT_ENTRY
+    except (EntryRejected, OSError) as exc:
+        print(f"산출을 쓰지 않았다: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return EXIT_ENTRY
+    return EXIT_OK if status == "pass" else EXIT_REJECTED
+
+
 # ── 에코 전용 — 학습 전 관문 ─────────────────────────────────────────────────
 
 def _echo_reasons(gens: list[Path], verified, rejected: dict, canaries: dict) -> list[str]:
@@ -815,11 +1341,19 @@ def main(argv: list[str] | None = None, *, _seam: Seam | None = None, _now: date
         print(f"진입 전 거부: {exc}", file=sys.stderr)
         return EXIT_ENTRY
     if args.registration == "strict":
-        if not canary_ok:
-            print("엄격 경로의 카나리아가 통과가 아니다 — 진입 전 관문", file=sys.stderr)
+        echo_stems = {vb.files.stem for vb in verified if vb.mode == MODE_ECHO}
+        bad_literal = {x.get("bundle") for x in canaries["literal"] if x.get("status") != "pass"}
+        echo_ok = bool(canaries["echo"]) and all(e.get("status") == "pass" for e in canaries["echo"])
+        if not echo_ok or bad_literal & echo_stems:
+            print("엄격 경로의 에코 카나리아가 통과가 아니다 — 진입 전 관문", file=sys.stderr)
             return EXIT_ENTRY
-        print("엄격 경로의 채점 단계가 아직 없다: " + " · ".join(STRICT_PENDING), file=sys.stderr)
-        return EXIT_ENTRY
+        if ctx.mode != MODE_SAMPLE:
+            print("엄격 경로의 채점 단계는 표본 모드만 있다: " + STRICT_PENDING[0], file=sys.stderr)
+            return EXIT_ENTRY
+        for stem in sorted(bad_literal):          # 모델 묶음의 문자 일치가 어긋나면 그 칸을 거부한다 — 실행을 멈추지 않는다
+            rejected.setdefault(stem, []).append("literal_mismatch")
+        kept = [vb for vb in verified if vb.files.stem not in bad_literal]
+        return _strict_sample(ctx, call_sha, gens, kept, rejected, canaries, gen, pop, meta)
     canaries["axis_ratio"] = _axis_ratio(ctx, verified, gen, meta)
     rehearsal, rehearsal_ok = _rehearsal(ctx, verified, gen)
     status = _status(verified, rejected, canary_ok, rehearsal_ok)

@@ -17,7 +17,12 @@ from corpus.production.generation_policy import (  # noqa: F401 — 생성 v2 �
     is_v2_run,
     render_generation_row,
 )
-from corpus.production.release import ReleaseRefused, _v4_generation_problem, check_row
+from corpus.production.release import (
+    ReleaseRefused,
+    _template_provenance,
+    _v4_generation_problem,
+    check_row,
+)
 from data.label_map import load_label_map
 from tests.corpus.test_production_release import Case
 
@@ -170,21 +175,46 @@ def test_v4_릴리스는_행마다_그_검사를_불러_거부한다(tmp_path, m
 def _template_row(case):
     rows = [json.loads(x) for x in (case.audit_dir / "dataset.jsonl").read_text(encoding="utf-8").splitlines()]
     row = next(r for r in rows if r["kind"] == "image_report")
-    row["provenance"]["generate"] = {"backend": "template", "generator": "template", "shard_sha256": "a" * 64,
-                                     "text_sha256": "b" * 64}
+    row["provenance"]["generate"] = {"backend": "template", "generator": "template", "family": None, "model_id": None,
+                                     "shard_sha256": "a" * 64, "text_sha256": "b" * 64}
     row["provenance"]["judge"] = {"applicable": False, "identity_sha256": "c" * 64}
     audit = json.loads(json.dumps(case.audit))
     audit["judge_identity"]["parser_schema"] = "judge_structured_v7"
     return row, audit
 
 
-def test_행_검사는_템플릿_생성_출처를_네_칸으로만_받는다(tmp_path):
+@pytest.mark.parametrize("bad", [
+    lambda g: g.update(family="qwen"),                                # 모델 칸이 null 이 아니다
+    lambda g: g.update(model_id="x"),
+    lambda g: g.update(generator="model"),
+    lambda g: g.update(extra=1),                                      # 여분 칸
+    lambda g: (g.pop("family"), g.pop("model_id")),                   # 06k 의 옛 네 칸
+])
+def test_행_검사는_템플릿_생성_출처를_여섯_칸_모델_칸_null_로만_받는다(tmp_path, bad):
     case = Case(tmp_path)
     row, audit = _template_row(case)
     check_row(row, audit)
-    for bad in ({"family": "qwen"}, {"generator": "model"}, {"model_id": "x"}):
-        broken = json.loads(json.dumps(row))
-        broken["provenance"]["generate"].update(bad)
-        with pytest.raises(ReleaseRefused) as err:
-            check_row(broken, audit)
-        assert err.value.code == "row_backend"
+    bad(row["provenance"]["generate"])
+    with pytest.raises(ReleaseRefused) as err:
+        check_row(row, audit)
+    assert err.value.code == "row_backend"
+
+
+def test_실제_품질_집계의_v4_출력을_릴리스의_행_검사와_템플릿_출처가_받는다(tmp_path):
+    """§137 I-01 회귀 — 생성 v4 실행 → 생성 → v7 판정 쓰기 · 읽기 → **실제** `quality.audit_run` 의 데이터셋 행을 릴리스가 받는다.
+    (각자 손으로 지은 출처 객체로는 두 쪽의 꼴이 어긋나도 지났다.) 실행 세계는 품질 시험의 생성 v4 도우미를 그대로 쓴다."""
+    from corpus.production import infer as I
+    from corpus.production.quality import audit_run
+    from tests.corpus.test_production_quality import _v4_run
+
+    run_dir, config, _tasks, src = _v4_run(tmp_path)
+    out = tmp_path / "audit"
+    audit_run(run_dir, config, out, judge_source=src)
+    audit = json.loads((out / "AUDIT.json").read_text(encoding="utf-8"))
+    rows = [json.loads(x) for x in (out / "dataset.jsonl").read_text(encoding="utf-8").splitlines()]
+    gen = {g["id"]: g for g in I.read_stage_rows(run_dir, "generate", config)}
+    template = [r for r in rows if r["provenance"]["generate"]["backend"] == "template"]
+    assert template, "정상 행이 데이터셋에 없다 — 회귀가 템플릿 행을 보지 않는다"
+    for r in template:
+        assert r["provenance"]["generate"] == _template_provenance(gen[r["id"]])      # 실행 대조의 꼴
+        check_row(r, audit)                                                            # 행 검사(검증에서도 돈다)

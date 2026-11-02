@@ -65,9 +65,22 @@ SCORER_FILES_AT_V3: tuple[str, ...] = (
 """**당시 값** — 사전실험(v3) 산출물의 `scorer_code` 가 지문을 낸 트리 밖 목록이다. 고치지 않는다. 그 산출물이 싣는
 `rule` · `files` · `combined` 은 이 목록으로 낸 기록이라 그대로 둔다(2026-10-01 재고정 — 덮지 않고 병기한다)."""
 
-SCORER_FILES: tuple[str, ...] = SCORER_FILES_AT_V3 + (
+SCORER_FILES_AT_MAIN1: tuple[str, ...] = SCORER_FILES_AT_V3 + (
     "scripts/probe/score_unified.py",           # 통합형 본채점 진입점(진입점 미니스펙 3판 3-4 · 6-1 의 9)
 )
+"""**당시 값** — 1차 본실험(2026-10-17 ~) 산출의 `scorer_code` 가 지문을 낸 트리 밖 목록이다. 고치지 않는다(2026-10-22 병기 —
+덮지 않는다). 그때의 기록을 다시 잴 때는 이 목록으로 잰다(`scorer_code_digest(files=...)`)."""
+
+LIMITS_RULE_FILES: tuple[str, ...] = (
+    "corpus/rules/clause_text.py",              # limit_eval 이 부른다 — 닫힘
+    "corpus/rules/limit_eval.py",               # derive_gold_clauses · judge — 조항 축 · 서술 검사기의 정답 조항
+    "corpus/rules/limits_loader.py",            # 허용치 표 로더
+    "corpus/rules/schema.py",                   # 행 자료형
+)
+"""조항 축 · 서술 검사기가 부르는 허용치 규칙 모듈(03 2판 §5 · §5a — `evaluation/metrics/clause.py` 가 이미 부르던 것이 목록 밖이던 구멍).
+허용치 CSV 는 데이터라 넣지 않는다 — 등록 칸(`narrative.limits_sha256`)에 바이트 해시로 묶는다."""
+
+SCORER_FILES: tuple[str, ...] = SCORER_FILES_AT_MAIN1 + LIMITS_RULE_FILES
 """`evaluation/` 밖에 있지만 채점 값을 결정하는 모듈. C 34번 Important 3 이 짚은 구멍이다 —
 "같은 코드로 채점됐는가" 를 물으면서 클래스 사상·층화 절단점·레코드 생성기를 지문 밖에
 두면 그 모듈이 바뀌어도 지문이 같다. 여기 없는 파일은 해시에 안 들어간다 — `rule` 이 밝힌다.
@@ -77,17 +90,21 @@ SCORER_FILES: tuple[str, ...] = SCORER_FILES_AT_V3 + (
 결과에 실리며, 사상표가 바뀌면 무내용 대조선 값이 함께 움직여 집계기가 멈춘다(C 34번 Minor 5).
 """
 
-RULE = (
-    "evaluation/**/*.py 전부 + 채점 경로의 트리 밖 모듈 " + ", ".join(SCORER_FILES) + ". "
-    "sys.modules 가 아니라 디렉터리·명시 목록 규칙으로 고정한다 — 지연 임포트 때문에 실행 "
-    "경로마다 모듈 목록이 달라지면 같은 코드에서 다른 해시가 나온다. "
-    "**줄끝은 LF 로 정규화한 뒤 해싱한다** — core.autocrlf 가 다른 체크아웃에서 같은 커밋이 "
-    "다른 지문을 내지 않게"
-)
+def _rule_text(files: tuple[str, ...]) -> str:
+    return (
+        "evaluation/**/*.py 전부 + 채점 경로의 트리 밖 모듈 " + ", ".join(files) + ". "
+        "sys.modules 가 아니라 디렉터리·명시 목록 규칙으로 고정한다 — 지연 임포트 때문에 실행 "
+        "경로마다 모듈 목록이 달라지면 같은 코드에서 다른 해시가 나온다. "
+        "**줄끝은 LF 로 정규화한 뒤 해싱한다** — core.autocrlf 가 다른 체크아웃에서 같은 커밋이 "
+        "다른 지문을 내지 않게"
+    )
 
 
-def scorer_source_files(repo: Path | None = None) -> list[Path]:
-    """해시 대상 파일 목록. 정렬된 저장소 상대 경로 순서다."""
+RULE = _rule_text(SCORER_FILES)
+
+
+def scorer_source_files(repo: Path | None = None, *, files: tuple[str, ...] | None = None) -> list[Path]:
+    """해시 대상 파일 목록. 정렬된 저장소 상대 경로 순서다. `files` 를 주면 트리 밖 목록으로 그것을 쓴다(당시 값 재계산)."""
     root = Path(repo or REPO)
     out: set[Path] = set()
     for tree in SCORER_TREES:
@@ -95,7 +112,7 @@ def scorer_source_files(repo: Path | None = None) -> list[Path]:
             p for p in (root / tree).rglob("*.py")
             if "__pycache__" not in p.parts
         )
-    for rel in SCORER_FILES:
+    for rel in (SCORER_FILES if files is None else files):
         p = root / rel
         if p.exists():
             out.add(p)
@@ -157,24 +174,27 @@ def _git_state(repo: Path) -> dict:
     }
 
 
-def scorer_code_digest(repo: Path | None = None, *, include_files: bool = True) -> dict:
+def scorer_code_digest(repo: Path | None = None, *, include_files: bool = True,
+                       files: tuple[str, ...] | None = None) -> dict:
     """산출물에 실을 채점기 코드 지문.
 
     Args:
         include_files: 파일별 해시를 함께 실을지. 끄면 합산 해시만 남는다 — 파일 수는
             `n_files` 가 말한다(고정 상수가 아니다).
+        files: 트리 밖 목록. 주지 않으면 지금 목록(`SCORER_FILES`). 당시 기록을 다시 잴 때만 그때의 목록을 준다 —
+            그때 `rule` 은 그 목록으로 적는다.
 
     Returns:
         `combined` 이 판정 근거다. 두 산출물의 `combined` 이 같으면 같은 채점기 소스이고,
         다르면 어느 파일이 달라졌는지 `files` 로 짚을 수 있다.
     """
     root = Path(repo or REPO)
-    files = scorer_source_files(root)
-    combined, per_file = combined_digest(files, root)
+    paths = scorer_source_files(root, files=files)
+    combined, per_file = combined_digest(paths, root)
     out = {
         "combined": combined,
-        "n_files": len(files),
-        "rule": RULE,
+        "n_files": len(paths),
+        "rule": RULE if files is None else _rule_text(files),
         "algorithm": ("sha256(경로 + '\\0' + sha256(줄끝 LF 정규화한 파일 내용) + '\\n' 를 "
                       "정렬 순서로 이어 붙임)"),
         "newline_normalized": True,

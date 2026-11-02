@@ -19,8 +19,8 @@ from __future__ import annotations
 import json
 from typing import Any, Callable, Mapping
 
-__all__ = ["UNI_RUN_KEYS", "PURPOSES", "UNI_RUN_DEFAULTS", "UNI_SERVER_DEFAULTS", "MAIN_REQUIRED", "UniMainIncomplete",
-           "down_config", "client_run_cfg"]
+__all__ = ["UNI_RUN_KEYS", "PURPOSES", "UNI_RUN_DEFAULTS", "UNI_RUN_UNDECLARED", "UNI_SERVER_DEFAULTS", "MAIN_REQUIRED",
+           "UniMainIncomplete", "down_config", "client_run_cfg"]
 
 #: 목적의 값 공간. 판정 07 의 25 가 셋째 값을 받았다. 넷째 `early_coord_check` 는 조기 좌표 점검(11번) — 중앙 칸에서만 돈다.
 PURPOSES = ("main", "rehearsal", "frame_diag", "early_coord_check")
@@ -47,14 +47,25 @@ UNI_RUN_DEFAULTS: dict[str, str] = {
     # 리허설 · 진단의 학습 행 목록 폴더(루트의 `lists/`). 비면 참여자 행 전체(본실험). 클라이언트는 `train_uni_local_<참여자>.jsonl` 을
     # 목록 단계의 기록 · 페어의 원본 행과 맞댄 뒤에만 학습한다(리허설 2판 §4-1 의 연합 행 — 로컬과 같은 행). 본실험은 받지 않는다.
     "uni-train-lists": "",
+    # 공통 학습 예산 비율(`vlm.budget`). 비면 1.0 — 참여자 행 전체. 클라이언트는 자기 행의 그 몫만 1 epoch 돈다.
+    "uni-budget-fraction": "",
+    # 학습 레시피(등록의 `recipe`). 비면 1 차 레시피 `json_only` — 실행기는 1 차 레시피면 이 키를 넘기지 않는다(실행 설정이 지금과 같다).
+    # 서버는 다른 키처럼 늘 내려보내고(실행 설정에 없으면 빈 문자열), 클라이언트는 키가 빠지면 거부한다 — 값이 없는 것을 1 차 레시피로
+    # 읽지 않는다. 새 레시피는 실행기가 등록에서 채우고 클라이언트는 그 값으로 `train_rounds` 를 부른다. 모르는 값은 학습 전에 거부한다.
+    "uni-target-recipe": "",
 }
 UNI_RUN_KEYS: tuple[str, ...] = tuple(UNI_RUN_DEFAULTS)
+#: 선언 대기 키. 현재는 전부 pyproject에 선언되어 비어 있다. 목록을 선언 검사 면제에 쓰지 않는다.
+#: 1차 실행기는 레시피 덮어쓰기를 생략하고, 선언 기본값(빈 문자열)을 서버가 명시해 내려보낸다.
+UNI_RUN_UNDECLARED: tuple[str, ...] = ()
 
 #: 서버만 읽는 통합형 키와 선언 기본값 — 클라이언트에 내려보내지 않는다.
 #: `uni-train-root` — 연합 칸의 출력을 로컬 · 중앙과 같은 꼴로 `<학습 루트>/uni_fed_s<n>/` 에 쓴다(리허설 2판 §13-4). 비면 `<project>/fl/uni_fed`.
 #: `uni-init-adapter` — 공통 초기 어댑터 파일. 비면 `<project>/fl/uni_fed/initial.npz` 다. 리허설 · 진단은 루트의 `init/initial.npz`
 #: (등록 단계가 만든 것 — 2판 §13-4 의 끝)를 준다. 본실험은 받지 않는다(실행기의 캐시 자리 하나다).
-UNI_SERVER_DEFAULTS: dict[str, str] = {"uni-train-root": "", "uni-init-adapter": ""}
+#: `uni-repo-root` — 실행기의 저장소 뿌리(절대 경로). 서버 앱은 풀어 놓은 FAB 폴더에서 돌아 그 `REPO_ROOT` 아래에 csv 가 없다.
+#: 예산 비율이 1 이 아닌 본실험은 행별 토큰 표를 이 뿌리 아래에서 읽는다(`fl.uni_fed.main_token_table`). 신원에 들지 않는다.
+UNI_SERVER_DEFAULTS: dict[str, str] = {"uni-train-root": "", "uni-init-adapter": "", "uni-repo-root": ""}
 
 #: 본실험이 비워 둘 수 없는 키. 비면 파일럿 기본값(모델 · 판 · 페어 · 프롬프트)으로 내려가므로 받지 않는다.
 MAIN_REQUIRED: tuple[str, ...] = (
@@ -109,6 +120,8 @@ def client_run_cfg(cfg: Mapping[str, Any]) -> dict[str, Any]:
         "expected_supervised_tokens": (json.loads(raw["uni-expected-supervised-tokens"])
                                        if raw["uni-expected-supervised-tokens"] else None),
         "train_lists": raw["uni-train-lists"] or None,
+        "budget_fraction": float(raw["uni-budget-fraction"]) if raw["uni-budget-fraction"] else 1.0,
+        "recipe": raw["uni-target-recipe"] or "json_only",
     }
 
 
@@ -120,9 +133,25 @@ def _check(raw: Mapping[str, str]) -> None:
         raise ValueError("조기 좌표 점검은 중앙 칸 자체로만 돈다 — 연합은 이 목적을 받지 않는다(11번 §1)")
     if raw["purpose"] == "main" and raw.get("uni-train-lists"):
         raise ValueError("본실험은 학습 행 목록(uni-train-lists)을 받지 않는다 — 참여자 행 전체로 학습한다")
+    bf = raw.get("uni-budget-fraction", "")
+    if bf:
+        from vlm.budget import BudgetRejected, check_fraction
+
+        try:
+            check_fraction(float(bf))
+        except (ValueError, BudgetRejected) as exc:
+            raise ValueError(f"uni-budget-fraction 이 0 보다 크고 1 이하인 수가 아니다: {bf!r} ({exc})") from None
+        if raw["purpose"] != "main" and float(bf) != 1.0:
+            raise ValueError("예산 비율은 본실험만 받는다 — 리허설 · 진단은 목록의 행으로 돈다")
     si = raw["uni-seed-index"]
     if si and (not si.isdigit() or int(si) < 1):
         raise ValueError(f"uni-seed-index 가 1 이상의 정수가 아니다: {si!r}")
+    recipe = raw.get("uni-target-recipe", "")
+    if recipe:
+        from vlm.registration import TRAIN_RECIPES
+
+        if recipe not in TRAIN_RECIPES or recipe == TRAIN_RECIPES[0]:
+            raise ValueError(f"uni-target-recipe 는 비우거나(1 차 레시피) 새 레시피 {list(TRAIN_RECIPES[1:])} 가운데 하나다: {recipe!r}")
     for key in ("uni-chat-template-kwargs", "uni-processor-kwargs", "uni-expected-supervised-tokens"):
         s = raw[key]
         if not s:

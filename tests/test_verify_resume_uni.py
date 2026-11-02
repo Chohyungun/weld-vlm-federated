@@ -48,15 +48,20 @@ def _all_stages(root: Path, rows, loader, *, epochs=3, die_after=1):
     V.run_stage("resume", root, **kw)
 
 
-def test_죽였다_이어_간_학습이_중단_없는_학습과_비트_동일하다(tmp_path):
-    rows = make_rows(tmp_path / "img", "C1", 40)          # 누적 32 → epoch 당 2 스텝(마지막 부분 창 포함)
+@pytest.mark.parametrize("n_rows", [40, 44])                # 44 — 누적 8 에서도 마지막 부분 창(4 행)이 남는다(Codex TEST-03)
+def test_죽였다_이어_간_학습이_중단_없는_학습과_비트_동일하다(tmp_path, n_rows):
+    from vlm.pilot_vlm import GRAD_ACCUM
+
+    rows = make_rows(tmp_path / "img", "C1", n_rows)      # 누적 8 → epoch 당 ⌈n/8⌉ 스텝(누적 32 였을 때 40 행은 2 — 마지막 부분 창 포함)
     loader = CountingLoader()
     _all_stages(tmp_path / "root", rows, loader)
     rep = V.judge(tmp_path / "root", epochs=3, die_after=1)
     assert rep["passed"], rep
     pair = rep["resume_pair"]
     assert pair["adapter_bit_identical"] and pair["adapter_max_abs_diff"] == 0.0
-    assert pair["optimizer_steps"] == [6, 6] and pair["per_epoch_equal"]
+    assert (n_rows % GRAD_ACCUM != 0) == (n_rows == 44)
+    steps = -(-n_rows // GRAD_ACCUM) * 3
+    assert pair["optimizer_steps"] == [steps, steps] and pair["per_epoch_equal"]
     assert rep["resumed_from_epoch"] == 2
     assert rep["nondeterminism_floor"]["adapter_bit_identical"]
     # crash 가 남긴 epoch 행과 resume 이 쓴 행이 한 파일에 이어진다 — 판정은 epoch 마다 마지막 기록을 쓴다

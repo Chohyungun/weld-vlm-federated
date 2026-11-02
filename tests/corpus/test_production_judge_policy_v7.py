@@ -94,8 +94,18 @@ def test_contract_exclusion_is_explicit_and_reported():
 def test_reference_is_byte_identical_and_has_a_new_policy_identity():
     digest = hashlib.sha256(Path(D.__file__).read_bytes()).hexdigest()
     assert digest == P.V7_REFERENCE_SHA256 == P.V7_TRANSPLANT_SHA256
-    assert P.V7_REFERENCE_COMMIT == "256c40b"
-    assert P.V7_VERSION.endswith("_256c40b")
+    assert P.V7_REFERENCE_COMMIT == "0b5a3fd4"
+    assert P.V7_VERSION.endswith("_0b5a3fd4")
+    # Earlier pins stay beside the current one (then-values and now-value).
+    assert P.V7_REFERENCE_HISTORY == (
+        ("image_report_judge_v7_20261013_256c40b", "256c40b", "07ce544f974e95692800314413a1c87f4ad6d741a54cf239404e979713e00962"),
+        ("image_report_judge_v7_20261015_6b11185e", "6b11185e", "7f80f90a0f9cb6e07dcd2c6e9d4f980346311e8d72ff8937b7b70b606e664518"),
+        ("image_report_judge_v7_20261015_223b31b6", "223b31b6", "9aa88c939a341036031330f5354d8b927cb12208f8b3c230cd33a727a76f08ad"),
+        ("image_report_judge_v7_20261016_8696585a", "8696585a", "ba291a24854699352f4e943cc99227a0b25734417a1b5c798551ec32ab7395ed"),
+        ("image_report_judge_v7_20261016_b84a9901", "b84a9901", "7518fe04355c3615adcca0664d1da37a47705f087ad117d746e2cb5e73195da1"),
+        ("image_report_judge_v7_20261016_6db5bbf1", "6db5bbf1", "7e5e769f17c856ead270ac00d561300cef9a409d8b639af8218815462093cd1c"),)
+    assert all(sha != P.V7_REFERENCE_SHA256 and version != P.V7_VERSION
+               for version, _, sha in P.V7_REFERENCE_HISTORY)
 
 
 @pytest.mark.parametrize("absence", G.NORMAL_ABSENCE_FORMS)

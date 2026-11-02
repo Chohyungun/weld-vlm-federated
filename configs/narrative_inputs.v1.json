@@ -1,0 +1,56 @@
+{
+ "conditions": {
+  "in_table": true
+ },
+ "contract_version": 1,
+ "generator": {
+  "files": [
+   {
+    "path": "corpus/generate/make_pairs_main.py",
+    "sha256": "c8a732e460c3aeafbb5294366b13b36e228dcd7d55a53190eac2f366fc17c168"
+   },
+   {
+    "path": "corpus/generate/make_pairs_pilot.py",
+    "sha256": "5ff441e188db289f349f91c43d59959b7af355af6eaf6eb56d2ebb418cc2c6b4"
+   },
+   {
+    "path": "corpus/generate/pairs_text_v2.py",
+    "sha256": "0098033ae2926785076f4d470fd4ed7d86797ae66b1bbc8179d05a9b4ea93c14"
+   }
+  ],
+  "rule": "lf_bundle_v1",
+  "sha256": "88fc410a40dda1419c9e00c9624e1560b2e3652f6b104f0c659e097ec4ef2513"
+ },
+ "kind": "narrative_inputs",
+ "limits": {
+  "path": "corpus/rules/limits_v2_pilot.csv",
+  "sha256": "0c76b6a639fc2d617115122fbc10204fcc0ccf665e9b4c6d27f679057294ef4d"
+ },
+ "limits_loader": {
+  "files": [
+   {
+    "path": "corpus/rules/clause_text.py",
+    "sha256": "570d4700248c8f58700179d269a5080df74d1b7173e9426711ca4a5479a545b6"
+   },
+   {
+    "path": "corpus/rules/limit_eval.py",
+    "sha256": "b537cecd13e839c0fa58fb17a0c0b74638ca65018ead896dd4081ac551eb2a58"
+   },
+   {
+    "path": "corpus/rules/limits_loader.py",
+    "sha256": "c7471bb0721a3ea570f786bdea246f17cf9c436dd370093f3db341ec97a2d3ef"
+   },
+   {
+    "path": "corpus/rules/schema.py",
+    "sha256": "510d163a8ab1228d0836245ef0c0dd8b0dc79d77ae33004563c881780bc5cbb8"
+   }
+  ],
+  "rule": "lf_bundle_v1",
+  "sha256": "7d1486ed139e499c18ef827e5a0ee99ee64fa11cfe3cc657177b5f4abf3e121f"
+ },
+ "pairs": {
+  "pairs_meta_sha256": "73633bdf72cc1876005afc4a117281f9da9656b9744a99808d24850b090a7150",
+  "path": "data/processed/pairs_main_v2",
+  "snapshot_digest": "9a77978ec62ffab58762ed8d1dbbe012d02b21d1283e3dba2b19e6e63309d139"
+ }
+}

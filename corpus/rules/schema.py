@@ -37,6 +37,17 @@ __all__ = [
     "RatioBasis",
     "VerdictMode",
     "ExtractionPath",
+    "Measure",
+    "Aggregation",
+    "DefectClass",
+    "COND_CLUSTER_GAP",
+    "COND_PREMISE",
+    "COND_MIXTURE",
+    "COND_DISTINCTION",
+    "CONDITION_PAIR_KINDS",
+    "CONDITION_SEP",
+    "parse_condition_token",
+    "v12_problems",
     "LimitRow",
     "LimitsTable",
     "Judgment",
@@ -151,6 +162,55 @@ class ExtractionPath(str, Enum):
     M = "M"  # 수기 전사
 
 
+# ---------------------------------------------------------------------------
+# 2 판(부분 B) 칸 — 1 판 31 칸 **뒤**의 네 칸(C 08 2 판 §1-3, 09 §6 Q1). 1 판 표는 이 칸이 없고 기본값(빈칸)으로 읽힌다.
+# ---------------------------------------------------------------------------
+
+
+class Measure(str, Enum):
+    """측정량 — 원천 표의 행 이름표 머리(`source_row_label`)가 가리키는 양. 값 한계 행에만 있다."""
+
+    MAX_SIZE = "최대결함크기"
+    INDIVIDUAL_LENGTH = "개별길이"   # 신판 행에는 쓰이지 않는다 — 부분 B 범위 1 의 이름 셋을 닫힌 집합으로 둔다
+    TOTAL_LENGTH = "합계길이"
+
+
+class Aggregation(str, Enum):
+    """집계 단위. `합계길이` ⇔ `합계`, 나머지 측정량 ⇒ `개별`(V12)."""
+
+    INDIVIDUAL = "개별"
+    TOTAL = "합계"
+
+
+class DefectClass(str, Enum):
+    """원천 표의 종별. 같은 (재질, 검사 방식, 코드)는 종별 하나다(V13)."""
+
+    CLASS_1 = "제1종"
+    CLASS_2 = "제2종"
+    CLASS_3 = "제3종"
+
+
+#: `conditions` 칸의 토큰. 짝 토큰(`혼재:<종별>` · `구별곤란:<종별>`)은 뒤에 종별을 든다. 칸은 토큰을 `|` 로 잇고,
+#: 토큰은 문자열 정렬 순 · 겹침 없음이다(같은 조건 집합이 한 표기만 갖게).
+COND_CLUSTER_GAP = "군집간격"
+COND_PREMISE = "무등급전제"
+COND_MIXTURE = "혼재"
+COND_DISTINCTION = "구별곤란"
+CONDITION_PAIR_KINDS: tuple[str, ...] = (COND_MIXTURE, COND_DISTINCTION)
+CONDITION_SEP = "|"
+
+
+def parse_condition_token(token: str) -> tuple[str, str | None]:
+    """토큰 하나 → (종류, 짝 종별 또는 None). 닫힌 문법 밖이면 `ValueError`(`[V12]`)."""
+    if token in (COND_CLUSTER_GAP, COND_PREMISE):
+        return token, None
+    kind, sep, cls = token.partition(":")
+    if sep and kind in CONDITION_PAIR_KINDS and cls in {c.value for c in DefectClass}:
+        return kind, cls
+    raise ValueError(f"[V12] 모르는 조건 토큰: {token!r} — 받는 꼴 {COND_CLUSTER_GAP} · {COND_PREMISE} · "
+                     f"{COND_MIXTURE}:<종별> · {COND_DISTINCTION}:<종별>")
+
+
 # iso5817 품질수준 관대 순서: B(엄격) → C → D(관대). V4 단조성 검사의 기준 서열.
 ISO5817_LEVEL_ORDER: tuple[str, ...] = ("B", "C", "D")
 
@@ -196,6 +256,30 @@ class LimitRow(BaseModel):
     extraction_path: ExtractionPath
     verified_by: Optional[str] = None
     verified_date: Optional[_dt.date] = None
+    # 2 판 칸(C 08 2 판 §1-3). 1 판 행은 받지 않아 기본값이다 — 행 값 · `active_canonical` 이 1 판과 같다.
+    measure: Measure | None = None
+    aggregation: Aggregation | None = None
+    defect_class: DefectClass | None = None
+    conditions: tuple[str, ...] = ()
+
+    # -- 2 판 조건 칸의 꼴: 닫힌 토큰 · 정렬 · 겹침 없음 (V12 의 꼴 부분 — 짝 · 필수는 `v12_problems`) ------
+
+    @field_validator("conditions", mode="before")
+    @classmethod
+    def _conditions_form(cls, v):
+        if v is None or v == "":
+            return ()
+        toks = tuple(v.split(CONDITION_SEP)) if isinstance(v, str) else tuple(v)
+        for t in toks:
+            if not isinstance(t, str):
+                # TypeError 로 내면 pydantic 이 검증 오류로 감싸지 않아 로더의 행 단위 수집을 지나 빠져나간다.
+                raise ValueError(f"[V12] 조건 토큰이 문자열이 아니다: {t!r}")  # noqa: TRY004
+            parse_condition_token(t)
+        if len(set(toks)) != len(toks):
+            raise ValueError(f"[V12] 조건 토큰이 겹친다: {list(toks)}")
+        if list(toks) != sorted(toks):
+            raise ValueError(f"[V12] 조건 토큰이 정렬 순이 아니다: {list(toks)} — {sorted(toks)} 로 적는다")
+        return toks
 
     # -- 양자화: 크기·두께·한계 (§1-3. factor 는 제외) ------------------------
 
@@ -300,6 +384,48 @@ class LimitRow(BaseModel):
         return self.thickness_max is None or t < self.thickness_max
 
 
+def v12_problems(row: LimitRow) -> list[str]:
+    """V12 — 2 판 행 하나의 필수 · 짝(C 08 2 판 §1-3). **2 판 표에만** 건다 — 1 판 행은 새 칸이 없어 필수를 못 채운다.
+
+    칸의 꼴(열거형 · 토큰 문법 · 정렬 · 겹침)은 모델이 먼저 본다. 여기는 칸 사이의 규칙이다:
+    측정량 ↔ 값 한계(`limit_type` 이 불허가 아닌 행) · 측정량 ↔ 집계 · 종별 필수 · 조건 토큰의 앞뒤 조건(군집 ⇒ 합계, 전제 ⇒
+    품질 체계 없음, 짝 종별 ≠ 제 종별) · VT 행의 새 칸 넷 빈칸. 행 사이의 규칙(종별 하나 · 짝 대칭 · 조항 안 일관)은 로더의 V13 이다.
+    """
+    out: list[str] = []
+    where = f"[V12] {row.rule_id}:"
+    rt_active = (row.inspection_method in (InspectionMethod.RT, InspectionMethod.ALL)
+                 and row.scope is Scope.ACTIVE)
+    value_limit = row.limit_rule is not LimitRule.NONE_PERMITTED
+    if rt_active and value_limit and row.measure is None:
+        out.append(f"{where} RT · ALL ∧ active 의 값 한계 행에 measure 가 없다")
+    if rt_active and row.defect_class is None:
+        out.append(f"{where} RT · ALL ∧ active 행에 defect_class 가 없다")
+    if not value_limit and row.measure is not None:
+        out.append(f"{where} 불허 행에 measure 가 있다 — 불허 조항은 측정량이 없다")
+    if row.inspection_method is InspectionMethod.VT:      # 부분 B 범위 밖 — 넷 가운데 하나라도 차면 거부(09 §10 M1)
+        filled = [name for name in ("measure", "aggregation", "defect_class", "conditions") if getattr(row, name)]
+        if filled:
+            out.append(f"{where} VT 행에 새 칸 {filled} 이 있다 — 부분 B 범위 밖이라 넷 모두 빈칸이다")
+    if row.measure is None:
+        if row.aggregation is not None:
+            out.append(f"{where} measure 가 빈칸인데 aggregation 이 있다")
+    elif (row.measure is Measure.TOTAL_LENGTH) != (row.aggregation is Aggregation.TOTAL) or row.aggregation is None:
+        out.append(f"{where} measure {row.measure.value} 와 aggregation "
+                   f"{getattr(row.aggregation, 'value', None)} 의 짝이 틀리다 — 합계길이 ⇔ 합계, 나머지 ⇒ 개별")
+    for tok in row.conditions:
+        kind, cls = parse_condition_token(tok)
+        if kind == COND_CLUSTER_GAP and row.aggregation is not Aggregation.TOTAL:
+            out.append(f"{where} {COND_CLUSTER_GAP} 는 aggregation=합계 행에만 둔다")
+        elif kind == COND_PREMISE and row.quality_scheme is not QualityScheme.NONE:
+            out.append(f"{where} {COND_PREMISE} 는 quality_scheme=none 행에만 둔다 — 품질 체계가 걸린 행이다")
+        elif cls is not None:
+            if row.defect_class is None:
+                out.append(f"{where} 짝 토큰 {tok} 이 있는데 제 종별(defect_class)이 없다")
+            elif cls == row.defect_class.value:
+                out.append(f"{where} 짝 토큰 {tok} 의 종별이 제 종별과 같다")
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Judgment · LimitsTable
 # ---------------------------------------------------------------------------
@@ -334,6 +460,8 @@ class LimitsTable(BaseModel):
     v9_conflicts: tuple[str, ...] = ()  # 교차 문서 충돌 — canonical 로 해소된 기록
     v10_flags: tuple[str, ...] = ()  # 샘플링 실현성 미달 행 (판단 대상)
     checks_skipped: tuple[str, ...] = ()  # pilot 면제 등으로 건너뛴 검사 목록
+    #: 표의 판 — 머리에 2 판 칸이 하나라도 있으면 "v2"(C 08 2 판 §2). 1 판 표는 지금 그대로 "v1" 이다.
+    edition: Literal["v1", "v2"] = "v1"
 
     @property
     def active_canonical(self) -> tuple[LimitRow, ...]:

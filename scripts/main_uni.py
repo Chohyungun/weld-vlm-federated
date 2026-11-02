@@ -17,6 +17,16 @@
     python -X utf8 scripts/main_uni.py pin --seed 1
     python -X utf8 scripts/main_uni.py ecc-prepare --seed 1 --ecc-root outputs/early_check/ecc-YYYYMMDDTHHMMSS --target-list <대상 목록>
     python -X utf8 scripts/main_uni.py gate-check --seed 1
+    python -X utf8 scripts/main_uni.py local --seed 1 --client C1 --ecc-permit-waiver <면제 파일>   (central · fed · all · gate-check 도)
+    python -X utf8 scripts/main_uni.py register --seed 1 --generation-list <봉인 목록> --echo-list <에코 목록> \
+        --scoring <채점 쪽 입력> --snapshot <동결 매니페스트> --reg-out <폴더> [--measurement <실측 파일>] [--name main-YYYYMMDD-n]
+    python -X utf8 scripts/main_uni.py receipt --registration configs/registration/main-YYYYMMDD-n.json --commit <본줄기 커밋>
+    python -X utf8 scripts/main_uni.py <명령> --seed 1 --main-out-root <새 뿌리>        (새 레시피의 본 칸 — 옛 outputs/main_u 밖)
+    python -X utf8 scripts/main_uni.py <명령> --seed 1 --train-registration configs/train_registration_sens025.yaml \
+        --out-root outputs/sens_u025 [--ecc-permit-waiver <면제 파일>]       (학습량 민감도 — 1017b)
+
+  시드 번호는 등록 파일(`configs/train_registration.yaml`)의 `seed_indices` 안이어야 한다 — 밖이면 어느 명령도 시작하지 않는다.
+  `all` 에 `--seed` 를 주지 않으면 설정의 시드표 전체가 아니라 등록의 시드를 돈다(외부 검토 §137 M-01).
     python -X utf8 scripts/main_uni.py ecc --seed 1 --ecc-root outputs/early_check/ecc-… --spent-hours H --next-hours H \
         [--max-hours H] [--max-won W] [--resume-step S]
     python -X utf8 scripts/main_uni.py ecc-accept --seed 1 --ecc-root outputs/early_check/ecc-… --permit <평가 쪽 통과 파일>
@@ -44,6 +54,19 @@
   원장에 행이 있는데 어댑터가 없으면 멈춘다. 스탬프가 시드마다 고정이라 이 실행기로 새 스탬프를 줄 수 없다 — 그 시드의
   `uni_fed_s<n>/` 를 지우지 말고 옆으로 옮긴 뒤 R 라운드를 처음부터 다시 돈다. 연합의 `close-ledger` 는 없다(재개가 없다).
 - **거부는 모델 적재 전이다.** 설정 · 페어 스냅샷 · 출력 경로 · 고의 중단 변수의 검사가 모두 앞선다.
+- **본실험 등록(④, 1016l · 판 6 연결 2 판)** — `register` 가 그 시드의 본 칸 다섯이 끝난 뒤 등록 넷(등록 · 학습 설정 원문 · 생성 · 에코 목록 —
+  새 레시피는 평가 설정 · 출처 운반 파일을 더한 여섯)을
+  `--reg-out` 에 쓴다(`vlm.main_registration` — 모델을 올리지 않는다, 영수증은 쓰지 않는다). 입력은 시드 폴더의 착수 고정 ·
+  초기 어댑터 · 칸 다섯의 어댑터 meta 와 명령줄의 파일이다. 넷을 본줄기에 병합한 **다음** 커밋을 위해 `receipt` 가 그 커밋의
+  바이트로 영수증을 `configs/registration/` 에 쓴다.
+- **새 레시피의 출력 뿌리(판 6 연결 2 판 §4-2)** — 정식 학습 등록이 새 레시피면 본 칸 · 등록 · ECC 명령은 `--main-out-root <뿌리>` 가 있어야
+  한다(`main_root_required`). 뿌리는 옛 `outputs/main_u` 와 겹치지 않아야 하고(`main_root_conflict`), 처음 쓸 때 `RUN_PROFILE.json`(정식 등록의
+  경로 · sha256 · 실행 이름 `main`)을 한 번 쓴다 — 이름 main 은 목적 · 태그 · 스탬프 신원을 유지하기 위함이고 출력 폴더만 분리한다. 민감도 인자와
+  함께 받지 않으며 receipt 는 뿌리를 받지 않는다.
+- **학습량 민감도(1017b)** — `--train-registration <등록 벌>` 과 `--out-root <뿌리>` 를 함께 주면 그 뿌리가 본실험 뿌리
+  (`outputs/main_u/`) 밖의 실행 묶음이 된다. 처음 쓸 때 뿌리에 `RUN_PROFILE.json`(등록 벌의 저장소 상대 경로 · sha256 · 실행 이름 =
+  뿌리 이름)을 한 번 쓰고, 그 뒤 그 뿌리의 모든 명령은 같은 등록 벌이어야 한다. 칸 명세의 등록 비율 · 실행 스탬프(`<실행 이름>_s<n>`)
+  · 착수 고정의 `common` 이 그 벌에서 온다 — 본실험과 다른 신원이다. ECC · 등록 · 영수증 명령은 받지 않는다.
 - export(C8)는 이 실행기에 없다.
 
 산출: 저장소 루트의 `outputs/main_u/seed<n>/` — 칸 폴더 `<tag>_s<n>/`(연합도 `uni_fed_s<n>/` — 리허설 2판 §13-4), 공통 초기 어댑터 `fl/uni_fed/initial.npz`.
@@ -63,6 +86,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from vlm.fault import FAULT_VAR, NONCE_VAR
+from vlm.registration import PROFILE_FILE
 
 #: 저장소 루트 기준이다 — 작업 폴더에 기대지 않는다.
 OUT = REPO_ROOT / "outputs" / "main_u"
@@ -72,6 +96,9 @@ CLIENT_TAGS = ("C1", "C2", "C3")
 #: 시드 폴더 안의 착수 고정 · 착수 허가(조기 좌표 점검의 통과 파일)의 자리.
 PIN_FILE = "PIN.json"
 PERMIT_FILE = "ecc_permit.json"
+#: 출력 뿌리의 실행 묶음(1017b)의 파일 이름은 `vlm.registration.PROFILE_FILE` 이다(실행기 · 연합 서버가 같은 판독기를 쓴다).
+#: 묶음이 없으면 본실험(기본 등록 · 이름 main)이다.
+MAIN_RUN_NAME = "main"
 
 
 class MainRefused(SystemExit):
@@ -110,6 +137,114 @@ def load_main_config(path: Path | None = None):
         raise MainRefused("config_incomplete", str(exc)) from None
 
 
+def run_profile(out: Path) -> dict[str, Any]:
+    """출력 뿌리의 실행 묶음 — `{"train_registration": 경로 또는 None, "run_name": 이름}`. 뿌리에 `PROFILE_FILE` 이 없으면 본실험이다.
+    있으면 적힌 등록 벌의 바이트가 적힌 sha256 과 같아야 한다(다르면 `run_profile_changed`). 판독은 연합 서버와 같은 함수다
+    (`vlm.registration.read_run_profile`)."""
+    from vlm.registration import RegistrationRejected, read_run_profile
+
+    try:
+        rec = read_run_profile(out, repo_root=REPO_ROOT)
+    except RegistrationRejected as exc:
+        raise MainRefused("run_profile_changed", " · ".join(exc.problems)) from None
+    return {"train_registration": None, "run_name": MAIN_RUN_NAME} if rec is None else rec
+
+
+def bind_profile(out_root: Path, train_registration: Path) -> Path:
+    """민감도 실행 묶음을 뿌리에 묶는다 — 처음이면 `PROFILE_FILE` 을 배타 생성, 있으면 같은 등록 벌인지 본다. 돌려주는 값은 뿌리다.
+
+    뿌리는 본실험 뿌리(`OUT`)도 그 아래도 아니어야 하고, 등록 벌은 저장소 안의 기본 등록이 아닌 파일이어야 한다(판독기를 지나야 한다).
+    실행 이름은 뿌리 이름이다(`[A-Za-z0-9_]+`, `main` 이 아니다) — 실행 스탬프 `<이름>_s<n>` 이 본실험 `main_s<n>` 과 갈린다."""
+    import hashlib
+    import re
+
+    from vlm.registration import REG_PATH, RegistrationRejected, load_registration
+
+    root, main_root = Path(out_root).resolve(), Path(OUT).resolve()           # 링크 경로로 와도 본실험 뿌리를 알아본다
+    if root == main_root or root.is_relative_to(main_root) or main_root.is_relative_to(root):
+        raise MainRefused("sens_root_is_main", f"민감도 뿌리가 본실험 뿌리와 겹친다: {root.name}")
+    if not re.fullmatch(r"[A-Za-z0-9_]+", root.name) or root.name == MAIN_RUN_NAME:
+        raise MainRefused("sens_root_name", f"민감도 뿌리 이름이 실행 이름 꼴([A-Za-z0-9_]+, main 아님)이 아니다: {root.name!r}")
+    reg, repo = Path(train_registration).resolve(), Path(REPO_ROOT).resolve()
+    if not reg.is_file() or not reg.is_relative_to(repo) or reg == (repo / REG_PATH).resolve():
+        raise MainRefused("sens_registration", "민감도 등록 벌은 저장소 안의, 기본 등록이 아닌 파일이어야 한다")
+    try:
+        load_registration(reg)
+    except RegistrationRejected as exc:
+        raise MainRefused("sens_registration", str(exc)) from None
+    rec = {"train_registration": reg.relative_to(repo).as_posix(),
+           "train_registration_sha256": hashlib.sha256(reg.read_bytes()).hexdigest(), "run_name": root.name}
+    p = root / PROFILE_FILE
+    if p.is_file():
+        got = json.loads(p.read_text(encoding="utf-8"))
+        if got != rec:
+            raise MainRefused("run_profile_mismatch", "이 뿌리는 다른 등록 벌 · 이름으로 묶였다 — 새 실행은 새 뿌리로")
+        return root
+    root.mkdir(parents=True, exist_ok=True)
+    with open(p, "x", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec, ensure_ascii=False, sort_keys=True) + "\n")
+    return root
+
+
+def bind_main_profile(out_root: Path, *, repo_root: Path | None = None) -> Path:
+    """새 레시피 본실험의 출력 뿌리(판 6 연결 2 판 §4-2) — 옛 `outputs/main_u` 와 같거나 서로 조상인 자리는 거부(`main_root_conflict`),
+    정식 학습 등록(`configs/train_registration.yaml`)이 새 레시피 · 학습 전 계약을 가져야 하며(`main_root_registration`), 뿌리에
+    `RUN_PROFILE.json` `{train_registration, train_registration_sha256, run_name: "main"}` 을 배타 저장한다 — 있으면 셋이 같아야
+    한다(`run_profile_mismatch`). 이름 main 은 목적 · 태그 신원을 유지하기 위함이고 출력 폴더만 옛 실험과 분리한다. 임의의 다른 학습
+    등록 파일을 본실험으로 승격하지 않는다. 평가 설정을 고르는 인자가 아니다. 실제 경로 발급 · 기동은 여기서 하지 않는다."""
+    from vlm.registration import REG_PATH, RegistrationRejected, load_registration
+
+    root, main_root = Path(out_root).resolve(), Path(OUT).resolve()
+    if root == main_root or root.is_relative_to(main_root) or main_root.is_relative_to(root):
+        raise MainRefused("main_root_conflict", f"새 본실험 뿌리가 옛 본실험 뿌리와 같거나 겹친다: {root.name}")
+    reg_path = Path(repo_root if repo_root is not None else REPO_ROOT).resolve() / REG_PATH
+    try:
+        reg, sha = load_registration(reg_path)
+    except RegistrationRejected as exc:
+        raise MainRefused("main_root_registration", str(exc)) from None
+    if reg.get("recipe") == "json_only" or not isinstance(reg.get("narrative_inputs"), dict):
+        raise MainRefused("main_root_registration", "새 출력 뿌리는 새 레시피 · 학습 전 계약이 든 정식 학습 등록에만 묶는다")
+    rec = {"train_registration": REG_PATH.as_posix(), "train_registration_sha256": sha, "run_name": MAIN_RUN_NAME}
+    p = root / PROFILE_FILE
+    if p.is_file():
+        got = json.loads(p.read_text(encoding="utf-8"))
+        if got != rec:
+            raise MainRefused("run_profile_mismatch", "이 뿌리는 다른 등록 · 이름으로 묶였다 — 새 실행은 새 뿌리로")
+        return root
+    root.mkdir(parents=True, exist_ok=True)
+    with open(p, "x", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec, ensure_ascii=False, sort_keys=True) + "\n")
+    return root
+
+
+def _canonical_registration_is_new() -> bool:
+    """정식 학습 등록의 레시피가 1 차(`json_only`)가 아닌가 — 새 본 칸은 옛 `outputs/main_u` 에 쓰지 않는다(`main_root_required`)."""
+    from vlm.registration import RegistrationRejected, registered_recipe
+
+    try:
+        return registered_recipe(None) != "json_only"
+    except RegistrationRejected:
+        return False
+
+
+def registered_seeds(path: Path | None = None) -> list[int]:
+    """등록 파일의 시드 번호들 — 본실험 명령의 시드 경계(외부 검토 §137 M-01). 등록이 없거나 꼴이 틀리면 시작하지 않는다."""
+    from vlm.registration import RegistrationRejected, registered_seed_indices
+
+    try:
+        return registered_seed_indices(path)
+    except RegistrationRejected as exc:
+        raise MainRefused("registration", str(exc)) from None
+
+
+def _require_registered(seeds: list[int], path: Path | None = None) -> None:
+    allowed = registered_seeds(path)
+    bad = [n for n in seeds if n not in allowed]
+    if bad:
+        raise MainRefused("seed_not_registered",
+                          f"시드 번호 {bad} 는 등록의 seed_indices {allowed} 밖이다 — 등록하지 않은 시드는 시작하지 않는다")
+
+
 def seed_dir(out: Path, n: int) -> Path:
     return Path(out) / f"seed{n}"
 
@@ -119,15 +254,34 @@ def fed_dir(out: Path, n: int) -> Path:
     return seed_dir(out, n) / f"uni_fed_s{n}"
 
 
-def spec_for(cfg: Any, n: int, *, out: Path = OUT, config_path: Path | None = None):
-    """시드 번호 `n`(1 부터)의 로컬 · 중앙 칸 설정. 값은 모두 설정에서 온다."""
+def spec_for(cfg: Any, n: int, *, out: Path = OUT, config_path: Path | None = None,
+             ecc_permit_waiver: Path | None = None):
+    """시드 번호 `n`(1 부터)의 로컬 · 중앙 칸 설정. 값은 모두 설정에서 온다. `ecc_permit_waiver` 는 착수 허가 면제 파일(1017a)이다."""
     from vlm.train_cell import UniRunSpec
 
     if not 1 <= n <= len(cfg.seeds):
         raise MainRefused("seed_index", f"시드 번호 {n} 가 등록 시드표 1..{len(cfg.seeds)} 밖이다")
     sd = seed_dir(out, n)
+    # 공통 학습 예산 비율 — 등록 파일이 정한다(없으면 1.0). 기대 토큰은 그 몫의 행별 토큰 합(`vlm.budget`).
+    # 등록 파일은 그 뿌리의 실행 묶음이 정한다(1017b — 없으면 본실험 기본 등록 · 이름 main).
+    # 학습 레시피도 같은 등록에서 읽는다 — 중앙 · 로컬 · 연합이 같은 출처다. 기대 토큰은 그 레시피의 행별 토큰 표로 낸다.
+    from vlm.budget import BudgetRejected, expected_tokens
+    from vlm.registration import registered_budget_fraction, registered_recipe
+
+    prof = run_profile(out)
+    fraction = registered_budget_fraction(prof["train_registration"])
+    recipe = registered_recipe(prof["train_registration"])
+    # 체제 짝(레시피 × 프롬프트)은 명세를 내는 이 함수가 아니라 실행의 가드(`_guarded` → `main_run_problems`)와 착수 고정
+    # (`registration_problems`)이 본다 — 칸 · 연합 · 착수 고정 명령이 모두 기동 전에 그 가드를 지난다(지시 1022c 덧붙임 A).
+    # 새 레시피는 표의 출처를 지금 등록 · 지금 환경(계측 코드 · 토크나이저 신원)과 맞댄다 — 어긋나면 사유 코드로 멈춘다(외부 검토 200 M-01).
+    try:
+        exp = expected_tokens(dict(cfg.expected_supervised_tokens), fraction=fraction, seed_value=int(cfg.seeds[n - 1]),
+                              pairs_path=str(cfg.pairs_path), recipe=recipe, pairs_digest=str(cfg.pairs_digest),
+                              model_id=str(cfg.model_id), model_revision=cfg.model_revision)
+    except BudgetRejected as exc:
+        raise MainRefused(exc.code, str(exc)) from None
     return UniRunSpec(
-        purpose="main", run_stamp=f"main_s{n}", seed_index=n, seed_value=int(cfg.seeds[n - 1]),
+        purpose="main", run_stamp=f"{prof['run_name']}_s{n}", seed_index=n, seed_value=int(cfg.seeds[n - 1]),
         snapshot_digest=str(cfg.snapshot_digest), model_id=str(cfg.model_id), model_revision=cfg.model_revision,
         pairs_path=str(cfg.pairs_path), pairs_digest=str(cfg.pairs_digest),
         chat_template_kwargs=dict(cfg.chat_template_kwargs), num_rounds=int(cfg.num_rounds),
@@ -135,8 +289,10 @@ def spec_for(cfg: Any, n: int, *, out: Path = OUT, config_path: Path | None = No
         train_root=sd, init_adapter_path=sd / "fl" / "uni_fed" / "initial.npz", resume_root=sd / "_resume",
         prompt_path=str(cfg.prompt_path), coord_space=str(cfg.coord_space),
         processor_kwargs=dict(cfg.processor_kwargs),
-        expected_supervised_tokens=dict(cfg.expected_supervised_tokens), config_path=config_path,
-        pin_path=sd / PIN_FILE, ecc_permit_path=sd / PERMIT_FILE,
+        expected_supervised_tokens=exp, config_path=config_path,
+        pin_path=sd / PIN_FILE, ecc_permit_path=sd / PERMIT_FILE, budget_fraction=fraction,
+        ecc_permit_waiver_path=None if ecc_permit_waiver is None else Path(ecc_permit_waiver),
+        train_registration_path=prof["train_registration"], recipe=recipe,
     )
 
 
@@ -184,19 +340,21 @@ def _cell_call(fn: Callable, stage: str, n: int, out: Path) -> Any:
     return res
 
 
-def stage_local(cfg: Any, n: int, *, out: Path = OUT, config_path: Path | None = None, client: str | None = None):
+def stage_local(cfg: Any, n: int, *, out: Path = OUT, config_path: Path | None = None, client: str | None = None,
+                ecc_permit_waiver: Path | None = None):
     """로컬 칸 — 참여자를 주면 그 칸 하나만(인스턴스마다 칸 하나, 26번 확정판), 없으면 세 참여자를 차례로."""
     from vlm.train_cell import CLIENT_ORDER, run_uni_local_cell
 
-    spec = spec_for(cfg, n, out=out, config_path=config_path)
+    spec = spec_for(cfg, n, out=out, config_path=config_path, ecc_permit_waiver=ecc_permit_waiver)
     clients = CLIENT_ORDER if client is None else (client,)
     return _cell_call(lambda: run_uni_local_cell(clients, spec=spec), "local", n, out)
 
 
-def stage_central(cfg: Any, n: int, *, out: Path = OUT, config_path: Path | None = None):
+def stage_central(cfg: Any, n: int, *, out: Path = OUT, config_path: Path | None = None,
+                  ecc_permit_waiver: Path | None = None):
     from vlm.train_cell import run_uni_central_cell
 
-    spec = spec_for(cfg, n, out=out, config_path=config_path)
+    spec = spec_for(cfg, n, out=out, config_path=config_path, ecc_permit_waiver=ecc_permit_waiver)
     return _cell_call(lambda: run_uni_central_cell(spec=spec), "central", n, out)
 
 
@@ -230,9 +388,28 @@ def fed_run_config(cfg: Any, n: int, *, out: Path = OUT) -> str:
         "uni-processor-kwargs": _toml_str(canonical_json(dict(spec.processor_kwargs))),
         "uni-expected-supervised-tokens": _toml_str(canonical_json(dict(spec.expected_supervised_tokens))),
         "purpose": _toml_str("main"), "plan": _toml_str(""), "rehearsal-root": _toml_str(""),
+        "uni-budget-fraction": _toml_str("" if spec.budget_fraction == 1.0 else repr(float(spec.budget_fraction))),
         "uni-train-root": _toml_str(Path(os.path.abspath(sd)).as_posix()),
+        # 서버 앱은 풀어 놓은 FAB 폴더에서 돈다 — 예산 비율 < 1 의 행별 토큰 표를 이 저장소 뿌리 아래에서 읽는다(신원 밖)
+        "uni-repo-root": _toml_str(Path(os.path.abspath(REPO_ROOT)).as_posix()),
     }
+    if spec.recipe != "json_only":
+        # 새 레시피만 넘긴다 — 1 차 레시피의 실행 설정은 지금과 같은 문자열이다. flwr 는 pyproject 에 없는 키를 거부하므로
+        # 키가 선언되지 않았으면 기동 전에 멈춘다(조용히 1 차 레시피로 내려가지 않는다).
+        if "uni-target-recipe" not in pyproject_run_keys():
+            raise MainRefused("run_config_key_missing", "pyproject.toml [tool.flwr.app.config] 에 uni-target-recipe 가 없다 — "
+                                                        "새 레시피를 연합 실행 설정으로 넘길 수 없다")
+        items["uni-target-recipe"] = _toml_str(spec.recipe)
     return " ".join(f"{k}={v}" for k, v in items.items())
+
+
+def pyproject_run_keys(path: Path | None = None) -> frozenset[str]:
+    """`pyproject.toml` 의 `[tool.flwr.app.config]` 에 선언된 키."""
+    import tomllib
+
+    with open(path or REPO_ROOT / "pyproject.toml", "rb") as fh:
+        body = tomllib.load(fh)
+    return frozenset(((body.get("tool") or {}).get("flwr") or {}).get("app", {}).get("config", {}))
 
 
 def fed_state(out_dir: Path) -> str:
@@ -247,9 +424,9 @@ def fed_state(out_dir: Path) -> str:
 
 
 def stage_fed(cfg: Any, n: int, *, out: Path = OUT, config_path: Path | None = None,
-              runner: Callable[[str, Path], None] | None = None) -> str:
+              runner: Callable[[str, Path], None] | None = None, ecc_permit_waiver: Path | None = None) -> str:
     """통합형 연합. 서버(`fl/server_app.py`)가 본실험 설정을 다시 맞대고 초기 어댑터를 같은 파일에서 읽는다."""
-    spec = spec_for(cfg, n, out=out, config_path=config_path)
+    spec = spec_for(cfg, n, out=out, config_path=config_path, ecc_permit_waiver=ecc_permit_waiver)
     _guarded(spec)
     out_dir = fed_dir(out, n)
     state = fed_state(out_dir)
@@ -289,7 +466,8 @@ def fed_expected_identity(spec: Any, init_digest: str) -> dict[str, Any]:
         pairs_digest=spec.pairs_digest, prompt_sha256=prompt_sha, chat_template_kwargs=dict(spec.chat_template_kwargs),
         coord_space=spec.coord_space, init_digest=init_digest, snapshot_digest=spec.snapshot_digest, plan_sha256=None,
         client_tags=CLIENT_TAGS, processor_kwargs=spec.processor_kwargs,
-        expected_supervised_tokens=spec.expected_supervised_tokens)
+        expected_supervised_tokens=spec.expected_supervised_tokens, budget_fraction=spec.budget_fraction,
+        recipe=spec.recipe)
 
 
 def _start_gate(spec: Any) -> dict[str, str]:
@@ -311,8 +489,18 @@ def stage_pin(cfg: Any, n: int, *, out: Path = OUT, config_path: Path | None = N
     _guarded(spec)
     if not spec.init_adapter_path.exists():
         raise MainRefused("init_adapter_missing", f"공통 초기 어댑터가 없다: {spec.init_adapter_path} — initadapter 먼저")
+    from vlm.registration import binding_problems
+
     try:
-        sha = write_pin(spec.pin_path, build_pin(init_adapter_path=spec.init_adapter_path, config_path=config_path))
+        pin = build_pin(init_adapter_path=spec.init_adapter_path, config_path=config_path,
+                        registration_path=spec.train_registration_path)
+        reg = (pin.get("common") or {}).get("registration")
+        bad = (["착수 고정의 공통 칸에 등록값이 없다"] if reg is None else
+               binding_problems(reg, seed_index=n, init_digest=pin["init_adapter"]["init_adapter_digest"],
+                                recipe=spec.recipe))
+        if bad:
+            raise MainRefused("registration_binding", " · ".join(bad))       # 착수 고정을 쓰지 않는다(§137 M-01 · M-02)
+        sha = write_pin(spec.pin_path, pin)
     except (PinMismatch, FileExistsError) as exc:
         raise MainRefused("pin_write", str(exc)) from None
     _progress(out, n, "pin", pin_sha256=sha)
@@ -359,6 +547,14 @@ def stage_ecc_prepare(cfg: Any, n: int, root: Path, *, target_list: Path, out: P
     if not Path(main_spec.pin_path).is_file():
         raise MainRefused("pin_missing", f"그 시드의 착수 고정이 없다 — pin 먼저: {main_spec.pin_path}")
     pin, pin_sha = read_pin(main_spec.pin_path)
+    from vlm.registration import binding_problems
+
+    reg = (pin.get("common") or {}).get("registration")                 # 등록과의 결속(§137 M-01 · M-02) — 옮기기 전에
+    bad = (["착수 고정의 공통 칸에 등록값이 없다"] if reg is None else
+           binding_problems(reg, seed_index=n, init_digest=(pin.get("init_adapter") or {}).get("init_adapter_digest"),
+                            recipe=main_spec.recipe))
+    if bad:
+        raise MainRefused("registration_binding", " · ".join(bad))
     try:
         rules = load_check_rules(rule_path)
     except EccRefused as exc:
@@ -464,9 +660,9 @@ def stage_ecc_accept(cfg: Any, n: int, root: Path, permit: Path, *, out: Path = 
         PREPARE_FILE,
         EccRefused,
         accept_permit,
+        budget_rows,
         cum_wall_s,
         effective_limits,
-        ledger_rows,
         load_check_rules,
     )
     from vlm.pin import init_probe, read_pin
@@ -491,10 +687,10 @@ def stage_ecc_accept(cfg: Any, n: int, root: Path, permit: Path, *, out: Path = 
     run_id = cell_run_id(ecc, CENTRAL_TAG)
     if {m["identity"].get("run_id") for m in metas} != {run_id}:
         raise MainRefused("ecc_identity", "점검 step 들의 실행 신원이 이 점검 루트의 것과 다르다")
-    hours = cum_wall_s(cdir) / 3600                                 # 학습 루프의 누적 처리 시간(적재 · export 생성 제외)
-    budget_rows = [json.loads(r["detail"]) for r in ledger_rows(cdir) if r.get("event") in ("budget_ok", "ecc_budget_exceeded")]
-    spent = budget_rows[-1].get("spent_hours") if budget_rows else None   # 운영자가 마지막에 준 인스턴스 시간
     try:
+        hours = cum_wall_s(cdir) / 3600                             # 학습 루프의 누적 처리 시간(적재 · export 생성 제외)
+        spent_rows = [r["detail"] for r in budget_rows(cdir)]           # 옛 원장의 비용 줄 + 비용 저널(§137 I-04)
+        spent = spent_rows[-1].get("spent_hours") if spent_rows else None   # 운영자가 마지막에 준 인스턴스 시간
         rules = load_check_rules(rule_path)
         if rec.get("rules_sha256") != rules["rules_sha256"]:
             raise MainRefused("ecc_rules_changed", "규칙 파일이 이 루트를 준비할 때와 다르다")
@@ -515,15 +711,153 @@ def stage_ecc_accept(cfg: Any, n: int, root: Path, permit: Path, *, out: Path = 
     return key
 
 
-def stage_gate_check(cfg: Any, n: int, *, out: Path = OUT, config_path: Path | None = None) -> dict[str, Any]:
+def _next_reg_name(now: Any, *dirs: Path) -> str:
+    """그날의 다음 본실험 등록 이름 — `main-YYYYMMDD-n`, n 은 그 폴더들에 이미 있는 같은 날 번호의 다음."""
+    day = now.strftime("%Y%m%d")
+    used = [0]
+    for d in dirs:
+        for p in Path(d).glob(f"main-{day}-*.json"):
+            tail = p.name[len(f"main-{day}-"):].split(".", 1)[0]
+            if tail.isdigit():
+                used.append(int(tail))
+    return f"main-{day}-{max(used) + 1}"
+
+
+def _regime2_candidate(root: Path) -> tuple[bytes, dict]:
+    """새 체제의 평가 설정 — 저장소의 고정 후보(`scripts.prepare_eval_regime2.CANDIDATE_REL`) 바이트가 1 차 설정 · base · 학습 등록 ·
+    프롬프트에서 도출한 결과와 같을 때만 그 바이트(판 6 연결 2 판 §2-3). 경로를 고르는 인자는 없다 — 다르면 `eval_binding`."""
+    from evaluation import eval_registration as ER
+    from scripts.prepare_eval_regime2 import CANDIDATE_REL, candidate_bytes
+    from vlm.registration import RegistrationRejected, registration_from_bytes
+
+    try:
+        source = ER.load_eval_registration((root / ER.CONFIG_REL).read_bytes())
+        base = ER.load_base((root / ER.BASE_REL).read_bytes())
+        train = registration_from_bytes((root / ER.TRAIN_REG_REL).read_bytes())
+        prompt_raw = (root / base["fixed_before_main_runs"]["uni_prompt_path"]).read_bytes()
+        expected = candidate_bytes(ER.build_regime2_eval(source, base_doc=base, train_doc=train, prompt_raw=prompt_raw))
+    except (ER.EvalRegistrationError, RegistrationRejected, OSError, KeyError, TypeError) as exc:
+        raise MainRefused("eval_binding", f"2 차 평가 설정을 도출하지 못했다: {type(exc).__name__}: {exc}") from None
+    cand = root / CANDIDATE_REL
+    if not cand.is_file() or cand.read_bytes() != expected:
+        raise MainRefused("eval_binding", f"고정 후보 {CANDIDATE_REL} 가 없거나 1 차 설정 · base · 학습 등록 · 프롬프트에서 도출한 "
+                                          "바이트와 다르다")
+    return expected, ER.load_eval_registration(expected)
+
+
+def stage_register_main(cfg: Any, n: int, *, generation_list: Path, echo_list: Path, scoring: Path, snapshot: Path,
+                        reg_out: Path, measurement: Path | None = None, name: str | None = None, out: Path = OUT,
+                        measure: Callable | None = None, now: Any = None,
+                        eval_registration: Path | None = None, repo: Path | None = None) -> dict[str, Path]:
+    """본실험 등록을 `reg_out` 에 쓴다(1016l · 판 6 연결 2 판 §4-1). 시드 폴더의 착수 고정 · `fl/uni_fed/initial.npz` · 칸 다섯의 어댑터
+    meta 와 명령줄의 파일에서 칸을 채운다 — 손으로 옮기는 값이 없다. 실측 파일이 없으면 실측 함수로 그 자리에서 잰다(CPU — 모델을
+    올리지 않는다). 구판(1 차 레시피)은 넷, 새 체제(`json_line_then_basis`)는 여섯 — 평가 설정은 저장소의 고정 후보 바이트(경로 인자
+    없음), 착수 고정 바이트 · 학습 전 계약 · 프로필 `regime2_v4` 를 작성기에 주고 출처 운반 파일을 함께 쓴다. `measure` ·
+    `eval_registration`(구판 전용 — 새 체제에서는 거부) · `repo`(파일을 읽을 저장소 뿌리, 기본 이 저장소)는 시험의 이음새다. 돌려주는
+    값은 쓴 파일이다."""
+    from datetime import datetime
+
+    from data.manifest_io import ManifestError, verify_snapshot
+    from evaluation import narrative_registration as NR
+    from evaluation.entry_gate import EntryRejected, read_manifest_meta
+    from evaluation.eval_registration import (
+        CONFIG_REL,
+        REGIME2_RECIPE,
+        EvalRegistrationError,
+        load_eval_registration,
+    )
+    from vlm.main_registration import (
+        CELLS,
+        MainRegistrationRefused,
+        build_main_registration,
+        export_impl_ids,
+        read_measurement,
+        write_main_registration,
+    )
+    from vlm.pin import PinMismatch, init_probe, read_pin
+    from vlm.train_cell import META_FILE
+
+    inputs = {"generation_list": generation_list, "echo_list": echo_list, "scoring": scoring, "snapshot": snapshot,
+              "measurement": measurement}
+    missing = [k for k, p in inputs.items() if (p is None and k != "measurement") or (p is not None and not Path(p).exists())]
+    if missing:
+        raise MainRefused("register_inputs", f"등록 짓기의 입력이 없다: {missing}")
+    sd = seed_dir(out, n)
+    metas = {}
+    for tag in CELLS:
+        p = (fed_dir(out, n) if tag == "uni_fed" else sd / f"{tag}_s{n}") / META_FILE
+        if not p.is_file():
+            raise MainRefused("register_meta", f"{tag} 의 어댑터 meta 가 없다 — 본 칸 다섯이 끝난 뒤 짓는다")
+        metas[tag] = json.loads(p.read_text(encoding="utf-8"))
+    try:
+        pin, _ = read_pin(sd / PIN_FILE)
+        init_digest = init_probe(sd / "fl" / "uni_fed" / "initial.npz")["init_adapter_digest"]
+    except (PinMismatch, OSError, ValueError) as exc:
+        raise MainRefused("register_pin", f"시드 폴더의 착수 고정 · 초기 어댑터를 읽지 못했다: {exc}") from None
+    root = Path(repo) if repo is not None else REPO_ROOT
+    try:
+        recipe = ((pin.get("common") or {}).get("registration") or {}).get("recipe")
+        v6kw: dict[str, Any] = {}
+        eval_raw = sources_raw = None
+        if recipe == REGIME2_RECIPE:
+            if eval_registration is not None:
+                raise MainRefused("eval_binding", "새 체제의 평가 설정은 저장소의 고정 후보에서만 읽는다 — 경로를 받지 않는다")
+            eval_raw, eval_doc = _regime2_candidate(root)
+            v6kw = {"repo": root, "pin_raw": (sd / PIN_FILE).read_bytes(),
+                    "inputs_contract_raw": (root / NR.INPUTS_CONTRACT_REL).read_bytes(), "profile": NR.PROFILE_REGIME2}
+        else:
+            eval_doc = load_eval_registration(Path(eval_registration or root / CONFIG_REL).read_bytes())
+        digest = verify_snapshot(Path(snapshot))
+        meta = read_manifest_meta(Path(snapshot))
+        scoring_obj = json.loads(Path(scoring).read_text(encoding="utf-8"))
+        if measurement is not None:
+            measured = read_measurement(Path(measurement).read_bytes())
+        else:
+            from vlm.export_measure import MeasureSpec
+            from vlm.export_measure import measure_env as measure_real
+            from vlm.pilot_vlm import load_prompt
+
+            text, _ = load_prompt(REPO_ROOT / cfg.prompt_path)
+            got = (measure or measure_real)(MeasureSpec(
+                model_id=cfg.model_id, model_revision=cfg.model_revision, processor_kwargs=dict(cfg.processor_kwargs or {}),
+                prompt_text=text, chat_template_kwargs=dict(cfg.chat_template_kwargs)))
+            measured = read_measurement(json.dumps(dict(got)).encode("utf-8"))
+        now = now or datetime.now().astimezone()
+        stem = name or _next_reg_name(now, REPO_ROOT / "configs" / "registration", Path(reg_out))
+        gen_raw, echo_raw = Path(generation_list).read_bytes(), Path(echo_list).read_bytes()
+        reg, raw, tc_text = build_main_registration(
+            cfg=cfg, seed_index=n, gen_raw=gen_raw, echo_raw=echo_raw, eval_doc=eval_doc, manifest_meta=meta,
+            snapshot_digest=digest, measured=measured, init_digest=init_digest, pin=pin, metas=metas, scoring=scoring_obj,
+            impl_ids=export_impl_ids("main"), prompt_path=root / cfg.prompt_path, now=now, **v6kw)
+        if eval_raw is not None:
+            sources_raw = NR.build_v6_sources(registration_raw=raw, eval_raw=eval_raw, repo=root)
+        files = write_main_registration(Path(reg_out), stem=stem, raw=raw, tc_text=tc_text, gen_raw=gen_raw,
+                                        echo_raw=echo_raw, eval_raw=eval_raw, sources_raw=sources_raw)
+    except MainRegistrationRefused as exc:
+        raise MainRefused(exc.code, str(exc)) from None
+    except NR.ProfileRefused as exc:
+        raise MainRefused(exc.code, str(exc)) from None
+    except (EvalRegistrationError, ManifestError, EntryRejected, json.JSONDecodeError, OSError) as exc:
+        raise MainRefused("register_inputs", f"등록 짓기의 입력을 읽지 못했다: {type(exc).__name__}: {exc}") from None
+    import hashlib
+
+    print(json.dumps({"name": stem, "generation_sha256": reg.generation_sha256(), "scoring_sha256": reg.scoring_sha256(),
+                      "files": {k: {"name": p.name, "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
+                                for k, p in files.items()}}, ensure_ascii=False))
+    return files
+
+
+def stage_gate_check(cfg: Any, n: int, *, out: Path = OUT, config_path: Path | None = None,
+                     ecc_permit_waiver: Path | None = None) -> dict[str, Any]:
     """본 칸의 시작 문만 — 착수 고정을 지금 값과 맞대고 허가 이식 묶음(통과 파일 · 키 기록 · 네 검사 산출 파일)을 대조한다.
-    모델을 올리지 않는다. 둘째 ~ 다섯째 인스턴스에서 칸을 켜기 전에 돌린다(26번 §6)."""
-    spec = spec_for(cfg, n, out=out, config_path=config_path)
+    면제 파일(1017a)을 주면 허가 대신 면제를 맞댄다. 모델을 올리지 않는다. 둘째 ~ 다섯째 인스턴스에서 칸을 켜기 전에 돌린다(26번 §6)."""
+    spec = spec_for(cfg, n, out=out, config_path=config_path, ecc_permit_waiver=ecc_permit_waiver)
     if not spec.init_adapter_path.exists():
         raise MainRefused("init_adapter_missing", f"공통 초기 어댑터가 없다: {spec.init_adapter_path}")
     gate = _start_gate(spec)
-    _progress(out, n, "gate_check", pin_sha256=gate["pin_sha256"], ecc_permit_sha256=gate["ecc_permit_sha256"])
-    print(json.dumps({"seed": n, **{k: gate[k] for k in ("pin_sha256", "ecc_permit_sha256")}}, ensure_ascii=False))
+    key = "ecc_permit_waiver_sha256" if "ecc_permit_waiver_sha256" in gate else "ecc_permit_sha256"
+    _progress(out, n, "gate_check", pin_sha256=gate["pin_sha256"], **{key: gate[key]})
+    print(json.dumps({"seed": n, "pin_sha256": gate["pin_sha256"], key: gate[key]}, ensure_ascii=False))
     return gate
 
 
@@ -549,14 +883,15 @@ def _check_fed_prior(spec: Any, out_dir: Path) -> None:
 
 
 def cmd_all(cfg: Any, seeds: list[int], *, out: Path = OUT, config_path: Path | None = None,
-            stages: dict[str, Callable] | None = None) -> None:
+            stages: dict[str, Callable] | None = None, ecc_permit_waiver: Path | None = None) -> None:
     """시드마다 initadapter → local → central → fed. 한 시드의 다섯 모델을 끝낸 뒤 다음 시드로 간다."""
     st = stages or {"initadapter": stage_initadapter, "local": stage_local,
                     "central": stage_central, "fed": stage_fed}
     for n in seeds:
         for name in ("initadapter", "local", "central", "fed"):
             print(f"\n########## 시드 {n} · {name} ##########", flush=True)
-            st[name](cfg, n, out=out, config_path=config_path)
+            kw = {} if name == "initadapter" or ecc_permit_waiver is None else {"ecc_permit_waiver": ecc_permit_waiver}
+            st[name](cfg, n, out=out, config_path=config_path, **kw)
         _progress(out, n, "chain_done")
 
 
@@ -599,7 +934,7 @@ def cmd_status(out: Path = OUT, config_path: Path | None = None) -> dict[int, di
 def main(argv: list[str] | None = None, *, out: Path = OUT, config_path: Path | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("cmd", choices=["status", "initadapter", "local", "central", "fed", "all", "close-ledger",
-                                    "pin", "ecc-prepare", "ecc", "ecc-accept", "gate-check"])
+                                    "pin", "ecc-prepare", "ecc", "ecc-accept", "gate-check", "register", "receipt"])
     ap.add_argument("--ecc-root", type=Path, default=None, help="ecc-prepare · ecc 의 점검 루트(outputs/early_check/ecc-…)")
     ap.add_argument("--resume-step", type=int, default=None, help="ecc — 판정 불가 뒤 이 점검 step 에서 잇는다")
     ap.add_argument("--spent-hours", type=float, default=None, help="ecc — 인스턴스가 켜져 있던 시간(상한 대조)")
@@ -611,8 +946,58 @@ def main(argv: list[str] | None = None, *, out: Path = OUT, config_path: Path | 
     ap.add_argument("--seed", type=int, default=None, help="시드 번호(1 부터)")
     ap.add_argument("--tag", default=None, help="close-ledger 의 칸 태그")
     ap.add_argument("--client", default=None, choices=list(CLIENT_TAGS), help="local — 이 참여자의 칸 하나만")
+    ap.add_argument("--budget-fraction", type=float, default=None,
+                    help="공통 학습 예산 비율 — 등록 파일의 budget_fraction 과 같아야 한다(다르면 시작하지 않는다)")
+    for flag, what in (("--generation-list", "register — 생성 목록(평가 등록 설정이 봉인한 주 표본의 바이트)"),
+                       ("--echo-list", "register — 에코 목록(val)"),
+                       ("--scoring", "register — 채점 쪽 입력(평가 쪽이 값을 내는 칸, JSON)"),
+                       ("--snapshot", "register — 동결 매니페스트(목록의 분할 대조)"),
+                       ("--reg-out", "register — 등록 넷을 쓸 폴더"),
+                       ("--measurement", "register — 실측 파일(없으면 그 자리에서 잰다)")):
+        ap.add_argument(flag, type=Path, default=None, help=what)
+    ap.add_argument("--name", default=None, help="register — 등록 이름 main-YYYYMMDD-n(없으면 그날의 다음 번호)")
+    ap.add_argument("--train-registration", type=Path, default=None,
+                    help="학습 등록 벌(민감도 실행 — --out-root 와 함께). 기본은 configs/train_registration.yaml")
+    ap.add_argument("--out-root", type=Path, default=None,
+                    help="민감도 실행의 출력 뿌리(본실험 outputs/main_u 밖, --train-registration 과 함께)")
+    ap.add_argument("--main-out-root", type=Path, default=None,
+                    help="새 레시피 본실험의 출력 뿌리(옛 outputs/main_u 와 겹치지 않는 자리) — 본실험 출력 선택 전용, 평가 설정을 "
+                         "고르는 인자가 아니다. 민감도 인자와 함께 받지 않는다")
+    ap.add_argument("--ecc-permit-waiver", type=Path, default=None,
+                    help="local · central · fed · all · gate-check — 착수 허가 면제 파일(사용자 결정, 통과 파일과 함께 받지 않는다)")
+    ap.add_argument("--registration", default=None, help="receipt — 본줄기에 병합한 등록의 저장소 상대 경로")
+    ap.add_argument("--commit", default=None, help="receipt — 등록이 병합된 본줄기 커밋")
     a = ap.parse_args(argv)
+    sens = (a.train_registration, a.out_root)
+    try:
+        if a.main_out_root is not None:
+            if any(v is not None for v in sens):
+                raise MainRefused("main_root_args", "--main-out-root 는 --train-registration · --out-root 와 함께 받지 않는다")
+            if a.cmd == "receipt":
+                raise MainRefused("receipt_args", "receipt 는 산출 뿌리를 받지 않는다 — 등록 경로와 커밋만")
+            out = bind_main_profile(a.main_out_root)
+        elif any(v is not None for v in sens):
+            if None in sens:
+                raise MainRefused("sens_args", "--train-registration 과 --out-root 는 함께 준다")
+            if a.cmd in ("ecc-prepare", "ecc", "ecc-accept", "register", "receipt"):
+                raise MainRefused("sens_cmd", f"민감도 실행은 {a.cmd} 를 받지 않는다 — ECC 는 면제 파일로, 등록 · 영수증은 본실험만")
+            out = bind_profile(a.out_root, a.train_registration)
+        reg_path = run_profile(out)["train_registration"]
+        # 새 레시피의 본 칸은 새 뿌리가 있어야 한다 — 인자 범위의 거부 뒤, 명령 실행 앞에서(옛 레시피의 기본 뿌리는 그대로)
+        need_root = (a.main_out_root is None and all(v is None for v in sens) and a.cmd != "receipt"
+                     and _canonical_registration_is_new())
+    except MainRefused as exc:
+        return int(exc.code)
+    reg_args = {"register": (a.generation_list, a.echo_list, a.scoring, a.snapshot, a.reg_out, a.measurement, a.name),
+                "receipt": (a.registration, a.commit)}
+    root_refusal = ("main_root_required", ("새 레시피의 본 칸은 --main-out-root 가 있어야 한다 — 옛 outputs/main_u 에 새 본 칸을 "
+                                           "쓰지 않는다(옛 레시피의 기본 뿌리는 그대로다)"))
     if a.cmd == "status":
+        try:
+            if need_root:
+                raise MainRefused(*root_refusal)
+        except MainRefused as exc:
+            return int(exc.code)
         cmd_status(out, config_path)
         return 0
     try:
@@ -621,18 +1006,47 @@ def main(argv: list[str] | None = None, *, out: Path = OUT, config_path: Path | 
         cfg = load_main_config(config_path)
         if a.client is not None and a.cmd != "local":
             raise MainRefused("client_on_other", "--client 는 local 에서만 받는다")
+        if a.budget_fraction is not None:
+            from vlm.registration import registered_budget_fraction
+
+            if a.budget_fraction != registered_budget_fraction(reg_path):
+                raise MainRefused("budget_fraction_mismatch", f"--budget-fraction {a.budget_fraction} 가 등록의 "
+                                  f"budget_fraction {registered_budget_fraction(reg_path)} 과 다르다 — 등록 파일이 정한다")
+        for cmd, vals in reg_args.items():
+            if a.cmd != cmd and any(v is not None for v in vals):
+                raise MainRefused("register_args", f"등록 인자는 {cmd} 에서만 받는다")
+        w = a.ecc_permit_waiver
+        if w is not None and a.cmd not in ("local", "central", "fed", "all", "gate-check"):
+            raise MainRefused("waiver_args", "--ecc-permit-waiver 는 local · central · fed · all · gate-check 에서만 받는다")
+        wkw = {} if w is None else {"ecc_permit_waiver": w}
+        if need_root:
+            raise MainRefused(*root_refusal)
+        if a.cmd == "receipt":
+            from evaluation.entry_gate import main_checkout
+            from vlm.main_registration import MainRegistrationRefused, write_main_receipt
+
+            if a.registration is None or a.commit is None or a.seed is not None:
+                raise MainRefused("receipt_args", "receipt 는 --registration · --commit 만 받는다")
+            try:
+                rp = write_main_receipt(registration_rel=a.registration, commit=a.commit, checkout=main_checkout())
+            except MainRegistrationRefused as exc:
+                raise MainRefused(exc.code, str(exc)) from None
+            print(f"receipt {rp.name}", flush=True)
+            return 0
         if a.cmd == "all":
-            cmd_all(cfg, [a.seed] if a.seed else list(range(1, len(cfg.seeds) + 1)), out=out,
-                    config_path=config_path)
+            seeds = [a.seed] if a.seed is not None else registered_seeds(reg_path)    # 기본은 등록의 시드(§137 M-01)
+            _require_registered(seeds, reg_path)
+            cmd_all(cfg, seeds, out=out, config_path=config_path, **wkw)
             return 0
         if a.seed is None:
             raise MainRefused("seed_missing", "--seed 가 필요하다")
+        _require_registered([a.seed], reg_path)
         ecc_args = (a.ecc_root, a.resume_step, a.spent_hours, a.next_hours, a.max_hours, a.max_won, a.permit,
                     a.target_list)
         if a.cmd not in ("ecc", "ecc-prepare", "ecc-accept") and any(v is not None for v in ecc_args):
             raise MainRefused("ecc_args_on_main", "점검 인자(--ecc-root · --resume-step · …)는 ecc · ecc-prepare · ecc-accept 에서만 받는다")
         if a.cmd == "gate-check":
-            stage_gate_check(cfg, a.seed, out=out, config_path=config_path)
+            stage_gate_check(cfg, a.seed, out=out, config_path=config_path, **wkw)
             return 0
         if a.cmd in ("ecc", "ecc-prepare", "ecc-accept"):
             if a.ecc_root is None:
@@ -660,6 +1074,12 @@ def main(argv: list[str] | None = None, *, out: Path = OUT, config_path: Path | 
         if a.cmd == "pin":
             stage_pin(cfg, a.seed, out=out, config_path=config_path)
             return 0
+        if a.cmd == "register":
+            if a.reg_out is None:
+                raise MainRefused("register_inputs", "register 는 --reg-out 이 있어야 한다")
+            stage_register_main(cfg, a.seed, generation_list=a.generation_list, echo_list=a.echo_list, scoring=a.scoring,
+                                snapshot=a.snapshot, reg_out=a.reg_out, measurement=a.measurement, name=a.name, out=out)
+            return 0
         if a.cmd == "close-ledger":
             from vlm.train_cell import CellRejected, close_ledger
 
@@ -671,10 +1091,12 @@ def main(argv: list[str] | None = None, *, out: Path = OUT, config_path: Path | 
                 raise MainRefused(exc.code, str(exc)) from None
             return 0
         if a.cmd == "local":
-            stage_local(cfg, a.seed, out=out, config_path=config_path, client=a.client)
+            stage_local(cfg, a.seed, out=out, config_path=config_path, client=a.client, **wkw)
             return 0
-        {"initadapter": stage_initadapter, "central": stage_central,
-         "fed": stage_fed}[a.cmd](cfg, a.seed, out=out, config_path=config_path)
+        if a.cmd in ("central", "fed"):
+            {"central": stage_central, "fed": stage_fed}[a.cmd](cfg, a.seed, out=out, config_path=config_path, **wkw)
+            return 0
+        stage_initadapter(cfg, a.seed, out=out, config_path=config_path)
         return 0
     except MainRefused as exc:
         return int(exc.code)

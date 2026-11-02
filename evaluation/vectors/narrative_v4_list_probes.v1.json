@@ -1,0 +1,2222 @@
+{
+ "kind": "narrative_v4_list_probes",
+ "version": 1,
+ "status": "닫힌 목록 v4-lists-1 의 낱말마다 쓰임 탐침 짝(우회 방지 · 과잉 방지). 회귀 후보이며 독립 확인 사례가 아니다 — 확인 사례 작성자에게 주지 않는다. 기대는 10 5판의 규칙으로 D 가 적었고, v4 구현 뒤 실측과 맞댄다(구현 결과로 채우지 않는다).",
+ "context": {
+  "material": "ST",
+  "codes": [
+   "2011"
+  ],
+  "{보조}": "KRA27-T16(그 코드의 보조 전용 조항)",
+  "{주}": "KRA27-T15(주 조항)"
+ },
+ "kinds": {
+  "우회 방지": "그 낱말이 막아야 할 빠져나감 — 걸려야(또는 면제되지 않아야) 한다",
+  "과잉 방지": "그 낱말 때문에 생길 과다 — 걸리지 않아야(또는 면제돼야) 한다. '알려진 과다 셈' 은 규칙의 공개한 대가다"
+ },
+ "lists_file": {
+  "path": "evaluation/vectors/narrative_lists.v4-1.json",
+  "version": "v4-lists-1",
+  "sha256": "e9575b6a613f72d01a33aeeefd07ede274bc37e7a5e1a3592ac558fe206f3d73"
+ },
+ "n_probes": 258,
+ "n_pairs": 128,
+ "probes": [
+  {
+   "list": "H2.exempt_conditional",
+   "word": "만약",
+   "kind": "과잉 방지",
+   "text": "만약의 경우 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개'",
+   "rule": "§4 (ㄱ) · (ㄹ)"
+  },
+  {
+   "list": "H2.exempt_conditional",
+   "word": "만약",
+   "kind": "우회 방지",
+   "text": "만약의 경우 {보조}를 적용한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 (ㄱ) · (ㄹ)"
+  },
+  {
+   "list": "H2.exempt_conditional",
+   "word": "만일",
+   "kind": "과잉 방지",
+   "text": "만일의 경우 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개'",
+   "rule": "§4 (ㄱ) · (ㄹ)"
+  },
+  {
+   "list": "H2.exempt_conditional",
+   "word": "만일",
+   "kind": "우회 방지",
+   "text": "만일의 경우 {보조}를 적용한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 (ㄱ) · (ㄹ)"
+  },
+  {
+   "list": "H2.exempt_conditional",
+   "word": "라면",
+   "kind": "과잉 방지",
+   "text": "그 결함이 아니라면 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개'",
+   "rule": "§4 (ㄱ) · (ㄹ)"
+  },
+  {
+   "list": "H2.exempt_conditional",
+   "word": "라면",
+   "kind": "우회 방지",
+   "text": "그 결함이 아니라면 {보조}를 적용한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 (ㄱ) · (ㄹ)"
+  },
+  {
+   "list": "H2.exempt_conditional",
+   "word": "이라면",
+   "kind": "과잉 방지",
+   "text": "다른 종별이라면 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개'",
+   "rule": "§4 (ㄱ) · (ㄹ)"
+  },
+  {
+   "list": "H2.exempt_conditional",
+   "word": "이라면",
+   "kind": "우회 방지",
+   "text": "다른 종별이라면 {보조}를 적용한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 (ㄱ) · (ㄹ)"
+  },
+  {
+   "list": "H2.exempt_conditional",
+   "word": "다면",
+   "kind": "과잉 방지",
+   "text": "자료가 더 있다면 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개'",
+   "rule": "§4 (ㄱ) · (ㄹ)"
+  },
+  {
+   "list": "H2.exempt_conditional",
+   "word": "다면",
+   "kind": "우회 방지",
+   "text": "자료가 더 있다면 {보조}를 적용한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 (ㄱ) · (ㄹ)"
+  },
+  {
+   "list": "H2.exempt_conditional",
+   "word": "가정하면",
+   "kind": "과잉 방지",
+   "text": "다른 종별을 가정하면 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개'",
+   "rule": "§4 (ㄱ) · (ㄹ)"
+  },
+  {
+   "list": "H2.exempt_conditional",
+   "word": "가정하면",
+   "kind": "우회 방지",
+   "text": "다른 종별을 가정하면 {보조}를 적용한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 (ㄱ) · (ㄹ)"
+  },
+  {
+   "list": "H2.exempt_conditional",
+   "word": "가정할 때",
+   "kind": "과잉 방지",
+   "text": "다른 종별을 가정할 때 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개'",
+   "rule": "§4 (ㄱ) · (ㄹ)"
+  },
+  {
+   "list": "H2.exempt_conditional",
+   "word": "가정할 때",
+   "kind": "우회 방지",
+   "text": "다른 종별을 가정할 때 {보조}를 적용한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 (ㄱ) · (ㄹ)"
+  },
+  {
+   "list": "H2.exempt_conditional",
+   "word": "적용하면",
+   "kind": "과잉 방지",
+   "text": "{보조}를 적용하면 필요한 정보가 무엇인지 검토할 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개'",
+   "rule": "§4 (ㄱ) · conditional_ending.exclude_following"
+  },
+  {
+   "list": "H2.exempt_conditional",
+   "word": "적용하면",
+   "kind": "우회 방지",
+   "text": "{보조}를 적용하면 안 된다.",
+   "expect": "(라) · 꼴 표지 차례 4 — 금지 꼴은 조건이 아니다",
+   "rule": "§4 (ㄱ) · conditional_ending.exclude_following"
+  },
+  {
+   "list": "H2.exempt_conditional(뺀 낱말)",
+   "word": "경우",
+   "kind": "과잉 방지",
+   "text": "이 경우라면 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — '라면'",
+   "rule": "§4 (ㄴ)"
+  },
+  {
+   "list": "H2.exempt_conditional(뺀 낱말)",
+   "word": "경우",
+   "kind": "우회 방지",
+   "text": "이 경우 {보조}도 함께 볼 수 있다.",
+   "expect": "(라) · 꼴 표지 차례 4 — '경우' 단독은 조건 표지가 아니다",
+   "rule": "§4 (ㄴ)"
+  },
+  {
+   "list": "H2.conditional_ending",
+   "word": "-(으)면",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개'",
+   "rule": "§4 (ㄱ) · (ㄹ)"
+  },
+  {
+   "list": "H2.conditional_ending",
+   "word": "-(으)면",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}를 적용한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 (ㄱ) · (ㄹ)"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_exact",
+   "word": "면",
+   "kind": "과잉 방지",
+   "text": "결함이 보이면 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 조건 어미는 다른 어절",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_exact",
+   "word": "면",
+   "kind": "우회 방지",
+   "text": "{보조}는 결함이 보이는 면 전체를 다루는 조항이다.",
+   "expect": "(라) · '조건부 소개 · 인용' — '면' 는 이름씨(조건 아님)",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_exact",
+   "word": "이면",
+   "kind": "과잉 방지",
+   "text": "크기가 기준 밖이면 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 조건 어미는 다른 어절",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_exact",
+   "word": "이면",
+   "kind": "우회 방지",
+   "text": "{보조}는 이면 비드 결함을 다루는 조항이다.",
+   "expect": "(라) · '조건부 소개 · 인용' — '이면' 는 이름씨(조건 아님)",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_exact",
+   "word": "반면",
+   "kind": "과잉 방지",
+   "text": "선형이면 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 조건 어미는 다른 어절",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_exact",
+   "word": "반면",
+   "kind": "우회 방지",
+   "text": "{보조}는 선형 결함을 다루는 반면 둥근 결함은 다루지 않는다.",
+   "expect": "(라) · '조건부 소개 · 인용' — '반면' 는 이름씨(조건 아님)",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_exact",
+   "word": "전면",
+   "kind": "과잉 방지",
+   "text": "결함이 전면에 보이면 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 조건 어미는 다른 어절",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_exact",
+   "word": "전면",
+   "kind": "우회 방지",
+   "text": "{보조}는 용접부 전면의 결함을 다루는 조항이다.",
+   "expect": "(라) · '조건부 소개 · 인용' — '전면' 는 이름씨(조건 아님)",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_suffix",
+   "word": "표면",
+   "kind": "과잉 방지",
+   "text": "결함이 표면에 보이면 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 조건 어미는 다른 어절",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_suffix",
+   "word": "표면",
+   "kind": "우회 방지",
+   "text": "{보조}는 표면 결함을 다루는 조항이다.",
+   "expect": "(라) · '조건부 소개 · 인용' — '표면' 는 이름씨(조건 아님)",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_suffix",
+   "word": "단면",
+   "kind": "과잉 방지",
+   "text": "결함이 단면에 보이면 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 조건 어미는 다른 어절",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_suffix",
+   "word": "단면",
+   "kind": "우회 방지",
+   "text": "{보조}는 단면 결함을 다루는 조항이다.",
+   "expect": "(라) · '조건부 소개 · 인용' — '단면' 는 이름씨(조건 아님)",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_suffix",
+   "word": "측면",
+   "kind": "과잉 방지",
+   "text": "결함이 측면에 보이면 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 조건 어미는 다른 어절",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_suffix",
+   "word": "측면",
+   "kind": "우회 방지",
+   "text": "{보조}는 측면 결함을 다루는 조항이다.",
+   "expect": "(라) · '조건부 소개 · 인용' — '측면' 는 이름씨(조건 아님)",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_suffix",
+   "word": "화면",
+   "kind": "과잉 방지",
+   "text": "화면에 결함이 보이면 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 조건 어미는 다른 어절",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_suffix",
+   "word": "화면",
+   "kind": "우회 방지",
+   "text": "{보조}는 화면 표시를 보지 않는 조항이다.",
+   "expect": "(라) · 꼴 표지 차례 4 — '화면' 는 이름씨(조건 아님)",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_suffix",
+   "word": "용접면",
+   "kind": "과잉 방지",
+   "text": "용접면에 결함이 보이면 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 조건 어미는 다른 어절",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_suffix",
+   "word": "용접면",
+   "kind": "우회 방지",
+   "text": "{보조}는 용접면 결함을 다루는 조항이다.",
+   "expect": "(라) · '조건부 소개 · 인용' — '용접면' 는 이름씨(조건 아님)",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_suffix",
+   "word": "개선면",
+   "kind": "과잉 방지",
+   "text": "개선면에 결함이 보이면 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 조건 어미는 다른 어절",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_suffix",
+   "word": "개선면",
+   "kind": "우회 방지",
+   "text": "{보조}는 개선면 결함을 다루는 조항이다.",
+   "expect": "(라) · '조건부 소개 · 인용' — '개선면' 는 이름씨(조건 아님)",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_suffix",
+   "word": "루트면",
+   "kind": "과잉 방지",
+   "text": "루트면에 결함이 보이면 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 조건 어미는 다른 어절",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_suffix",
+   "word": "루트면",
+   "kind": "우회 방지",
+   "text": "{보조}는 루트면 결함을 다루는 조항이다.",
+   "expect": "(라) · '조건부 소개 · 인용' — '루트면' 는 이름씨(조건 아님)",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_suffix",
+   "word": "모재면",
+   "kind": "과잉 방지",
+   "text": "모재면에 결함이 보이면 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 조건 어미는 다른 어절",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_suffix",
+   "word": "모재면",
+   "kind": "우회 방지",
+   "text": "{보조}는 모재면 결함을 다루는 조항이다.",
+   "expect": "(라) · '조건부 소개 · 인용' — '모재면' 는 이름씨(조건 아님)",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_forms",
+   "word": "따르면",
+   "kind": "과잉 방지",
+   "text": "기록이 필요하면 {보조}도 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개'",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_eojeol_forms",
+   "word": "따르면",
+   "kind": "우회 방지",
+   "text": "{보조}에 따르면 이 지시는 기록 대상이다.",
+   "expect": "(라) · 꼴 표지 차례 4 — 출처의 '따르면' 은 조건이 아니다",
+   "rule": "conditional_ending"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_following",
+   "word": "안 되",
+   "kind": "과잉 방지",
+   "text": "필요하면 {보조}를 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개'",
+   "rule": "conditional_ending.exclude_following"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_following",
+   "word": "안 되",
+   "kind": "우회 방지",
+   "text": "{보조}를 함께 보면 안 되므로 기록만 남긴다.",
+   "expect": "(라) · 꼴 표지 차례 4 — 금지 · 충분의 '-면' 은 조건이 아니다",
+   "rule": "conditional_ending.exclude_following"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_following",
+   "word": "안 된",
+   "kind": "과잉 방지",
+   "text": "필요하면 {보조}를 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개'",
+   "rule": "conditional_ending.exclude_following"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_following",
+   "word": "안 된",
+   "kind": "우회 방지",
+   "text": "{보조}를 함께 보면 안 된다.",
+   "expect": "(라) · 꼴 표지 차례 4 — 금지 · 충분의 '-면' 은 조건이 아니다",
+   "rule": "conditional_ending.exclude_following"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_following",
+   "word": "안 돼",
+   "kind": "과잉 방지",
+   "text": "필요하면 {보조}를 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개'",
+   "rule": "conditional_ending.exclude_following"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_following",
+   "word": "안 돼",
+   "kind": "우회 방지",
+   "text": "{보조}를 함께 보면 안 돼서 기록만 남긴다.",
+   "expect": "(라) · 꼴 표지 차례 4 — 금지 · 충분의 '-면' 은 조건이 아니다",
+   "rule": "conditional_ending.exclude_following"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_following",
+   "word": "아니 되",
+   "kind": "과잉 방지",
+   "text": "필요하면 {보조}를 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개'",
+   "rule": "conditional_ending.exclude_following"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_following",
+   "word": "아니 되",
+   "kind": "우회 방지",
+   "text": "{보조}를 함께 보면 아니 되므로 기록만 남긴다.",
+   "expect": "(라) · 꼴 표지 차례 4 — 금지 · 충분의 '-면' 은 조건이 아니다",
+   "rule": "conditional_ending.exclude_following"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_following",
+   "word": "아니 된",
+   "kind": "과잉 방지",
+   "text": "필요하면 {보조}를 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개'",
+   "rule": "conditional_ending.exclude_following"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_following",
+   "word": "아니 된",
+   "kind": "우회 방지",
+   "text": "{보조}를 함께 보면 아니 된다.",
+   "expect": "(라) · 꼴 표지 차례 4 — 금지 · 충분의 '-면' 은 조건이 아니다",
+   "rule": "conditional_ending.exclude_following"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_following",
+   "word": "되",
+   "kind": "과잉 방지",
+   "text": "필요하면 {보조}를 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개'",
+   "rule": "conditional_ending.exclude_following"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_following",
+   "word": "되",
+   "kind": "우회 방지",
+   "text": "{보조}를 함께 보면 되므로 기록을 남긴다.",
+   "expect": "(라) · 꼴 표지 차례 4 — 금지 · 충분의 '-면' 은 조건이 아니다",
+   "rule": "conditional_ending.exclude_following"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_following",
+   "word": "된",
+   "kind": "과잉 방지",
+   "text": "필요하면 {보조}를 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개'",
+   "rule": "conditional_ending.exclude_following"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_following",
+   "word": "된",
+   "kind": "우회 방지",
+   "text": "{보조}를 함께 보면 된다.",
+   "expect": "(라) · 꼴 표지 차례 4 — 금지 · 충분의 '-면' 은 조건이 아니다",
+   "rule": "conditional_ending.exclude_following"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_following",
+   "word": "돼",
+   "kind": "과잉 방지",
+   "text": "필요하면 {보조}를 함께 볼 수 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개'",
+   "rule": "conditional_ending.exclude_following"
+  },
+  {
+   "list": "H2.conditional_ending.exclude_following",
+   "word": "돼",
+   "kind": "우회 방지",
+   "text": "{보조}를 함께 보면 돼서 기록을 남긴다.",
+   "expect": "(라) · 꼴 표지 차례 4 — 금지 · 충분의 '-면' 은 조건이 아니다",
+   "rule": "conditional_ending.exclude_following"
+  },
+  {
+   "list": "ra_apply",
+   "word": "따른다",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}를 따른다고 단정할 수 없다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정이 아니다",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "따른다",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}를 따른다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "따름",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}에 따름인지는 알 수 없다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정이 아니다",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "따름",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}에 따름.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "따라야",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}를 따라야 하는지는 알 수 없다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정이 아니다",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "따라야",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}를 따라야 한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "적용한다",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}를 적용한다고 단정하지 않는다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정이 아니다",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "적용한다",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}를 적용한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "적용된다",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 볼 수 없다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정이 아니다",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "적용된다",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}가 적용된다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "적용함",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}를 적용함이 맞는지는 알 수 없다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정이 아니다",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "적용함",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}를 적용함.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "적용해",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}를 적용해서는 안 된다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정이 아니다",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "적용해",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}를 적용해야 한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "적용됨",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}가 적용됨이 맞는지는 알 수 없다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정이 아니다",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "적용됨",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}가 적용됨.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "준용한다",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}를 준용한다고 할 수 없다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정이 아니다",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "준용한다",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}를 준용한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "준용된다",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}가 준용된다고 보기 어렵다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정이 아니다",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "준용된다",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}가 준용된다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "준용함",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}를 준용함이 맞는지는 알 수 없다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정이 아니다",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "준용함",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}를 준용함.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "쓴다",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}를 쓴다고 단정할 수 없다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정이 아니다",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "쓴다",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}를 기준으로 쓴다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "기준으로 본다",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}를 기준으로 본다고 말할 수 없다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정이 아니다",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "기준으로 본다",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}를 기준으로 본다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "기준으로 삼는다",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}를 기준으로 삼는다고 하기 어렵다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정이 아니다",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "기준으로 삼는다",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}를 기준으로 삼는다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 적용 단정의 판별"
+  },
+  {
+   "list": "ra_apply",
+   "word": "쓴다",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}도 함께 볼 수 있으며 메모를 쓴다.",
+   "expect": "(라) · '조건부 대응의 단정' · 진단 '보조 면제 막힘' — 알려진 과다 셈('쓰다' 의 다른 뜻)",
+   "rule": "§4 다른 작은 마디의 단정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 단정하지 않",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 단정하지 않는다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정의 부정",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 단정하지 않",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 단정한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 단정할 수 없",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 단정할 수 없다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정의 부정",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 단정할 수 없",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 단정할 수 있다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 단정하기 어렵",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 단정하기 어렵다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정의 부정",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 단정하기 어렵",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 단정한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 보지 않",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 보지 않는다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정의 부정",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 보지 않",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 본다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 볼 수 없",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 볼 수 없다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정의 부정",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 볼 수 없",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 볼 수 있다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 보기 어렵",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 보기 어렵다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정의 부정",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 보기 어렵",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 본다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 말할 수 없",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 말할 수 없다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정의 부정",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 말할 수 없",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 말할 수 있다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 말하기 어렵",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 말하기 어렵다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정의 부정",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 말하기 어렵",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 말한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 하지 않",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 하지 않는다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정의 부정",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 하지 않",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 할 수 없",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 할 수 없다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정의 부정",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 할 수 없",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 할 수 있다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 하기 어렵",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 하기 어렵다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 단정의 부정",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "고 하기 어렵",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}가 적용된다고 한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "는 조건",
+   "kind": "과잉 방지",
+   "text": "종별을 가리기 어려우면 {보조}도 적용된다는 조건이 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 조건을 말하는 관형절",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "는 조건",
+   "kind": "우회 방지",
+   "text": "종별을 가리기 어려우면 {보조}도 적용된다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "는 규칙",
+   "kind": "과잉 방지",
+   "text": "종별이 섞이면 {보조}도 적용된다는 규칙이 있다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 규칙을 말하는 관형절",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_da",
+   "word": "는 규칙",
+   "kind": "우회 방지",
+   "text": "종별이 섞이면 {보조}도 적용된다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_hae",
+   "word": "서는 안 되",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}를 적용해서는 안 되며 기록만 남긴다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 금지 꼴은 적용 단정이 아니다",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_hae",
+   "word": "서는 안 되",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}를 적용해야 한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_hae",
+   "word": "서는 안 된",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}를 적용해서는 안 된다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 금지 꼴은 적용 단정이 아니다",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_hae",
+   "word": "서는 안 된",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}를 적용해야 한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_hae",
+   "word": "서는 안 돼",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}를 적용해서는 안 돼서 기록만 남긴다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 금지 꼴은 적용 단정이 아니다",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_hae",
+   "word": "서는 안 돼",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}를 적용해야 한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_hae",
+   "word": "선 안 되",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}를 적용해선 안 되므로 기록만 남긴다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 금지 꼴은 적용 단정이 아니다",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_hae",
+   "word": "선 안 되",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}를 적용해야 한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_hae",
+   "word": "선 안 된",
+   "kind": "과잉 방지",
+   "text": "결함이 크면 {보조}를 적용해선 안 된다.",
+   "expect": "분자 밖(면제) · 진단 '보조 조건부 소개' — 금지 꼴은 적용 단정이 아니다",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "ra_not_assertion.after_hae",
+   "word": "선 안 된",
+   "kind": "우회 방지",
+   "text": "결함이 크면 {보조}를 적용해야 한다.",
+   "expect": "(라) · '조건부 대응의 단정'",
+   "rule": "§4 단정 자체의 부정"
+  },
+  {
+   "list": "clause_split.connectives",
+   "word": "고",
+   "kind": "과잉 방지",
+   "text": "결함의 크기가 작고 문제없다.",
+   "expect": "(나) H1 — 대조 마디에 예외가 없어 v3.1 그대로 대조 마디로 잰다",
+   "rule": "§5 작은 마디 · clause_split.use.inherited"
+  },
+  {
+   "list": "clause_split.connectives",
+   "word": "고",
+   "kind": "우회 방지",
+   "text": "이 결함은 판정할 수 없고, 이 결함은 안전하다.",
+   "expect": "(나) H1 — 작은 마디 2, 명시적 대상 반복",
+   "rule": "§5 작은 마디 · clause_split.use.inherited"
+  },
+  {
+   "list": "clause_split.connectives",
+   "word": "며",
+   "kind": "과잉 방지",
+   "text": "결함의 크기가 작으며 문제없다.",
+   "expect": "(나) H1 — 대조 마디에 예외가 없어 v3.1 그대로 대조 마디로 잰다",
+   "rule": "§5 작은 마디 · clause_split.use.inherited"
+  },
+  {
+   "list": "clause_split.connectives",
+   "word": "며",
+   "kind": "우회 방지",
+   "text": "이 결함은 판정할 수 없으며, 이 결함은 안전하다.",
+   "expect": "(나) H1 — 작은 마디 2, 명시적 대상 반복",
+   "rule": "§5 작은 마디 · clause_split.use.inherited"
+  },
+  {
+   "list": "clause_split.connectives",
+   "word": "므로",
+   "kind": "과잉 방지",
+   "text": "결함의 크기가 작으므로 문제없다.",
+   "expect": "(나) H1 — 대조 마디에 예외가 없어 v3.1 그대로 대조 마디로 잰다",
+   "rule": "§5 작은 마디 · clause_split.use.inherited"
+  },
+  {
+   "list": "clause_split.connectives",
+   "word": "므로",
+   "kind": "우회 방지",
+   "text": "이 결함은 판정할 수 없으므로 이 결함은 안전하다.",
+   "expect": "(나) H1 — 작은 마디 2, 명시적 대상 반복",
+   "rule": "§5 작은 마디 · clause_split.use.inherited"
+  },
+  {
+   "list": "clause_split.no_split_aux",
+   "word": "있",
+   "kind": "과잉 방지",
+   "text": "결함 상태를 기록하고 있다.",
+   "expect": "작은 마디 1 — 보조 용언 앞 '고' 는 나누지 않는다",
+   "rule": "§5"
+  },
+  {
+   "list": "clause_split.no_split_aux",
+   "word": "있",
+   "kind": "우회 방지",
+   "text": "결함 상태를 기록하고, 판정을 보류한다.",
+   "expect": "작은 마디 2",
+   "rule": "§5"
+  },
+  {
+   "list": "clause_split.no_split_aux",
+   "word": "싶",
+   "kind": "과잉 방지",
+   "text": "결함을 더 보고 싶다.",
+   "expect": "작은 마디 1 — 보조 용언 앞 '고' 는 나누지 않는다",
+   "rule": "§5"
+  },
+  {
+   "list": "clause_split.no_split_aux",
+   "word": "싶",
+   "kind": "우회 방지",
+   "text": "결함을 더 보고, 판정을 보류한다.",
+   "expect": "작은 마디 2",
+   "rule": "§5"
+  },
+  {
+   "list": "clause_split.no_split_aux",
+   "word": "보면",
+   "kind": "과잉 방지",
+   "text": "결함을 다시 재고 보면 크기가 다르다.",
+   "expect": "작은 마디 1 — 보조 용언 앞 '고' 는 나누지 않는다",
+   "rule": "§5"
+  },
+  {
+   "list": "clause_split.no_split_aux",
+   "word": "보면",
+   "kind": "우회 방지",
+   "text": "결함을 다시 재고, 판정을 보류한다.",
+   "expect": "작은 마디 2",
+   "rule": "§5"
+  },
+  {
+   "list": "clause_split.no_split_aux",
+   "word": "나서",
+   "kind": "과잉 방지",
+   "text": "결함을 기록하고 나서 판정을 보류한다.",
+   "expect": "작은 마디 1 — 보조 용언 앞 '고' 는 나누지 않는다",
+   "rule": "§5"
+  },
+  {
+   "list": "clause_split.no_split_aux",
+   "word": "나서",
+   "kind": "우회 방지",
+   "text": "결함을 기록하고, 판정을 보류한다.",
+   "expect": "작은 마디 2",
+   "rule": "§5"
+  },
+  {
+   "list": "clause_split.no_split_aux",
+   "word": "말",
+   "kind": "과잉 방지",
+   "text": "판정을 미루고 말았다.",
+   "expect": "작은 마디 1 — 보조 용언 앞 '고' 는 나누지 않는다",
+   "rule": "§5"
+  },
+  {
+   "list": "clause_split.no_split_aux",
+   "word": "말",
+   "kind": "우회 방지",
+   "text": "판정을 미루고, 기록을 남긴다.",
+   "expect": "작은 마디 2",
+   "rule": "§5"
+  },
+  {
+   "list": "clause_split.no_split_quote",
+   "word": "다고",
+   "kind": "과잉 방지",
+   "text": "{보조}가 적용된다고 단정하지 않는다.",
+   "expect": "작은 마디 1 — 인용의 '고' 는 나누지 않는다",
+   "rule": "§5"
+  },
+  {
+   "list": "clause_split.no_split_quote",
+   "word": "다고",
+   "kind": "우회 방지",
+   "text": "기공이 보이고, 판정을 보류한다.",
+   "expect": "작은 마디 2",
+   "rule": "§5"
+  },
+  {
+   "list": "clause_split.no_split_quote",
+   "word": "라고",
+   "kind": "과잉 방지",
+   "text": "이 결함을 기공이라고 부른다.",
+   "expect": "작은 마디 1 — 인용의 '고' 는 나누지 않는다",
+   "rule": "§5"
+  },
+  {
+   "list": "clause_split.no_split_quote",
+   "word": "라고",
+   "kind": "우회 방지",
+   "text": "기공이고, 판정을 보류한다.",
+   "expect": "작은 마디 2",
+   "rule": "§5"
+  },
+  {
+   "list": "clause_split.no_split_quote",
+   "word": "냐고",
+   "kind": "과잉 방지",
+   "text": "이 조항이 적용되느냐고 묻는다.",
+   "expect": "작은 마디 1 — 인용의 '고' 는 나누지 않는다",
+   "rule": "§5"
+  },
+  {
+   "list": "clause_split.no_split_quote",
+   "word": "냐고",
+   "kind": "우회 방지",
+   "text": "조항을 찾고, 판정을 보류한다.",
+   "expect": "작은 마디 2",
+   "rule": "§5"
+  },
+  {
+   "list": "clause_split.no_split_quote",
+   "word": "자고",
+   "kind": "과잉 방지",
+   "text": "다시 재자고 적는다.",
+   "expect": "작은 마디 1 — 인용의 '고' 는 나누지 않는다",
+   "rule": "§5"
+  },
+  {
+   "list": "clause_split.no_split_quote",
+   "word": "자고",
+   "kind": "우회 방지",
+   "text": "다시 재고, 판정을 보류한다.",
+   "expect": "작은 마디 2",
+   "rule": "§5"
+  },
+  {
+   "list": "clause_split.boundary",
+   "word": "쉼표 · 공백",
+   "kind": "과잉 방지",
+   "text": "이 결함은 판정할 수 없고이 결함은 안전하다.",
+   "expect": "작은 마디 1 · (나) 없음 — 붙여 쓴 꼴은 나누지 않는다",
+   "rule": "§5"
+  },
+  {
+   "list": "clause_split.boundary",
+   "word": "쉼표 · 공백",
+   "kind": "우회 방지",
+   "text": "이 결함은 판정할 수 없고,이 결함은 안전하다.",
+   "expect": "작은 마디 2 · (나) H1 — 쉼표만 있어도 나눈다",
+   "rule": "§5"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "없",
+   "kind": "과잉 방지",
+   "text": "기계 표현으로 옮기지 못한 단서가 있어 판정을 유보한다.",
+   "expect": "r_note 인정",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "없",
+   "kind": "우회 방지",
+   "text": "기계 표현으로 옮길 단서가 없어 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 단서의 있음을 부정 · 물음",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "있지 않",
+   "kind": "과잉 방지",
+   "text": "기계 표현으로 옮기지 못한 단서가 있어 판정을 유보한다.",
+   "expect": "r_note 인정",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "있지 않",
+   "kind": "우회 방지",
+   "text": "단서가 있지 않아 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 단서의 있음을 부정 · 물음",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "있는지",
+   "kind": "과잉 방지",
+   "text": "기계 표현으로 옮기지 못한 단서가 있어 판정을 유보한다.",
+   "expect": "r_note 인정",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "있는지",
+   "kind": "우회 방지",
+   "text": "단서가 있는지 알 수 없어 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 단서의 있음을 부정 · 물음",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "있을지",
+   "kind": "과잉 방지",
+   "text": "기계 표현으로 옮기지 못한 단서가 있어 판정을 유보한다.",
+   "expect": "r_note 인정",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "있을지",
+   "kind": "우회 방지",
+   "text": "단서가 있을지 몰라 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 단서의 있음을 부정 · 물음",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "있는가",
+   "kind": "과잉 방지",
+   "text": "기계 표현으로 옮기지 못한 단서가 있어 판정을 유보한다.",
+   "expect": "r_note 인정",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "있는가",
+   "kind": "우회 방지",
+   "text": "단서가 있는가는 확인하지 않고 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 단서의 있음을 부정 · 물음",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "있을까",
+   "kind": "과잉 방지",
+   "text": "기계 표현으로 옮기지 못한 단서가 있어 판정을 유보한다.",
+   "expect": "r_note 인정",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "있을까",
+   "kind": "우회 방지",
+   "text": "단서가 있을까 하여 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 단서의 있음을 부정 · 물음",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "있었는지",
+   "kind": "과잉 방지",
+   "text": "기계 표현으로 옮기지 못한 단서가 있어 판정을 유보한다.",
+   "expect": "r_note 인정",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "있었는지",
+   "kind": "우회 방지",
+   "text": "단서가 있었는지 확인하지 않아 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 단서의 있음을 부정 · 물음",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "남지 않",
+   "kind": "과잉 방지",
+   "text": "기계 표현으로 옮기지 못한 단서가 있어 판정을 유보한다.",
+   "expect": "r_note 인정",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "남지 않",
+   "kind": "우회 방지",
+   "text": "단서가 남지 않아 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 단서의 있음을 부정 · 물음",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "남아 있지 않",
+   "kind": "과잉 방지",
+   "text": "기계 표현으로 옮기지 못한 단서가 있어 판정을 유보한다.",
+   "expect": "r_note 인정",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "남아 있지 않",
+   "kind": "우회 방지",
+   "text": "단서가 남아 있지 않아 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 단서의 있음을 부정 · 물음",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "찾지 못",
+   "kind": "과잉 방지",
+   "text": "기계 표현으로 옮기지 못한 단서가 있어 판정을 유보한다.",
+   "expect": "r_note 인정",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "찾지 못",
+   "kind": "우회 방지",
+   "text": "단서를 찾지 못해 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 단서의 있음을 부정 · 물음",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "찾을 수 없",
+   "kind": "과잉 방지",
+   "text": "기계 표현으로 옮기지 못한 단서가 있어 판정을 유보한다.",
+   "expect": "r_note 인정",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "찾을 수 없",
+   "kind": "우회 방지",
+   "text": "단서를 찾을 수 없어 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 단서의 있음을 부정 · 물음",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "확인되지 않",
+   "kind": "과잉 방지",
+   "text": "기계 표현으로 옮기지 못한 단서가 있어 판정을 유보한다.",
+   "expect": "r_note 인정",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "확인되지 않",
+   "kind": "우회 방지",
+   "text": "단서가 확인되지 않아 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 단서의 있음을 부정 · 물음",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "확인할 수 없",
+   "kind": "과잉 방지",
+   "text": "기계 표현으로 옮기지 못한 단서가 있어 판정을 유보한다.",
+   "expect": "r_note 인정",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject",
+   "word": "확인할 수 없",
+   "kind": "우회 방지",
+   "text": "단서를 확인할 수 없어 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 단서의 있음을 부정 · 물음",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject_quote",
+   "word": "있다고 + 단정의 부정",
+   "kind": "과잉 방지",
+   "text": "단서가 있다고 보아 판정을 유보한다.",
+   "expect": "r_note 인정",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.reject_quote",
+   "word": "있다고 + 단정의 부정",
+   "kind": "우회 방지",
+   "text": "단서가 있다고 보기 어려워 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 존재 단정의 부정",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.adverbs",
+   "word": "전혀",
+   "kind": "과잉 방지",
+   "text": "단서가 전혀 다른 꼴로 남아 판정을 유보한다.",
+   "expect": "r_note 인정 — 꾸밈말을 건넌 첫 낱말이 거부 꼴이 아니다",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.adverbs",
+   "word": "전혀",
+   "kind": "우회 방지",
+   "text": "단서가 전혀 없어 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 꾸밈말을 건넌 첫 낱말이 '없'",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.adverbs",
+   "word": "따로",
+   "kind": "과잉 방지",
+   "text": "단서가 따로 남아 판정을 유보한다.",
+   "expect": "r_note 인정 — 꾸밈말을 건넌 첫 낱말이 거부 꼴이 아니다",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.adverbs",
+   "word": "따로",
+   "kind": "우회 방지",
+   "text": "단서가 따로 없어 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 꾸밈말을 건넌 첫 낱말이 '없'",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.adverbs",
+   "word": "아직",
+   "kind": "과잉 방지",
+   "text": "단서가 아직 남아 판정을 유보한다.",
+   "expect": "r_note 인정 — 꾸밈말을 건넌 첫 낱말이 거부 꼴이 아니다",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.adverbs",
+   "word": "아직",
+   "kind": "우회 방지",
+   "text": "단서가 아직 없어 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 꾸밈말을 건넌 첫 낱말이 '없'",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.adverbs",
+   "word": "더는",
+   "kind": "과잉 방지",
+   "text": "단서가 더는 옮겨지지 않아 판정을 유보한다.",
+   "expect": "r_note 인정 — 꾸밈말을 건넌 첫 낱말이 거부 꼴이 아니다",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.adverbs",
+   "word": "더는",
+   "kind": "우회 방지",
+   "text": "단서가 더는 없어 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 꾸밈말을 건넌 첫 낱말이 '없'",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.adverbs",
+   "word": "더",
+   "kind": "과잉 방지",
+   "text": "단서가 더 남아 판정을 유보한다.",
+   "expect": "r_note 인정 — 꾸밈말을 건넌 첫 낱말이 거부 꼴이 아니다",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.adverbs",
+   "word": "더",
+   "kind": "우회 방지",
+   "text": "단서가 더 없어 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 꾸밈말을 건넌 첫 낱말이 '없'",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.adverbs",
+   "word": "별로",
+   "kind": "과잉 방지",
+   "text": "단서가 별로 다르지 않아 판정을 유보한다.",
+   "expect": "r_note 인정 — 꾸밈말을 건넌 첫 낱말이 거부 꼴이 아니다",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.adverbs",
+   "word": "별로",
+   "kind": "우회 방지",
+   "text": "단서가 별로 없어 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 꾸밈말을 건넌 첫 낱말이 '없'",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.particles",
+   "word": "가",
+   "kind": "과잉 방지",
+   "text": "단서가 있어 판정을 유보한다.",
+   "expect": "r_note 인정 — 토씨를 건넌 첫 낱말이 거부 꼴이 아니다",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.particles",
+   "word": "가",
+   "kind": "우회 방지",
+   "text": "단서가 없어 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 토씨를 건넌 첫 낱말이 거부 꼴",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.particles",
+   "word": "는",
+   "kind": "과잉 방지",
+   "text": "단서는 있어 판정을 유보한다.",
+   "expect": "r_note 인정 — 토씨를 건넌 첫 낱말이 거부 꼴이 아니다",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.particles",
+   "word": "는",
+   "kind": "우회 방지",
+   "text": "단서는 없어 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 토씨를 건넌 첫 낱말이 거부 꼴",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.particles",
+   "word": "도",
+   "kind": "과잉 방지",
+   "text": "단서도 있어 판정을 유보한다.",
+   "expect": "r_note 인정 — 토씨를 건넌 첫 낱말이 거부 꼴이 아니다",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.particles",
+   "word": "도",
+   "kind": "우회 방지",
+   "text": "단서도 없어 판정을 유보한다.",
+   "expect": "r_note 인정 아님 — 토씨를 건넌 첫 낱말이 거부 꼴",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.particles",
+   "word": "를",
+   "kind": "과잉 방지",
+   "text": "단서를 고려해 판정을 보류한다.",
+   "expect": "r_note 인정 — 토씨를 건넌 첫 낱말이 거부 꼴이 아니다",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.particles",
+   "word": "를",
+   "kind": "우회 방지",
+   "text": "단서를 찾지 못해 판정을 보류한다.",
+   "expect": "r_note 인정 아님 — 토씨를 건넌 첫 낱말이 거부 꼴",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.particles",
+   "word": "만",
+   "kind": "과잉 방지",
+   "text": "단서만 남아 판정을 보류한다.",
+   "expect": "r_note 인정 — 토씨를 건넌 첫 낱말이 거부 꼴이 아니다",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.particles",
+   "word": "만",
+   "kind": "우회 방지",
+   "text": "단서만 확인되지 않아 판정을 보류한다.",
+   "expect": "r_note 인정 아님 — 토씨를 건넌 첫 낱말이 거부 꼴",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.particles",
+   "word": "(토씨 없음)",
+   "kind": "과잉 방지",
+   "text": "단서 때문에 판정을 보류한다.",
+   "expect": "r_note 인정 — 거부 꼴이 아니다",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "reservation.reasons.r_note.presence.particles",
+   "word": "(토씨 없음)",
+   "kind": "우회 방지",
+   "text": "단서 없이 판정을 보류한다.",
+   "expect": "r_note 인정 아님 — 토씨 없이 '없' 으로 이어진다",
+   "rule": "§6 r_note"
+  },
+  {
+   "list": "D.premise.triggers",
+   "word": "무등급",
+   "kind": "과잉 방지",
+   "text": "무등급인지는 이 자료로 알 수 없다.",
+   "expect": "(다) 없음 — 예외(조건 · 의문 · 앎의 부정)",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.triggers",
+   "word": "무등급",
+   "kind": "우회 방지",
+   "text": "무등급 용접부다.",
+   "expect": "(다) '적용 전제 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.triggers",
+   "word": "품질등급이 지정되지 않",
+   "kind": "과잉 방지",
+   "text": "품질등급이 지정되지 않은 경우의 기준이다.",
+   "expect": "(다) 없음 — 예외(조건 · 의문 · 앎의 부정)",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.triggers",
+   "word": "품질등급이 지정되지 않",
+   "kind": "우회 방지",
+   "text": "품질등급이 지정되지 않았다.",
+   "expect": "(다) '적용 전제 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.triggers",
+   "word": "등급이 지정되지 않",
+   "kind": "과잉 방지",
+   "text": "등급이 지정되지 않은 경우라면 이 기준을 쓴다.",
+   "expect": "(다) 없음 — 예외(조건 · 의문 · 앎의 부정)",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.triggers",
+   "word": "등급이 지정되지 않",
+   "kind": "우회 방지",
+   "text": "이 용접부는 등급이 지정되지 않았다.",
+   "expect": "(다) '적용 전제 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.triggers",
+   "word": "등급 지정이 없",
+   "kind": "과잉 방지",
+   "text": "등급 지정이 없는지는 확인하지 않는다.",
+   "expect": "(다) 없음 — 예외(조건 · 의문 · 앎의 부정)",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.triggers",
+   "word": "등급 지정이 없",
+   "kind": "우회 방지",
+   "text": "이 용접부는 등급 지정이 없다.",
+   "expect": "(다) '적용 전제 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.triggers",
+   "word": "등급 정보가 없",
+   "kind": "과잉 방지",
+   "text": "등급 정보가 없어 전제를 확인하지 않는다.",
+   "expect": "(다) 없음 — 예외(조건 · 의문 · 앎의 부정)",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.triggers",
+   "word": "등급 정보가 없",
+   "kind": "우회 방지",
+   "text": "등급 정보가 없으므로 이 규정이 적용된다.",
+   "expect": "(다) '적용 전제 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.triggers",
+   "word": "등급이 없",
+   "kind": "과잉 방지",
+   "text": "등급이 없는지는 알 수 없다.",
+   "expect": "(다) 없음 — 예외(조건 · 의문 · 앎의 부정)",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.triggers",
+   "word": "등급이 없",
+   "kind": "우회 방지",
+   "text": "이 용접부는 등급이 없다.",
+   "expect": "(다) '적용 전제 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.triggers",
+   "word": "적용 전제",
+   "kind": "과잉 방지",
+   "text": "이 자료는 적용 전제를 확인하지 않는다.",
+   "expect": "(다) 없음 — 예외(조건 · 의문 · 앎의 부정)",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.triggers",
+   "word": "적용 전제",
+   "kind": "우회 방지",
+   "text": "이 결함은 적용 전제를 충족한다.",
+   "expect": "(다) '적용 전제 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.exclude",
+   "word": "무등급전제",
+   "kind": "과잉 방지",
+   "text": "이 조항의 조건 토큰은 무등급전제다.",
+   "expect": "(다) 없음 — 조건의 이름이다",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.exclude",
+   "word": "무등급전제",
+   "kind": "우회 방지",
+   "text": "이 용접부는 무등급이다.",
+   "expect": "(다) '적용 전제 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.exclude",
+   "word": "무등급 전제",
+   "kind": "과잉 방지",
+   "text": "이 조항에는 무등급 전제의 조건이 있다.",
+   "expect": "(다) 없음 — 조건의 이름이다",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.exclude",
+   "word": "무등급 전제",
+   "kind": "우회 방지",
+   "text": "이 용접부는 무등급이다.",
+   "expect": "(다) '적용 전제 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.exclude",
+   "word": "무등급 조건",
+   "kind": "과잉 방지",
+   "text": "이 조항에는 무등급 조건이 붙어 있다.",
+   "expect": "(다) 없음 — 조건의 이름이다",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.exclude",
+   "word": "무등급 조건",
+   "kind": "우회 방지",
+   "text": "이 용접부는 무등급이다.",
+   "expect": "(다) '적용 전제 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.head_same_not_triggers",
+   "word": "등급 표시",
+   "kind": "과잉 방지",
+   "text": "필름의 등급 표시 글자는 판독하지 않는다.",
+   "expect": "(다) 없음",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.head_same_not_triggers",
+   "word": "등급 표시",
+   "kind": "우회 방지",
+   "text": "이 용접부는 무등급이다.",
+   "expect": "(다) '적용 전제 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.head_same_not_triggers",
+   "word": "전제로",
+   "kind": "과잉 방지",
+   "text": "이 서술은 영상 관찰을 전제로 한다.",
+   "expect": "(다) 없음",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.premise.head_same_not_triggers",
+   "word": "전제로",
+   "kind": "우회 방지",
+   "text": "이 결함은 적용 전제를 충족한다.",
+   "expect": "(다) '적용 전제 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.triggers",
+   "word": "한 군",
+   "kind": "과잉 방지",
+   "text": "두 결함이 한 군인지는 알 수 없다.",
+   "expect": "(다) 없음 — 예외(조건 · 의문 · 앎의 부정 · 재지 않음)",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.triggers",
+   "word": "한 군",
+   "kind": "우회 방지",
+   "text": "두 결함은 한 군이다.",
+   "expect": "(다) '군집 · 간격 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.triggers",
+   "word": "군집이다",
+   "kind": "과잉 방지",
+   "text": "군집이면 합계길이를 잰다는 조건이 있다.",
+   "expect": "(다) 없음 — 예외(조건 · 의문 · 앎의 부정 · 재지 않음)",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.triggers",
+   "word": "군집이다",
+   "kind": "우회 방지",
+   "text": "세 기공은 군집이다.",
+   "expect": "(다) '군집 · 간격 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.triggers",
+   "word": "군집을 이룬",
+   "kind": "과잉 방지",
+   "text": "세 기공이 군집을 이룬다고 단정할 수 없다.",
+   "expect": "(다) 없음 — 예외(조건 · 의문 · 앎의 부정 · 재지 않음)",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.triggers",
+   "word": "군집을 이룬",
+   "kind": "우회 방지",
+   "text": "세 기공이 군집을 이룬다.",
+   "expect": "(다) '군집 · 간격 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.triggers",
+   "word": "군집으로 본",
+   "kind": "과잉 방지",
+   "text": "두 지시를 군집으로 본다고 단정하지 않는다.",
+   "expect": "(다) 없음 — 예외(조건 · 의문 · 앎의 부정 · 재지 않음)",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.triggers",
+   "word": "군집으로 본",
+   "kind": "우회 방지",
+   "text": "두 지시를 군집으로 본다.",
+   "expect": "(다) '군집 · 간격 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.triggers",
+   "word": "군집에 든",
+   "kind": "과잉 방지",
+   "text": "이 기공이 군집에 든다고 단정할 수 없다.",
+   "expect": "(다) 없음 — 예외(조건 · 의문 · 앎의 부정 · 재지 않음)",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.triggers",
+   "word": "군집에 든",
+   "kind": "우회 방지",
+   "text": "이 기공은 군집에 든다.",
+   "expect": "(다) '군집 · 간격 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.triggers",
+   "word": "합계길이",
+   "kind": "과잉 방지",
+   "text": "합계길이는 이 자료로 재지 않는다.",
+   "expect": "(다) 없음 — 예외(조건 · 의문 · 앎의 부정 · 재지 않음)",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.triggers",
+   "word": "합계길이",
+   "kind": "우회 방지",
+   "text": "상자 길이를 더한 값이 합계길이다.",
+   "expect": "(다) '군집 · 간격 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.triggers",
+   "word": "합계 길이",
+   "kind": "과잉 방지",
+   "text": "합계 길이는 이 자료로 재지 않는다.",
+   "expect": "(다) 없음 — 예외(조건 · 의문 · 앎의 부정 · 재지 않음)",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.triggers",
+   "word": "합계 길이",
+   "kind": "우회 방지",
+   "text": "두 길이를 더한 값이 합계 길이다.",
+   "expect": "(다) '군집 · 간격 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.exclude",
+   "word": "한 군데",
+   "kind": "과잉 방지",
+   "text": "한 군데에 지시가 모여 보인다.",
+   "expect": "(다) 없음 — '한 군데'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.exclude",
+   "word": "한 군데",
+   "kind": "우회 방지",
+   "text": "두 결함은 한 군이다.",
+   "expect": "(다) '군집 · 간격 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.head_same_not_triggers",
+   "word": "간격",
+   "kind": "과잉 방지",
+   "text": "간격이 고른 기공이 보인다.",
+   "expect": "(다) 없음",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.head_same_not_triggers",
+   "word": "간격",
+   "kind": "우회 방지",
+   "text": "두 결함의 간격이 짧아 한 군이다.",
+   "expect": "(다) '군집 · 간격 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.head_same_not_triggers",
+   "word": "군데",
+   "kind": "과잉 방지",
+   "text": "여러 군데에 지시가 보인다.",
+   "expect": "(다) 없음",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "D.cluster.head_same_not_triggers",
+   "word": "군데",
+   "kind": "우회 방지",
+   "text": "세 기공은 군집이다.",
+   "expect": "(다) '군집 · 간격 단정'",
+   "rule": "§5 (다) 새 세부 표지"
+  },
+  {
+   "list": "H2.sublabel_conditional.intro_markers",
+   "word": "다루",
+   "kind": "과잉 방지",
+   "text": "{보조}는 기록을 다루는 조항이다.",
+   "expect": "(라) · '조건부 소개 · 인용' — 소개는 면제 근거가 아니다",
+   "rule": "§4 (ㄷ) · 꼴 표지 차례 1"
+  },
+  {
+   "list": "H2.sublabel_conditional.intro_markers",
+   "word": "다루",
+   "kind": "우회 방지",
+   "text": "{보조}는 기록을 다루며 이 결함에 적용된다.",
+   "expect": "(라) · '조건부 대응의 단정' — 단정이 소개보다 앞선다",
+   "rule": "§4 (ㄷ) · 꼴 표지 차례 1"
+  },
+  {
+   "list": "H2.sublabel_conditional.intro_markers",
+   "word": "관한 조항",
+   "kind": "과잉 방지",
+   "text": "{보조}는 크기에 관한 조항이다.",
+   "expect": "(라) · '조건부 소개 · 인용' — 소개는 면제 근거가 아니다",
+   "rule": "§4 (ㄷ) · 꼴 표지 차례 1"
+  },
+  {
+   "list": "H2.sublabel_conditional.intro_markers",
+   "word": "관한 조항",
+   "kind": "우회 방지",
+   "text": "{보조}는 크기에 관한 조항으로 이 결함에 적용된다.",
+   "expect": "(라) · '조건부 대응의 단정' — 단정이 소개보다 앞선다",
+   "rule": "§4 (ㄷ) · 꼴 표지 차례 1"
+  },
+  {
+   "list": "H2.sublabel_conditional.intro_markers",
+   "word": "에 관한",
+   "kind": "과잉 방지",
+   "text": "{보조}는 선형 결함에 관한 기준이다.",
+   "expect": "(라) · '조건부 소개 · 인용' — 소개는 면제 근거가 아니다",
+   "rule": "§4 (ㄷ) · 꼴 표지 차례 1"
+  },
+  {
+   "list": "H2.sublabel_conditional.intro_markers",
+   "word": "에 관한",
+   "kind": "우회 방지",
+   "text": "{보조}는 선형 결함에 관한 기준이며 이 결함에 적용된다.",
+   "expect": "(라) · '조건부 대응의 단정' — 단정이 소개보다 앞선다",
+   "rule": "§4 (ㄷ) · 꼴 표지 차례 1"
+  },
+  {
+   "list": "H2.sublabel_conditional.intro_markers",
+   "word": "에 대한 조항",
+   "kind": "과잉 방지",
+   "text": "{보조}는 선형 결함에 대한 조항이다.",
+   "expect": "(라) · '조건부 소개 · 인용' — 소개는 면제 근거가 아니다",
+   "rule": "§4 (ㄷ) · 꼴 표지 차례 1"
+  },
+  {
+   "list": "H2.sublabel_conditional.intro_markers",
+   "word": "에 대한 조항",
+   "kind": "우회 방지",
+   "text": "{보조}는 선형 결함에 대한 조항이며 이 결함에 적용된다.",
+   "expect": "(라) · '조건부 대응의 단정' — 단정이 소개보다 앞선다",
+   "rule": "§4 (ㄷ) · 꼴 표지 차례 1"
+  },
+  {
+   "list": "H2.sublabel_conditional.intro_markers",
+   "word": "관한 조항",
+   "kind": "과잉 방지",
+   "text": "{보조}는 이 결함과 무관한 조항이다.",
+   "expect": "(라) · '조건부 소개 · 인용' — 알려진 머리 겹침('무관한 조항' 안의 '관한 조항'). 꼴 표지만 바뀌고 분자는 그대로다(v3.1 과 같다)",
+   "rule": "§4 꼴 표지 차례 3"
+  }
+ ],
+ "noun_use": {
+  "rule": "정본 이름씨가 든 낱말을 가진 목록 칸(문자열 목록) — 넓히거나 좁히면 이 칸들이 함께 움직인다",
+  "nouns": {
+   "기준": {
+    "n_lists": 4,
+    "lists": [
+     "H2.cues",
+     "H3.apply_predicates",
+     "H3.criteria_words",
+     "ra_apply"
+    ]
+   },
+   "조항": {
+    "n_lists": 5,
+    "lists": [
+     "H2.cues",
+     "H2.not_caught.anaphora_without_alias",
+     "H2.sublabel_conditional.intro_markers",
+     "H3.criteria_words",
+     "reservation.reasons.r_uncov.information"
+    ]
+   },
+   "규정": {
+    "n_lists": 2,
+    "lists": [
+     "H2.cues",
+     "H3.criteria_words"
+    ]
+   },
+   "규칙": {
+    "n_lists": 2,
+    "lists": [
+     "H3.criteria_words",
+     "ra_not_assertion.after_da"
+    ]
+   },
+   "적용": {
+    "n_lists": 7,
+    "lists": [
+     "D.premise.triggers",
+     "H2.cues",
+     "H2.exempt_conditional",
+     "H2.not_caught.anaphora_without_alias",
+     "H2.sublabel_conditional.conditional_markers",
+     "H3.apply_predicates",
+     "ra_apply"
+    ]
+   },
+   "조건": {
+    "n_lists": 2,
+    "lists": [
+     "D.premise.exclude",
+     "ra_not_assertion.after_da"
+    ]
+   },
+   "단서": {
+    "n_lists": 1,
+    "lists": [
+     "reservation.reasons.r_note.information"
+    ]
+   },
+   "등급": {
+    "n_lists": 3,
+    "lists": [
+     "D.premise.exclude",
+     "D.premise.head_same_not_triggers",
+     "D.premise.triggers"
+    ]
+   },
+   "전제": {
+    "n_lists": 3,
+    "lists": [
+     "D.premise.exclude",
+     "D.premise.head_same_not_triggers",
+     "D.premise.triggers"
+    ]
+   },
+   "간격": {
+    "n_lists": 1,
+    "lists": [
+     "D.cluster.head_same_not_triggers"
+    ]
+   },
+   "군집": {
+    "n_lists": 1,
+    "lists": [
+     "D.cluster.triggers"
+    ]
+   },
+   "경우": {
+    "n_lists": 2,
+    "lists": [
+     "D.cluster.not_caught.conditional",
+     "D.premise.not_caught.conditional"
+    ]
+   },
+   "판정": {
+    "n_lists": 3,
+    "lists": [
+     "na_value_rule.excluded_from_na",
+     "reservation.not_accepted.possibility",
+     "reservation.verdict_nouns"
+    ]
+   },
+   "정보": {
+    "n_lists": 4,
+    "lists": [
+     "D.premise.triggers",
+     "reservation.absence.noun_after_target",
+     "reservation.reasons.r_dim.information",
+     "reservation.reasons.r_scope.information"
+    ]
+   },
+   "결함": {
+    "n_lists": 1,
+    "lists": [
+     "H1.target_words.fixed"
+    ]
+   },
+   "표": {
+    "n_lists": 5,
+    "lists": [
+     "D.premise.head_same_not_triggers",
+     "H2.conditional_ending.exclude_eojeol_suffix",
+     "H2.not_caught.head_same_words",
+     "reservation.reasons.r_note.information",
+     "reservation.reasons.r_uncov.information"
+    ]
+   }
+  }
+ },
+ "written_at_utc": "2026-10-24T18:07:50Z"
+}

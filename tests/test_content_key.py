@@ -56,14 +56,15 @@ def independent(rows: list[dict]) -> str:
 def test_분류가_계약의_표와_같다() -> None:
     assert set(CONTENT_KEYS) == {"image_id", "image_sha256", "text", "bbox_px_parsed", "parse_error",
                                  "gen_stop", "n_new_tokens", "n_bad_items_dropped", "model_input_wh"}
-    assert set(EXCLUDED_KEYS) == {"latency_ms", "raw_output_ref", "coord_space", "coord_cfg_hash"}
+    assert set(EXCLUDED_KEYS) == {"latency_ms", "raw_output_ref", "coord_space", "coord_cfg_hash", "batch_n"}
     assert not set(CONTENT_KEYS) & set(EXCLUDED_KEYS)
     assert set(OPTIONAL_CONTENT_KEYS) == {"image_grid_thw"}
     assert not set(OPTIONAL_CONTENT_KEYS) & (set(CONTENT_KEYS) | set(EXCLUDED_KEYS))
 
 
 @pytest.mark.parametrize(("key", "other"), [("latency_ms", 99.0), ("raw_output_ref", "elsewhere/1.txt"),
-                                            ("coord_space", "ABS_RESIZED"), ("coord_cfg_hash", "0cc62b38")])
+                                            ("coord_space", "ABS_RESIZED"), ("coord_cfg_hash", "0cc62b38"),
+                                            ("batch_n", 8)])
 def test_제외_키만_다르면_같은_열쇠다(key: str, other) -> None:
     """다시 내보내 지연이 달라진 경우 — 원시 바이트 해시는 갈리지만 판정 한 번 규칙은 걸려야 한다."""
     a, b = raw(line(), line("aihub71761:12")), raw(line(), line("aihub71761:12", **{key: other}))

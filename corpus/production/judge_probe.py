@@ -23,7 +23,7 @@ from . import infer as I
 from . import judge_identity as J
 from . import judge_policy as P
 from . import quality as Q
-from .judge_cases import (V7_EVALUATION_SCOPE, V7_A_PROTOCOL, V7_B_PROTOCOL,
+from .judge_cases import (V7_EVALUATION_SCOPE, V7_A_PROTOCOL, V7_B_PROTOCOL, V8_PROTOCOLS,
                           V7_REGISTERED_SCOPES, V7_REGISTERED_GROUP_COUNTS, validate_v7_manifest,
                           v7_registered_evaluation_scope)
 
@@ -66,12 +66,19 @@ V7_THRESHOLDS = {"dplus_model_false_reject_maximum": 2, "dplus_model_denominator
                  "actual_independent_calls": 2, "parser_error_rows": 0, "truncated_rows": 0}
 V7_REGISTERED_THRESHOLDS = {**V7_THRESHOLDS, "nplus_deterministic_denominator": 4, "planned_cases": 104}
 _V7_BOOL_KEYS = ("has_limitation", "language_ok", "no_unannotated_attributes", "no_unsupported_relation")
-_V7_PROTOCOLS = (V7_PROTOCOL, V7_A_PROTOCOL, V7_B_PROTOCOL)
+_V8_BOOL_KEYS = ("no_unannotated_attributes", "no_unsupported_relation")
+# v8 protocols are v7-family probes (no normal-row model call, registered A/B sets);
+# only the policy, renderer, parser and verdict shape differ (`_is_v8`).
+_V7_PROTOCOLS = (V7_PROTOCOL, V7_A_PROTOCOL, V7_B_PROTOCOL, *V8_PROTOCOLS)
 _STRUCTURED_PROTOCOLS = (V5_PROTOCOL, V6_PROTOCOL, *_V7_PROTOCOLS)
 
 
 def _is_v7(protocol):
     return protocol in _V7_PROTOCOLS
+
+
+def _is_v8(protocol):
+    return protocol in V8_PROTOCOLS
 _FORMAT_NORMALIZATIONS = ("code_fence", "string_boolean")
 _ARTIFACTS = {"CALL.json", "cases.json", "config.json", "backend_batches.jsonl", "outputs.jsonl", "PROBE.json"}
 
@@ -398,6 +405,8 @@ def _group_counts(protocol):
 
 
 def _parser_schema(protocol):
+    if _is_v8(protocol):
+        return "judge_structured_v8"
     if _is_v7(protocol):
         return "judge_structured_v7"
     return "judge_structured_v6" if protocol == V6_PROTOCOL else (
@@ -405,6 +414,8 @@ def _parser_schema(protocol):
 
 
 def _require_parser(protocol):
+    if _is_v8(protocol):
+        return J.require_v8_parser()
     if _is_v7(protocol):
         return J.require_v7_parser()
     if protocol == V6_PROTOCOL:
@@ -432,12 +443,16 @@ def _approval_scope(protocol):
 
 
 def _policy_for(protocol):
+    if _is_v8(protocol):
+        return J._policy_v8()
     if _is_v7(protocol):
         return J._policy_v7()
     return J._policy()
 
 
 def _runtime_for(model, spec, protocol):
+    if _is_v8(protocol):
+        return J.judge_runtime_identity(model, spec, policy_version="v8")
     if _is_v7(protocol):
         return J.judge_runtime_identity(model, spec, policy_version="v7")
     return J.judge_runtime_identity(model, spec)
@@ -480,7 +495,8 @@ def _code_pins():
 
 def _render(cases):
     if _is_v7(_protocol(cases)):
-        return [P.render_judge_v7(c["task"], {"text": c["candidate"], "finish_reason": "eos"})
+        render = P.render_judge_v8 if _is_v8(_protocol(cases)) else P.render_judge_v7
+        return [render(c["task"], {"text": c["candidate"], "finish_reason": "eos"})
                 for c in _model_cases(cases)]
     return [P.render_judge(c["task"], {"text": c["candidate"], "finish_reason": "eos"}) for c in cases]
 
@@ -688,8 +704,9 @@ def _v7_evaluations(case):
     # The exposed G150 predates the generation contract. Keep both modes; the
     # regression gate must not silently relabel old positives or discard failures.
     task, text = case["task"], case["candidate"]
-    regression = P.evaluate_v7(task, text, generation_contract=False)
-    full = P.evaluate_v7(task, text, generation_contract=True)
+    evaluate = P.evaluate_v8 if _is_v8(case.get("protocol")) else P.evaluate_v7
+    regression = evaluate(task, text, generation_contract=False)
+    full = evaluate(task, text, generation_contract=True)
     return regression, full
 
 
@@ -721,24 +738,30 @@ def _analysis_v7(case, raw):
     if not isinstance(raw, dict):
         raise I.StageRefused("probe_rows", "defect v7 rows require preserved model output")
     # No parser or policy helper receives a mutable alias to the saved response.
-    parsed = _require_parser(V7_PROTOCOL)(J._clone(case["task"]), J._clone(raw))
+    v8 = _is_v8(case.get("protocol"))
+    parsed = _require_parser(case["protocol"] if v8 else V7_PROTOCOL)(J._clone(case["task"]), J._clone(raw))
     if (not isinstance(parsed, dict) or
             not {"errors", "rejected", "verdict", "flags", "format_normalized"} <= set(parsed) or
             any(not isinstance(parsed[k], list) or not all(isinstance(v, str) for v in parsed[k])
                 for k in ("errors", "rejected", "flags", "format_normalized"))):
         raise I.StageRefused("parser_contract", "v7 requires B errors/rejected/verdict/flags/normalization")
     normalized = parsed["format_normalized"]
-    if normalized != [key for key in _FORMAT_NORMALIZATIONS if key in normalized]:
+    allowed = Q.JUDGE_V8_FORMAT_NORMALIZATIONS if v8 else _FORMAT_NORMALIZATIONS
+    if normalized != [key for key in allowed if key in normalized]:
         raise I.StageRefused("parser_contract", "invalid v7 format normalization metadata")
     verdict = parsed["verdict"]
     if verdict is None and not parsed["errors"]:
         raise I.StageRefused("parser_contract", "missing v7 verdict must carry a parser error")
-    if verdict is not None and (not isinstance(verdict, dict) or set(verdict) != set(_V7_BOOL_KEYS) | {"reason"}
+    bool_keys = _V8_BOOL_KEYS if v8 else _V7_BOOL_KEYS
+    if v8 and verdict is not None and (not isinstance(verdict, dict) or set(verdict) != set(bool_keys)
+                                       or any(type(verdict[key]) is not bool for key in bool_keys)):
+        raise I.StageRefused("parser_contract", "v8 verdict must contain exactly two strict booleans")
+    if not v8 and verdict is not None and (not isinstance(verdict, dict) or set(verdict) != set(_V7_BOOL_KEYS) | {"reason"}
                                or any(type(verdict[key]) is not bool for key in _V7_BOOL_KEYS)
                                or not isinstance(verdict["reason"], str) or not verdict["reason"].strip()):
         raise I.StageRefused("parser_contract", "v7 verdict must contain four strict booleans and reason")
     rejected = sorted(set(parsed["rejected"]) | (
-        {"judge_" + key + "_false" for key in _V7_BOOL_KEYS if verdict[key] is not True}
+        {"judge_" + key + "_false" for key in bool_keys if verdict[key] is not True}
         if verdict is not None else set()))
     accept = verdict is not None and not parsed["errors"] and not rejected
     return {**base, "raw": raw, "raw_sha256": I._digest(raw), "parser": parsed,
@@ -834,7 +857,7 @@ def _summary_v7(cases, rows, status):
             "positive_full_generation_contract_rejected": sum(groups[g]["full_generation_contract_rejected"] for g in _POSITIVE),
             "full_generation_contract_passed": complete and not any(g["full_generation_contract_rejected"] for g in groups.values()),
             "thresholds_passed": bool(thresholds), "single_call_is_not_determinism_verification": True,
-            "exposed_adjustment_set_cannot_mint_final_approval": protocol != V7_B_PROTOCOL}
+            "exposed_adjustment_set_cannot_mint_final_approval": _approval_scope(protocol) != "final_blinded"}
 
 
 def _check_rules_v7(path, raw, cases):
@@ -1271,7 +1294,7 @@ def _compare_verified(first, left, first_sha, second, right, second_sha):
             "real_backend_pair": bool(real), "gpu_model_verified": verified,
             "protocol": a["input_basis"]["protocol"], "approval_eligible": bool(eligible),
             **({"approval_scope": _approval_scope(protocol),
-                "final_blinded_approval": protocol == V7_B_PROTOCOL and verified,
+                "final_blinded_approval": _approval_scope(protocol) == "final_blinded" and verified,
                 "nplus_model_metric": "not_applicable", "model_determinism_rows": len([r for r in left if r["raw"] is not None]),
                 "gpu_determinism_measured": bool(real and complete)} if _is_v7(protocol) else {}),
             "first_summary": a["summary"], "second_summary": b["summary"],
@@ -1322,7 +1345,7 @@ def _approval_basis(report, first, second, judge_config):
     return {"kind": "two-probe-judge-approval", "protocol": protocol,
             "thresholds": _thresholds(protocol), "comparison": report,
             "evaluation_scope": _evaluation_scope(protocol),
-            **({"approval_scope": _approval_scope(protocol), "final_blinded_approval": protocol == V7_B_PROTOCOL}
+            **({"approval_scope": _approval_scope(protocol), "final_blinded_approval": _approval_scope(protocol) == "final_blinded"}
                if _is_v7(protocol) else {}),
             "input_basis": a["input_basis"], "judge_config": judge_config,
             "runtime_model": a["runtime_model"], "common_implementation_sha256": common,

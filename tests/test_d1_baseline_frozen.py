@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 from typing import get_args
 
@@ -51,14 +52,16 @@ FROZEN_SHA256: dict[str, str] = {
     "scripts/probe/aggregate_seeds.py": "9cf76496660a3036033346975a19f0b00e65cdb88871dc6e60729ea5a5ebbb2d",
     "scripts/probe/recovery_bootstrap.py": "4e892a10c1a574485f1b807ae5620b5d6bb8db92e2398cf7bda99217b7ee768e",
     "scripts/probe/map50_independent.py": "3f1a6201477be80983300cbcfc37324a4ed8165ddc55eb276435bd4dcbc1537b",
-    "evaluation/provenance.py": "3c7550a05995aa2ee22e9348641dd5c1aea63938325fe493530bac960e341f71",
+    "evaluation/provenance.py": "53f0e4d35ac5f0f2975a4185f83cbc1c76248ca1a0a21dbacb03cfe1a17471f8",
 }
 """줄끝을 LF 로 고친 바이트의 sha256 — `evaluation.provenance` 의 코드 지문과 같은 정의다(체크아웃의 줄끝 설정에
 값이 흔들리지 않게). 2026-09-21 D1 착수 직전의 값이고, 같은 날 공개본 표현 정리(주석·docstring 만)로
 여섯 파일을 다시 고정했다 — 동작·단언·설정값은 그대로다. **2026-10-01 에 열한 파일을 다시 박았다** — 역할 이름을 걷었고,
 당시 값은 `BEFORE_ROLE_SCRUB` 에 병기했다. 주석 밖(산출 문자열)이 바뀐 파일은 `tests/test_scrub_was_comment_only.py` 의
 `ROLE_SCRUB_DIVERGED` 가 사유와 함께 든다. **같은 날 `evaluation/provenance.py` 를 더했다**(검수 16번 I-3) — 채점 지문을 내는
-파일인데 역할 이름 정리로 구문 트리 시험에서 빠져 걸린 고정이 0 이 됐다. 그 정리 직전의 값을 `BEFORE_ROLE_SCRUB` 에 병기했다."""
+파일인데 역할 이름 정리로 구문 트리 시험에서 빠져 걸린 고정이 0 이 됐다. 그 정리 직전의 값을 `BEFORE_ROLE_SCRUB` 에 병기했다. **2026-10-22 에 `evaluation/provenance.py` 를 다시 박았다** —
+허용치 규칙 모듈 넷을 채점 지문의 트리 밖 목록에 더했다(03 2판 §5a, 지시 1022b 과제 3). 당시 값은 `BEFORE_LIMITS_RULE_FILES` 에
+병기했다."""
 
 BEFORE_ROLE_SCRUB: dict[str, str] = {
     "evaluation/discrimination.py": "6cdb267258cf9c9ad1f10227c293eff19fc85609eefd0d60129f6431bfd7f9b0",
@@ -76,6 +79,20 @@ BEFORE_ROLE_SCRUB: dict[str, str] = {
 }
 """**당시 값** — 2026-10-01 역할 이름 정리 직전의 바이트 해시(위 표와 같은 정의). 덮지 않고 병기한다. v3 산출물의 파일별 해시와
 맞대는 시험은 이 값을 쓴다 — 산출물이 싣는 파일별 해시는 그때의 기록이라 고치지 않는다."""
+
+
+BEFORE_LIMITS_RULE_FILES: dict[str, str] = {
+    "evaluation/provenance.py": "3c7550a05995aa2ee22e9348641dd5c1aea63938325fe493530bac960e341f71",
+}
+"""**당시 값** — 2026-10-22 허용치 규칙 모듈 넷(`LIMITS_RULE_FILES`)을 `SCORER_FILES` 에 더하기 직전(main `e1820b2d`)의 바이트
+해시(위 표와 같은 정의). 덮지 않고 병기한다. 1차 본실험 산출이 지문을 낸 목록은 `SCORER_FILES_AT_MAIN1` 로 남았고, 그 산출이 싣는
+지문은 고치지 않는다. 바뀐 것은 목록과 그 규칙 문자열(`RULE`)이다 — 채점 함수의 계산은 같다. 당시 값이 그 커밋의 blob 에서 다시
+잰 값인지는 `test_허용치_규칙_모듈을_더하기_전의_값은_그_blob_에서_다시_잰_값이다` 가 맞댄다(상수와 상수를 맞대지 않는다)."""
+
+LIMITS_RULE_BLOBS: dict[str, str] = {
+    "evaluation/provenance.py": "5aca6e035054183447cb41176a977fb98887abb8",
+}
+"""당시 값을 낸 바이트의 **git blob id**(main `e1820b2d` 의 트리)."""
 
 
 def at_d1(rel: str) -> str:
@@ -170,11 +187,16 @@ def test_코드_지문의_파일_목록이_전부_실재한다() -> None:
     assert not grown, f"이제 있는 파일이다 — PENDING_SCORER_FILES 에서 뺀다: {grown}"
 
 
-def test_채점_지문의_목록은_당시_값을_병기하고_진입점만_더했다() -> None:
-    """2026-10-01 재고정. 사전실험 산출물이 지문을 낸 목록(`SCORER_FILES_AT_V3`)은 그대로 두고 진입점 하나만 뒤에 더했다."""
-    from evaluation.provenance import SCORER_FILES_AT_V3
+def test_채점_지문의_목록은_당시_값을_병기하고_뒤에만_더한다() -> None:
+    """2026-10-01 재고정. 사전실험 산출물이 지문을 낸 목록(`SCORER_FILES_AT_V3`)은 그대로 두고 진입점 하나만 뒤에 더했다.
+    2026-10-22: 그 목록을 1차 본실험의 당시 값(`SCORER_FILES_AT_MAIN1`)으로 두고 허용치 규칙 모듈 넷(`LIMITS_RULE_FILES` — 조항 축 ·
+    서술 검사기가 부른다)을 뒤에 더했다. 앞의 목록은 고치지 않는다."""
+    from evaluation.provenance import LIMITS_RULE_FILES, SCORER_FILES_AT_MAIN1, SCORER_FILES_AT_V3
 
-    assert SCORER_FILES == SCORER_FILES_AT_V3 + ("scripts/probe/score_unified.py",)
+    assert SCORER_FILES_AT_MAIN1 == SCORER_FILES_AT_V3 + ("scripts/probe/score_unified.py",)
+    assert SCORER_FILES == SCORER_FILES_AT_MAIN1 + LIMITS_RULE_FILES
+    assert LIMITS_RULE_FILES == ("corpus/rules/clause_text.py", "corpus/rules/limit_eval.py",
+                                 "corpus/rules/limits_loader.py", "corpus/rules/schema.py")
     assert SCORER_FILES_AT_V3 == (                    # 당시 목록 전체 — 길이와 첫 항목만으로는 덜 묶인다(검수 16번 M-9)
         "scripts/probe/score_cells.py", "scripts/probe/adapt_main_detections.py",
         "scripts/probe/content_free_baselines.py", "data/label_map.py", "data/id_strata.py",
@@ -202,6 +224,19 @@ def test_당시_값과_지금_값은_정리한_열두_파일에서만_다르다(
     assert len(BEFORE_ROLE_SCRUB) == 12 and "evaluation/provenance.py" in BEFORE_ROLE_SCRUB
     assert all(BEFORE_ROLE_SCRUB[rel] != FROZEN_SHA256[rel] for rel in BEFORE_ROLE_SCRUB)
 
+
+
+@pytest.mark.parametrize("rel", sorted(BEFORE_LIMITS_RULE_FILES))
+def test_허용치_규칙_모듈을_더하기_전의_값은_그_blob_에서_다시_잰_값이다(rel: str) -> None:
+    assert set(BEFORE_LIMITS_RULE_FILES) == set(LIMITS_RULE_BLOBS) and set(BEFORE_LIMITS_RULE_FILES) <= set(FROZEN_SHA256)
+    out = subprocess.run(["git", "-C", str(REPO), "cat-file", "blob", LIMITS_RULE_BLOBS[rel]], capture_output=True, check=False)
+    if out.returncode != 0 and subprocess.run(["git", "-C", str(REPO), "rev-parse", "--git-dir"],
+                                              capture_output=True, check=False).returncode != 0:
+        pytest.skip("git 저장소가 아니다 — 이 사슬은 저장소 체크아웃에서 돈다")
+    assert out.returncode == 0, f"당시 blob {LIMITS_RULE_BLOBS[rel]} 이 저장소에 없다 — 사슬의 고리가 끊겼다"
+    assert hashlib.sha256(out.stdout.replace(b"\r\n", b"\n")).hexdigest() == BEFORE_LIMITS_RULE_FILES[rel]
+    assert BEFORE_LIMITS_RULE_FILES[rel] != FROZEN_SHA256[rel]
+    assert BEFORE_ROLE_SCRUB.get(rel) != BEFORE_LIMITS_RULE_FILES[rel]      # 앞의 병기와 다른 시점의 값이다
 
 # --------------------------------------------------------------------------------------
 # 저장된 1.3 줄의 바이트 되읽기 — 공유 자산이 있을 때만 돈다

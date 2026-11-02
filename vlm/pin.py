@@ -144,13 +144,16 @@ def init_probe(init_adapter_path: Path) -> dict[str, Any]:
 
 # ---------------------------------------------------------------- 묶기 · 쓰기 · 대조
 def build_pin(*, init_adapter_path: Path, config_path: Path | None = None, repo: Path | None = None,
-              probes: Mapping[str, Callable[[], dict[str, Any]]] | None = None) -> dict[str, Any]:
-    """지금 값으로 착수 고정을 낸다. `probes` 는 시험의 이음새다(`code` · `env` · `common` · `init_adapter`)."""
+              probes: Mapping[str, Callable[[], dict[str, Any]]] | None = None,
+              registration_path: Path | None = None) -> dict[str, Any]:
+    """지금 값으로 착수 고정을 낸다. `probes` 는 시험의 이음새다(`code` · `env` · `common` · `init_adapter`).
+    `registration_path` 는 학습 등록 파일이다 — 비면 `configs/train_registration.yaml`(본실험), 민감도 실행은 그 벌을 준다."""
     pr = dict(probes or {})
     return {"schema": PIN_SCHEMA,
             "code": (pr["code"] if "code" in pr else lambda: code_probe(repo))(),
             "env": (pr["env"] if "env" in pr else lambda: env_probe(repo))(),
-            "common": (pr["common"] if "common" in pr else lambda: common_probe(config_path, repo=repo))(),
+            "common": (pr["common"] if "common" in pr
+                       else lambda: common_probe(config_path, repo=repo, registration_path=registration_path))(),
             "init_adapter": (pr["init_adapter"] if "init_adapter" in pr else lambda: init_probe(init_adapter_path))()}
 
 

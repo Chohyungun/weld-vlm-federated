@@ -32,8 +32,11 @@ def _no_loading(monkeypatch):
     monkeypatch.setattr("data.manifest_io.load_snapshot", boom)
 
 
-@pytest.mark.parametrize("argv", [[], ["--out", "x"], ["--date", "2026-09-21"], ["--out", "x", "--date", "어제"]])
-def test_out_과_date_는_필수이고_날짜는_ISO_꼴이다(argv):
+@pytest.mark.parametrize("argv", [[], ["--edition", "v1", "--out", "x"], ["--edition", "v1", "--date", "2026-09-21"],
+                                  ["--edition", "v1", "--out", "x", "--date", "어제"],
+                                  ["--out", "x", "--date", "2026-09-21"],                    # 판은 기본값이 없다
+                                  ["--edition", "v9", "--out", "x", "--date", "2026-09-21"]])  # 등록부 밖의 판
+def test_판_out_date_는_필수이고_날짜는_ISO_꼴이다(argv):
     with pytest.raises(SystemExit) as e:
         MM.main(argv)
     assert e.value.code == 2
@@ -46,7 +49,7 @@ def test_봉인된_경로에는_쓰지_않는다(tmp_path, monkeypatch):
     (sealed / CONTRACT_NAME).write_text("0" * 64 + "  pairs.jsonl\n", encoding="utf-8")
     before = (sealed / CONTRACT_NAME).read_bytes()
     with pytest.raises(FrozenDirectoryError):
-        MM.main(["--out", str(sealed), "--date", "2026-09-21"])
+        MM.main(["--edition", "v1", "--out", str(sealed), "--date", "2026-09-21"])
     assert (sealed / CONTRACT_NAME).read_bytes() == before and len(list(sealed.iterdir())) == 1
 
 
@@ -54,7 +57,7 @@ def test_비어_있지_않은_경로에는_쓰지_않는다(tmp_path, monkeypatc
     _no_loading(monkeypatch)
     (tmp_path / "남의_파일.txt").write_text("x\n", encoding="utf-8")
     with pytest.raises(SystemExit, match="비어 있지 않다"):
-        MM.main(["--out", str(tmp_path), "--date", "2026-09-21"])
+        MM.main(["--edition", "v1", "--out", str(tmp_path), "--date", "2026-09-21"])
     assert [p.name for p in tmp_path.iterdir()] == ["남의_파일.txt"]
 
 
@@ -71,7 +74,7 @@ def test_main_이_경로_실재_검사를_켜서_부른다(monkeypatch, tmp_path
     monkeypatch.setattr("data.manifest_io.load_snapshot", lambda *a, **k: SimpleNamespace(manifest=None, annotations=None))
     monkeypatch.setattr(MM.P, "build_pairs", fake_build)
     with pytest.raises(RuntimeError):
-        MM.main(["--out", str(tmp_path / "o"), "--date", "2026-09-21"])
+        MM.main(["--edition", "v1", "--out", str(tmp_path / "o"), "--date", "2026-09-21"])
     assert seen.get("check_paths") is True and seen.get("root") == M.REPO
 
 

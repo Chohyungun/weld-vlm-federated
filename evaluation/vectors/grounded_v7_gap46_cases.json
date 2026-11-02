@@ -1,0 +1,2399 @@
+{
+ "about": "v8 결정적 층의 틈 정정(47)의 합성 사례 — 46 합성 탐침 35 + 변형 X01 ~ X15. 정본 동치 벡터에 extend 로 더한다.",
+ "kind": "grounded_v7_cases",
+ "source": "judge_parser_v8_vectors.json 의 gap46 과 같은 입력(같은 빌더)",
+ "cases": [
+  {
+   "candidate": "용입불량 1개가 위 가운데에 표시되어 있다. 다른 결함 표시는 없다. 용입불량의 모양과 밝기는 주석에 나타나 있지 않다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-A",
+   "id": "G46-P01",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 1개가 위 가운데에 표시되어 있다. 다른 결함 표시는 없다. 용입불량의 모양과 밝기는 알 수 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-A",
+   "id": "G46-P01c",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 1개가 위 가운데에 표시되어 있다. 다른 결함 표시는 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-A",
+   "id": "G46-P01d",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 1개가 아래 왼쪽에 표시되어 있다. 이 밖의 결함 표시는 없다. 주석은 결함의 길이를 알려 주지 않는다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-B",
+   "id": "G46-P02",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "아래 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "아래 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 1개가 아래 왼쪽에 표시되어 있다. 이 밖의 결함 표시는 없다. 결함의 길이는 주석에 적혀 있지 않다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-B",
+   "id": "G46-P02c",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "아래 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "아래 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 2개가 아래 왼쪽에 표시되어 있다. 이 기공들은 같은 칸에 표시되어 있다. 주석만으로는 기공이 서로 이어져 있는지 알 수 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-C",
+   "id": "G46-P03",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 2
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "아래 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "아래 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 2개가 아래 왼쪽에 표시되어 있다. 아래 왼쪽 칸의 기공들이 붙어 있는지는 주석으로 알 수 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-C",
+   "id": "G46-P03b",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 2
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "아래 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "아래 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 2개가 아래 왼쪽에 표시되어 있다. 이 기공들은 같은 칸에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-C",
+   "id": "G46-P03c",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 2
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "아래 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "아래 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 3개가 위 왼쪽, 위 가운데, 위 오른쪽에 표시되어 있다. 용입불량은 모두 위쪽 높이의 칸에 있다. 같은 높이에 있다는 것만으로 이 용입불량들이 이어져 있다고 볼 수는 없다. 아래쪽 높이의 칸에는 표시된 결함이 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-D",
+   "id": "G46-P04",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 3
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 3개가 위 왼쪽, 위 가운데, 위 오른쪽에 표시되어 있다. 용입불량은 모두 위쪽 높이의 칸에 있다. 아래쪽 높이의 칸에는 표시된 결함이 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-D",
+   "id": "G46-P04b",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 3
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 3개가 위 왼쪽, 위 가운데, 위 오른쪽에 표시되어 있다. 같은 높이에 있다는 것만으로 이 용입불량들이 이어져 있다고 볼 수는 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-D",
+   "id": "G46-P04c",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 3
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 3개가 위 왼쪽, 위 가운데, 위 오른쪽에 표시되어 있다. 같은 높이에 있다는 것만으로는 이 용입불량들이 이어져 있는지 알 수 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-C",
+   "id": "G46-P04d",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 3
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 3개가 위 왼쪽, 위 가운데, 위 오른쪽에 표시되어 있다. 같은 높이의 칸에 있다는 것만으로 하나로 이어진 결함이라고 볼 수는 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-E",
+   "id": "G46-P05",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 3
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 3개가 위 왼쪽과 가운데 왼쪽에 표시되어 있다. 위 왼쪽 칸에 표시된 기공이 가운데 왼쪽 칸보다 많다. 기공은 모두 왼쪽 열의 칸에 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-F",
+   "id": "G46-P06",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "가운데 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "가운데 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 3개가 위 왼쪽과 가운데 왼쪽에 표시되어 있다. 위 왼쪽 칸에 기공이 가장 많다. 기공은 모두 왼쪽 열의 칸에 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-F",
+   "id": "G46-P06b",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "가운데 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "가운데 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 3개가 위 왼쪽과 가운데 왼쪽에 표시되어 있다. 기공은 모두 왼쪽 열의 칸에 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-F",
+   "id": "G46-P06c",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 3
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "가운데 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "가운데 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 2개가 아래 왼쪽과 아래 오른쪽에 표시되어 있다. 용입불량은 아래쪽 높이의 양 끝 칸에 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-G",
+   "id": "G46-P07",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 2
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "아래 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "아래 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 2개가 아래 왼쪽과 아래 오른쪽에 표시되어 있다. 아래 가운데 칸과 그 위 칸들에는 표시된 결함이 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-G",
+   "id": "G46-P07b",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 2
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "아래 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "아래 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "아래 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 2개와 용입불량 1개가 표시되어 있다. 기공은 위 왼쪽과 위 오른쪽에, 용입불량은 아래 가운데에 있다. 용입불량을 뺀 결함은 모두 위쪽 높이의 칸에 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-H",
+   "id": "G46-P08",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 2,
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 오른쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "아래 가운데"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 오른쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "아래 가운데"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 2개와 용입불량 1개가 표시되어 있다. 기공은 위 왼쪽과 위 오른쪽에, 용입불량은 아래 가운데에 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-H",
+   "id": "G46-P08b",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 2,
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 오른쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "아래 가운데"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 오른쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "아래 가운데"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "균열 1개가 아래 오른쪽에, 기공 1개와 용입불량 1개가 위 왼쪽에 표시되어 있다. 위 왼쪽 칸에는 종류가 다른 결함이 함께 있다. 영상 가운데 칸에는 표시된 결함이 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-I",
+   "id": "G46-P09",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1,
+      "기공": 1,
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "균열 1개가 아래 오른쪽에 표시되어 있다. 위 왼쪽에는 기공 1개와 용입불량 1개가 표시되어 있다. 위 왼쪽 칸에는 종류가 다른 결함이 함께 있다. 영상 가운데 칸에는 표시된 결함이 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-I",
+   "id": "G46-P09b",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1,
+      "기공": 1,
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "균열 1개가 아래 오른쪽에, 기공 1개가 위 왼쪽에, 용입불량 1개가 위 왼쪽에 표시되어 있다. 위 왼쪽 칸에는 종류가 다른 결함이 함께 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-I",
+   "id": "G46-P09c",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1,
+      "기공": 1,
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "융합불량 2개, 기공 1개, 용입불량 1개가 표시되어 있다. 융합불량은 가운데 왼쪽과 영상 가운데에, 기공과 용입불량은 가운데 오른쪽에 있다. 결함은 모두 가운데 높이의 칸에 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-I",
+   "id": "G46-P10",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "융합불량": 2,
+      "기공": 1,
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "융합불량",
+       "where": "가운데 왼쪽"
+      },
+      {
+       "name": "융합불량",
+       "where": "가운데"
+      },
+      {
+       "name": "기공",
+       "where": "가운데 오른쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "융합불량",
+       "where": "가운데 왼쪽"
+      },
+      {
+       "name": "융합불량",
+       "where": "가운데"
+      },
+      {
+       "name": "기공",
+       "where": "가운데 오른쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "융합불량 2개, 기공 1개, 용입불량 1개가 표시되어 있다. 융합불량은 가운데 왼쪽과 가운데에, 기공과 용입불량은 가운데 오른쪽에 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-가운데",
+   "id": "G46-P10b",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "융합불량": 2,
+      "기공": 1,
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "융합불량",
+       "where": "가운데 왼쪽"
+      },
+      {
+       "name": "융합불량",
+       "where": "가운데"
+      },
+      {
+       "name": "기공",
+       "where": "가운데 오른쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "융합불량",
+       "where": "가운데 왼쪽"
+      },
+      {
+       "name": "융합불량",
+       "where": "가운데"
+      },
+      {
+       "name": "기공",
+       "where": "가운데 오른쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "융합불량 2개, 기공 1개, 용입불량 1개가 표시되어 있다. 융합불량은 가운데 왼쪽과 영상 가운데에, 기공은 가운데 오른쪽에, 용입불량은 가운데 오른쪽에 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-I",
+   "id": "G46-P10c",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "융합불량": 2,
+      "기공": 1,
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "융합불량",
+       "where": "가운데 왼쪽"
+      },
+      {
+       "name": "융합불량",
+       "where": "가운데"
+      },
+      {
+       "name": "기공",
+       "where": "가운데 오른쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "융합불량",
+       "where": "가운데 왼쪽"
+      },
+      {
+       "name": "융합불량",
+       "where": "가운데"
+      },
+      {
+       "name": "기공",
+       "where": "가운데 오른쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 1개가 영상 가운데에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-대조",
+   "id": "G46-P11",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 1
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "가운데"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "가운데"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "균열 2개가 아래 왼쪽과 아래 가운데에 표시되어 있다. 균열은 아래쪽 높이의 이웃한 칸에 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-대조",
+   "id": "G46-P12",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 2
+     },
+     "defect_positions": [
+      {
+       "name": "균열",
+       "where": "아래 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 가운데"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "균열",
+       "where": "아래 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 가운데"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 3개가 가운데 왼쪽, 가운데, 가운데 오른쪽에 표시되어 있다. 위쪽 높이와 아래쪽 높이의 칸에는 표시된 결함이 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-가운데",
+   "id": "G46-P13",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 3
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "가운데 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "가운데 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 1개가 위 왼쪽에, 균열 1개가 아래 왼쪽에 표시되어 있다. 결함은 모두 왼쪽 열의 칸에 있다. 같은 열에 있다는 것만으로 결함이 이어져 있다고 볼 수는 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-D",
+   "id": "G46-P14",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 1,
+      "균열": 1
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "균열",
+       "where": "아래 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 1개가 위 왼쪽에 표시되어 있다. 결함의 모양은 주석에 나타나 있지 않다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-A",
+   "id": "G46-P15",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 1
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 3개가 가운데 왼쪽, 영상 가운데, 가운데 오른쪽에 표시되어 있다. 위쪽 높이와 아래쪽 높이의 칸에는 표시된 결함이 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-대조",
+   "id": "G46-P13b",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 3
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "가운데 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "가운데 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 3개가 가운데 왼쪽, 가운데, 가운데 오른쪽에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-가운데",
+   "id": "G46-P16",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 3
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "가운데 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "가운데 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 1개가 가운데에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-가운데",
+   "id": "G46-P16b",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "가운데"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "가운데"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 1개가 가운데 왼쪽에, 용입불량 1개가 가운데에, 용입불량 1개가 가운데 오른쪽에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-가운데",
+   "id": "G46-P16c",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 3
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "가운데 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "가운데 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "가운데 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 3개가 위 왼쪽, 위 가운데, 위 오른쪽에 표시되어 있다. 같은 높이에 있다는 것만으로 이 용입불량들이 이어져 있다고 말할 수는 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-D",
+   "id": "G46-X01",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 3
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 3개가 위 왼쪽, 위 가운데, 위 오른쪽에 표시되어 있다. 같은 높이에 있다는 것만으로 결함이 이어져 있다고 말할 수는 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-D",
+   "id": "G46-X02",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 3
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 3개가 위 왼쪽, 위 가운데, 위 오른쪽에 표시되어 있다. 합격이 아니라고 볼 수는 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-D",
+   "id": "G46-X03",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 3
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 2개가 아래 왼쪽에 표시되어 있다. 이 기공들이 서로 이어져 있지 않다고 볼 수는 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-D",
+   "id": "G46-X04",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 2
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "아래 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "아래 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "아래 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 3개가 위 왼쪽, 위 가운데, 위 오른쪽에 표시되어 있다. 용입불량 3개는 하나로 된 결함이다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-E",
+   "id": "G46-X05",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 3
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 오른쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 가운데"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 오른쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "균열 1개가 위 왼쪽에 표시되어 있다. 균열의 끝은 뾰족하다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-G",
+   "id": "G46-X06",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1
+     },
+     "defect_positions": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 2개와 용입불량 1개가 표시되어 있다. 기공은 위 왼쪽과 위 오른쪽에, 용입불량은 아래 가운데에 있다. 용입불량을 제외한 결함은 모두 위쪽 높이의 칸에 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-H",
+   "id": "G46-X07",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 2,
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 오른쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "아래 가운데"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 오른쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "아래 가운데"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 2개와 용입불량 1개가 표시되어 있다. 기공은 위 왼쪽과 위 오른쪽에, 용입불량은 아래 가운데에 있다. 위쪽 높이와 아래 가운데를 뺀 칸에는 표시된 결함이 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-H",
+   "id": "G46-X08",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 2,
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 오른쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "아래 가운데"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 오른쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "아래 가운데"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "기공 2개와 용입불량 1개가 표시되어 있다. 기공은 위 왼쪽과 위 오른쪽에, 용입불량은 아래 가운데에 있다. 기공을 제외한 결함은 모두 위쪽 높이의 칸에 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-H",
+   "id": "G46-X09",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "기공": 2,
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 오른쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "아래 가운데"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 오른쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "아래 가운데"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "균열 1개가 아래 오른쪽에, 기공 1개, 용입불량 1개가 위 왼쪽에 표시되어 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-I",
+   "id": "G46-X10",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1,
+      "기공": 1,
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "균열 1개, 기공 1개, 용입불량 1개가 표시되어 있다. 균열은 아래 오른쪽에, 기공과 용입불량은 위 왼쪽에 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-I",
+   "id": "G46-X11",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1,
+      "기공": 1,
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "균열 1개, 기공 1개, 용입불량 1개가 표시되어 있다. 용입불량은 위 왼쪽에, 기공과 균열은 위 왼쪽에 있다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-I",
+   "id": "G46-X12",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1,
+      "기공": 1,
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "균열",
+       "where": "아래 오른쪽"
+      },
+      {
+       "name": "기공",
+       "where": "위 왼쪽"
+      },
+      {
+       "name": "용입불량",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 1개가 아래 왼쪽에 표시되어 있다. 용접 조건 때문에 생겼다고 볼 수는 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-D",
+   "id": "G46-X13",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "아래 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "아래 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "균열 1개가 위 왼쪽에 표시되어 있다. 균열이 길다고 볼 수는 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-D",
+   "id": "G46-X14",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "균열": 1
+     },
+     "defect_positions": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "균열",
+       "where": "위 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  },
+  {
+   "candidate": "용입불량 1개가 아래 왼쪽에 표시되어 있다. 불합격이라고 볼 수는 없다. 모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+   "group": "GAP46-D",
+   "id": "G46-X15",
+   "intent": null,
+   "task": {
+    "kind": "image_report",
+    "evidence": {
+     "defect_counts_by_name": {
+      "용입불량": 1
+     },
+     "defect_positions": [
+      {
+       "name": "용입불량",
+       "where": "아래 왼쪽"
+      }
+     ],
+     "row_class": "defect",
+     "size_mm_available": false
+    },
+    "locked_target": {
+     "clauses": [],
+     "defects": [
+      {
+       "name": "용입불량",
+       "where": "아래 왼쪽"
+      }
+     ],
+     "verdict": null
+    },
+    "prompt": "제공한 주석의 이름·개수·거친 위치와 한계만 한국어로 설명하라.",
+    "source_ids": [
+     "synthetic-annotation"
+    ]
+   }
+  }
+ ]
+}

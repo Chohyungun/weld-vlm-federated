@@ -189,8 +189,8 @@ def test_export_는_이미지와_생성기보다_먼저_목록_관문을_부른�
     w = W.build(tmp_path)
     seen = []
 
-    def spy(el, g, *, mode, purpose, meta_of):
-        seen.append((mode, purpose, el.file_sha256))
+    def spy(el, g, *, mode, purpose, meta_of, sample=None):
+        seen.append((mode, purpose, el.file_sha256, sample))
         raise ExportRefused("spy", "목록 관문에서 멈춘다")
 
     monkeypatch.setattr(XP, "check_generation_list", spy)
@@ -198,4 +198,4 @@ def test_export_는_이미지와_생성기보다_먼저_목록_관문을_부른�
     with pytest.raises(ExportRefused) as e:
         W.run(w, loader=loader)
     assert e.value.code == "spy" and loader.calls == 0
-    assert seen == [("model", "rehearsal", validate_eval_list(w.lists["model"].read_bytes()).file_sha256)]
+    assert seen == [("model", "rehearsal", validate_eval_list(w.lists["model"].read_bytes()).file_sha256, None)]

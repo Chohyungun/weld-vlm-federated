@@ -20,10 +20,12 @@ population:
     strata: material_x_group_mean_defect_bucket
     bucket_edges: ["0", "1", "2-3", "4+"]
     min_groups_per_stratum: 2
-    main_size: 3000
+    main_size: 1000
     weighting: stratified_g_over_n
     side_file_header: "image_id,stratum,G_h,n_h"
     sealed:
+      # 1000 — 의사결정로그 2026-10-17 본실험 평가 표본(같은 시드 · 같은 묶음 순열의 앞, 2000 · 3000 · 4000 의 부분집합)
+      "1000": {images: 1059, groups: 101, file_sha256: "7dbb6aaf44c6be2dc256627644472704a037d3446795064a4e547f4176be9313", set_sha256: "4ea80dbbc3e159ee6470dbce3ed68c0c10e20c66b7c1b4facbedde0cbf73e073", side_sha256: "04ea37cb799d3513bb1cab2eefa702422a1f5a709de62387a51c31f887326fdd"}
       "2000": {images: 2103, groups: 200, file_sha256: "8a7687dd95edfe2a8342bd81a23b5f8331f7da3c46318eb22ed138ec2ffddf94", set_sha256: "39a065c0afa11bfaae75d06642e71005c8deb54beeece10acabfc0b0b2f58df8", side_sha256: "463f6463dc4b43be999f377d9c764f8208f5d530743278bf663139c4f000d4b7"}
       "3000": {images: 3080, groups: 300, file_sha256: "a251ebffb4265b06610e7d69a115f97753855253b2db94c053174c1449ab39b5", set_sha256: "5c7c0990463eb84ba6ec03df23c934df93b2aaca893f5f225b363156b815540f", side_sha256: "098924530c1c8c5b02e4e8f31e269225b29d327f913bd0da968095d6abd9e318"}
       "4000": {images: 4181, groups: 399, file_sha256: "1033bea37fe1aa0ef76a87b5b1f77dc5dd717160e06b822bcb0ad948fd85fb9d", set_sha256: "4804d9f94b42aa8d1aa30ac4194c7fa5f893764ce48ee95a6428cb50f11d755e", side_sha256: "025c5e6ef758cda98e206cb8dfc9a448647e242130528e943f039b7f404f24b7"}

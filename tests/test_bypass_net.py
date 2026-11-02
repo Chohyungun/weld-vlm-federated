@@ -34,10 +34,19 @@ NET: dict[str, frozenset[str]] = {
     "evaluation.rule5": frozenset({"judge_rule5", "judge_rule5_registered"}),
     "evaluation.recovery_ci": frozenset({"percentile_ci", "recovery_from", "paired_bootstrap", "weighted_map"}),
     "evaluation.stats": frozenset({"cluster_bootstrap"}),
+    "evaluation.recovery_interval": frozenset({"classify_draws", "recovery_interval", "recovery_interval_registered",
+                                               "point_recovery"}),
+    "evaluation.percentile_rule": frozenset({"interval", "defined_interval"}),
+    "evaluation.strict_main": frozenset({"compute", "baseline_table"}),
+    "evaluation.sample_bootstrap": frozenset({"draw_weights", "draw_multiplicities", "weights_from", "m1_draws"}),
 }
-"""모듈 → 그물의 이름. `box_f1` 은 공개 함수 전부다(파일에서 센다). `rule5` 는 아직 없는 모듈이다(§29-5)."""
-INTERVAL_NAMES = frozenset({"percentile_ci", "paired_bootstrap", "weighted_map", "cluster_bootstrap"})
-"""구간을 내는 이름."""
+"""모듈 → 그물의 이름. `box_f1` 은 공개 함수 전부다(파일에서 센다). `rule5` 는 등록 판정(`judge_rule5_registered`)만 있다 —
+진단 함수(`judge_rule5`)는 만들지 않았고 이름만 그물에 남겨 둔다(35번 §1)."""
+INTERVAL_NAMES = frozenset({"percentile_ci", "paired_bootstrap", "weighted_map", "cluster_bootstrap", "classify_draws",
+                            "recovery_interval", "recovery_interval_registered", "point_recovery", "interval",
+                            "defined_interval", "compute", "draw_weights", "draw_multiplicities", "weights_from"})
+"""구간을 내는 이름. 10-01 규약의 두 모듈(`recovery_interval` · `percentile_rule`)을 2026-10-14 에 더했다(외부 검토 137-2 M-03 반영으로
+CI 어림이 그 이름을 가져오게 됐다)."""
 
 CLOSED: dict[str, tuple[str, str]] = {
     "scripts/probe/score_cells.py": (
@@ -56,13 +65,15 @@ CLOSED: dict[str, tuple[str, str]] = {
     "scripts/recompute_baselines.py": ("no_interval", "score_records 만 가져온다"),
     "scripts/verify_ablation_arms.py": ("no_interval", "score_records 만 가져온다"),
     "scripts/probe/eval_sample_ci_estimate.py": (
-        "no_interval",
-        "평가 표본 크기 어림(25번) — 사전실험 검출기 예측(통합형 묶음이 아니다)의 계수를 build_counts 로만 센다. "
-        "구간 이름을 가져오지 않는다 — 자체 층 안 재표집은 크기 비교용 어림이고 등록 구간이 아니다(2026-10-13 추가)"),
+        "registered_convention",
+        "평가 표본 크기 어림(25번) — 사전실험 검출기 예측(통합형 묶음이 아니다)의 계수를 build_counts 로 센다. 구간은 본채점과 같은 "
+        "10-01 규약(recovery_interval · percentile_rule)으로 내고 규약 id 를 싣는다 — 자체 층 안 재표집은 크기 비교용 어림이고 "
+        "본채점 구간이 아니다(2026-10-13 추가, 2026-10-14 규약 통일)"),
 }
 """닫힌 목록 열하나 — 사전실험 스크립트다. 통합형 묶음을 읽지 않는다(`UNI_MAIN_TAGS` 를 가져오지 않는다 — 아래 시험).
 
-분류 셋. `old_registration` 은 구간을 싣되 옛 등록 블록이나 규약 문장을 산출에 싣는다 — 시험이 그 참조를 본다.
+분류 넷. `old_registration` 은 구간을 싣되 옛 등록 블록이나 규약 문장을 산출에 싣는다 — 시험이 그 참조를 본다.
+`registered_convention` 은 구간을 10-01 규약 모듈로 내고 규약 id(`CONVENTION_ID`)를 싣는다 — 시험이 그 참조를 본다.
 `no_interval` 은 구간을 내는 이름을 가져오지 않는다 — 시험이 본다. `interval_unmarked` 는 구간을 싣는데 표지가 없다 —
 3판이 가정한 "둘 가운데 하나" 에 들지 않는 둘이고, 고칠 수 없는 파일이라 이름과 까닭만 적는다(보고서에 올렸다)."""
 
@@ -188,6 +199,16 @@ def test_구간을_싣는_스크립트는_옛_등록이나_규약_문장을_싣�
 @pytest.mark.parametrize("rel", sorted(p for p, (k, _) in CLOSED.items() if k == "no_interval"))
 def test_구간을_싣지_않는_스크립트는_구간_함수를_가져오지_않는다(rel: str, found) -> None:
     assert not found[rel] & INTERVAL_NAMES
+
+
+@pytest.mark.parametrize("rel", sorted(p for p, (k, _) in CLOSED.items() if k == "registered_convention"))
+def test_등록_규약으로_구간을_내는_스크립트는_규약_id_를_싣는다(rel: str, found) -> None:
+    tree = ast.parse((REPO / rel).read_text(encoding="utf-8"))
+    assert found[rel] & INTERVAL_NAMES and "CONVENTION_ID" in names_referenced(tree)
+
+
+def test_닫힌_목록의_분류는_넷_가운데_하나다() -> None:
+    assert {k for k, _ in CLOSED.values()} <= {"old_registration", "no_interval", "interval_unmarked", "registered_convention"}
 
 
 @pytest.mark.parametrize("rel", sorted(CLOSED))

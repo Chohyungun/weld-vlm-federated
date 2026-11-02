@@ -1,0 +1,153 @@
+{
+ "kind": "partb_meta_binding_cases",
+ "version": 1,
+ "status": "결합 시험 (나) — 봉인 페어 2 판의 실제 메타와 명부 상태를 대조한다. 사례별 연산과 거부 기대는 기존 판을 유지한다.",
+ "sources": {
+  "dispatch_1024h": {
+   "path": "docs/dev_log/2026-10-20-설계복구/dispatch_D_20261024h.md(본체 체크아웃)",
+   "sha256": "5c62c5fbee36510451db81026982185a67ef19581b3811c8ca2585d08523ca07"
+  },
+  "receipt": {
+   "commit": "cda38e0bf5c5712cd7f00d78e64eaf87f764ca3e",
+   "path": "docs/dev_log/2026-10-20-설계복구/08g_결합재빌드영수증_C.json",
+   "sha256": "209eac6b491f0b3a0568d16bf66ad2f019ef3e738894fa4f76a675fe4be79111"
+  },
+  "inputs_cases_v1": {
+   "path": "evaluation/vectors/narrative_inputs_cases.v1.json",
+   "sha256": "4d06a076fc52fed0f96408d0b7923eed4dfe12e3ac3d46bed18af15b09f764b5"
+  },
+  "binding_cases_v1": {
+   "path": "evaluation/vectors/partb_binding_cases.v1.json",
+   "sha256": "827ca571b9a62bf65ddc1f40eebe9232b7d3977f9efa3026f8a143ebfada11cc"
+  },
+  "builder": {
+   "path": "docs/dev_log/2026-10-20-설계복구/07k_메타결합사례고정_D.py",
+   "lf_sha256": "155624accd5f4885e1e7ba3b381823b79dfe2d50ce378e8c7da589168bc0d980"
+  },
+  "seal_receipt": {
+   "path": "_workspace/seal/seal-20261027/receipts/S10_SEAL.json",
+   "sha256": "2e87f89add99d6041fd6fff6323a3e8aa6d79531b5607fe6fd4099038bfb7318",
+   "seal_commit": "74a9c5c1c866b25ac0bdea5b0b4120240ef2c6a0"
+  }
+ },
+ "facts_rule": {
+  "path": "봉인 영수증이 적은 최종 폴더",
+  "snapshot_digest": "영수증의 digest — 실제 SNAPSHOT.sha256 의 digest 와 같아야 한다",
+  "snapshot_problems": "vlm.uni_config.pairs_snapshot_problems(실제 pairs.jsonl, digest) — 비어야 한다(실제 파일 해시를 다시 잰다)",
+  "sealed_status": "실제 봉인 명부의 상태를 읽는다. expected 와 같아야 하며 대역 상태를 넣지 않는다.",
+  "pairs_meta_raw": "실제 PAIRS_META.json 의 바이트(바꾼 사례는 바꾼 바이트)",
+  "snapshot_pairs_meta_sha256": "실제 SNAPSHOT.sha256 에 적힌 PAIRS_META.json 의 sha(바꾼 메타 사례는 그 바이트의 sha — 스냅샷을 다시 낸 것과 같은 꼴)",
+  "config_pairs_digest": "digest — 실제 호출 자리는 설정에서 읽는다(대신 쓴다)",
+  "token_table_pairs_digest": "digest — 실제 호출 자리는 토큰 표 출처에서 읽는다(대신 쓴다)",
+  "contract": "평가 쪽 narrative_inputs_block(세계, 표 · 로더 · 생성 경로는 저장소의 실제 바이트 사본, 페어 = 위 사실) → dump_narrative_inputs; 등록 sha = 그 바이트의 sha"
+ },
+ "cases": [
+  {
+   "id": "accept",
+   "ops": [],
+   "expect": [],
+   "why": "실제 봉인 페어 2 판 메타 · 실제 표 · 로더 · 생성 경로로 지은 계약을 그 사실들로 맞대면 받는다(사례 v1 의 accept)"
+  },
+  {
+   "id": "conditions_only_table",
+   "ops": [
+    {
+     "edit_table_after_contract": "drop_first_condition_token",
+     "token": "|무등급전제"
+    }
+   ],
+   "expect": [
+    "code_bytes"
+   ],
+   "spec_case": "M10",
+   "why": "계약을 지은 뒤 표의 조건 칸 토큰 하나만 지운다 — 표의 원시 바이트를 다시 재어 거부(단계 ③)"
+  },
+  {
+   "id": "identity_limits_path",
+   "ops": [
+    {
+     "set": [
+      "identity",
+      "limits",
+      "path"
+     ],
+     "value": "corpus/rules/limits_v2_pilot_copy.csv"
+    }
+   ],
+   "expect": [
+    "pairs_meta_identity"
+   ],
+   "spec_case": "I02_path",
+   "why": "메타의 identity.limits.path 만 다르다 — 메타 바이트 · 스냅샷 · 계약은 그 메타에 맞춰 지었다(단계 ⑤)"
+  },
+  {
+   "id": "identity_limits_sha",
+   "ops": [
+    {
+     "set": [
+      "identity",
+      "limits",
+      "sha256"
+     ],
+     "sha_of_text": "결합 시험 — 다른 표"
+    }
+   ],
+   "expect": [
+    "pairs_meta_identity"
+   ],
+   "spec_case": "I02_sha",
+   "why": "메타의 identity.limits.sha256 만 다르다(단계 ⑤)"
+  },
+  {
+   "id": "status_moved",
+   "ops": [
+    {
+     "move": [
+      "limits_table",
+      "status"
+     ],
+     "to": [
+      "identity",
+      "limits",
+      "status"
+     ]
+    }
+   ],
+   "expect": [
+    "pairs_meta_identity"
+   ],
+   "spec_case": "I02_unknown_field",
+   "why": "limits_table 의 status 를 identity.limits 로 옮긴다 — identity.limits 는 {path, sha256} 의 닫힌 객체다(I-02)"
+  },
+  {
+   "id": "unknown_field",
+   "ops": [
+    {
+     "set": [
+      "identity",
+      "extra"
+     ],
+     "value": 1
+    }
+   ],
+   "expect": [
+    "pairs_meta_identity"
+   ],
+   "spec_case": "M12_meta",
+   "why": "identity 에 모르는 칸 — 닫힌 객체다(단계 ⑤)"
+  }
+ ],
+ "codes_rule": "사유 코드는 줄마다 ': ' 앞 — 집합을 정렬해 맞댄다(사례 v1 의 시험과 같은 규칙)",
+ "written_at_utc": "2026-10-24T15:21:32Z",
+ "sealed_pairs": {
+  "path": "data/processed/pairs_main_v2",
+  "snapshot_digest": "9a77978ec62ffab58762ed8d1dbbe012d02b21d1283e3dba2b19e6e63309d139",
+  "pairs_meta_sha256": "73633bdf72cc1876005afc4a117281f9da9656b9744a99808d24850b090a7150",
+  "snapshot_file_sha256": "4a2fcbbed38ca3bcf608c59fa33a31290aed15407a01dd59ba66057dfecee8f6",
+  "identity_limits": {
+   "path": "corpus/rules/limits_v2_pilot.csv",
+   "sha256": "0c76b6a639fc2d617115122fbc10204fcc0ccf665e9b4c6d27f679057294ef4d"
+  },
+  "from": "봉인 영수증과 실제 봉인 파일의 바이트"
+ }
+}

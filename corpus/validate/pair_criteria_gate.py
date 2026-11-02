@@ -59,6 +59,25 @@ CLOSE_SIZE_INDEPENDENT = ("크기와 무관한 기준은 치수 정보 없이도
                           " 이 자료는 판정 축을 조항 검색과 기준 서술로 한정해 합부 판정을 싣지 않는다.")
 NONE_PERMITTED_KO = "크기와 무관하게 허용하지 않는다"
 
+#: 2 판(부분 B) 서술의 고정 문장 — C 08 2 판 §4 의 문장 계약 표에서 **글자 그대로** 옮겼다. 생성기(`corpus.generate.pairs_text_v2`)를
+#: import 하지 않는다 — 두 곳이 어긋나면 게이트가 폐기로 드러낸다. 그대로인 문장(관찰 · C3b 머리 · C4 · C11 · C13)은 위의 1 판 상수다.
+V2_CORRESPOND_TAIL = "에 현 허용치 표에서 대응되는 조항은 "                       # C2 — '{이름}' 뒤 · '{조항} 이다.' 앞
+V2_CRIT_HEAD_MEASURE = ("이 조항의 측정량은 ", "이고, 기준은 다음과 같다. ")          # C3a 의 머리 — 가운데에 측정량
+V2_AGGREGATION = "합계길이는 군집이면 간격을 포함해 잰다는 조건이 있고, 이 자료는 그 간격을 재지 않는다."            # C5
+V2_MIXTURE = "종별이 섞이면 함께 견주는 결합 규칙이 있고, 이 자료는 그 결합을 계산하지 않는다."                      # C6
+V2_DISTINCTION = ("종별을 가리기 어려우면 두 종별의 기준으로 각각 평가한다는 조건이 있고,"
+                  " 이 자료는 그 구별을 확인하지 않는다.")                                                  # C7
+V2_PREMISE = "이 기준은 품질등급이 지정되지 않은 경우의 기준이고, 이 자료는 등급 지정 여부를 확인하지 않는다."      # C8
+V2_NO_CLAUSE_MATERIAL = "이 재질에 대응되는 조항이 현 허용치 표에 없어 대응 조항을 특정하지 않는다."              # C9
+V2_NO_CLAUSE_CODE_TAIL = "에 대응되는 조항이 현 허용치 표에 없어 그 결함의 대응 조항을 특정하지 않는다."          # C10 꼬리
+V2_CLOSE_SIZE_INDEPENDENT = ("크기와 무관한 기준은 치수 정보가 필요 없지만, 이 자료는 그 기준의 실제 적용 전제를 확인하지 않고"
+                             " 판정 축을 조항 검색과 기준 서술로 한정해 합부 판정을 싣지 않는다.")              # C12
+#: 측정량의 닫힌 집합(C 08 2 판 §1-3). 서술에 다른 낱말이 오면 문법 밖이다.
+V2_MEASURES = ("최대결함크기", "개별길이", "합계길이")
+#: 조건 토큰(C 08 2 판 §1-3) — 표의 칸에서 읽는 이름이다.
+_COND_CLUSTER, _COND_PREMISE, _COND_MIXTURE, _COND_DISTINCTION = "군집간격", "무등급전제", "혼재", "구별곤란"
+EDITIONS = ("v1", "v2")
+
 _OPS = {"이하": "le", "미만": "lt"}
 _BASES = {"모재 두께": "t", "용접부 공칭 두께": "s", "목두께": "a"}
 _UNITS = {"mm": "mm", "%": "percent"}
@@ -98,6 +117,13 @@ class ParsedText:
     close_dimensional: bool
     close_size_independent: bool
     criteria_spans: tuple[tuple[int, int], ...]                # 기준 문장의 [시작, 끝) — 판정 함의 검사에서 뺀다
+    # 2 판에서만 값이 있다 — 1 판 서술은 기본값 그대로다.
+    edition: str = "v1"
+    block_measures: tuple[str | None, ...] = ()                # 덩이마다 기준 목록 머리의 측정량(C3a) — 불허 머리(C3b)면 None
+    cond_aggregation: bool = False                             # C5
+    cond_mixture: bool = False                                 # C6
+    cond_distinction: bool = False                             # C7
+    cond_premise: bool = False                                 # C8
 
 
 # --------------------------------------------------------------- 허용치 행 → 구조
@@ -151,7 +177,10 @@ class PairRules:
     #: 아는 재질. 표의 `material` 어휘와 같다. 모르는 값은 "덮는 행이 없는 재질" 로 조용히 읽히면 안 된다(검토 F6).
     KNOWN_MATERIALS = frozenset({"ST", "AL"})
 
-    def __init__(self, rows: Iterable, names: Mapping[str, str]):
+    def __init__(self, rows: Iterable, names: Mapping[str, str], *, edition: str = "v1"):
+        if edition not in EDITIONS:
+            raise ValueError(f"모르는 서술 판 {edition!r} — 아는 것 {list(EDITIONS)}")
+        self.edition = edition
         self.names = dict(names)
         self._rows = [r for r in rows
                       if _v(getattr(r, "scope", "active")) == "active"
@@ -161,7 +190,23 @@ class PairRules:
                 raise ValueError(f"정본이 아닌 행이 페어 축에 걸린다: {r.rule_id} — 정책 미정")
             if _v(getattr(r, "quality_scheme", "none")) not in ("none", None):
                 raise ValueError(f"품질 체계가 걸린 행이 페어 축에 걸린다: {r.rule_id} — 정책 미정")
+        if edition == "v2" and not any(getattr(r, "defect_class", None) is not None for r in self._rows):
+            # 2 판 기대는 표의 새 칸에서만 나온다. 칸이 없는 표(1 판)로 2 판을 맞대면 조건 문장의 기대가 전부 '없음' 이 된다.
+            raise ValueError("2 판 규칙인데 페어 축의 행에 2 판 칸(defect_class)이 없다 — 1 판 표다")
         self.valid_clause_ids = frozenset(r.clause_id for r in self._rows)
+
+    def v2_of(self, material: str, code: str) -> tuple[str | None, str | None, tuple[str, ...]]:
+        """(측정량, 종별, 조건 토큰) — 그 (재질, 코드)의 행에서 직접 읽는다. 행끼리 다르면 멈춘다(조항 단위 문장이라)."""
+        vals = {(_v(getattr(r, "measure", None)), _v(getattr(r, "defect_class", None)),
+                 tuple(getattr(r, "conditions", ()) or ())) for r in self.rows_for(material, code)}
+        if len(vals) > 1:
+            raise ValueError(f"결함 {code}({material}) 의 행들이 2 판 칸의 값이 다르다: {sorted(map(str, vals))}")
+        return vals.pop() if vals else (None, None, ())
+
+    def classes_present(self, material: str) -> set[str]:
+        """그 재질의 페어 축 행이 든 종별 — 구별 곤란 문장(C7)의 '그 재질에 X 종별 행이 있으면' 이 이것을 본다."""
+        return {_v(r.defect_class) for r in self._rows
+                if _v(r.material) in (material, "ALL") and getattr(r, "defect_class", None) is not None}
 
     def covers_material(self, material: str) -> bool:
         return any(_v(r.material) in (material, "ALL") for r in self._rows)
@@ -324,8 +369,20 @@ def _eat_name(c: _Cursor, names: Sequence[str]) -> str | None:
     return None
 
 
-def parse_target_text(text: str, names: Mapping[str, str]) -> ParsedText:
-    """결함 페어의 서술 전체를 읽는다. **끝까지 문법대로여야 한다** — 남는 글자가 있으면 실패다."""
+_MEASURE = re.compile("(" + "|".join(map(re.escape, V2_MEASURES)) + ")")
+_CLAUSE_ID = re.compile(r"(\S+) 이다\.")
+
+
+def parse_target_text(text: str, names: Mapping[str, str], *, edition: str = "v1") -> ParsedText:
+    """결함 페어의 서술 전체를 읽는다. **끝까지 문법대로여야 한다** — 남는 글자가 있으면 실패다.
+
+    `edition` 이 서술 계약의 판이다. 1 판 서술을 2 판 문법으로(또는 거꾸로) 읽으면 대응 문구에서 막혀 실패한다.
+    2 판 문법: 관찰 → 덩이마다 [대응 문구(C2) · 기준 목록(측정량 머리 C3a 또는 1 판 머리 C3b) · 미표현 단서(C4)] → C5 · C6 · C7 · C8
+    (각각 많아야 한 번, 이 차례) → C9 또는 C10 → C11 → C12.
+    """
+    if edition not in EDITIONS:
+        raise ValueError(f"모르는 서술 판 {edition!r} — 아는 것 {list(EDITIONS)}")
+    v2 = edition == "v2"
     by_len = sorted(set(names.values()) | {"결함"}, key=len, reverse=True)
     c = _Cursor(text)
     c.need(OBS_HEAD)
@@ -342,21 +399,30 @@ def parse_target_text(text: str, names: Mapping[str, str]) -> ParsedText:
             break
     c.need(OBS_TAIL)
 
-    blocks, spans = [], []
+    blocks, spans, measures = [], [], []
+    clause_tail = V2_CORRESPOND_TAIL if v2 else "에 적용되는 조항은 "
     while True:
         mark = c.i
         if not c.eat(" "):
             break
         name = _eat_name(c, by_len)
-        if name is None or not c.eat("에 적용되는 조항은 "):
+        if name is None or not c.eat(clause_tail):
             c.i = mark
             break
-        m = c.match(re.compile(r"(\S+) 이다\."))
+        m = c.match(_CLAUSE_ID)
         if not m:
             raise TextParseError(f"{c.i}자: 조항 식별자를 읽지 못했다")
         c.need(" ")
         start = c.i
-        c.need(CRIT_HEAD)
+        measure = None
+        if v2 and c.eat(V2_CRIT_HEAD_MEASURE[0]):
+            mm = c.match(_MEASURE)
+            if mm is None:
+                raise TextParseError(f"{c.i}자: 측정량을 읽지 못했다 — {text[c.i:c.i + 24]!r}")
+            measure = mm.group(1)
+            c.need(V2_CRIT_HEAD_MEASURE[1])
+        else:
+            c.need(CRIT_HEAD)
         crit = [_parse_band(c)]
         while c.eat(" / "):
             crit.append(_parse_band(c))
@@ -364,8 +430,16 @@ def parse_target_text(text: str, names: Mapping[str, str]) -> ParsedText:
         spans.append((start, c.i))
         note = c.eat(" " + NOTE_UNEXPRESSED)
         blocks.append((name, m.group(1), tuple(crit), note))
+        measures.append(measure)
 
-    uncited_material = c.eat(" " + NO_CLAUSE_MATERIAL)
+    conds = {}
+    if v2:
+        for key, sentence in (("agg", V2_AGGREGATION), ("mix", V2_MIXTURE), ("dis", V2_DISTINCTION),
+                              ("pre", V2_PREMISE)):
+            conds[key] = c.eat(" " + sentence)
+    no_material = V2_NO_CLAUSE_MATERIAL if v2 else NO_CLAUSE_MATERIAL
+    no_code_tail = V2_NO_CLAUSE_CODE_TAIL if v2 else NO_CLAUSE_CODE_TAIL
+    uncited_material = c.eat(" " + no_material)
     uncited: list[str] = []
     if not uncited_material:
         mark = c.i
@@ -379,14 +453,17 @@ def parse_target_text(text: str, names: Mapping[str, str]) -> ParsedText:
                 uncited.append(m.group(1))
                 if not c.eat(", "):
                     break
-            if not (uncited and c.eat(NO_CLAUSE_CODE_TAIL)):
+            if not (uncited and c.eat(no_code_tail)):
                 c.i, uncited = mark, []
     close_dim = c.eat(" " + CLOSE_DIMENSIONAL)
-    close_np = c.eat(" " + CLOSE_SIZE_INDEPENDENT)
+    close_np = c.eat(" " + (V2_CLOSE_SIZE_INDEPENDENT if v2 else CLOSE_SIZE_INDEPENDENT))
     if not c.done():
         raise TextParseError(f"{c.i}자: 문법 밖의 글자가 남았다 — {text[c.i:c.i + 32]!r}")
     return ParsedText(tuple(observed), tuple(blocks), uncited_material, tuple(uncited),
-                      close_dim, close_np, tuple(spans))
+                      close_dim, close_np, tuple(spans), edition=edition,
+                      block_measures=tuple(measures) if v2 else (),
+                      cond_aggregation=conds.get("agg", False), cond_mixture=conds.get("mix", False),
+                      cond_distinction=conds.get("dis", False), cond_premise=conds.get("pre", False))
 
 
 # --------------------------------------------------------------- 대조
@@ -404,7 +481,8 @@ def check_text(rec: Mapping, rules: PairRules) -> tuple[list[str], ParsedText | 
 
     사유: `material_missing` · `material_unknown` · `clause_set_mismatch` · `candidate_rules_mismatch` · `uncited_codes_mismatch` ·
     `text_unparsable` · `observation_mismatch` · `clause_text_mismatch` · `criterion_mismatch` ·
-    `note_mismatch` · `uncited_text_mismatch` · `closing_mismatch`.
+    `note_mismatch` · `uncited_text_mismatch` · `closing_mismatch`. 2 판 규칙(`rules.edition == "v2"`)이면 더해서
+    `measure_mismatch` · `aggregation_mismatch` · `mixture_mismatch` · `distinction_mismatch` · `premise_mismatch`.
     """
     bad: list[str] = []
     sk = rec.get("skeleton") or {}
@@ -430,7 +508,7 @@ def check_text(rec: Mapping, rules: PairRules) -> tuple[list[str], ParsedText | 
         bad.append("uncited_codes_mismatch")
 
     try:
-        p = parse_target_text(rec.get("target_text", ""), names)
+        p = parse_target_text(rec.get("target_text", ""), names, edition=rules.edition)
     except TextParseError:
         return sorted(set(bad + ["text_unparsable"])), None
 
@@ -445,6 +523,27 @@ def check_text(rec: Mapping, rules: PairRules) -> tuple[list[str], ParsedText | 
                 bad.append("criterion_mismatch")
             if note != rules.has_note(material, code):
                 bad.append("note_mismatch")
+        if rules.edition == "v2" and list(p.block_measures) != [rules.v2_of(material, c)[0] for c in cited]:
+            bad.append("measure_mismatch")          # 값 한계 조항 → 그 행의 측정량 머리, 불허 조항 → 1 판 머리(C3a · C3b)
+    if rules.edition == "v2":
+        # 영상 수준 조건 문장(C5 ~ C8) — 기대는 표의 새 칸에서 직접 낸다(C 08 2 판 §4 의 붙는 규칙).
+        facts = [(rules.clause_of(material, c), *rules.v2_of(material, c)) for c in cited]
+        cited_classes = {cls for _, _, cls, _ in facts if cls}
+        present = rules.classes_present(material)
+
+        def pairs(conds, kind):
+            return {t.partition(":")[2] for t in conds if t.partition(":")[0] == kind and ":" in t}
+
+        clusters = {cid for cid, _, _, conds in facts if _COND_CLUSTER in conds}
+        for flag, want, reason in (
+                (p.cond_aggregation, bool(clusters), "aggregation_mismatch"),
+                (p.cond_mixture, any(pairs(conds, _COND_MIXTURE) & cited_classes for *_, conds in facts),
+                 "mixture_mismatch"),
+                (p.cond_distinction, any(pairs(conds, _COND_DISTINCTION) & present for *_, conds in facts),
+                 "distinction_mismatch"),
+                (p.cond_premise, any(_COND_PREMISE in conds for *_, conds in facts), "premise_mismatch")):
+            if flag != want:
+                bad.append(reason)
     if not rules.covers_material(material):
         ok = p.uncited_material == bool(uncited) and not p.uncited_codes
     else:

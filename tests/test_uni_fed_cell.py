@@ -302,3 +302,104 @@ def test_연합_원장의_라운드_규칙이_어긋나면_거부한다(tmp_path
     with pytest.raises(UniFedRejected) as exc:
         check_fed_ledger(p, num_rounds=2, num_clients=3, closed=True)
     assert exc.value.code == code
+
+
+# ================================================================ 학습 레시피(02 2판 §3-5 의 새 시험 1 · 3, 외부 검토 194 M1)
+def _with_text_pairs(f) -> None:
+    """클라이언트가 읽는 페어에 서술(`target_text`)을 싣는다 — 2 차 레시피의 타깃 재료."""
+    write_pairs(f.tmp / "pairs.jsonl",
+                [{**r, "target_text": f"{r['image_id']} 의 서술이다."} for c in TAGS for r in f.rows[c]])
+
+
+def _fed_kw() -> dict:
+    return {"run_id": "r", "seed_index": 1, "seed_value": 7, "purpose": "rehearsal", "num_rounds": R, "local_epochs": E,
+            "total_epochs": R * E, "model_id": "tiny", "model_revision": "r1", "pairs_digest": "p" * 64,
+            "prompt_sha256": "q" * 64, "chat_template_kwargs": {"enable_thinking": False}, "coord_space": "ABS_ORIG",
+            "init_digest": "i" * 64, "snapshot_digest": "s" * 64, "plan_sha256": "a" * 64, "client_tags": TAGS,
+            "processor_kwargs": None, "expected_supervised_tokens": None}
+
+
+def test_1차_레시피의_연합_신원은_레시피를_생략한_것과_같은_바이트다():
+    from fl.uni_fed import fed_identity
+    from vlm import pilot_vlm
+
+    a, b = fed_identity(**_fed_kw()), fed_identity(**_fed_kw(), recipe="json_only")
+    assert pilot_vlm.canonical_json(a) == pilot_vlm.canonical_json(b)
+    assert a["target_contract_sha256"] == pilot_vlm.TARGET_CONTRACT_SHA256 and "recipe" not in a
+    c = fed_identity(**_fed_kw(), recipe="json_line_then_basis")
+    assert {k for k in a if a[k] != c[k]} == {"target_contract_sha256"}
+
+
+def test_1차_레시피의_연합_칸은_1차_계약을_말한다(fed):
+    from vlm import pilot_vlm
+
+    r = _run_fed(fed)
+    assert r.meta["identity"]["target_contract_sha256"] == pilot_vlm.TARGET_CONTRACT_SHA256
+    assert json.loads(r.meta["train_config"])["target_contract_sha256"] == pilot_vlm.TARGET_CONTRACT_SHA256
+
+
+def test_2차_레시피는_클라이언트가_서술을_실제로_학습하고_서버가_계약을_맞댄다(fed, monkeypatch):
+    """서버 실행 설정의 레시피 → `down_config` → 클라이언트 `client_run_cfg` → `run_client_round` → **실제** `train_rounds`
+    의 `_encode` 가 서술까지 든 타깃을 만든다 → 보고한 계약 해시를 서버가 등록 레시피의 계약과 맞댄다."""
+    from vlm import pilot_vlm
+
+    seen: list[tuple[str, str]] = []
+    real = pilot_vlm.build_target
+
+    def spy(row, geom, coord_cfg=None, *, recipe="json_only"):
+        t = real(row, geom, coord_cfg, recipe=recipe)
+        seen.append((row["image_id"], t))
+        return t
+
+    monkeypatch.setattr(pilot_vlm, "build_target", spy)
+    _with_text_pairs(fed)
+    r = _run_fed(fed, get=_server_get(fed.tmp, **{"uni-target-recipe": "json_line_then_basis"}))
+    texts = {r_["image_id"]: f"{r_['image_id']} 의 서술이다." for c in TAGS for r_ in fed.rows[c]}
+    assert {i for i, _t in seen} == set(texts)                             # 세 참여자의 행 전부
+    assert all(t.endswith("\n" + texts[i]) for i, t in seen)              # 타깃 = JSON 한 줄 + 줄바꿈 + 서술
+    v2 = pilot_vlm.target_contract_sha256("json_line_then_basis")
+    assert r.meta["identity"]["target_contract_sha256"] == v2
+    assert json.loads(r.meta["train_config"])["target_contract_sha256"] == v2
+
+
+@pytest.mark.parametrize("server_recipe, reported", [
+    ("json_line_then_basis", "json_only"),        # 서버는 새 레시피 · 클라이언트는 옛 타깃으로 학습했다고 보고
+    ("", "json_line_then_basis"),                  # 서버는 1 차 · 클라이언트는 새 타깃
+])
+def test_클라이언트가_보고한_계약이_서버_레시피의_계약과_다르면_닫지_않는다(fed, server_recipe, reported):
+    from vlm import pilot_vlm
+
+    _with_text_pairs(fed)
+    want = pilot_vlm.target_contract_sha256(reported)
+
+    def tamper(sr, i, strings):
+        strings["uni-target-contract-sha256"] = want                       # 셋이 같은 값 — 참여자 사이 일치는 지난다
+
+    with pytest.raises(UniFedRejected) as exc:
+        _run_fed(fed, get=_server_get(fed.tmp, **{"uni-target-recipe": server_recipe}), tamper=tamper)
+    assert exc.value.code == "client_registration_mismatch" and "uni-target-contract-sha256" in str(exc.value)
+    assert not (fed.out / "adapter_last.npz").exists()
+
+
+def test_2차_레시피의_서버는_서술_없는_페어로_학습을_시작하지_않는다(fed):
+    with pytest.raises(ValueError, match="target_text"):
+        _run_fed(fed, get=_server_get(fed.tmp, **{"uni-target-recipe": "json_line_then_basis"}))
+    assert not (fed.out / "adapter_last.npz").exists()
+
+
+def test_클라이언트는_서버가_레시피를_보내지_않으면_1차로_채우지_않고_거부한다(fed):
+    """`client_run_cfg` 는 늘 `recipe` 를 채운다 — 그 칸이 빠지거나 빈 설정은 1 차 레시피로 메우지 않는다(지시 1022c 덧붙임 C)."""
+    from fl.client_vlm import run_client_round
+
+    n = fed.loader.n
+    for broken in ("drop", ""):
+        uni = client_run_cfg(down_config(_server_get(fed.tmp)))
+        if broken == "drop":
+            del uni["recipe"]
+        else:
+            uni["recipe"] = broken
+        with pytest.raises(ValueError, match="레시피"):
+            run_client_round(adapter_in=[a.copy() for a in fed.arrays], canonical_keys=fed.keys, round_idx=0,
+                             client_idx=0, cfg={"client_tag": "C1", "local_epochs": E, "num_rounds": R, "base_seed": 7,
+                                                "resume_root": None, "run_id": "t1", "uni": uni})
+    assert fed.loader.n == n                                              # 모델을 올리기 전이다

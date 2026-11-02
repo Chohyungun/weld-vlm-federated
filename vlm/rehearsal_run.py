@@ -131,8 +131,8 @@ def train_list_bytes(rows: list[dict]) -> bytes:
     return "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows).encode("utf-8")
 
 
-def target_token_counts(rows: list[dict], *, config: Any) -> dict[str, int]:
-    """**승인된 실제 구현** — 페어 행의 학습 타깃(`build_target`)을 프로세서의 토크나이저로 센 토큰 수(특수 토큰 없이).
+def target_token_counts(rows: list[dict], *, config: Any, recipe: str = "json_only") -> dict[str, int]:
+    """**승인된 실제 구현** — 페어 행의 학습 타깃(`build_target`, 레시피 `recipe`)을 프로세서의 토크나이저로 센 토큰 수(특수 토큰 없이).
     프로세서는 학습 · 실측과 같은 호출(`AutoProcessor.from_pretrained(모델, revision, **프로세서 인자)`)로 연다 — 모델은 올리지 않는다.
     원본 크기는 이미지 머리만 읽어 낸다. 좌표 규약이 `ABS_ORIG` 가 아니면 리사이즈 크기가 필요해 세지 않는다."""
     from PIL import Image
@@ -151,7 +151,8 @@ def target_token_counts(rows: list[dict], *, config: Any) -> dict[str, int]:
         p = Path(r["image_path"])
         with Image.open(p if p.is_absolute() else REPO_ROOT / p) as im:
             w, h = im.size
-        out[str(r["image_id"])] = len(tok(build_target(r, ImageGeom(w, h), cfg), add_special_tokens=False)["input_ids"])
+        out[str(r["image_id"])] = len(tok(build_target(r, ImageGeom(w, h), cfg, recipe=recipe),
+                                          add_special_tokens=False)["input_ids"])
     return out
 
 
@@ -276,8 +277,9 @@ def diag_rules_bytes(checkout: Path, rules_rel: str | None) -> bytes:
 def stage_register(*, root: Path, plan: Any, config: Any, checkout: Path, measure_env: Callable,
                    model_loader: Callable | None, generator_loader: Callable, now: datetime | None = None,
                    standin_allowed: bool = False, env: Mapping[str, str] | None = None,
-                   rules_rel: str | None = None) -> Path:
+                   rules_rel: str | None = None, recipe: str = "json_only") -> Path:
     """등록 단계 — 평가 쪽 `UnifiedRegistration` 을 채워 `registration/` 에 쓴다. 목적은 계획의 것(`plan.purpose`)이다.
+    `recipe` 는 학습 레시피다 — 학습 설정 원문의 계약 해시가 그 레시피의 것이다(기본 1 차 레시피).
     리허설은 영수증까지 쓰고 그 경로를 돌려준다. **진단은 등록 파일과 학습 설정 원문만 쓰고 멈춘다**(2판 §3-1 의 흐름 1) —
     둘을 본줄기에 커밋하고 영수증을 적는 것은 그 뒤의 일이다. 돌려주는 값은 등록 파일 경로다.
 
@@ -308,13 +310,13 @@ def stage_register(*, root: Path, plan: Any, config: Any, checkout: Path, measur
     from vlm.export_preflight import TRAIN_CONFIG_SUFFIX
     from vlm.init_adapter import build_initial_adapter, init_adapter_digest
     from vlm.pilot_vlm import (
-        TARGET_CONTRACT_SHA256,
         _config_blocks,
         canonical_json,
         load_prompt,
         make_optimizer,
         processor_config_sha256,
         resolve_model_loader,
+        target_contract_sha256,
         template_mode_of,
         train_rows_digest,
     )
@@ -369,11 +371,11 @@ def stage_register(*, root: Path, plan: Any, config: Any, checkout: Path, measur
     chash = coord_cfg_hash(CoordCfg(coord_space=config.coord_space))
     metrics = {"processor_config_sha256": proc_sha, "config_blocks": blocks, "prompt_sha256": prompt_sha,
                "template_mode": template_mode_of(tmpl), "coord_cfg_hash": chash,
-               "target_contract_sha256": TARGET_CONTRACT_SHA256}
+               "target_contract_sha256": target_contract_sha256(recipe)}
     tc_text = canonical_json(train_config_object(
         model_id=config.model_id, model_revision=config.model_revision, pairs_digest=config.pairs_digest,
         chat_template_kwargs=tmpl, coord_space=config.coord_space, num_rounds=r, local_epochs=e, total_epochs=n,
-        prompt_sha256=prompt_sha, init_digest=init_digest, metrics=metrics))
+        prompt_sha256=prompt_sha, init_digest=init_digest, metrics=metrics, recipe=recipe))
 
     reg = UnifiedRegistration()
     g = reg.generation

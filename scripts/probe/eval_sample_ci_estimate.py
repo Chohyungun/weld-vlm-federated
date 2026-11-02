@@ -11,6 +11,13 @@
 
 입력: 동결 스냅샷 `data/interim/manifest_v1`(매니페스트 · 주석), `outputs/main_d/seed{1,2,3}/sep_*_s*.jsonl`(사전실험 예측).
 출력: 집계만(id 없음).
+
+**구간 규약은 본채점과 같다**(외부 검토 137-2 M-03, 2026-10-14). 회복률은 `evaluation.recovery_interval` 이 추첨을 분류한다 —
+분모 ≤ 0 이고 분자 == 0 이면 판정 불가(`numerator_zero`)이고 +무한이 아니다. 시드끼리 ±무한이 갈리면 판정 불가(`sign_conflict`),
+어느 항이 수가 아니면(지지량 0) 지지량 제외다. 점추정은 분모 실패 · 지지량 0 이면 수를 내지 않는다(`absent`). 지표 구간은
+`percentile_rule` 의 순위 규칙이다. **수가 아닌 값은 상태 칸으로 싣는다** — 산출 JSON 에 `NaN` · `Infinity` 를 쓰지 않는다.
+앞 판(이 규약 전)은 분자 0 을 +무한으로, 시드끼리 갈린 ±무한을 지지량 미정의와 한 칸(`undef`)으로 셌다. 그 판의 산출은 그때
+규약의 기록이다 — 고치지 않고, 이번 수정으로 다시 돌리지 않았다(실제 평가 입력을 열지 않는다).
 """
 
 from __future__ import annotations
@@ -24,6 +31,9 @@ from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
+
+from evaluation import percentile_rule as PR
+from evaluation import recovery_interval as RI
 
 ROOT = Path(__file__).resolve().parents[2]
 SNAP = ROOT / "data/interim/manifest_v1"
@@ -156,23 +166,78 @@ def metrics(T: np.ndarray) -> dict[str, np.ndarray]:
     return {"M1": m1, "imgF1": imf1, "CJ": cj}
 
 
-def recovery(F, C, L):
-    """R = (F − L̄)/(C − L̄). 분모 ≤ 0 이면 분자 부호의 ±무한(10-01 규약)."""
-    lbar = np.mean(L, axis=0)
-    num, den = F - lbar, C - lbar
-    with np.errstate(invalid="ignore", divide="ignore"):
-        r = np.where(den > 0, num / den, np.where(num >= 0, np.inf, -np.inf))
-    return np.where(np.isnan(num) | np.isnan(den), np.nan, r)
+def value_state(x) -> dict:
+    """수 하나를 표준 JSON 꼴로 — 유한이면 수, 아니면 `None` 과 상태(`undefined` · `pos_inf` · `neg_inf`)."""
+    b = PR.bound_of(float(x))
+    return {"value": b.value, "state": b.state}
 
 
-def ci(draws: np.ndarray) -> tuple[float, float, float]:
-    """95 % 백분위(차수 통계). NaN(support 미정의)은 빼고 그 비율을 따로 낸다. ±무한은 남긴다."""
-    d = draws[~np.isnan(draws)]
-    if len(d) == 0:
-        return float("nan"), float("nan"), 1.0
-    s = np.sort(d)
-    lo, hi = s[int(np.floor(0.025 * (len(s) - 1)))], s[int(np.ceil(0.975 * (len(s) - 1)))]
-    return float(lo), float(hi), float(1 - len(d) / len(draws))
+def metric_interval(draws) -> dict:
+    """지표 추첨의 95 % 구간 — 등록 순위 규칙(`percentile_rule`). `NaN`(지지량 0 · 분모 0)은 미정의로 세고 뺀다."""
+    iv, n_def, n_undef = PR.defined_interval(draws)
+    return {**iv.as_dict(), "n_defined": n_def, "n_undefined": n_undef}
+
+
+def _support_ok(fed: np.ndarray, central: np.ndarray, locals_: np.ndarray) -> np.ndarray:
+    return np.isfinite(fed).all(axis=-1) & np.isfinite(central).all(axis=-1) & np.isfinite(locals_).all(axis=(-2, -1))
+
+
+def recovery_draws(fed, central, locals_) -> dict:
+    """회복률 `R = (F − L̄)/(C − L̄)` 의 구간 — 본채점과 같은 분류(`recovery_interval`).
+
+    모양은 연합 · 중앙 `(추첨, 시드)`, 로컬 `(추첨, 시드, 로컬 수)`. 어느 항이 수가 아닌 추첨은 지지량 제외다 —
+    그 추첨의 값은 분류기에 넘기기 전에 0 으로 바꾸고 지지량 표시로 뺀다(분류가 지지량을 먼저 본다).
+    """
+    f, c, l = (np.asarray(x, dtype=float) for x in (fed, central, locals_))
+    ok = _support_ok(f, c, l)
+    f = np.where(ok[:, None], f, 0.0)
+    c = np.where(ok[:, None], c, 0.0)
+    l = np.where(ok[:, None, None], l, 0.0)
+    return RI.recovery_interval(f, c, l, ok, alpha=PR.REGISTERED_ALPHA, n_resamples=int(f.shape[0])).as_dict()
+
+
+def recovery_point(fed, central, locals_) -> dict:
+    """시드별 `R_s` 와 `R̄` — 본채점의 점추정(`point_recovery`). 분모 실패면 `absent`(사유 `denominator`), 어느 항이 수가
+    아니면 `absent`(사유 `support`). 무한을 적지 않는다."""
+    f, c, l = (np.asarray(x, dtype=float) for x in (fed, central, locals_))
+    if not (np.isfinite(f).all() and np.isfinite(c).all() and np.isfinite(l).all()):
+        return {"R_bar": None, "state": "absent", "reason": "support", "convention_id": PR.CONVENTION_ID}
+    p = RI.point_recovery(f, c, l)
+    return {"R_bar": p["R_bar"], "state": p["state"], "reason": p["reason"], "convention_id": p["convention_id"]}
+
+
+def _states(states) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for st in states:
+        out[st] = out.get(st, 0) + 1
+    return dict(sorted(out.items()))
+
+
+def _finite(xs) -> np.ndarray:
+    return np.array([x for x in xs if x is not None], dtype=float)
+
+
+def aggregate(cells: list[dict]) -> dict:
+    """복제마다의 칸을 모은다. 수의 요약은 **유한한 것만**으로 내고, 수가 아닌 것은 상태별 건수로 함께 싣는다 — 덮지 않는다."""
+    ivs = [c["interval"] for c in cells]
+    half = _finite(i["half_width"] for i in ivs)
+    out = {"replicates": len(cells), "half_states": _states(i["half_width_state"] for i in ivs),
+           "half_median": float(np.median(half)) if half.size else None,
+           "half_p90": float(np.quantile(half, 0.9)) if half.size else None}
+    if "R_bar" in cells[0]["point"]:
+        pts = _finite(c["point"]["R_bar"] for c in cells)
+        out["point_states"] = _states(c["point"]["state"] for c in cells)
+        for key in RI.COUNTERS:
+            out[f"{key}_mean"] = float(np.mean([i[key] for i in ivs]))
+        out["share_half_le_0.25"] = float(np.mean([i["half_width_state"] == "finite" and i["half_width"] <= 0.25
+                                                   for i in ivs]))
+    else:
+        pts = _finite(c["point"]["value"] for c in cells)
+        out["point_states"] = _states(c["point"]["state"] for c in cells)
+        out["undefined_share_mean"] = float(np.mean([i["n_undefined"] / (i["n_defined"] + i["n_undefined"]) for i in ivs]))
+    out["point_mean"] = float(np.mean(pts)) if pts.size else None
+    out["point_sd"] = float(np.std(pts)) if pts.size else None
+    return out
 
 
 def evaluate(groups, feats, design: str, n_target: int, seed: str, B: int, rng_seed: int, seeds_used) -> dict:
@@ -203,24 +268,23 @@ def evaluate(groups, feats, design: str, n_target: int, seed: str, B: int, rng_s
         # 시드별 값 → 시드 평균(같은 추첨을 모든 모델 · 시드에)
         P = {c: np.mean([point[(s, c)][m] for s in seeds_used]) for c in CELLS}
         D = {c: np.mean([boot[(s, c)][m] for s in seeds_used], axis=0) for c in CELLS}
-        lo, hi, und = ci(D["sep_central"])
-        out[f"{m}.central"] = {"point": float(P["sep_central"]), "half": (hi - lo) / 2, "undef": und}
+        out[f"{m}.central"] = {"point": value_state(P["sep_central"]), "interval": metric_interval(D["sep_central"])}
         if m == "M1":
             for sub in ("ST", "AL"):
                 mask = (mat == sub).astype(float)
                 ps = np.mean([metrics((w0 * mask) @ feats[(s, "sep_central")])["M1"] for s in seeds_used])
                 ds = np.mean([metrics((W * mask) @ feats[(s, "sep_central")])["M1"] for s in seeds_used], axis=0)
-                lo, hi, und = ci(ds)
-                out[f"M1.central.{sub}"] = {"point": float(ps), "half": (hi - lo) / 2, "undef": und}
-        lo, hi, und = ci(D["sep_central"] - D["sep_fed"])
-        out[f"{m}.central_minus_fed"] = {"point": float(P["sep_central"] - P["sep_fed"]), "half": (hi - lo) / 2, "undef": und}
-        rs_point = np.mean([recovery(point[(s, "sep_fed")][m], point[(s, "sep_central")][m],
-                                     [point[(s, c)][m] for c in CELLS[2:]]) for s in seeds_used])
-        rs = np.mean([recovery(boot[(s, "sep_fed")][m], boot[(s, "sep_central")][m],
-                               np.stack([boot[(s, c)][m] for c in CELLS[2:]])) for s in seeds_used], axis=0)
-        lo, hi, und = ci(rs)
-        out[f"{m}.R"] = {"point": float(rs_point), "half": (hi - lo) / 2 if np.isfinite(hi - lo) else float("inf"),
-                         "undef": und, "inf_share": float(np.mean(np.isinf(rs)))}
+                out[f"M1.central.{sub}"] = {"point": value_state(ps), "interval": metric_interval(ds)}
+        out[f"{m}.central_minus_fed"] = {"point": value_state(P["sep_central"] - P["sep_fed"]),
+                                         "interval": metric_interval(D["sep_central"] - D["sep_fed"])}
+        # 회복률 — 시드를 한 축으로 묶어 본채점의 분류기에 넘긴다(시드 평균을 먼저 내지 않는다)
+        fed = np.stack([boot[(s, "sep_fed")][m] for s in seeds_used], axis=1)
+        cen = np.stack([boot[(s, "sep_central")][m] for s in seeds_used], axis=1)
+        loc = np.stack([np.stack([boot[(s, c)][m] for c in CELLS[2:]], axis=-1) for s in seeds_used], axis=1)
+        p_fed = np.array([point[(s, "sep_fed")][m] for s in seeds_used], dtype=float)
+        p_cen = np.array([point[(s, "sep_central")][m] for s in seeds_used], dtype=float)
+        p_loc = np.array([[point[(s, c)][m] for c in CELLS[2:]] for s in seeds_used], dtype=float)
+        out[f"{m}.R"] = {"point": recovery_point(p_fed, p_cen, p_loc), "interval": recovery_draws(fed, cen, loc)}
     return out
 
 
@@ -255,18 +319,12 @@ def main() -> int:
                 for k in rows[0]:
                     if "." not in k:
                         continue
-                    halves = np.array([x[k]["half"] for x in rows])
-                    pts = np.array([x[k]["point"] for x in rows])
-                    agg[k] = {"half_median": float(np.median(halves)), "half_p90": float(np.quantile(halves, 0.9)),
-                              "point_mean": float(np.nanmean(pts)), "point_sd": float(np.nanstd(pts)),
-                              "undef_mean": float(np.mean([x[k]["undef"] for x in rows]))}
-                    if k.endswith(".R"):
-                        agg[k]["share_half_le_0.25"] = float(np.mean(halves <= 0.25))
-                        agg[k]["inf_share_mean"] = float(np.mean([x[k]["inf_share"] for x in rows]))
+                    agg[k] = aggregate([x[k] for x in rows])
                 res["rows"].append(agg)
                 print(tag, design, n, f"{time.time() - t0:.0f}s", flush=True)
     a.out.parent.mkdir(parents=True, exist_ok=True)
-    a.out.write_text(json.dumps(res, ensure_ascii=False, indent=1, default=float), encoding="utf-8")
+    # 표준 JSON 만 — 수가 아닌 값이 상태 칸을 거치지 않고 새면 여기서 멈춘다
+    a.out.write_text(json.dumps(res, ensure_ascii=False, indent=1, default=float, allow_nan=False), encoding="utf-8")
     print("wrote", a.out)
     return 0
 

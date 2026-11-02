@@ -14,7 +14,13 @@ eval 분할은 만들지 않는다(개발규약 1-4). 빌드는 train·val 의 `
 **뒤에** `data/processed/pairs_main_v1/` 로 한다 — 그 전의 빌드는 전부 임시 경로다.
 한 번 봉인하면 다시 만들지 않는다(규약 1-6). 결정이 바뀌면 `pairs_main_v2` 로 새 경로에 만든다.
 
-실행: uv run python -m corpus.generate.make_pairs_main --out <임시 경로> --date 2026-09-23
+**판 등록부 `EDITIONS`** — 판마다 표 · 서술 계약 · 메타의 상태 문장이 한 행이다. `--edition` 은 기본값 없는 필수 인자다.
+1 판(`v1`)은 지금 값 그대로이고(1 판 다시 짓기의 메타 키가 같다), 2 판(`v2` — 부분 B, C 08 2 판 §3)은 신판 표와 2 판 서술
+(`pairs_text_v2`)을 쓰고 메타에 신원 블록(`identity`)과 문장 계약 판(`text_contract`)을 더 싣는다. 신판 경로는 이 등록부 한 자리에만
+둔다 — 산출물 검사 · 봉인 관문은 빌드 메타의 `limits_table.path` 로 여기서 판을 찾는다. 독립 대조기는 이 등록부를 읽지 않는다
+(봉인 관문이 넘긴 `--limits` 를 직접 읽는다 — 221 M-01).
+
+실행: python -m corpus.generate.make_pairs_main --edition v1 --out <임시 경로> --date 2026-09-23
 산출: pairs.jsonl · discarded.jsonl · counts.json · PAIRS_META.json · SNAPSHOT.sha256 (전부 LF)
 """
 
@@ -22,7 +28,9 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from corpus.generate import make_pairs_pilot as P
 from corpus.generate.frozen_out import assert_not_frozen
@@ -61,6 +69,80 @@ NEAR_DUPLICATE_NOTE = {
     "status": "분할 쪽에서 정량화 중이다. 페어는 D1 분할을 그대로 상속한다",
 }
 
+#: 2 판(부분 B)의 상태 문장들(C 08 2 판 §3 의 표). 1 판 값은 위 상수 그대로다.
+LIMITS_STATUS_V2 = ("2 판(부분 B) — 1 판의 행 · 값 · 구간 · 조항은 그대로 두고 측정량 · 집계 · 종별 · 조건 칸을 더했다."
+                    " 사람 이중 검수 · 용접 검사 전문가 검수 전이다. 재수록 수치 사용은 연구 책임자가 결정했다(전문가 검수가 아니다)."
+                    " 로더는 pilot 모드로 읽는다")
+HUMAN_VERIFICATION_V2 = {
+    **HUMAN_VERIFICATION,
+    "limits_table_double_check": ("미실시 — 2 판도 사람 이중 검수 · 전문가 검수 전이다. 원문 대조(검토 192 · 화면 대조 · 검토 193)만"
+                                  " 했다"),
+    "user_decision": "재수록 수치 사용 — 연구 책임자 결정(2026-10-24), 전문가 검수가 아니다",
+}
+ANSWER_CONTRACT_V2 = ("학습 타깃은 학습 레시피가 정한다. json_only 는 구조화 JSON 만, json_line_then_basis 는 JSON 한 줄 + 줄바꿈 +"
+                      " target_text 다. 2 차 레시피에서는 허용치 표 · 서술 계약의 변경이 곧 재학습 사유다")
+
+#: 2 판 메타의 신원 블록(C 08 2 판 §9-4, D 07 의 §18-3 규칙). 묶음 칸은 `lf_bundle_v1` 이다 — 파일마다 `\r\n` → `\n` 뒤의 sha256 을
+#: 경로 정렬로 `경로 + 탭 + sha256 + LF` 줄로 이은 UTF-8 바이트의 sha256(평가 쪽 `limits_loader_bundle_sha256` 과 같은 값 — 시험이 맞댄다).
+IDENTITY_CONTRACT_VERSION = 1
+BUNDLE_RULE = "lf_bundle_v1"
+#: 로더 묶음 — 정답 계산 · 조건 해석에 드는 허용치 규칙 모듈 넷(평가 쪽 `evaluation.provenance.LIMITS_RULE_FILES` 와 같은 목록 — 시험이 맞댄다).
+LIMITS_LOADER_FILES: tuple[str, ...] = ("corpus/rules/clause_text.py", "corpus/rules/limit_eval.py",
+                                        "corpus/rules/limits_loader.py", "corpus/rules/schema.py")
+#: 생성 경로 묶음 — 2 판 서술을 내는 세 파일.
+GENERATOR_FILES: tuple[str, ...] = ("corpus/generate/make_pairs_main.py", "corpus/generate/make_pairs_pilot.py",
+                                    "corpus/generate/pairs_text_v2.py")
+
+
+@dataclass(frozen=True)
+class Edition:
+    """판 등록부의 한 행. `text_contract` 가 None 이면 메타에 신원 블록을 싣지 않는다(1 판 — 메타 키를 바꾸지 않는다)."""
+
+    version: str
+    limits_csv: Path
+    text_contract: str | None
+    limits_status: str
+    human_verification: dict
+    answer_contract: str
+
+    @property
+    def limits_rel(self) -> str:
+        return self.limits_csv.relative_to(REPO).as_posix()
+
+
+#: **판 등록부** — 신판 경로의 C 쪽 한 자리(C 08 2 판 §1-6 · T8). 1 판 행은 지금 값 그대로다.
+EDITIONS: dict[str, Edition] = {
+    "v1": Edition("v1", LIMITS_CSV, None, LIMITS_STATUS, HUMAN_VERIFICATION, ANSWER_CONTRACT),
+    "v2": Edition("v2", REPO / "corpus/rules/limits_v2_pilot.csv", "v2", LIMITS_STATUS_V2, HUMAN_VERIFICATION_V2,
+                  ANSWER_CONTRACT_V2),
+}
+
+
+def edition_for_limits_path(rel: Any) -> str | None:
+    """메타의 `limits_table.path` → 판 이름. 등록부에 없는 경로면 None(호출자가 거부한다)."""
+    return next((name for name, e in EDITIONS.items() if e.limits_rel == rel), None)
+
+
+def lf_sha256(path: Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
+def lf_bundle(files: tuple[str, ...], repo: Path = REPO) -> dict:
+    """묶음 블록 `{rule, files, sha256}` — 파일마다의 sha 를 싣는다(어느 파일이 바뀌었는지 말하게 — D 07 §17-3)."""
+    entries = [{"path": rel, "sha256": lf_sha256(Path(repo) / rel)} for rel in sorted(files)]
+    body = "".join(f"{e['path']}\t{e['sha256']}\n" for e in entries)
+    return {"rule": BUNDLE_RULE, "files": entries, "sha256": hashlib.sha256(body.encode("utf-8")).hexdigest()}
+
+
+def identity_block(limits_table: dict, repo: Path = REPO) -> dict:
+    """2 판 메타의 `identity`. `limits` 는 `limits_table` 에서 `{path, sha256}` 두 칸만 추출한 닫힌 객체다(221 I-02 — `status` 는
+    `limits_table` 에 보존한다). 조건 자료는 표 안이라(안 1) `{in_table: true}` 를 생략하지 않는다."""
+    return {"contract_version": IDENTITY_CONTRACT_VERSION,
+            "limits": {"path": limits_table["path"], "sha256": limits_table["sha256"]},
+            "limits_loader": lf_bundle(LIMITS_LOADER_FILES, repo),
+            "generator": lf_bundle(GENERATOR_FILES, repo),
+            "conditions": {"in_table": True}}
+
 
 def same_bytes_within_train_val(manifest) -> dict:
     """train·val **안**에서 sha256 이 같은 행 — 같은 화소에 서로 다른 서술이 나가는 자리다. 매니페스트만으로 센다."""
@@ -75,11 +157,19 @@ def same_bytes_within_train_val(manifest) -> dict:
     }
 
 
-def build_meta(res, manifest, *, manifest_digest: str, date: str) -> dict:
-    meta = P.base_meta(res, asset=f"{ASSET}_{VERSION}")
-    meta["uncovered_policy"] = ("덮는 행이 없는 재질은 조항을 특정하지 않고 그 사실을 문장과 skeleton.uncited_codes 에 적는다"
+def build_meta(res, manifest, *, manifest_digest: str, date: str, edition: str = "v1") -> dict:
+    ed = EDITIONS[edition]
+    meta = P.base_meta(res, asset=f"{ASSET}_{ed.version}")
+    meta["uncovered_policy"] = (("덮는 행이 없는 재질은 조항을 특정하지 않고" if ed.text_contract is None else
+                                 "덮는 행이 없는 재질은 대응 조항을 특정하지 않고")
+                                + " 그 사실을 문장과 skeleton.uncited_codes 에 적는다"
                                 " (안 B — 09-21 판정으로 확정). 채점은 정답 조항이 공집합인 레코드를 오답이 아니라"
                                 " '적용 대상 아님' 으로 세야 한다")
+    limits_table = {"path": ed.limits_rel, "sha256": hashlib.sha256(ed.limits_csv.read_bytes()).hexdigest(),
+                    "status": ed.limits_status}
+    # 2 판만 — 신원 블록과 문장 계약 판을 `limits_table` 바로 뒤에 둔다. 1 판 메타 키는 그대로다.
+    identity = ({} if ed.text_contract is None else
+                {"identity": identity_block(limits_table), "text_contract": ed.text_contract})
     meta.update({
         "built_on": date,
         # 회계의 `generated_by.git_commit` 이 무엇을 가리키는지 산출물이 스스로 말한다.
@@ -90,15 +180,14 @@ def build_meta(res, manifest, *, manifest_digest: str, date: str) -> dict:
                          " pairs.jsonl·discarded.jsonl 에 대한 주장이다"),
         "input_snapshot": {"path": str(SNAP.relative_to(REPO)).replace("\\", "/"),
                            "snapshot_digest": manifest_digest, "splits_used": ["train", "val"]},
-        "limits_table": {"path": str(LIMITS_CSV.relative_to(REPO)).replace("\\", "/"),
-                         "sha256": hashlib.sha256(LIMITS_CSV.read_bytes()).hexdigest(),
-                         "status": LIMITS_STATUS},
-        "answer_contract": ANSWER_CONTRACT,
+        "limits_table": limits_table,
+        **identity,
+        "answer_contract": ed.answer_contract,
         "clause_granularity": ("clauses 는 조항 id 수준이다(두께 미상). candidate_rules 가 행별 두께 구간을 함께 싣는다 —"
                                " 반열림 [thickness_min, thickness_max), 0.01 그리드, 상한 공란은 null."
                                " 두께가 생기면 레코드만으로 행을 고를 수 있다"),
         "prompt_material": "프롬프트에 재질을 주지 않는다(현행 — 팀 결정 항목). 인용 축이 재질 추정에 기댄다는 한계가 있다",
-        "human_verification": HUMAN_VERIFICATION,
+        "human_verification": ed.human_verification,
         "pass_rate": {"value": round(len(res.made) / res.n_input, 6), "meaning": "형식 통과율 — 사실성 지표가 아니다"},
         "inherited_split_limits": {"same_bytes_within_train_val": same_bytes_within_train_val(manifest),
                                    "near_duplicates_with_eval": NEAR_DUPLICATE_NOTE},
@@ -122,12 +211,15 @@ def main(argv: list[str] | None = None) -> int:
     from data.manifest_io import load_snapshot, verify_snapshot
 
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--edition", required=True, choices=sorted(EDITIONS),
+                    help="판 — 표 · 서술 계약 · 메타의 판(등록부 `EDITIONS`). **기본값 없음**")
     ap.add_argument("--out", required=True,
                     help="산출 디렉터리. **기본값 없음.** 봉인 전의 빌드는 임시 경로에 한다")
     ap.add_argument("--date", required=True, type=_iso_date,
                     help="메타와 counts 에 적는 빌드 날짜(YYYY-MM-DD). **기본값 없음** — 시계를 읽으면 같은 입력의"
                          " 두 빌드가 날짜만으로 갈린다")
     args = ap.parse_args(argv)
+    ed = EDITIONS[args.edition]
     out_dir = Path(args.out)
     assert_not_frozen(out_dir, what="--out 대상", flag="--out")
     if out_dir.exists() and any(out_dir.iterdir()):
@@ -135,12 +227,12 @@ def main(argv: list[str] | None = None) -> int:
 
     manifest_digest = verify_snapshot(SNAP)            # 계약 4/4 — 어긋나면 여기서 멈춘다
     snap = load_snapshot(SNAP)
-    table = limits_loader.load_limits(str(LIMITS_CSV), pilot=True)
+    table = limits_loader.load_limits(str(ed.limits_csv), pilot=True)
     res = P.build_pairs(snap.manifest, snap.annotations, table, defect_names(), load_defect_lexicon(),
-                        root=REPO, check_paths=True)
-    meta = build_meta(res, snap.manifest, manifest_digest=manifest_digest, date=args.date)
-    digest = P.write_outputs(out_dir, res, asset=ASSET, version=VERSION, date=args.date,
-                             limits_csv=LIMITS_CSV, manifest_csv=SNAP / "manifest.csv", meta=meta)
+                        root=REPO, check_paths=True, edition=ed.version)
+    meta = build_meta(res, snap.manifest, manifest_digest=manifest_digest, date=args.date, edition=args.edition)
+    digest = P.write_outputs(out_dir, res, asset=ASSET, version=ed.version, date=args.date,
+                             limits_csv=ed.limits_csv, manifest_csv=SNAP / "manifest.csv", meta=meta)
     P.report(res, digest, out_dir)
     return 0
 

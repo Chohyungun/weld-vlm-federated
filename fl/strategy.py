@@ -59,6 +59,12 @@ WEIGHT_KEY = "fedavg-weight"
 STR_FIELDS = ("keys-digest", "optimizer", "arg-optimizer")
 
 
+def _reply_order(msg: Any) -> float:
+    """집계 순서의 열쇠 — 응답의 `client-idx`. 없으면 맨 뒤(정렬은 안정이라 그들끼리는 도착 순서)."""
+    metrics = msg.content[METRICS_KEY]
+    return float(metrics["client-idx"]) if "client-idx" in metrics else float("inf")
+
+
 class RoundFailure(RuntimeError):
     """라운드가 성립하지 않았다. 재정규화로 넘어가지 않고 즉시 중단한다."""
 
@@ -128,6 +134,10 @@ class WeldFedAvg(FedAvg):
                 f"라운드 {server_round}: 유효 응답 {len(valid)}개 != 기대 {self.expected_nodes}개. "
                 "응답하지 않은 노드는 에러 응답도 남기지 않으므로 개수로만 잡힌다."
             )
+
+        # ②-1 응답을 참여자 번호(`client-idx`) 순으로 놓는다. 도착 순서는 실행 방식(한 actor 가 차례로 · GPU 여럿에 동시)에
+        #     따라 바뀌는데, 가중 평균은 float64 로 더한 뒤 float32 로 내리므로 더하는 순서가 비트를 바꿀 수 있다(06 §8).
+        valid.sort(key=_reply_order)
 
         # ③ 교환 규약 검사 — 키·shape·dtype 이 어긋난 채로 평균하면 조용히 오염된다.
         client_arrays: list[list[np.ndarray]] = []

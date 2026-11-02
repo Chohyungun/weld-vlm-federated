@@ -58,6 +58,16 @@ dev = ["pytest>=8.3", "pytest-cov>=5.0", "ruff>=0.6"]
 # 여기 박아 두면 configs 와 정본이 둘이 된다(80번 G8).
 [tool.flwr.app]
 publisher = "weld-fl"
+# FAB(연합 앱 묶음) 허용 목록 — 서버 · 클라이언트 앱의 import 폐포와 실행 중에 읽는 설정 · 픽스처만(2026-10-17).
+# flwr 1.33 의 FAB 상한은 10 MiB 인데, 추적 파일 전체(docs · corpus · 시험 벡터)가 34.7 MB 라 local-sim 이 시뮬레이션 전에 거부했다.
+# 허용 목록이라 체크아웃에 .gitignore 가 없거나 반입 데이터(json · jsonl)가 같은 상대 경로에 있어도 들어가지 않는다.
+# 패턴마다 하나 이상 맞아야 하고(flwr 가 확인한다) 기본 포함 꼴(py · toml · md · yaml · yml · json · jsonl)만 쓴다.
+fab-include = [
+    "fl/**/*.py", "vlm/**/*.py", "evaluation/**/*.py", "detection/**/*.py", "data/*.py", "tracking/**/*.py",
+    "scripts/main_det.py", "scripts/main_uni.py",
+    "configs/**/*.yaml", "configs/**/*.json", "evaluation/*.json", "evaluation/fixtures/*.json",
+    "vlm/coords_fixtures/*.yaml", "vlm/coords_fixtures/*.json",
+]
 
 [tool.flwr.app.components]
 serverapp = "fl.server_app:app"
@@ -92,6 +102,8 @@ client-tags = "C1,C2,C3"
 # "Invalid run configuration" 으로 거부하므로 기본값을 선언해 둔다(실측).
 resume-root = ""
 smoke-fail-at = ""
+# 라운드 응답 대기 상한(초). 비면 flwr 메시지 TTL(12 h)이다 — fl/server_app.py 의 round_timeout. 학습 신원 · 등록 밖.
+round-timeout = ""
 # 통합형 연합의 키 — 목록과 기본값은 fl/uni_run_config.py 의 UNI_RUN_DEFAULTS 와 같다(시험이 맞댄다).
 # 빈 값은 "지정하지 않았다" 이고 파일럿 기본값으로 돈다. 본실험은 실행기가 설정에서 읽어 채운다.
 uni-model = ""
@@ -108,10 +120,14 @@ uni-seed-index = ""
 uni-processor-kwargs = ""
 uni-expected-supervised-tokens = ""
 uni-train-lists = ""
+uni-budget-fraction = ""
+# 빈 값은 1차 레시피. 새 레시피는 실행기가 학습 등록에서 읽어 덮어쓴다.
+uni-target-recipe = ""
 # 서버만 읽는 키(fl/uni_run_config.py 의 UNI_SERVER_DEFAULTS) — 연합 칸의 출력을 <학습 루트>/uni_fed_s<n>/ 에 쓴다.
 # 비면 종전 자리 <project>/fl/uni_fed 다(파일럿 재현). 본실험은 비워 둘 수 없다.
 uni-train-root = ""
 uni-init-adapter = ""
+uni-repo-root = ""
 
 
 # --- SuperLink 연결 설정은 pyproject 에 두지 않는다 (flwr 1.33 이관, 실측) ---

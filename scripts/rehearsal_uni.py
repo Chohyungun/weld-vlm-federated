@@ -241,6 +241,7 @@ def run_rehearsal(*, plan_path: Path, snapshot: Path, device: str, parent: Path 
     faults = plan.get("faults") or {}
     tfaults, efaults = faults.get("train") or {}, faults.get("export") or {}
     train = ("--run-root", R, "--plan", str(P), "--snapshot", S)
+    negs: dict[str, dict] = {}                     # 합성한 구판 — 중앙 칸에 학습 중단을 건 계획에서만 생긴다
 
     def train_cell(tag: str, no: str) -> None:
         f = tfaults.get(tag)
@@ -253,6 +254,7 @@ def run_rehearsal(*, plan_path: Path, snapshot: Path, device: str, parent: Path 
                 if not src:
                     raise Halt("negative_source", "중단 뒤 재개 체크포인트가 없다 — 합성 구판을 만들 수 없다")
                 made = synth_negatives(root, tag=tag, seed_index=int(idx), source=src[0])
+                negs.update(made)
                 _append_log(root, {"kind": "negatives_made", "source": src[0].relative_to(root).as_posix(),
                                    "cases": {k: {"path": Path(v["path"]).relative_to(root).as_posix(),
                                                  "sha256": v["sha256"], "changed": v["changed"]}
@@ -280,7 +282,12 @@ def run_rehearsal(*, plan_path: Path, snapshot: Path, device: str, parent: Path 
 
     # 줄 A — 학습 시도 1 · 재개 · 구판 거부 · 덮어쓰기 거부
     train_cell("uni_central", "1")
-    for case in plan.get("negatives") or []:
+    # 구판은 합성한 경우만 돈다. 중단이 없는 계획(서버 smoke)에는 구판이 없어, 돌리면 학습 진입이 새 폴더에서 처음부터 학습한다.
+    cases = list(plan.get("negatives") or [])
+    skipped = [c for c in cases if c not in negs]
+    if skipped:
+        _append_log(root, {"kind": "negatives_skipped", "cases": skipped, "reason": "no_synthesized_checkpoint"})
+    for case in (c for c in cases if c in negs):
         go(Stage("2'", f"negative_{case}", "train", train + ("--tag", "uni_central", "--negative", case),
                  ANY_NONZERO, "train", tag="uni_central"))
     before = file_hashes(root)

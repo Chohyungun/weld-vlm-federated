@@ -18,7 +18,8 @@
 1. 시도 기록 전체를 평가 쪽 규칙(바이트 · 줄마다 JSON 객체 · 공통 키 · `event` 두 값)으로 본다. 어긋나면 덧붙이지 않고 멈춘다.
    끝 줄을 덧붙이기 전에도 같은 검사를 한다.
 2. 곁 파일이 있으면 완결 묶음이다 — 시작 줄을 쓰지 않고 멈춘다.
-3. 도장이 있으면 이어 갈 수 있는지 본다(읽힘 · 딸린 시작 줄 · 지문 · 생성 줄의 id 가 목록의 앞부분 · 코드와 파서의 판 · 멈춘 개명).
+3. 도장이 있으면 이어 갈 수 있는지 본다(읽힘 · 딸린 시작 줄 · 지문 · 생성 줄의 id 가 목록의 앞부분 · 코드와 파서의 판 · 멈춘 개명 ·
+   조기 점검 모델 모드면 `check_step` 까지 — 같은 어댑터라도 다른 step 으로는 잇지 않는다, §137 C-01).
    이어 갈 수 없으면 기본은 거부다. `abort_mismatched=True` 일 때만 생성 → 토큰 → 도장 순으로 `.aborted-{k}` 를 붙이고 4 로 간다.
 4. 도장이 없으면 쓰고 `attempt_no=1` · `first_pass` 다. 도장 없이 생성 · 토큰 파일만 있으면 거부한다.
 5. 도장이 맞으면 생성 파일의 완결 줄 수 `m` 을 센다. 꼬리가 찢겼으면 **먼저** `retry_torn_tail` 시작 줄을 쓰고 되읽은 뒤,
@@ -50,6 +51,9 @@ __all__ = [
     "ExportWriter",
     "StartPlan",
     "check_attempts_file",
+    "check_new_device",
+    "device_form_ok",
+    "resume_device",
     "stem_of",
 ]
 
@@ -58,6 +62,9 @@ REASON_FIRST, REASON_RESUME, REASON_TORN = "first_pass", "resume_after_interrupt
 #: 호출부가 도장에 넣는 값. 나머지(`tag` · `seed_index` · `mode` · 목록 해시 둘 · `started_at` · `device`)는 이 객체가 낸다.
 STAMP_KEYS = ("purpose", "export_commit", "parser_sha256", "generation_sha256",
               "train_run_id", "train_ledger_sha256", "scored_adapter_sha256")
+#: 조기 좌표 점검 · 모델 모드의 도장에만 있는 칸 — 점검 step(bool 아닌 양의 정수). 그 밖의 도장에는 있으면 거부한다(§137 C-01).
+ECC_STAMP_KEYS = ("check_step",)
+ECC_PURPOSE = "early_coord_check"
 #: 에코 도장 · 곁 파일에 **키 자체가 없어야** 하는 것(평가 계약 §28-3 가 · 다).
 ECHO_ABSENT_STAMP = ("train_run_id", "train_ledger_sha256", "scored_adapter_sha256")
 ECHO_ABSENT_SIDECAR = ("train_run_id", "train_ledger_sha256", "train_ledger_path", "scored_adapter_sha256",
@@ -65,9 +72,21 @@ ECHO_ABSENT_SIDECAR = ("train_run_id", "train_ledger_sha256", "train_ledger_path
 #: 이어 쓰려면 도장과 지금 값이 같아야 하는 것(리허설 2판 §2-4 의 3).
 RESUME_KEYS = ("generation_sha256", "scored_adapter_sha256", "eval_list_file_sha256", "eval_list_set_sha256",
                "mode", "purpose", "tag", "seed_index", "train_run_id", "train_ledger_sha256",
-               "export_commit", "parser_sha256")
+               "export_commit", "parser_sha256", "check_step")
 _ATTEMPT_COMMON = ("event", "tag", "seed_index", "attempt_no", "start_stamp_sha256")
 _RENAME_TRIES = 5
+
+
+def _ecc_check_step(fields: Mapping[str, Any], mode: str) -> int | None:
+    """도장의 점검 step — 조기 점검 · 모델 모드면 반드시 bool 아닌 양의 정수, 그 밖에는 칸이 없어야 한다."""
+    if fields.get("purpose") == ECC_PURPOSE and mode == "model":
+        step = fields.get("check_step")
+        if type(step) is not int or step <= 0:
+            raise ExportRefused("check_step", f"조기 점검 모델 export 의 도장에 bool 아닌 양의 정수 check_step 이 있어야 한다: {step!r}")
+        return step
+    if "check_step" in fields:
+        raise ExportRefused("check_step_scope", "check_step 은 조기 점검 · 모델 모드의 도장에만 둔다")
+    return None
 
 
 class ExportRefused(ValueError):
@@ -94,6 +113,39 @@ class StartPlan:
 
 def stem_of(tag: str, seed_index: int, mode: str) -> str:
     return f"{tag}_s{int(seed_index)}" + (".echo" if mode == "echo" else "")
+
+
+def device_form_ok(value: Any) -> bool:
+    """장비 문자열이 채점기의 꼴 `{이름}:{인덱스}` 인지 — 채점기와 같은 정규식(`evaluation.bundle_v14._DEVICE`, §28-3 나)."""
+    from evaluation.bundle_v14 import _DEVICE
+
+    return isinstance(value, str) and _DEVICE.match(value) is not None
+
+
+def check_new_device(device: Any) -> str:
+    """새 시작(도장을 새로 쓰는 시도)의 장비 — 채점기의 꼴이 아니면 `export_device_form` 으로 시작하지 않는다.
+
+    2026-10-18 다섯 칸 평가가 `--device` 를 꼴 검사 없이 도장 · 시작 줄에 적어 채점기 `_device_ok` 가 전부 거부했다(의사결정로그
+    2026-10-18 22:2x). 쓰는 쪽이 읽는 쪽과 같은 규칙으로 먼저 본다."""
+    if not device_form_ok(device):
+        raise ExportRefused("export_device_form", "장비는 채점기의 꼴 {이름}:{인덱스} 로 적는다(예 NVIDIA-A100-80GB-PCIe:0) — "
+                                                  f"받은 값 {device!r}")
+    return device
+
+
+def resume_device(given: Any, stamp_device: Any) -> str:
+    """재개(같은 도장으로 이어 쓰기)의 장비 — 남은 도장의 `device`(처음 시작 때 한 번 쓴 값 = 첫 시작 줄의 값)를 읽어 정한다.
+
+    - 도장이 채점기의 꼴이면 새 값도 그 꼴이어야 한다(`export_device_form`). 값이 달라도 된다 — 다른 장비로 이어 가기는
+      채점기가 `devices_spanned` 로 적는다(종전과 같다).
+    - 도장이 그 꼴이 아니면(꼴 검사 전에 시작한 묶음) **도장의 문자열을 그대로 잇는다** — `--device` 와 다르더라도. 채점기는 비정본
+      문자열을 도장 · 시작 줄 · 곁 파일에서 서로 같을 때만 표지로 받는다(의사결정로그 2026-10-18 22:2x 결정 (2) · (3)).
+    - 도장의 값이 비었거나 문자열이 아니면 이어 쓰지 않는다(`export_device_form`)."""
+    if device_form_ok(stamp_device):
+        return check_new_device(given)
+    if not isinstance(stamp_device, str) or not stamp_device.strip():
+        raise ExportRefused("export_device_form", f"남은 도장의 장비가 비었거나 문자열이 아니다 — 이어 쓸 수 없다: {stamp_device!r}")
+    return stamp_device
 
 
 def _sha(raw: bytes) -> str:
@@ -198,9 +250,11 @@ class ExportWriter:
         if not isinstance(eval_list, EvalList):
             raise ExportRefused("eval_list_unchecked", "목록은 validate_eval_list 를 지난 EvalList 로만 받는다")
         fields = dict(stamp_fields)
-        unknown = sorted(set(fields) - set(STAMP_KEYS))
+        unknown = sorted(set(fields) - set(STAMP_KEYS) - set(ECC_STAMP_KEYS))
         if unknown:
             raise ExportRefused("stamp_unknown_key", f"도장에 넣지 않는 키다(이 객체가 내거나 없는 키): {unknown}")
+        if _ecc_check_step(fields, mode) is not None and (type(seed_index) is not int or seed_index < 1):
+            raise ExportRefused("seed_index", f"조기 점검 모델 export 의 시드 번호는 bool 아닌 양의 정수다: {seed_index!r}")
         if mode == "echo":
             present = [k for k in ECHO_ABSENT_STAMP if k in fields]
             if present:
@@ -275,6 +329,12 @@ class ExportWriter:
         if not isinstance(stamp, dict):
             return ["도장이 객체가 아니다"]
         out: list[str] = []
+        try:                                                        # 남은 도장의 점검 step 꼴(형 변환으로 같아 보이지 않게)
+            stored_step = _ecc_check_step(stamp, stamp.get("mode"))
+            if stored_step is not None and (type(stamp.get("seed_index")) is not int or stamp["seed_index"] < 1):
+                out.append("남은 도장의 seed_index 가 bool 아닌 양의 정수가 아니다")
+        except ExportRefused as exc:
+            out.append(f"남은 도장의 점검 칸이 맞지 않는다({exc.code})")
         if self._half_renamed_k() is not None:
             out.append("앞 프로세스의 개명이 도중에 멈췄다(생성 · 토큰만 .aborted 로 갔다)")
         mine = self._rows_of(rows, _sha(raw))
@@ -334,11 +394,13 @@ class ExportWriter:
             if problems:
                 if not self.abort_mismatched:
                     raise ExportRefused("stamp_mismatch", "이어 쓸 수 없다 — " + " · ".join(problems))
+                check_new_device(self.device)                                  # 새로 시작한다 — 옛 파일을 옮기기 전에
                 self._abort_rename()
         if not self.p_stamp.exists():                                          # 4
             orphan = [p.name for p in (self.p_gen, self.p_tok) if p.exists()]
             if orphan:
                 raise ExportRefused("orphan_generations", f"도장 없이 남은 파일이 있다: {orphan}")
+            check_new_device(self.device)                                      # 도장을 쓰기 전에
             self.folder.mkdir(parents=True, exist_ok=True)
             self._write_stamp()
             self.stamp_sha = _sha(self.p_stamp.read_bytes())
@@ -350,6 +412,7 @@ class ExportWriter:
             return plan
         # 5 — 도장이 맞다. 새 프로세스의 시각이 이 도장의 마지막 기록 시각 이상인지 본다.
         raw_stamp = self.p_stamp.read_bytes()
+        self.device = resume_device(self.device, json.loads(raw_stamp).get("device"))   # 시작 줄을 쓰기 전에
         self.stamp_sha = _sha(raw_stamp)
         mine = self._rows_of(rows, self.stamp_sha)
         seen = [json.loads(raw_stamp).get("started_at")]
@@ -519,6 +582,13 @@ class ExportWriter:
             for k in ECHO_ABSENT_STAMP:
                 derived[k] = self.fields[k]
         extra = dict(measured or {})
+        ecc_step = _ecc_check_step(self.fields, self.mode)
+        if ecc_step is not None:                                    # 채점한 step 은 도장의 값이 정본이다(§137 C-01)
+            derived["scored_adapter_step"] = ecc_step
+            for source in (values, extra):
+                v = source.get("scored_adapter_step", ecc_step)
+                if type(v) is not int or v != ecc_step:
+                    raise ExportRefused("sidecar_clash", f"곁 파일의 scored_adapter_step {v!r} 이 도장의 check_step {ecc_step} 과 다르다")
         clash = sorted({k for k in derived if k in values and values[k] != derived[k]}
                        | {k for k in extra if k in derived and extra[k] != derived[k]}
                        | {k for k in extra if k in values and values[k] != extra[k]})

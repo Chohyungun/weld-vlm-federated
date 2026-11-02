@@ -239,11 +239,22 @@ def main_run_problems(cfg: UniConfig, *, model_id: str | None, model_revision: s
                       prompt_path: str | None, coord_space: str | None, output_paths: list[Path],
                       processor_kwargs: Mapping[str, Any] | None = None,
                       expected_supervised_tokens: Mapping[str, int] | None = None,
-                      non_main_parents: tuple[Path, ...] | None = None) -> list[str]:
+                      non_main_parents: tuple[Path, ...] | None = None, budget_fraction: float = 1.0,
+                      token_table: Path | None = None, recipe: str = "json_only",
+                      registration_path: Path | None = None, repo: Path | None = None) -> list[str]:
     """본실험 실행의 값이 설정 파일과 같은지 — **모델을 올리기 전에** 부른다. 빈 목록이면 시작해도 된다.
+
+    `recipe` 는 등록의 학습 레시피다. 감독 토큰 기대값은 그 레시피의 행별 토큰 표로 맞댄다(`vlm.budget.expected_tokens`) —
+    1 차 레시피는 지금과 같고, 새 레시피는 f 와 무관하게 표 합 · 표의 출처(레시피 · 페어 digest · 계측 코드 · 설정 모델의 지금
+    토크나이저 신원)까지 본다.
 
     실행 설정에 남은 옛 기본값(파일럿의 R/E/N · 시드 · 출력 루트)이 본실험 목적과 함께 쓰이는 길을 막는다.
     설정 파일 자체가 비어 있으면(`require("train")`) 그 까닭을 먼저 낸다.
+
+    학습 전 계약 — 학습 등록(`registration_path`, 비면 본실험 기본 등록)에 `narrative_inputs` 칸이 있으면 평가 쪽 대조 함수로 맞댄다
+    (C 08 2 판 §5-3 · `vlm.narrative_inputs`). `repo` 는 그 대조가 표 · 로더 · 생성 경로 · 페어 · 계약 파일을 읽는 저장소 뿌리다(비면
+    이 모듈의 뿌리). 연합 서버는 풀어 놓은 앱 묶음에서 돌아 그 뿌리에 `corpus/**` · 페어가 없어, 실행 설정의 `uni-repo-root` 와 서버가
+    맞댄 등록을 넘긴다(`fl/uni_fed.py` — 09 §10 I2). 뿌리를 받지 못하면 이 칸이 있는 등록은 닫힌 쪽으로 거부된다.
     """
     out = list(cfg.problems("train"))
     if out:
@@ -265,16 +276,51 @@ def main_run_problems(cfg: UniConfig, *, model_id: str | None, model_revision: s
     same("snapshot_digest", snapshot_digest, cfg.snapshot_digest)
     # 프로세서 설정과 감독 토큰 기대값도 **등록된 값**이어야 한다 — 전달받은 값이 설정 파일의 것인지 맞댄다.
     same("processor_kwargs", None if processor_kwargs is None else dict(processor_kwargs), cfg.processor_kwargs)
+    # 예산 비율이 1 보다 작으면 기대값은 그 몫의 행별 토큰 합이다(`vlm.budget.expected_tokens` — 1.0 이면 설정 값 그대로).
+    # `token_table` — 연합 서버가 저장소 뿌리 아래의 표를 준다(풀어 놓은 FAB 폴더에는 csv 가 없다). 그때는 등록 지문을 맞댄다.
+    from vlm.budget import BudgetRejected, expected_tokens, token_table_of
+
+    try:
+        want_tokens = expected_tokens(cfg.expected_supervised_tokens, fraction=budget_fraction, seed_value=seed_value,
+                                      table_path=token_table,
+                                      table_sha256=token_table_of(recipe)[1] if token_table is not None else None,
+                                      pairs_path=pairs_path if pairs_path is not None else cfg.pairs_path,
+                                      recipe=recipe, pairs_digest=cfg.pairs_digest, model_id=cfg.model_id,
+                                      model_revision=cfg.model_revision)
+    except BudgetRejected as exc:
+        out.append(str(exc))
+        want_tokens = cfg.expected_supervised_tokens
     same("expected_supervised_tokens",
          None if expected_supervised_tokens is None else {str(k): int(v) for k, v in expected_supervised_tokens.items()},
-         cfg.expected_supervised_tokens)
+         want_tokens)
     if seed_index is None or not 1 <= seed_index <= len(cfg.seeds):
         out.append(f"seed_index {seed_index!r} 가 등록 시드표 1..{len(cfg.seeds)} 밖이다")
     else:
         same("seed_value", seed_value, cfg.seeds[seed_index - 1])
     # 프롬프트 · 좌표 규약도 설정에서만 온다 — 모듈 상수 · 기본값으로 내려가지 않는다(검수 14번 M-1).
     same("prompt_path", None if prompt_path is None else Path(prompt_path).as_posix(), Path(cfg.prompt_path).as_posix())
+    # 체제 짝 — 이 실행이 쓰는 프롬프트(학습과 같은 `load_prompt` 로 읽은 문자열)가 등록 레시피의 프롬프트여야 한다(지시 1022c
+    # 덧붙임 A — 섞인 조합은 기동 전에 거부). 자리는 위에서 설정과 맞댔다.
+    from vlm.pilot_vlm import load_prompt
+    from vlm.registration import regime_problems
+
+    src = prompt_path if prompt_path is not None else cfg.prompt_path
+    try:
+        sha = load_prompt(src)[1] if src else None
+    except OSError:
+        sha = None
+    if sha is None:
+        out.append(f"프롬프트 파일을 읽지 못했다: {src!r}")
+    else:
+        out.extend(regime_problems(recipe, prompt_sha256=sha))
     same("coord_space", coord_space, cfg.coord_space)
+    from vlm import narrative_inputs as NI
+
+    entry, _unread = NI.registration_entry(registration_path)       # 등록을 읽지 못한 사유는 착수 고정 · 실행기가 따로 낸다
+    if entry is not None:
+        out.extend(NI.problems(entry, repo=Path(repo) if repo is not None else REPO_ROOT,
+                               pairs_path=pairs_path if pairs_path is not None else cfg.pairs_path,
+                               config_pairs_digest=cfg.pairs_digest, recipe=recipe))
     parents = [(REPO_ROOT / q).resolve() for q in (non_main_parents or NON_MAIN_PARENTS)]
     for p in output_paths:
         rp = Path(p).resolve()

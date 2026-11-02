@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import sys
-import tomllib
 from pathlib import Path
 
 import pytest
@@ -30,7 +29,7 @@ DECIDED_GEN_LIMIT = 512
 
 
 @pytest.fixture(autouse=True)
-def _no_model(monkeypatch):
+def _no_model(monkeypatch, request, tmp_path):
     """모델 적재 · 칸 학습이 불리면 떨어진다 — 이 시험들은 올리기 전만 본다."""
     import vlm.init_adapter as ia
     import vlm.train_cell as tc
@@ -41,6 +40,22 @@ def _no_model(monkeypatch):
     monkeypatch.setattr(ia, "build_initial_adapter", boom)
     monkeypatch.setattr(tc, "run_uni_local_cell", boom)
     monkeypatch.setattr(tc, "run_uni_central_cell", boom)
+    # 예산 비율은 저장소 등록 파일(지금 1/8)이 아니라 1.0 으로 — 이 시험들의 합성 페어는 행별 토큰 표와 맞지 않는다.
+    # 비율의 배선은 아래 `test_등록의_예산_비율이_명세와_연합_설정에_실린다` 와 tests/test_budget_fraction.py 가 본다.
+    import vlm.registration as reg
+
+    monkeypatch.setattr(reg, "registered_budget_fraction", lambda path=None: 1.0)
+    # 저장소 실물 설정 시험만 현재 등록을 쓴다. 나머지 합성 세계는 프롬프트 v2의 1차 체제다.
+    real_names = {
+        "test_저장소의_설정으로도_초기_어댑터_없이는_학습_명령이_모델을_올리기_전에_멈춘다",
+        "test_저장소의_설정으로_initadapter_는_설정의_모델_판과_시드로_공통_초기_어댑터를_만든다",
+        "test_저장소_설정의_프롬프트_파일과_좌표_규약을_실행기가_그대로_읽는다",
+        "test_현재_설정은_봉인_계측과_등록을_함께_읽는다",
+    }
+    if request.node.originalname not in real_names:
+        from tests.registration_history import legacy_default
+
+        legacy_default(monkeypatch, tmp_path)
     for k in list(__import__("os").environ):
         if k.upper() in M.FAULT_VARS:
             monkeypatch.delenv(k)
@@ -65,11 +80,25 @@ def _cfg_yaml(tmp: Path, **over) -> Path:
     return p
 
 
-def test_저장소의_설정은_10_13_결정값을_싣는다():
-    cfg = M.load_main_config()
+def test_보존_설정은_10_13_결정값을_싣는다():
+    from tests.registration_history import historical_base
+
+    cfg = M.load_main_config(historical_base())
     assert (cfg.num_rounds, cfg.local_epochs, cfg.total_epochs) == DECIDED_BUDGET
     assert cfg.total_epochs == cfg.num_rounds * cfg.local_epochs
     assert cfg.max_new_tokens == DECIDED_GEN_LIMIT
+
+
+def test_현재_설정은_봉인_계측과_등록을_함께_읽는다():
+    from vlm.registration import load_registration
+
+    cfg = M.load_main_config()
+    reg = load_registration()[0]
+    measured = json.loads((ROOT / "outputs/diag_20261027/02a_sealed.json").read_bytes())
+    assert cfg.max_new_tokens == reg["eval_gen_limit"] == measured["recommended_limit"]["value"]
+    assert cfg.prompt_path == measured["inputs"]["prompt"]["path"]
+    assert cfg.pairs_digest == measured["input_contract"]["pairs_digest"]
+    assert (cfg.num_rounds, cfg.local_epochs, cfg.total_epochs) == DECIDED_BUDGET
 
 
 @pytest.fixture(scope="module")
@@ -104,8 +133,8 @@ def test_저장소의_설정으로도_초기_어댑터_없이는_학습_명령�
     monkeypatch.setattr(_tc, "run_uni_local_cell", _REAL_LOCAL)        # 칸의 실물 가드까지 — 모델 적재 함수는 막힌 채
     monkeypatch.setattr(_tc, "run_uni_central_cell", _REAL_CENTRAL)
     built = _record_build(monkeypatch) if cmd == "all" else None       # all 은 initadapter 를 지난다(대역)
-    argv = [cmd, "--seed", "1"] + (["--tag", "uni_local_C1"] if cmd == "close-ledger" else [])
-    assert M.main(argv, out=tmp_path / "out") == 2
+    argv = [cmd, "--seed", "1", "--main-out-root", str(tmp_path / "out")] + (["--tag", "uni_local_C1"] if cmd == "close-ledger" else [])
+    assert M.main(argv, out=tmp_path / "out") == 2                 # 새 레시피의 본 칸은 새 뿌리(--main-out-root)에서 — 판 6 연결 2 판 §4-2
     assert f"[{reason}]" in capsys.readouterr().err
     assert built is None or len(built) == 1
     out = tmp_path / "out"
@@ -116,7 +145,7 @@ def test_저장소의_설정으로_initadapter_는_설정의_모델_판과_시�
     """착수 고정보다 먼저 도는 유일한 학습 명령이다(착수 고정이 초기 어댑터의 digest 를 묶는다). 모델은 대역이다."""
     monkeypatch.chdir(ROOT)
     calls = _record_build(monkeypatch)
-    assert M.main(["initadapter", "--seed", "1"], out=tmp_path / "out") == 0
+    assert M.main(["initadapter", "--seed", "1", "--main-out-root", str(tmp_path / "out")], out=tmp_path / "out") == 0
     cfg = M.load_main_config()
     (kw,) = calls
     assert (kw["model_id"], kw["revision"], kw["seed"], kw["purpose"]) == \
@@ -137,9 +166,8 @@ def test_설정에서_칸_설정을_만든다(tmp_path):
         M.spec_for(cfg, 4, out=tmp_path / "out")          # 등록 시드표 밖
 
 
-def test_저장소_설정의_프롬프트_파일과_좌표_규약을_실행기가_그대로_읽는다(tmp_path):
-    """`configs/base.yaml` 에 값이 있는 두 키 — 실행기의 칸 설정과 연합 run-config 가 그 값을 싣는다.
-    나머지 키는 아직 비어 있어 저장소 설정으로는 칸 설정을 만들 수 없으므로, 두 값만 저장소 설정에서 옮긴다."""
+def test_저장소_설정의_프롬프트_파일과_좌표_규약을_실행기가_그대로_읽는다(tmp_path, monkeypatch):
+    """현재 프롬프트·좌표 전달을 합성 입력으로 검사한다. 실물 실행 준비 완료를 뜻하지 않는다."""
     import yaml
 
     from vlm.coords import COORD_SPACES
@@ -147,6 +175,8 @@ def test_저장소_설정의_프롬프트_파일과_좌표_규약을_실행기�
 
     real = yaml.safe_load((ROOT / "configs/base.yaml").read_text(encoding="utf-8"))["fixed_before_main_runs"]
     prompt, coord = real["uni_prompt_path"], real["uni_coord_space"]
+    # 여기서는 프롬프트·좌표의 배선을 본다. 합성 페어의 토큰 합은 별도 합성 시험과 실제 표 시험이 맡는다.
+    monkeypatch.setattr("vlm.budget.expected_tokens", lambda per, **kw: dict(per))
     got = load_uni_config(ROOT / "configs/base.yaml")
     assert (got.prompt_path, got.coord_space) == (prompt, coord)        # 읽는 쪽이 저장소의 키를 읽는다
     assert (ROOT / prompt).is_file() and coord in COORD_SPACES
@@ -154,24 +184,37 @@ def test_저장소_설정의_프롬프트_파일과_좌표_규약을_실행기�
     cfg = M.load_main_config(p)
     spec = M.spec_for(cfg, 1, out=tmp_path / "out", config_path=p)
     assert (spec.prompt_path, spec.coord_space) == (prompt, coord)
+    declared = M.pyproject_run_keys()
+    if "uni-target-recipe" not in declared:
+        # 실물 선언 누락은 그대로 거부한다. 아래 전달 검사는 선언을 갖춘 합성 세계다.
+        with pytest.raises(M.MainRefused) as exc:
+            M.fed_run_config(cfg, 1, out=tmp_path / "out")
+        assert exc.value.reason == "run_config_key_missing"
+    monkeypatch.setattr(M, "pyproject_run_keys", lambda path=None: declared | {"uni-target-recipe"})
     s = M.fed_run_config(cfg, 1, out=tmp_path / "out")
+    assert 'uni-target-recipe="json_line_then_basis"' in s
     assert f'uni-prompt="{prompt}"' in s and f'uni-coord-space="{coord}"' in s
 
 
 def test_연합_run_config_가_flwr_파서와_선언된_키와_받는_쪽을_지난다(tmp_path):
     from flwr.common.config import parse_config_args
 
-    from fl.uni_run_config import client_run_cfg
+    from fl.uni_run_config import client_run_cfg, down_config
 
     cfg = M.load_main_config(_cfg_yaml(tmp_path))
     s = M.fed_run_config(cfg, 1, out=tmp_path / "out")
     got = parse_config_args([s])
+    import tomllib
+
     declared = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["flwr"]["app"]["config"]
     assert set(got) <= set(declared), sorted(set(got) - set(declared))
     assert got["cell"] == "uni_fed" and got["purpose"] == "main" and got["base-seed"] == 11
     assert json.loads(got["uni-chat-template-kwargs"]) == {"enable_thinking": False}
     assert json.loads(got["uni-processor-kwargs"]) == {"max_pixels": 921600}
-    uni = client_run_cfg({**{k: v for k, v in declared.items()}, **got})   # 본실험 필수 키가 모두 찼다
+    # 받는 쪽 = 서버가 실행 설정(선언 기본값 + 덮어쓰기)에서 `down_config` 로 내려보낸 것 — 본실험 필수 키가 모두 찼다
+    run_cfg = {**declared, **got}
+    uni = client_run_cfg(down_config(lambda k, d: run_cfg.get(k, d)))
+    assert "uni-target-recipe" not in got and uni["recipe"] == "json_only"     # 1 차 레시피는 실행 설정이 지금과 같다
     assert uni["model_revision"] == "a" * 40 and uni["seed_index"] == 1
     assert uni["expected_supervised_tokens"] == {"C1": 10, "C2": 20, "C3": 30}
 
@@ -300,7 +343,10 @@ def test_상태_격자(tmp_path, capsys):
     assert M.status_grid(out, 3)[1]["uni_local_C1"] == "closed"
 
 
-def test_close_ledger_는_로컬_중앙_칸만_받는다(tmp_path, capsys):
+def test_close_ledger_는_로컬_중앙_칸만_받는다(tmp_path, capsys, monkeypatch):
+    from tests.uni_fakes import use_registration
+
+    use_registration(monkeypatch, tmp_path)                             # 시드 경계는 임시 등록으로
     assert M.main(["close-ledger", "--seed", "1", "--tag", "uni_fed"], out=tmp_path / "out",
                   config_path=_cfg_yaml(tmp_path)) == 2
     assert "tag" in capsys.readouterr().err
@@ -326,3 +372,147 @@ def test_페어_스냅샷이_설정과_맞지_않으면_적재_전에_멈춘다(
         M.stage_initadapter(cfg, 1, out=tmp_path / "out", config_path=p)
     err = capsys.readouterr().err
     assert "main_config_mismatch" in err and why in err
+
+
+def test_등록의_예산_비율이_명세와_연합_설정에_실린다(tmp_path, monkeypatch):
+    """`spec_for` 는 등록의 budget_fraction 을 명세에 싣고 기대 토큰을 그 몫(`vlm.budget.expected_tokens`)으로 낸다.
+    연합 실행 설정에는 `uni-budget-fraction` 으로 내려간다. 1.0 이면 그 칸은 빈 문자열이다."""
+    import vlm.budget as bud
+    import vlm.registration as reg
+
+    cfg = M.load_main_config(_cfg_yaml(tmp_path))
+    seen = {}
+
+    def fake_tokens(per, *, fraction, seed_value, pairs_path=None, table_path=None, recipe="json_only", pairs_digest=None,
+                    model_id=None, model_revision=None):
+        seen.update(fraction=fraction, seed_value=seed_value)
+        assert recipe == "json_only" and pairs_digest == str(cfg.pairs_digest)   # 등록의 레시피 · 설정의 페어 digest 가 간다
+        # 설정의 모델이 간다 — 새 레시피의 표 출처를 그 모델의 지금 토크나이저 신원과 맞댄다(외부 검토 200 M-01)
+        assert (model_id, model_revision) == (str(cfg.model_id), cfg.model_revision)
+        return {k: int(v) // 8 for k, v in per.items()} if fraction != 1.0 else dict(per)
+
+    monkeypatch.setattr(bud, "expected_tokens", fake_tokens)
+    monkeypatch.setattr(reg, "registered_budget_fraction", lambda path=None: 0.125)
+    spec = M.spec_for(cfg, 1, out=tmp_path / "out")
+    assert spec.budget_fraction == 0.125 and seen == {"fraction": 0.125, "seed_value": int(cfg.seeds[0])}
+    assert spec.expected_supervised_tokens == {k: int(v) // 8 for k, v in cfg.expected_supervised_tokens.items()}
+    assert "uni-budget-fraction=\"0.125\"" in M.fed_run_config(cfg, 1, out=tmp_path / "out")
+    monkeypatch.setattr(reg, "registered_budget_fraction", lambda path=None: 1.0)
+    assert "uni-budget-fraction=\"\"" in M.fed_run_config(cfg, 1, out=tmp_path / "out")
+
+
+# ================================================================ 학습 레시피의 실행 설정(02 2판 §3-5, 외부 검토 194 M5)
+def _declared() -> dict:
+    import tomllib
+
+    return tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["flwr"]["app"]["config"]
+
+
+def test_1차_레시피의_실행_설정에는_레시피_키가_없고_서버가_빈_값을_명시해_내려보낸다(tmp_path):
+    from flwr.common.config import fuse_dicts, parse_config_args
+
+    from fl.uni_run_config import client_run_cfg, down_config
+
+    cfg = M.load_main_config(_cfg_yaml(tmp_path))
+    got = parse_config_args([M.fed_run_config(cfg, 1, out=tmp_path / "out")])
+    assert "uni-target-recipe" not in got
+    run_cfg = fuse_dicts(_declared(), got)                                  # flwr 가 서버에 주는 실행 설정
+    sent = down_config(lambda k, d: run_cfg.get(k, d))
+    assert sent["uni-target-recipe"] == "" and client_run_cfg(sent)["recipe"] == "json_only"
+
+
+def test_새_레시피는_선언이_없으면_기동_전에_멈추고_선언되면_클라이언트까지_간다(tmp_path, monkeypatch):
+    from flwr.common.config import fuse_dicts, parse_config_args
+
+    import vlm.budget as bud
+    import vlm.registration as reg
+    from fl.uni_run_config import client_run_cfg, down_config
+
+    cfg = M.load_main_config(_cfg_yaml(tmp_path, uni_prompt_path="vlm/prompts/unified_v3_1_basis.txt"))   # 2 차 체제의 짝
+    monkeypatch.setattr(reg, "registered_recipe", lambda path=None: "json_line_then_basis")
+    monkeypatch.setattr(bud, "expected_tokens", lambda per, **kw: dict(per))
+    assert M.spec_for(cfg, 1, out=tmp_path / "out").recipe == "json_line_then_basis"
+    declared = _declared()
+    assert declared["uni-target-recipe"] == ""
+    undeclared = {k: v for k, v in declared.items() if k != "uni-target-recipe"}
+    with monkeypatch.context() as absent:
+        absent.setattr(M, "pyproject_run_keys", lambda path=None: frozenset(undeclared))
+        with pytest.raises(M.MainRefused) as exc:
+            M.fed_run_config(cfg, 1, out=tmp_path / "out")
+        assert exc.value.reason == "run_config_key_missing"
+        with pytest.raises(ValueError):
+            fuse_dicts(undeclared, {"uni-target-recipe": "json_line_then_basis"})
+    # 실제 pyproject 선언을 쓴다. 선언을 합성으로 덧붙여 통과시키지 않는다.
+    got = parse_config_args([M.fed_run_config(cfg, 1, out=tmp_path / "out")])
+    assert got["uni-target-recipe"] == "json_line_then_basis"
+    run_cfg = fuse_dicts(declared, got)
+    assert client_run_cfg(down_config(lambda k, d: run_cfg.get(k, d)))["recipe"] == "json_line_then_basis"
+
+
+def test_착수_고정은_등록의_레시피와_실행의_레시피가_갈리면_쓰지_않는다():
+    """명세는 지금 등록의 레시피를 읽는다 — 착수 고정에 실린 등록의 레시피가 그것과 다르면 결속 거부(`binding_problems(recipe=)`).
+    실행기의 두 단계(`stage_pin` · `stage_ecc_prepare`)가 실제로 그렇게 멈추는지는 `tests/test_ecc_flow.py` 의 행동 시험이 본다
+    (지시 1023a — 소스 문자열 개수 시험을 바꿨다)."""
+    from vlm.registration import binding_problems
+
+    assert binding_problems({"seed_indices": [1], "recipe": "json_only"}, seed_index=1, recipe="json_only") == []
+    assert binding_problems({"seed_indices": [1], "recipe": "json_only"}, seed_index=1, recipe="json_line_then_basis")
+
+
+@pytest.mark.parametrize(("recipe", "prompt"), [
+    ("json_line_then_basis", "vlm/prompts/unified_v2_absorig.txt"),     # 2 차 레시피 + v2 프롬프트
+    ("json_only", "vlm/prompts/unified_v3_1_basis.txt"),                 # 1 차 레시피 + 2 차 프롬프트(v3.1)
+])
+def test_실행기의_가드는_섞인_체제를_기동_전에_거부한다(tmp_path, monkeypatch, capsys, recipe, prompt):
+    """칸 · 연합 · 착수 고정 명령이 모두 지나는 `_guarded`(→ `main_run_problems`)가 레시피 × 프롬프트의 짝을 본다(지시 1022c
+    덧붙임 A). 명세(`spec_for`)는 짝을 보지 않는다 — 설정에서 값을 읽는 일만 한다(검수 14번 M1 의 시험이 그것을 본다)."""
+    import vlm.budget as bud
+    import vlm.registration as reg
+
+    monkeypatch.setattr(reg, "registered_recipe", lambda path=None: recipe)
+    monkeypatch.setattr(bud, "expected_tokens", lambda per, **kw: dict(per))
+    cfg = M.load_main_config(_cfg_yaml(tmp_path, uni_prompt_path=prompt))
+    spec = M.spec_for(cfg, 1, out=tmp_path / "out")
+    with pytest.raises(M.MainRefused) as exc:
+        M._guarded(spec)
+    assert exc.value.reason == "main_config_mismatch"
+    assert f"레시피 {recipe!r} 는 프롬프트" in capsys.readouterr().err
+    assert not (tmp_path / "out").exists()
+
+
+# ---------------------------------------------------------------- 판 6 연결 2 판 — 새 출력 뿌리(§4-2)
+def test_v6_link_main_root_isolated(tmp_path, capsys, monkeypatch):
+    """새 레시피의 본 칸은 `--main-out-root` 가 있어야 하고(`main_root_required`), 옛 뿌리와 같거나 겹치면 `main_root_conflict`, 민감도
+    인자와 함께 받지 않으며, receipt 는 뿌리를 받지 않는다. 뿌리에는 `RUN_PROFILE.json`(정식 등록 · sha · run_name main)이 한 번 선다.
+    옛 레시피 · 계약 없는 등록에는 묶지 않는다."""
+    import hashlib
+
+    import vlm.registration as reg
+    from tests.registration_history import legacy_default
+
+    monkeypatch.setattr(reg, "REG_PATH", Path("configs/train_registration.yaml"))          # 저장소의 정식 등록(새 레시피)
+    monkeypatch.chdir(ROOT)
+    assert M._canonical_registration_is_new()
+    assert M.main(["status"]) == 2 and "[main_root_required]" in capsys.readouterr().err
+    for bad in (M.OUT, M.OUT / "seed1", M.OUT.parent):
+        assert M.main(["status", "--main-out-root", str(bad)]) == 2 and "[main_root_conflict]" in capsys.readouterr().err
+    root = tmp_path / "main_v6"
+    assert M.main(["status", "--main-out-root", str(root), "--out-root", str(tmp_path / "s"),
+                   "--train-registration", str(ROOT / "configs/train_registration.yaml")]) == 2
+    assert "[main_root_args]" in capsys.readouterr().err
+    assert M.main(["receipt", "--main-out-root", str(root), "--registration", "x", "--commit", "HEAD"]) == 2
+    assert "[receipt_args]" in capsys.readouterr().err
+    assert M.main(["status", "--main-out-root", str(root)]) == 0
+    prof = json.loads((root / M.PROFILE_FILE).read_text(encoding="utf-8"))
+    assert prof["run_name"] == M.MAIN_RUN_NAME and prof["train_registration"] == "configs/train_registration.yaml"
+    assert prof["train_registration_sha256"] == hashlib.sha256((ROOT / "configs/train_registration.yaml").read_bytes()).hexdigest()
+    assert M.run_profile(root)["run_name"] == M.MAIN_RUN_NAME                      # 연합 서버와 같은 판독기가 같은 이름을 읽는다
+    assert M.spec_for(M.load_main_config(), 1, out=root).run_stamp == "main_s1"    # 신원(목적 · 태그 · 스탬프)은 그대로
+    (root / M.PROFILE_FILE).write_text(json.dumps({**prof, "run_name": "other"}), encoding="utf-8")
+    assert M.main(["status", "--main-out-root", str(root)]) == 2 and "[run_profile_mismatch]" in capsys.readouterr().err
+    legacy_default(monkeypatch, tmp_path)                                          # 옛 등록(json_only · 계약 없음)
+    with pytest.raises(M.MainRefused) as exc:
+        M.bind_main_profile(tmp_path / "legacy_root")
+    assert exc.value.reason == "main_root_registration" and not (tmp_path / "legacy_root").exists()
+    assert not M._canonical_registration_is_new()
+    assert M.main(["status"], out=tmp_path / "old_out") == 0                       # 옛 레시피의 기본 뿌리는 그대로

@@ -45,6 +45,10 @@ def test_실행실패와_범위제한을_최종_보고에도_함께_남긴다(tm
     checker.write_text("# 대역\n", encoding="utf-8")
     monkeypatch.setattr(S, "INDEPENDENT", checker)
     monkeypatch.setattr(S, "_run", lambda argv: next(replies))
+    # 관문은 빌드 메타의 표로 판을 찾는다(판 등록부) — 1 판 표를 가리키는 메타 한 칸만 둔다.
+    (tmp_path / "build").mkdir()
+    (tmp_path / "build" / "PAIRS_META.json").write_text(
+        '{"limits_table": {"path": "corpus/rules/limits_v0_pilot.csv"}}', encoding="utf-8")
     report = S.check(tmp_path / "build", tmp_path / "snap", tmp_path, tmp_path / "out")
     assert report["봉인_가능"] is False
     assert report["판정"] == "불통과"

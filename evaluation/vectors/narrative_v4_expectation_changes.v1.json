@@ -1,0 +1,436 @@
+{
+ "kind": "narrative_v4_expectation_changes",
+ "version": 1,
+ "status": "초안 — 구현 전 규칙으로 정한 선언. 구현 뒤 실측과 맞댄다",
+ "rules": {
+  "spec_10_4th": {
+   "path": "docs/dev_log/2026-10-20-설계복구/10_검사기v4_미니스펙_D.md",
+   "commit": "7e3c7d662c8056ea6aade7fe13bcd79fed0b047c",
+   "sha256": "4766d85465d002dc4687964bf78c8403871fed53ef8ad10d408c522a0faeaa4f"
+  },
+  "spec_10_5th": "같은 커밋의 10 5판(규칙 정정 A ~ E — 07 §30)",
+  "lists": {
+   "path": "evaluation/vectors/narrative_lists.v4-1.json",
+   "sha256": "e9575b6a613f72d01a33aeeefd07ede274bc37e7a5e1a3592ac558fe206f3d73"
+  }
+ },
+ "method": "후보는 규칙이 보는 낱말이 든 사례를 글자로 골랐다(11b 의 scan — 검사기를 돌리지 않는다). 바뀌는지는 규칙으로 정했다. 196 · 199 의 다섯 자리 틀은 연결 어미를 더하지 않아(대조 이음 뒤 자리는 대조 마디가 따로 선다) 자리마다 판정이 같다.",
+ "roles_v2": {
+  "ST 100": {
+   "main": "KRA27-3D",
+   "auxiliary": []
+  },
+  "ST 2011": {
+   "main": "KRA27-T15",
+   "auxiliary": [
+    "KRA27-T16"
+   ]
+  },
+  "ST 301": {
+   "main": "KRA27-T16",
+   "auxiliary": [
+    "KRA27-T15"
+   ]
+  },
+  "ST 401": {
+   "main": "KRA27-T16",
+   "auxiliary": [
+    "KRA27-T15"
+   ]
+  }
+ },
+ "changes": [
+  {
+   "source": "196",
+   "id": "RA-B01",
+   "placements": "다섯 자리 모두",
+   "old": {
+    "kinds": [
+     "라"
+    ],
+    "subtags": [
+     "정답 밖 · 제 주장과도 어긋남"
+    ]
+   },
+   "new": {
+    "kinds": [
+     "라"
+    ],
+    "subtags": [
+     "정답 밖 · 제 주장과도 어긋남",
+     "조건부 대응의 단정"
+    ]
+   },
+   "rule": "5판 §4 꼴 표지 차례 1 — 보조 전용 조항(코드 2011 의 보조 KRA27-T16)의 언급이고 그 대조 마디에 유효한 적용 단정('적용한다')이 있다"
+  },
+  {
+   "source": "196",
+   "id": "RA-D01",
+   "placements": "다섯 자리 모두",
+   "old": {
+    "kinds": [
+     "라"
+    ],
+    "subtags": [
+     "정답 밖 · 제 주장과도 어긋남",
+     "조건부 소개 · 인용"
+    ]
+   },
+   "new": {
+    "kinds": [
+     "라"
+    ],
+    "subtags": [
+     "정답 밖 · 제 주장과도 어긋남",
+     "조건부 대응의 단정"
+    ]
+   },
+   "rule": "5판 §4 (ㄹ) · 꼴 표지 차례 1 — 조건 표지('만약' · '라면')가 있어도 유효한 적용 단정('적용한다')이 있어 면제가 아니고, 보조 전용 조항의 단정이라 '조건부 소개 · 인용' 대신 '조건부 대응의 단정'"
+  }
+ ],
+ "n_changes": {
+  "cases": 2,
+  "case_placements": 10
+ },
+ "reviewed": {
+  "03a": {
+   "path": "docs/dev_log/2026-10-20-설계복구/03a_적대음성_D.json",
+   "sha256": "b80887730df4ee62913e3c995dc57f6c0555f30d990124347b72cf44d8424247",
+   "n_rows": 110,
+   "n_candidates": 84,
+   "candidates_by_feature": {
+    "aux": {
+     "n": 1,
+     "ids": [
+      "P43"
+     ],
+     "changed": [],
+     "unchanged_why": "바뀌지 않은 것(03a P43)은 보조 전용 조항의 언급이지만 적용 단정이 없다 — 1 판 꼴 앵커 문장이다(앵커는 적용 단정으로 세지 않는다, §2)"
+    },
+    "conn": {
+     "n": 2,
+     "ids": [
+      "N15",
+      "P16"
+     ],
+     "changed": [],
+     "unchanged_why": "대조 마디에 v3.1 예외가 있고 연결 어미로 나뉘지만, 예외 없는 작은 마디에 대상 낱말 + 술어(H1 · H3) · 두께 낱말((다))이 함께 든 것이 없다 — 작은 마디로 재도 v3.1 과 같다(5판 §5, 예외가 없으면 대조 마디 그대로)"
+    },
+    "danseo": {
+     "n": 83,
+     "ids": [
+      "N01",
+      "N03",
+      "N04",
+      "N05",
+      "N12",
+      "N13",
+      "N14",
+      "N15",
+      "N16",
+      "N17",
+      "N19",
+      "N20",
+      "N21",
+      "N22",
+      "N23",
+      "N24",
+      "N25",
+      "N26",
+      "N27",
+      "N28",
+      "N29",
+      "N30",
+      "N31",
+      "N33",
+      "N34",
+      "N35",
+      "N36",
+      "N40",
+      "N42",
+      "N43",
+      "N44",
+      "N45",
+      "N48",
+      "N49",
+      "P01",
+      "P02",
+      "P03",
+      "P04",
+      "P05",
+      "P06",
+      "P07",
+      "P09",
+      "P10",
+      "P11",
+      "P12",
+      "P13",
+      "P14",
+      "P15",
+      "P17",
+      "P18",
+      "P19",
+      "P20",
+      "P21",
+      "P23",
+      "P24",
+      "P25",
+      "P27",
+      "P28",
+      "P29",
+      "P30",
+      "P31",
+      "P32",
+      "P33",
+      "P34",
+      "P35",
+      "P36",
+      "P37",
+      "P38",
+      "P39",
+      "P40",
+      "P41",
+      "P42",
+      "P43",
+      "P44",
+      "P45",
+      "P46",
+      "P47",
+      "P48",
+      "P50",
+      "P51",
+      "R01",
+      "R06",
+      "R07"
+     ],
+     "changed": [],
+     "unchanged_why": "'단서' 뒤가 거부 꼴(존재의 부정 · 물음)이 아니다 — r_note 의 인정 그대로. 4판 §6 의 표처럼 '있' 만 인정했다면 196 의 r_note-P02('남아') · P03('때문에') · P04('고려해')가 바뀌었다 — 5판은 거부 목록만 닫는다"
+    }
+   }
+  },
+  "03o": {
+   "path": "docs/dev_log/2026-10-20-설계복구/03o_검사기v3_회귀_D.json",
+   "sha256": "85967b828aae3a0719be7c1e510e79014fe1f9f5dc484a8f5d877010c1196b2d",
+   "n_rows": 12,
+   "n_candidates": 0,
+   "candidates_by_feature": {}
+  },
+  "03x": {
+   "path": "docs/dev_log/2026-10-20-설계복구/03x_검사기v3_1_회귀_D.json",
+   "sha256": "8a020abd0dd738a136ec61cd1d3bc85a84e66891c97d99a8cdda460e0832ea9a",
+   "n_rows": 9,
+   "n_candidates": 1,
+   "candidates_by_feature": {
+    "conn": {
+     "n": 1,
+     "ids": [
+      "absence_regression.sentences[2]"
+     ],
+     "changed": [],
+     "unchanged_why": "대조 마디에 v3.1 예외가 있고 연결 어미로 나뉘지만, 예외 없는 작은 마디에 대상 낱말 + 술어(H1 · H3) · 두께 낱말((다))이 함께 든 것이 없다 — 작은 마디로 재도 v3.1 과 같다(5판 §5, 예외가 없으면 대조 마디 그대로)"
+    }
+   }
+  },
+  "196": {
+   "path": "_workspace/2026-10-20-design-recovery/NARRATIVE_CONFIRMATION_CASES_196.json",
+   "sha256": "fd01effe402caff8dd08dce83d6be811490d45a9729c12284f0bb8e0bfab690e",
+   "n_rows": 165,
+   "n_candidates": 22,
+   "candidates_by_feature": {
+    "aux": {
+     "n": 2,
+     "ids": [
+      "RA-B01",
+      "RA-D01"
+     ],
+     "changed": [
+      "RA-B01",
+      "RA-D01"
+     ],
+     "unchanged_why": "바뀌지 않은 것(03a P43)은 보조 전용 조항의 언급이지만 적용 단정이 없다 — 1 판 꼴 앵커 문장이다(앵커는 적용 단정으로 세지 않는다, §2)"
+    },
+    "cond": {
+     "n": 2,
+     "ids": [
+      "RA-D01",
+      "RA-D02"
+     ],
+     "changed": [
+      "RA-D01"
+     ],
+     "unchanged_why": "바뀌지 않은 것(196 RA-D02)은 보조 전용이 아닌 조항의 조건부 언급이고 적용 술어가 없다 — v3.1 과 같이 꼴 표지 차례 3 '조건부 소개 · 인용'"
+    },
+    "conn": {
+     "n": 8,
+     "ids": [
+      "r_scope-P02",
+      "r_scope-P04",
+      "r_uncov-P03",
+      "r_dim-N03",
+      "r_scope-N03",
+      "r_scope-N04",
+      "r_scope-N05",
+      "r_uncov-N06"
+     ],
+     "changed": [],
+     "unchanged_why": "대조 마디에 v3.1 예외가 있고 연결 어미로 나뉘지만, 예외 없는 작은 마디에 대상 낱말 + 술어(H1 · H3) · 두께 낱말((다))이 함께 든 것이 없다 — 작은 마디로 재도 v3.1 과 같다(5판 §5, 예외가 없으면 대조 마디 그대로)"
+    },
+    "danseo": {
+     "n": 11,
+     "ids": [
+      "r_note-P01",
+      "r_note-P02",
+      "r_note-P03",
+      "r_note-P04",
+      "r_note-N01",
+      "r_note-N02",
+      "r_note-N04",
+      "r_note-N05",
+      "r_note-N06",
+      "r_note-U01",
+      "r_note-U02"
+     ],
+     "changed": [],
+     "unchanged_why": "'단서' 뒤가 거부 꼴(존재의 부정 · 물음)이 아니다 — r_note 의 인정 그대로. 4판 §6 의 표처럼 '있' 만 인정했다면 196 의 r_note-P02('남아') · P03('때문에') · P04('고려해')가 바뀌었다 — 5판은 거부 목록만 닫는다"
+    }
+   }
+  },
+  "199": {
+   "path": "_workspace/2026-10-20-design-recovery/NARRATIVE_CONFIRMATION_CASES_199.json",
+   "sha256": "1f627e7c073e6dd22e3838eb3ccc45a49ddacfe1478b032a4d52aec5870bb6e1",
+   "n_rows": 40,
+   "n_candidates": 1,
+   "candidates_by_feature": {
+    "conn": {
+     "n": 1,
+     "ids": [
+      "199-H3-N18"
+     ],
+     "changed": [],
+     "unchanged_why": "대조 마디에 v3.1 예외가 있고 연결 어미로 나뉘지만, 예외 없는 작은 마디에 대상 낱말 + 술어(H1 · H3) · 두께 낱말((다))이 함께 든 것이 없다 — 작은 마디로 재도 v3.1 과 같다(5판 §5, 예외가 없으면 대조 마디 그대로)"
+    }
+   }
+  }
+ },
+ "b_regression_v1": {
+  "path": "evaluation/vectors/narrative_b_regression.v1.json",
+  "sha256": "d75253aedf68747dd478d02fe7ba7cd8d15fc4dc446b17aaaa02d309593e04c6",
+  "n_cases": 36,
+  "rule": "B 회귀 v1 은 v4 의 기대로 먼저 고정했다 — 바꾸지 않는다. 5판 규칙 · v4-lists-1 로 36 건 모두 기대 그대로다(설계로 맞댐)",
+  "not_produced_by_4th_edition": [
+   {
+    "id": "distinction.assert_auxiliary",
+    "group": "확정 어긋남",
+    "expect_v1": {
+     "kinds": [
+      "라"
+     ],
+     "sublabels": [
+      "조건부 대응의 단정"
+     ]
+    },
+    "result_by_4th_edition_rules": "(라) · 꼴 표지 차례 2 '적용 주장' — 세부 표지 없음(4판 차례 1 은 조건 표지 · '경우' 가 있어야 했다)",
+    "fix_in_5th_edition": "A — 차례 1 = 보조 전용 조항의 단정(07 §20 Q1 의 '조건부 대응의 단정' 의 뜻)"
+   },
+   {
+    "id": "distinction.auxiliary_conditional",
+    "group": "확정 어긋남",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "result_by_4th_edition_rules": "(라) — '어려우면' 이 4판의 조건 표지(v3.1 − '경우')에 없어 면제되지 않는다",
+    "fix_in_5th_edition": "B — 일반 조건 어미 '-(으)면'(1024i (ㄱ) 의 '조건 어미')"
+   },
+   {
+    "id": "premise.assert_applies",
+    "group": "확정 어긋남",
+    "expect_v1": {
+     "kinds": [
+      "다"
+     ],
+     "sublabels": [
+      "적용 전제 단정"
+     ]
+    },
+    "result_by_4th_edition_rules": "걸리지 않음 — 촉발 낱말('등급 정보가 없')과 적용 술어가 다른 작은 마디('…므로' 뒤)에 있다",
+    "fix_in_5th_edition": "D — (다) 새 세부 표지의 단정은 같은 대조 마디의 뒤 작은 마디의 적용 · 충족 술어까지 본다"
+   },
+   {
+    "id": "correspondence.v1_form_with_premise_claim",
+    "group": "확정 어긋남",
+    "expect_v1": {
+     "kinds": [
+      "다"
+     ],
+     "sublabels": [
+      "적용 전제 단정"
+     ]
+    },
+    "result_by_4th_edition_rules": "걸리지 않음 — 위와 같다",
+    "fix_in_5th_edition": "D"
+   },
+   {
+    "id": "cluster.include",
+    "group": "4판이 정하지 않음",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "result_by_4th_edition_rules": "4판의 조건 표지에 '이면' 이 없어 '군집이면'(정답 C5)을 조건으로 읽을 근거가 없다",
+    "fix_in_5th_edition": "B · D"
+   },
+   {
+    "id": "cluster.paraphrase",
+    "group": "4판이 정하지 않음",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "result_by_4th_edition_rules": "위와 같다",
+    "fix_in_5th_edition": "B · D"
+   },
+   {
+    "id": "premise.include",
+    "group": "4판이 정하지 않음",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "result_by_4th_edition_rules": "(다)의 조건 예외에 '경우' 를 둘지 4판이 정하지 않았다(§4 (ㄴ) 은 §4 의 조건 표지에서 '경우' 를 뺐다) — 정답 C8",
+    "fix_in_5th_edition": "D — (다)의 조건 예외에 '경우'"
+   },
+   {
+    "id": "premise.paraphrase",
+    "group": "4판이 정하지 않음",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "result_by_4th_edition_rules": "위와 같다",
+    "fix_in_5th_edition": "D"
+   },
+   {
+    "id": "cluster.probe_spacing",
+    "group": "4판이 정하지 않음",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "result_by_4th_edition_rules": "4판 §5 표의 촉발 낱말에 '간격' 이 들어 있어 '간격이 고른 기공' 이 걸릴 수 있었다",
+    "fix_in_5th_edition": "D — '간격' 단독은 촉발 낱말이 아니다"
+   },
+   {
+    "id": "cluster.negative_not_measured",
+    "group": "4판이 정하지 않음",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "result_by_4th_edition_rules": "'간격' 이 촉발 낱말이면 '재지 않' 을 예외로 둘 목록이 4판에 없었다",
+    "fix_in_5th_edition": "D"
+   }
+  ]
+ },
+ "written_at_utc": "2026-10-24T18:10:04Z"
+}

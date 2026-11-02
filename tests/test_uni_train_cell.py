@@ -558,3 +558,89 @@ def test_원장_콜백_값과_체크포인트_extra_합치기():
     i_led = body.index("ledger_cb({")
     i_ck = body.index("ckpt(_AdapterTrainerView(model, opt, epoch=ep))")
     assert i_led < i_ck                                   # 원장 행은 체크포인트 전에 쓴다
+
+
+# ================================================================ 학습 레시피(02 2판 §3-5 의 새 시험 1 · 3, 지시 1022b)
+def _with_text(rows: dict[str, list[dict]]) -> dict[str, list[dict]]:
+    return {c: [{**r, "target_text": f"{r['image_id']} 의 서술이다."} for r in rs] for c, rs in rows.items()}
+
+
+def test_1차_레시피의_학습_설정_원문은_1차_등록_파일과_같은_바이트다(monkeypatch):
+    """1 차 등록의 학습 설정 원문(`main-20261017-1.train_config.json`, 고치기 전 코드가 낸 바이트)을 그 필드로 다시 지어
+    바이트가 같아야 한다 — 기본값(레시피 생략)과 `json_only` 명시 둘 다."""
+    from vlm import pilot_vlm
+
+    monkeypatch.setattr(pilot_vlm, "GRAD_ACCUM", 32)                    # 기록 등록(누적 32 시절)과 맞대는 시험 — 10-31 누적 8 변경 뒤에도 그 시절 코드값으로
+    from vlm.train_cell import train_config_object
+
+    raw = (ROOT / "configs/registration/main-20261017-1.train_config.json").read_bytes()
+    tc = json.loads(raw)
+    blocks = {k: tc[k] for k in ("lora", "quant", "optimizer", "loss", "lr_schedule")}
+    metrics = {"processor_config_sha256": tc["processor_config_sha256"], "config_blocks": blocks,
+               **{k: tc[k] for k in ("prompt_sha256", "template_mode", "coord_cfg_hash", "target_contract_sha256")}}
+    kw = {"model_id": tc["model_id"], "model_revision": tc["model_revision"], "pairs_digest": tc["pairs_digest"],
+          "chat_template_kwargs": {"enable_thinking": False}, "coord_space": "ABS_ORIG", "num_rounds": tc["num_rounds"],
+          "local_epochs": tc["local_epochs"], "total_epochs": tc["total_epochs"], "prompt_sha256": tc["prompt_sha256"],
+          "init_digest": tc["init_adapter_digest"], "metrics": metrics}
+    for obj in (train_config_object(**kw), train_config_object(**kw, recipe="json_only")):
+        assert pilot_vlm.canonical_json(obj).encode("utf-8") == raw
+    assert "target_recipe" not in tc and "recipe" not in tc
+
+
+def test_1차_레시피는_신원과_학습_설정_원문이_레시피를_생략한_실행과_같다(world):
+    """레시피 생략(지금까지의 호출) = `json_only` 명시. 같은 신원이므로 명시한 쪽은 모델을 올리지 않고 건너뛴다."""
+    a = run_uni_local_cell(["C1"], spec=world.spec, model_loader=world.loader, rows_by_client=world.rows)
+    assert world.spec.recipe == "json_only"
+    m = _meta(a["C1"].cell_dir)
+    assert m["identity"]["target_contract_sha256"] == pilot_vlm.TARGET_CONTRACT_SHA256
+    assert json.loads(m["train_config"])["target_contract_sha256"] == pilot_vlm.TARGET_CONTRACT_SHA256
+    assert "target_recipe" not in m["metrics"] and "recipe" not in m["identity"]
+    n = world.loader.n
+    b = run_uni_local_cell(["C1"], spec=_spec(world.tmp, recipe="json_only"), model_loader=world.loader,
+                           rows_by_client=world.rows)
+    assert b["C1"].status == "skipped" and world.loader.n == n
+
+
+def test_레시피가_다르면_신원이_다르고_완료_산출을_건너뛰지_않는다(world):
+    rows = _with_text(world.rows)
+    run_uni_local_cell(["C1"], spec=world.spec, model_loader=world.loader, rows_by_client=rows)
+    n = world.loader.n
+    with pytest.raises(CellRejected) as exc:
+        run_uni_local_cell(["C1"], spec=_spec(world.tmp, recipe="json_line_then_basis"), model_loader=world.loader,
+                           rows_by_client=rows)
+    assert exc.value.code == "identity_mismatch" and world.loader.n == n
+
+
+def test_레시피가_다르면_재개_파일을_적용하기_전에_거부한다(world):
+    rows = _with_text(world.rows)
+    with pytest.raises(_Die):
+        run_uni_local_cell(["C1"], spec=world.spec, model_loader=world.loader, rows_by_client=rows,
+                           hooks={"after_ckpt": _die_at(0)})
+    resume = Path(world.spec.resume_root)
+    before = _tree_bytes(resume)
+    led = cell_dir(world.spec, LOCAL_TAGS["C1"]) / "train_ledger.csv"
+    led_before = led.read_bytes()
+    with pytest.raises((CellRejected, ValueError)) as exc:
+        run_uni_local_cell(["C1"], spec=_spec(world.tmp, recipe="json_line_then_basis"), model_loader=world.loader,
+                           rows_by_client=rows)
+    assert "target_contract_sha256" in str(exc.value) or getattr(exc.value, "code", "").endswith("identity_mismatch")
+    assert _tree_bytes(resume) == before and led.read_bytes() == led_before
+
+
+def test_2차_레시피의_칸은_서술을_학습하고_신원_원문_지표가_새_계약을_말한다(world):
+    rows = _with_text(world.rows)
+    spec = _spec(world.tmp, recipe="json_line_then_basis")
+    res = run_uni_local_cell(["C3"], spec=spec, model_loader=world.loader, rows_by_client=rows)
+    m = _meta(res["C3"].cell_dir)
+    v2 = pilot_vlm.target_contract_sha256("json_line_then_basis")
+    assert m["identity"]["target_contract_sha256"] == json.loads(m["train_config"])["target_contract_sha256"] == v2
+    assert m["metrics"]["target_contract_sha256"] == v2 and m["metrics"]["target_recipe"] == "json_line_then_basis"
+    # 서술이 없는 행이면 고치지 않고 거부한다(학습 풀에는 없다)
+    with pytest.raises(ValueError, match="target_text"):
+        run_uni_local_cell(["C2"], spec=spec, model_loader=world.loader, rows_by_client=world.rows)
+
+
+def test_모르는_레시피의_실행_명세는_서지_않는다(tmp_path):
+    with pytest.raises(CellRejected) as exc:
+        _spec(tmp_path, recipe="two_task_mix")
+    assert exc.value.code == "recipe_unknown"

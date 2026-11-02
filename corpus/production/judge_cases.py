@@ -188,9 +188,16 @@ V7_EVALUATION_SCOPE = {
 }
 V7_A_PROTOCOL = "judge_v7_g150_a_v2"
 V7_B_PROTOCOL = "judge_v7_g150_b_v2"
+# The v8 judge contract reuses the registered A/B sets under its own protocol names,
+# so a v7 manifest, receipt or approval can never stand for a v8 one.
+V8_A_PROTOCOL = "judge_v8_g150_a_v2"
+V8_B_PROTOCOL = "judge_v8_g150_b_v2"
+V8_PROTOCOLS = (V8_A_PROTOCOL, V8_B_PROTOCOL)
 V7_REGISTERED_SCOPES = {
     V7_A_PROTOCOL: "adjustment_operational_only",
     V7_B_PROTOCOL: "final_blinded",
+    V8_A_PROTOCOL: "adjustment_operational_only",
+    V8_B_PROTOCOL: "final_blinded",
 }
 V7_REGISTERED_GROUP_COUNTS = {"N+": 4, "D+": 50, "ADV1": 25, "ADV2": 25}
 
@@ -199,7 +206,7 @@ def v7_registered_evaluation_scope(protocol: str) -> dict:
     """Fixed roles, not caller-supplied claims about a mutable case bundle."""
     if protocol not in V7_REGISTERED_SCOPES:
         raise ValueError("unregistered v7 protocol")
-    final = protocol == V7_B_PROTOCOL
+    final = protocol in (V7_B_PROTOCOL, V8_B_PROTOCOL)
     return {"previous_model_protocol": V7_PROTOCOL,
             "prior_model_output_exposed": not final,
             "new_independent_discrimination_claimed": final,

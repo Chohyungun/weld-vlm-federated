@@ -1,0 +1,638 @@
+{
+ "kind": "narrative_v4_expectation_changes",
+ "version": 2,
+ "status": "초안 — 구현 전 규칙으로 정한 선언. 구현 뒤 실측과 맞댄다. 기대 변경 표 v1 의 바이트는 그대로다",
+ "supersedes": {
+  "path": "evaluation/vectors/narrative_v4_expectation_changes.v1.json",
+  "sha256": "743f453d932fd62e0112025937bda709ada3a405307c4468632e976a9747389b",
+  "bytes_unchanged": true
+ },
+ "rules": {
+  "spec_10": "같은 커밋의 10 6판(지시 1024l 의 A ~ E 결정)",
+  "lists": {
+   "path": "evaluation/vectors/narrative_lists.v4-2.json",
+   "version": "v4-lists-2"
+  },
+  "decisions": {
+   "dispatch_1024l": "9bea671dab4b40982e197f2037809462b3a24036a65b0eb606f6a61a45e6a3f3",
+   "review_235": "5d90c01457d1a7e78bc60e1d26121e518793e4dedac1e54c44417a3bf1c7b420"
+  }
+ },
+ "method": "바뀌는 것은 규칙으로 정했다(CHANGES). 그 밖에 바뀌는 자리가 없는지는 v3.1 회귀 · B 회귀 · 230 예문을 v4-1 과 v4-2 의 목록 규칙(조건 어미 · 작은 마디 · r_note 조건 1 · (다) 새 세부 표지)으로 각각 재어 맞댔다(11c 의 Rules — 검사기가 아니다. §4 의 유효성 판별과 판정 전체는 재지 않는다). 그 차이는 모두 아래 changes 의 B 회귀 둘이다. 표본 밖 전수 증명은 아니다. 196 · 199 의 다섯 자리 틀은 연결 어미를 더하지 않아 자리마다 판정이 같다.",
+ "roles_v2": {
+  "ST 100": {
+   "main": "KRA27-3D",
+   "auxiliary": []
+  },
+  "ST 2011": {
+   "main": "KRA27-T15",
+   "auxiliary": [
+    "KRA27-T16"
+   ]
+  },
+  "ST 301": {
+   "main": "KRA27-T16",
+   "auxiliary": [
+    "KRA27-T15"
+   ]
+  },
+  "ST 401": {
+   "main": "KRA27-T16",
+   "auxiliary": [
+    "KRA27-T15"
+   ]
+  }
+ },
+ "changes": [
+  {
+   "source": "196",
+   "id": "RA-B01",
+   "placements": "다섯 자리 모두",
+   "old": {
+    "kinds": [
+     "라"
+    ],
+    "subtags": [
+     "정답 밖 · 제 주장과도 어긋남"
+    ]
+   },
+   "new": {
+    "kinds": [
+     "라"
+    ],
+    "subtags": [
+     "정답 밖 · 제 주장과도 어긋남",
+     "조건부 대응의 단정"
+    ]
+   },
+   "rule": "A — 보조 전용 조항(코드 2011 의 보조 KRA27-T16)의 언급이고 그 대조 마디에 유효한 적용 단정('적용한다')이 있다 → 꼴 표지 차례 1. '조건부' 는 조항의 대응 자격이다",
+   "premise": "A 의 채택(지시 1024l)을 전제로 한다 — 4판 규칙만으로는 이 세부 표지가 나오지 않는다. 분자 · 면제는 그대로다"
+  },
+  {
+   "source": "196",
+   "id": "RA-D01",
+   "placements": "다섯 자리 모두",
+   "old": {
+    "kinds": [
+     "라"
+    ],
+    "subtags": [
+     "정답 밖 · 제 주장과도 어긋남",
+     "조건부 소개 · 인용"
+    ]
+   },
+   "new": {
+    "kinds": [
+     "라"
+    ],
+    "subtags": [
+     "정답 밖 · 제 주장과도 어긋남",
+     "조건부 대응의 단정"
+    ]
+   },
+   "rule": "A · (ㄹ) — 조건 표지('만약' · '라면')가 있어도 유효한 적용 단정('적용한다')이 있어 면제가 아니고, 보조 전용 조항의 단정이라 '조건부 소개 · 인용' 대신 '조건부 대응의 단정'",
+   "premise": "A 의 채택(지시 1024l)을 전제로 한다. 분자 · 면제는 그대로다"
+  },
+  {
+   "source": "breg",
+   "id": "premise.assert_applies",
+   "placements": "다섯 자리 모두",
+   "old": {
+    "kinds": [
+     "다"
+    ],
+    "sublabels": [
+     "적용 전제 단정"
+    ]
+   },
+   "new": {
+    "kinds": [],
+    "sublabels": [],
+    "note": "미검출(알려진 한계)"
+   },
+   "rule": "D(지시 1024l — later_predicates 기각): 촉발 낱말('등급 정보가 없')은 '…므로' 앞 작은 마디에 있고 그 작은 마디는 평서로 끝나지 않는다. 뒤 작은 마디의 적용 술어를 단정 근거로 잇지 않는다 — 미검출(알려진 한계, 10 6판 §15 새 한계 4 · I2 잔여 한계)",
+   "premise": "D 의 later_predicates 기각(지시 1024l)"
+  },
+  {
+   "source": "breg",
+   "id": "correspondence.v1_form_with_premise_claim",
+   "placements": "자리 없음(단독 하나)",
+   "old": {
+    "kinds": [
+     "다"
+    ],
+    "sublabels": [
+     "적용 전제 단정"
+    ]
+   },
+   "new": {
+    "kinds": [],
+    "sublabels": [],
+    "note": "미검출(알려진 한계)"
+   },
+   "rule": "D(지시 1024l — later_predicates 기각): 촉발 낱말('등급 정보가 없')은 '…므로' 앞 작은 마디에 있고 그 작은 마디는 평서로 끝나지 않는다. 뒤 작은 마디의 적용 술어를 단정 근거로 잇지 않는다 — 미검출(알려진 한계, 10 6판 §15 새 한계 4 · I2 잔여 한계)",
+   "premise": "D 의 later_predicates 기각(지시 1024l)"
+  }
+ ],
+ "n_changes": {
+  "cases": 4,
+  "case_placements": 16,
+  "by_source": {
+   "196": {
+    "cases": 2,
+    "placements": 10
+   },
+   "breg": {
+    "cases": 2,
+    "placements": 6
+   }
+  }
+ },
+ "reviewed": {
+  "03a": {
+   "path": "docs/dev_log/2026-10-20-설계복구/03a_적대음성_D.json",
+   "sha256": "b80887730df4ee62913e3c995dc57f6c0555f30d990124347b72cf44d8424247",
+   "n_rows": 110,
+   "list_rule_diffs": {}
+  },
+  "03o": {
+   "path": "docs/dev_log/2026-10-20-설계복구/03o_검사기v3_회귀_D.json",
+   "sha256": "85967b828aae3a0719be7c1e510e79014fe1f9f5dc484a8f5d877010c1196b2d",
+   "n_rows": 12,
+   "list_rule_diffs": {}
+  },
+  "03x": {
+   "path": "docs/dev_log/2026-10-20-설계복구/03x_검사기v3_1_회귀_D.json",
+   "sha256": "8a020abd0dd738a136ec61cd1d3bc85a84e66891c97d99a8cdda460e0832ea9a",
+   "n_rows": 9,
+   "list_rule_diffs": {}
+  },
+  "196": {
+   "path": "_workspace/2026-10-20-design-recovery/NARRATIVE_CONFIRMATION_CASES_196.json",
+   "sha256": "fd01effe402caff8dd08dce83d6be811490d45a9729c12284f0bb8e0bfab690e",
+   "n_rows": 165,
+   "list_rule_diffs": {}
+  },
+  "199": {
+   "path": "_workspace/2026-10-20-design-recovery/NARRATIVE_CONFIRMATION_CASES_199.json",
+   "sha256": "1f627e7c073e6dd22e3838eb3ccc45a49ddacfe1478b032a4d52aec5870bb6e1",
+   "n_rows": 40,
+   "list_rule_diffs": {}
+  },
+  "breg": {
+   "path": "evaluation/vectors/narrative_b_regression.v1.json",
+   "sha256": "d75253aedf68747dd478d02fe7ba7cd8d15fc4dc446b17aaaa02d309593e04c6",
+   "n_rows": 36,
+   "list_rule_diffs": {
+    "d_new": {
+     "n": 2,
+     "ids": [
+      "correspondence.v1_form_with_premise_claim",
+      "premise.assert_applies"
+     ],
+     "handled": [
+      "바뀜",
+      "바뀜"
+     ]
+    }
+   }
+  },
+  "230": {
+   "path": "_workspace/2026-10-20-design-recovery/D_1024HI_C_1024J_REVIEW_230.md(§2 · §3 의 예문)",
+   "sha256": "f9c88aa2b4bcfebef680238a7b73cd084d7280a853029504b42f41d9c0df6ccb",
+   "n_rows": 31,
+   "list_rule_diffs": {}
+  }
+ },
+ "b_regression_v1": {
+  "path": "evaluation/vectors/narrative_b_regression.v1.json",
+  "sha256": "d75253aedf68747dd478d02fe7ba7cd8d15fc4dc446b17aaaa02d309593e04c6",
+  "n_cases": 36,
+  "rule": "B 회귀 v1 의 바이트는 바꾸지 않는다. 6판 규칙으로 사례마다 다시 따졌고, 바뀌는 것은 changes 의 둘(later_predicates 기각 — '미검출(알려진 한계)')이다. 기존 기대를 지키려고 규칙을 맞추지 않았다(지시 1024l)",
+  "recheck_6th": [
+   {
+    "id": "measure.include",
+    "expression": "측정량",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": [],
+     "anchor": true,
+     "list_allowed": true
+    },
+    "expect_6th": "그대로",
+    "why": "A ~ E 가 닿지 않는 갈래 — 앵커 · 기준 목록(§2 · §3)"
+   },
+   {
+    "id": "measure.missing_word",
+    "expression": "측정량",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": [],
+     "anchor": true,
+     "list_allowed": true
+    },
+    "expect_6th": "그대로",
+    "why": "A ~ E 가 닿지 않는 갈래 — 앵커 · 기준 목록(§2 · §3)"
+   },
+   {
+    "id": "measure.wrong",
+    "expression": "측정량",
+    "expect_v1": {
+     "kinds": [
+      "가"
+     ],
+     "sublabels": [
+      "기준 오기(측정량)"
+     ],
+     "anchor": true,
+     "list_allowed": false
+    },
+    "expect_6th": "그대로",
+    "why": "A ~ E 가 닿지 않는 갈래 — 앵커 · 기준 목록(§2 · §3)"
+   },
+   {
+    "id": "measure.negative",
+    "expression": "측정량",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "A ~ E 가 닿지 않는 갈래 — 앵커 · 기준 목록(§2 · §3)"
+   },
+   {
+    "id": "cluster.include",
+    "expression": "합계길이 · 군집",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "D — '간격' 단독은 촉발 낱말이 아니고, '군집이면' 은 (ii) 일반 조건 어미라 그 작은 마디의 예외다. 단정 사례는 촉발 낱말의 작은 마디가 평서로 끝난다"
+   },
+   {
+    "id": "cluster.paraphrase",
+    "expression": "합계길이 · 군집",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "D — '간격' 단독은 촉발 낱말이 아니고, '군집이면' 은 (ii) 일반 조건 어미라 그 작은 마디의 예외다. 단정 사례는 촉발 낱말의 작은 마디가 평서로 끝난다"
+   },
+   {
+    "id": "cluster.assert_group",
+    "expression": "합계길이 · 군집",
+    "expect_v1": {
+     "kinds": [
+      "다"
+     ],
+     "sublabels": [
+      "군집 · 간격 단정"
+     ]
+    },
+    "expect_6th": "그대로",
+    "why": "D — '간격' 단독은 촉발 낱말이 아니고, '군집이면' 은 (ii) 일반 조건 어미라 그 작은 마디의 예외다. 단정 사례는 촉발 낱말의 작은 마디가 평서로 끝난다"
+   },
+   {
+    "id": "cluster.assert_sum",
+    "expression": "합계길이 · 군집",
+    "expect_v1": {
+     "kinds": [
+      "다"
+     ],
+     "sublabels": [
+      "군집 · 간격 단정"
+     ]
+    },
+    "expect_6th": "그대로",
+    "why": "D — '간격' 단독은 촉발 낱말이 아니고, '군집이면' 은 (ii) 일반 조건 어미라 그 작은 마디의 예외다. 단정 사례는 촉발 낱말의 작은 마디가 평서로 끝난다"
+   },
+   {
+    "id": "cluster.assert_sum_mm",
+    "expression": "합계길이 · 군집",
+    "expect_v1": {
+     "kinds": [
+      "가",
+      "다"
+     ],
+     "sublabels": [
+      "군집 · 간격 단정"
+     ]
+    },
+    "expect_6th": "그대로",
+    "why": "D — '간격' 단독은 촉발 낱말이 아니고, '군집이면' 은 (ii) 일반 조건 어미라 그 작은 마디의 예외다. 단정 사례는 촉발 낱말의 작은 마디가 평서로 끝난다"
+   },
+   {
+    "id": "cluster.negative_px",
+    "expression": "합계길이 · 군집",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "D — '간격' 단독은 촉발 낱말이 아니고, '군집이면' 은 (ii) 일반 조건 어미라 그 작은 마디의 예외다. 단정 사례는 촉발 낱말의 작은 마디가 평서로 끝난다"
+   },
+   {
+    "id": "cluster.negative_not_measured",
+    "expression": "합계길이 · 군집",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "D — '간격' 단독은 촉발 낱말이 아니고, '군집이면' 은 (ii) 일반 조건 어미라 그 작은 마디의 예외다. 단정 사례는 촉발 낱말의 작은 마디가 평서로 끝난다"
+   },
+   {
+    "id": "cluster.probe_spacing",
+    "expression": "합계길이 · 군집",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "D — '간격' 단독은 촉발 낱말이 아니고, '군집이면' 은 (ii) 일반 조건 어미라 그 작은 마디의 예외다. 단정 사례는 촉발 낱말의 작은 마디가 평서로 끝난다"
+   },
+   {
+    "id": "cluster.probe_place",
+    "expression": "합계길이 · 군집",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "D — '간격' 단독은 촉발 낱말이 아니고, '군집이면' 은 (ii) 일반 조건 어미라 그 작은 마디의 예외다. 단정 사례는 촉발 낱말의 작은 마디가 평서로 끝난다"
+   },
+   {
+    "id": "mixture.include",
+    "expression": "혼재",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "A ~ E 가 닿지 않는 갈래 — (나)는 v3.1 규칙"
+   },
+   {
+    "id": "mixture.paraphrase",
+    "expression": "혼재",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "A ~ E 가 닿지 않는 갈래 — (나)는 v3.1 규칙"
+   },
+   {
+    "id": "mixture.assert_fail",
+    "expression": "혼재",
+    "expect_v1": {
+     "kinds": [
+      "나"
+     ],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "A ~ E 가 닿지 않는 갈래 — (나)는 v3.1 규칙"
+   },
+   {
+    "id": "mixture.assert_pass",
+    "expression": "혼재",
+    "expect_v1": {
+     "kinds": [
+      "나"
+     ],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "A ~ E 가 닿지 않는 갈래 — (나)는 v3.1 규칙"
+   },
+   {
+    "id": "mixture.observation",
+    "expression": "혼재",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "A ~ E 가 닿지 않는 갈래 — (나)는 v3.1 규칙"
+   },
+   {
+    "id": "mixture.probe",
+    "expression": "혼재",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "A ~ E 가 닿지 않는 갈래 — (나)는 v3.1 규칙"
+   },
+   {
+    "id": "distinction.include",
+    "expression": "구별 곤란",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "A — 보조 전용 조항의 단정은 꼴 표지 차례 1. B — '어려우면' 은 (ii) 일반 조건 어미(이름씨 제외 밖)라 적용 단정이 없는 소개는 면제"
+   },
+   {
+    "id": "distinction.auxiliary_conditional",
+    "expression": "구별 곤란",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "A — 보조 전용 조항의 단정은 꼴 표지 차례 1. B — '어려우면' 은 (ii) 일반 조건 어미(이름씨 제외 밖)라 적용 단정이 없는 소개는 면제"
+   },
+   {
+    "id": "distinction.assert_auxiliary",
+    "expression": "구별 곤란",
+    "expect_v1": {
+     "kinds": [
+      "라"
+     ],
+     "sublabels": [
+      "조건부 대응의 단정"
+     ]
+    },
+    "expect_6th": "그대로",
+    "why": "A — 보조 전용 조항의 단정은 꼴 표지 차례 1. B — '어려우면' 은 (ii) 일반 조건 어미(이름씨 제외 밖)라 적용 단정이 없는 소개는 면제"
+   },
+   {
+    "id": "distinction.assert_unrelated",
+    "expression": "구별 곤란",
+    "expect_v1": {
+     "kinds": [
+      "라"
+     ],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "A — 보조 전용 조항의 단정은 꼴 표지 차례 1. B — '어려우면' 은 (ii) 일반 조건 어미(이름씨 제외 밖)라 적용 단정이 없는 소개는 면제"
+   },
+   {
+    "id": "distinction.observation",
+    "expression": "구별 곤란",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "A — 보조 전용 조항의 단정은 꼴 표지 차례 1. B — '어려우면' 은 (ii) 일반 조건 어미(이름씨 제외 밖)라 적용 단정이 없는 소개는 면제"
+   },
+   {
+    "id": "premise.include",
+    "expression": "무등급 전제",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "D — '…않은 경우의 · 경우에' 는 조건절 꼴(촉발 낱말이 '경우' 를 꾸미는 관형절 안), '경우라면' 은 '라면'. 단정 사례는 촉발 낱말의 작은 마디가 평서로 끝난다"
+   },
+   {
+    "id": "premise.paraphrase",
+    "expression": "무등급 전제",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "D — '…않은 경우의 · 경우에' 는 조건절 꼴(촉발 낱말이 '경우' 를 꾸미는 관형절 안), '경우라면' 은 '라면'. 단정 사례는 촉발 낱말의 작은 마디가 평서로 끝난다"
+   },
+   {
+    "id": "premise.assert_applies",
+    "expression": "무등급 전제",
+    "expect_v1": {
+     "kinds": [
+      "다"
+     ],
+     "sublabels": [
+      "적용 전제 단정"
+     ]
+    },
+    "expect_6th": {
+     "kinds": [],
+     "sublabels": [],
+     "note": "미검출(알려진 한계)"
+    },
+    "why": "D(지시 1024l — later_predicates 기각): 촉발 낱말('등급 정보가 없')은 '…므로' 앞 작은 마디에 있고 그 작은 마디는 평서로 끝나지 않는다. 뒤 작은 마디의 적용 술어를 단정 근거로 잇지 않는다 — 미검출(알려진 한계, 10 6판 §15 새 한계 4 · I2 잔여 한계)"
+   },
+   {
+    "id": "premise.assert_ungraded",
+    "expression": "무등급 전제",
+    "expect_v1": {
+     "kinds": [
+      "다"
+     ],
+     "sublabels": [
+      "적용 전제 단정"
+     ]
+    },
+    "expect_6th": "그대로",
+    "why": "D — '…않은 경우의 · 경우에' 는 조건절 꼴(촉발 낱말이 '경우' 를 꾸미는 관형절 안), '경우라면' 은 '라면'. 단정 사례는 촉발 낱말의 작은 마디가 평서로 끝난다"
+   },
+   {
+    "id": "premise.assert_not_designated",
+    "expression": "무등급 전제",
+    "expect_v1": {
+     "kinds": [
+      "다"
+     ],
+     "sublabels": [
+      "적용 전제 단정"
+     ]
+    },
+    "expect_6th": "그대로",
+    "why": "D — '…않은 경우의 · 경우에' 는 조건절 꼴(촉발 낱말이 '경우' 를 꾸미는 관형절 안), '경우라면' 은 '라면'. 단정 사례는 촉발 낱말의 작은 마디가 평서로 끝난다"
+   },
+   {
+    "id": "premise.negation_knowledge",
+    "expression": "무등급 전제",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "D — '…않은 경우의 · 경우에' 는 조건절 꼴(촉발 낱말이 '경우' 를 꾸미는 관형절 안), '경우라면' 은 '라면'. 단정 사례는 촉발 낱말의 작은 마디가 평서로 끝난다"
+   },
+   {
+    "id": "premise.conditional",
+    "expression": "무등급 전제",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "D — '…않은 경우의 · 경우에' 는 조건절 꼴(촉발 낱말이 '경우' 를 꾸미는 관형절 안), '경우라면' 은 '라면'. 단정 사례는 촉발 낱말의 작은 마디가 평서로 끝난다"
+   },
+   {
+    "id": "premise.probe_grade",
+    "expression": "무등급 전제",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "D — '…않은 경우의 · 경우에' 는 조건절 꼴(촉발 낱말이 '경우' 를 꾸미는 관형절 안), '경우라면' 은 '라면'. 단정 사례는 촉발 낱말의 작은 마디가 평서로 끝난다"
+   },
+   {
+    "id": "premise.probe_premise",
+    "expression": "무등급 전제",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": []
+    },
+    "expect_6th": "그대로",
+    "why": "D — '…않은 경우의 · 경우에' 는 조건절 꼴(촉발 낱말이 '경우' 를 꾸미는 관형절 안), '경우라면' 은 '라면'. 단정 사례는 촉발 낱말의 작은 마디가 평서로 끝난다"
+   },
+   {
+    "id": "correspondence.include",
+    "expression": "대응 조항 문구",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": [],
+     "anchor": true,
+     "list_allowed": true
+    },
+    "expect_6th": "그대로",
+    "why": "앵커(§2) — A ~ E 가 닿지 않는다"
+   },
+   {
+    "id": "correspondence.v1_form",
+    "expression": "대응 조항 문구",
+    "expect_v1": {
+     "kinds": [],
+     "sublabels": [],
+     "anchor": true,
+     "list_allowed": true
+    },
+    "expect_6th": "그대로",
+    "why": "앵커(§2) — A ~ E 가 닿지 않는다"
+   },
+   {
+    "id": "correspondence.v1_form_with_premise_claim",
+    "expression": "대응 조항 문구",
+    "expect_v1": {
+     "kinds": [
+      "다"
+     ],
+     "sublabels": [
+      "적용 전제 단정"
+     ]
+    },
+    "expect_6th": {
+     "kinds": [],
+     "sublabels": [],
+     "note": "미검출(알려진 한계)"
+    },
+    "why": "D(지시 1024l — later_predicates 기각): 촉발 낱말('등급 정보가 없')은 '…므로' 앞 작은 마디에 있고 그 작은 마디는 평서로 끝나지 않는다. 뒤 작은 마디의 적용 술어를 단정 근거로 잇지 않는다 — 미검출(알려진 한계, 10 6판 §15 새 한계 4 · I2 잔여 한계)"
+   }
+  ],
+  "n_changed": 2
+ },
+ "written_at_utc": "2026-10-26T03:28:10Z"
+}

@@ -67,6 +67,75 @@ ANN_COLS = ("ann_id", "image_id", "iso_code", "bbox_x1_px", "bbox_y1_px", "bbox_
 LIMIT_COLS = ("rule_id", "canonical", "scope", "defect_code", "material", "inspection_method", "thickness_min",
               "thickness_max", "quality_scheme", "limit_rule", "limit_value", "limit_factor", "limit_cap",
               "ratio_basis", "limit_op", "unit", "clause_id")
+LIMIT_COLS_V2 = ("measure", "aggregation", "defect_class", "conditions")
+"""2 판(부분 B) 표의 칸 넷 — C 08 2 판 §1-3. 머리에 하나라도 있으면 2 판이고 넷 모두 있어야 한다. **판은 `--limits` 의 머리에서
+직접 가린다** — 빌더의 판 등록부(`EDITIONS`)는 읽지 않는다(221 M-01)."""
+
+MEASURES = frozenset({"최대결함크기", "개별길이", "합계길이"})
+AGGREGATIONS = frozenset({"개별", "합계"})
+DEFECT_CLASSES = frozenset({"제1종", "제2종", "제3종"})
+COND_CLUSTER, COND_PREMISE, COND_MIXTURE, COND_DISTINCTION = "군집간격", "무등급전제", "혼재", "구별곤란"
+"""C 08 2 판 §1-3 의 닫힌 값 — 칸 값이 밖이면 입력 규약 위반이다."""
+
+MIXTURE_CLASSES = frozenset({"제1종", "제2종"})
+"""N3 의 종 조합 — D 07 §16-1 의 문장 그대로("레코드의 결함 코드에 제1종 코드와 제2종 코드가 함께 있으면 — 종별은 표의
+`defect_class` 로 읽는다 — 혼재 조건 문장이 한 번 있고, 그렇지 않으면 없다"). 생성기는 같은 레코드를 `혼재:<종별>` 토큰에서 고른다 —
+같은 것을 다른 길로 낸다."""
+
+TEXT_CONTRACT_DOC = {"path": "docs/dev_log/2026-10-20-설계복구/08_허용치표_부분B_미니스펙_C.md",
+                     "commit": "f1ce519a538659f1bf4496343e0112d3b1bc9667",
+                     "sha256": "046575e62f2583a9eb532fee4d7620149ba3ff80d20c9cbc97166d54ceccd963"}
+"""2 판 서술의 고정 문장을 옮긴 문서(C 08 2 판 — 그 커밋의 blob) — 아래 문장 상수의 출처다. 요약에 싣는다(D 07 §18-4). 문서에 절이
+덧붙어도 이 값은 옮겨 온 판을 가리킨다."""
+
+V2_FIXED = {
+    "C3b": "이 조항의 기준은 다음과 같다.",
+    "C4": "이 조항에는 기계 표현으로 옮기지 못한 단서가 있어 위 기준만으로 합부를 결정하지 않는다.",
+    "C5": "합계길이는 군집이면 간격을 포함해 잰다는 조건이 있고, 이 자료는 그 간격을 재지 않는다.",
+    "C6": "종별이 섞이면 함께 견주는 결합 규칙이 있고, 이 자료는 그 결합을 계산하지 않는다.",
+    "C7": "종별을 가리기 어려우면 두 종별의 기준으로 각각 평가한다는 조건이 있고, 이 자료는 그 구별을 확인하지 않는다.",
+    "C8": "이 기준은 품질등급이 지정되지 않은 경우의 기준이고, 이 자료는 등급 지정 여부를 확인하지 않는다.",
+    "C9": "이 재질에 대응되는 조항이 현 허용치 표에 없어 대응 조항을 특정하지 않는다.",
+    "C11": "모재 두께와 화소당 실치수 정보가 없어 치수 기준의 합부 판정은 내리지 않는다.",
+    "C12": ("크기와 무관한 기준은 치수 정보가 필요 없지만, 이 자료는 그 기준의 실제 적용 전제를 확인하지 않고 판정 축을 조항 검색과"
+            " 기준 서술로 한정해 합부 판정을 싣지 않는다."),
+    "C13a": "방사선투과 영상에서 검출 한계 내 특기할 지시가 관찰되지 않는다.",
+    "C13b": "인용할 허용치 조항이 없다.",
+}
+"""2 판 정답 서술의 고정 문장 — C 08 2 판 §4 표에서 **글자 그대로** 옮겼다(빌더를 import 하지도 읽지도 않는다). 문장 사이는 공백
+하나다. C3 은 머리와 띠 목록이 '. ' 로 나뉘므로 머리(`C3b` · `_C3A`)와 띠 목록을 따로 읽는다. C13 은 두 조각이다."""
+
+_C_NAMED = r"[^\s,()]+\(ISO 6520-1 코드 [1-9][0-9]*\)"
+_C1 = re.compile(rf"방사선투과 영상에서 {_C_NAMED} [1-9][0-9]*개(?:, {_C_NAMED} [1-9][0-9]*개)*가 관찰된다\.")
+_C2 = re.compile(r"[^\s,()]+에 현 허용치 표에서 대응되는 조항은 (\S+) 이다\.")
+_C3A = re.compile(r"이 조항의 측정량은 (\S+?)이고, 기준은 다음과 같다\.")
+_C10 = re.compile(rf"{_C_NAMED}(?:, {_C_NAMED})*에 대응되는 조항이 현 허용치 표에 없어 그 결함의 대응 조항을 특정하지 않는다\.")
+_NUM = r"(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?"
+_THICK_LO = rf"{_NUM} mm (?:이상|초과)"
+_THICK_HI = rf"{_NUM} mm (?:이하|미만)"
+_BAND_HEAD = rf"(?:모든 두께|두께 (?:{_THICK_LO} {_THICK_HI}|{_THICK_LO}|{_THICK_HI}))"
+_BAND_OP = r"(?:이하|미만)"
+_BAND_UNIT = r"(?:mm|%)"
+_BAND_BASIS = r"(?:모재 두께|용접부 공칭 두께|목두께)"
+_BAND_CRIT = (r"(?:크기와 무관하게 허용하지 않는다"
+              rf"|{_NUM} {_BAND_UNIT} {_BAND_OP}"
+              rf"|{_BAND_BASIS}의 {_NUM} 배 {_BAND_OP}(?:이고 최대 {_NUM} {_BAND_UNIT})?)")
+_BAND = rf"{_BAND_HEAD}: {_BAND_CRIT}"
+"""띠 하나의 **닫힌** 문법(09 §10 I1) — 두께 구간 · 기준 표현 · 단위 · 접속 꼴을 모두 소비한다. 남는 어구가 하나라도 있으면 띠가 아니라
+계약 밖 문장 꼴(N7)이다. 꼴은 1 판 `criterion_ko` · `thickness_ko` 의 글자를 옮겼다(그 모듈을 import 하지 않는다). 수는 원문 표기(뒤따르는
+0 을 지운 꼴)만 받는다. 표에 새 단위 · 부등호 · 비례 기준이 들어오면 여기서 먼저 걸린다 — 받기 전에 계약(C 08 §4)을 고친다."""
+_BANDS = re.compile(rf"{_BAND}(?: / {_BAND})*")
+_V1_CORRESPOND = "에 적용되는 조항은 "
+"""1 판의 대응 문구 — 2 판 정답 서술에는 없어야 한다(N6)."""
+
+N7_SEEDS = {
+    "군집 · 합산": ("두 결함의 간격이 … 짧아 한 군이다", "상자 길이를 더한 값이 합계길이다"),
+    "혼재 결합": ("혼재 기준을 넘어 불합격", "혼재 규칙을 만족한다"),
+    "전제 충족": ("등급 정보가 없으므로 이 규정이 적용된다", "무등급 용접부다", "품질등급이 지정되지 않았다"),
+}
+"""N7 (나) 씨앗 문구 — C 08 2 판 §9-2 의 목록(D 07 §3-2 의 '잘못된 단정' 예문 글자 그대로, 09 §6 Q13 — 이 모듈의 상수). 평가 쪽 B 회귀
+사례의 같은 목록과 같은지는 시험이 맞댄다. ' … ' 는 사이에 무엇이 와도 된다는 자리다. 낱말 머리로 넓히지 않는다 — 넓히면 C8 자신이
+걸린다(C 08 2 판 §9-2)."""
 
 SPLITS = frozenset({"train", "val", "eval"})
 """분할 어휘를 닫는다. `Train`·`test`·` eval` 은 어느 쪽에도 들지 않아 조용히 빠진다."""
@@ -91,6 +160,13 @@ META_PATHS_CHECKED = "image_paths_checked"
 META_SNAPSHOT = "input_snapshot"
 META_LIMITS = "limits_table"
 META_VALIDATED_BY = "validated_by"
+META_IDENTITY = "identity"
+META_TEXT_CONTRACT = "text_contract"
+IDENTITY_KEYS = frozenset({"contract_version", "limits", "limits_loader", "generator", "conditions"})
+"""2 판 메타 신원 블록의 칸 — C 08 2 판 §9-4."""
+
+ROOT = Path(__file__).resolve().parents[2]
+"""메타의 저장소 상대 경로(`limits_table.path`)를 푸는 뿌리 — 이 파일이 있는 저장소다."""
 NOT_COMPARED_ALL = "pairs.*"
 """`--pairs` 를 주지 않아 **아무것도 대조하지 않은** 상태. 축 하나가 빠진 것과 전부 빠진 것을 같은 목록에서 가른다."""
 
@@ -203,6 +279,10 @@ class LimitRow:
     ratio_basis: str
     limit_op: str
     unit: str
+    measure: str = ""
+    defect_class: str = ""
+    conditions: tuple[str, ...] = ()
+    """2 판 칸(1 판 표에서는 빈 값). `aggregation` 은 기대에 쓰지 않아 들고 다니지 않는다 — 값의 꼴만 읽을 때 본다."""
 
 
 # ---------------------------------------------------------------- 입력 규약
@@ -462,8 +542,42 @@ def assert_isolated(rows, eval_keys: dict[str, frozenset[str]]) -> None:
             raise AssertionError(f"train·val 과 eval 이 {axis} 축에서 {len(leaked)}건 겹친다")
 
 
+def limits_edition(path: Path) -> str:
+    """표의 판 — 머리에서 직접 가린다. 2 판 칸이 하나라도 있으면 `v2` 이고 넷 모두 있어야 한다."""
+    with open(path, encoding="utf-8", newline="") as handle:
+        head = next(csv.reader(handle), [])
+    present = [c for c in LIMIT_COLS_V2 if c in head]
+    if not present:
+        return "v1"
+    if len(present) != len(LIMIT_COLS_V2):
+        raise InputContractError(f"{path.name}: 2 판 칸이 일부만 있다 — {present}")
+    return "v2"
+
+
+def _v2_cell(value: str, allowed: frozenset[str], where: str) -> str:
+    if value and value not in allowed:
+        raise InputContractError(f"{where}: 닫힌 값이 아니다 — {value!r}")
+    return value
+
+
+def _conditions(text: str, where: str) -> tuple[str, ...]:
+    """`|` 로 이은 조건 토큰 — 닫힌 문법 · 정렬 · 겹침 없음(C 08 2 판 §1-3)."""
+    if not text:
+        return ()
+    toks = tuple(text.split("|"))
+    for t in toks:
+        kind, sep, cls = t.partition(":")
+        if not ((not sep and t in (COND_CLUSTER, COND_PREMISE))
+                or (sep and kind in (COND_MIXTURE, COND_DISTINCTION) and cls in DEFECT_CLASSES)):
+            raise InputContractError(f"{where}: 모르는 조건 토큰 {t!r}")
+    if len(set(toks)) != len(toks) or list(toks) != sorted(toks):
+        raise InputContractError(f"{where}: 조건 토큰이 정렬 순이 아니거나 겹친다 — {list(toks)}")
+    return toks
+
+
 def load_limits(path: Path) -> list[LimitRow]:
-    handle, reader = _reader(path, LIMIT_COLS)
+    edition = limits_edition(path)
+    handle, reader = _reader(path, LIMIT_COLS + (LIMIT_COLS_V2 if edition == "v2" else ()))
     rows: list[LimitRow] = []
     with handle:
         for n, r in enumerate(reader, start=2):
@@ -475,6 +589,12 @@ def load_limits(path: Path) -> list[LimitRow]:
             t_min = _dec(r["thickness_min"], where + " thickness_min")
             if t_min is None:
                 raise AmbiguousContract(f"{where}: thickness_min 이 비어 있다 — 하한 공란의 뜻이 규약에 없다")
+            v2 = {}
+            if edition == "v2":
+                _v2_cell(r["aggregation"], AGGREGATIONS, where + " aggregation")
+                v2 = {"measure": _v2_cell(r["measure"], MEASURES, where + " measure"),
+                      "defect_class": _v2_cell(r["defect_class"], DEFECT_CLASSES, where + " defect_class"),
+                      "conditions": _conditions(r["conditions"], where + " conditions")}
             rows.append(LimitRow(
                 rule_id=_token(r["rule_id"], where + " rule_id"), clause_id=_token(r["clause_id"], where + " clause_id"),
                 defect_code=_code(r["defect_code"], where + " defect_code"),
@@ -486,7 +606,7 @@ def load_limits(path: Path) -> list[LimitRow]:
                 limit_value=_dec(r["limit_value"], where + " limit_value"),
                 limit_factor=_dec(r["limit_factor"], where + " limit_factor"),
                 limit_cap=_dec(r["limit_cap"], where + " limit_cap"), ratio_basis=r["ratio_basis"],
-                limit_op=r["limit_op"], unit=r["unit"]))
+                limit_op=r["limit_op"], unit=r["unit"], **v2))
     if len({x.rule_id for x in rows}) != len(rows):
         raise InputContractError(f"{path.name}: rule_id 중복")
     return rows
@@ -544,8 +664,50 @@ def narrative_values(row: LimitRow) -> dict:
             "unit": row.unit}
 
 
-def expected_record(img: ImageRow, anns: list[Ann], limits: list[LimitRow]) -> dict:
-    """이미지 한 장의 기대 레코드(구조화 부분). 폐기 대상이면 `discard` 에 사유가 든다."""
+def _one(values: set, what: str):
+    if len(values) > 1:
+        raise AmbiguousContract(f"{what} 이 행마다 다르다 — {sorted(map(str, values))} (조항 단위 문장이라 하나여야 한다)")
+    return next(iter(values)) if values else None
+
+
+def narrative_v2_expect(material: str, codes: list[str], limits: list[LimitRow]) -> dict | None:
+    """2 판 서술의 기대(C 08 2 판 §4 의 붙는 규칙 — 문장은 만들지 않고 수와 차례만). 조항을 특정한 코드가 없으면 None.
+
+    - 코드 덩이(C2 · C3)는 조항을 특정한 코드마다 첫 등장 순이다 — 그 조항 · 그 행의 측정량(빈칸이면 불허 머리 C3b).
+    - C5 = 인용한 조항 가운데 `군집간격` 을 든 조항이 있으면 1(둘 이상이면 규약 밖 — 빌더는 멈춘다).
+    - C6 = 인용한 코드의 종별에 제1종과 제2종이 함께 있으면 1(D 07 §16-1 의 N3 문장 — 토큰이 아니라 종별로 본다).
+    - C7 = 인용한 코드의 행이 `구별곤란:X` 를 들고 그 재질의 고른 행에 X 종별이 있으면 1.
+    - C8 = 인용한 조항이 `무등급전제` 를 들면 1.
+    """
+    blocks = []
+    for code in codes:
+        rows = rules_for(limits, material, code)
+        if not rows:
+            continue
+        blocks.append({"code": code, "clause_id": rows[0].clause_id,
+                       "measure": _one({r.measure for r in rows}, f"({material}, {code}) 의 measure") or None,
+                       "defect_class": _one({r.defect_class for r in rows}, f"({material}, {code}) 의 defect_class") or None,
+                       "conditions": _one({r.conditions for r in rows}, f"({material}, {code}) 의 conditions") or ()})
+    if not blocks:
+        return None
+    cluster = {b["clause_id"] for b in blocks if COND_CLUSTER in b["conditions"]}
+    if len(cluster) > 1:
+        raise AmbiguousContract(f"({material}, {codes}) 에 군집 조건 조항이 둘 이상 — 합계 조건 문장의 계약 밖이다")
+    classes = {b["defect_class"] for b in blocks if b["defect_class"]}
+    present = {r.defect_class for r in selectable(limits, material) if r.defect_class}
+
+    def pair(conds, kind):
+        return {t.partition(":")[2] for t in conds if t.partition(":")[0] == kind and ":" in t}
+
+    return {"clauses": [b["clause_id"] for b in blocks], "measures": [b["measure"] for b in blocks],
+            "C5": int(bool(cluster)), "C6": int(MIXTURE_CLASSES <= classes),
+            "C7": int(any(pair(b["conditions"], COND_DISTINCTION) & present for b in blocks)),
+            "C8": int(any(COND_PREMISE in b["conditions"] for b in blocks))}
+
+
+def expected_record(img: ImageRow, anns: list[Ann], limits: list[LimitRow], edition: str = "v1") -> dict:
+    """이미지 한 장의 기대 레코드(구조화 부분). 폐기 대상이면 `discard` 에 사유가 든다.
+    `edition` 이 `v2` 이면 2 판 서술의 기대(`narrative_v2` — 수와 차례)를 함께 싣는다."""
     ordered = sorted(anns, key=operator.attrgetter("ann_id"))  # 문자열 정렬 — "#10" < "#2" (06번 §2-나 '정렬은 학습 계약이다')
     valid = [a for a in ordered if a.geom_valid]
     if len(anns) != img.n_defects:  # B 10번 §6 — 폐기가 아니라 빌드 중단. 본 매니페스트 49,847장 전부 성립한다
@@ -594,6 +756,7 @@ def expected_record(img: ImageRow, anns: list[Ann], limits: list[LimitRow]) -> d
         "uncited_codes": uncited,
         "input_flags": flags,
         "discard": discard,
+        **({"narrative_v2": narrative_v2_expect(img.material, codes, limits)} if edition == "v2" else {}),
     }
 
 
@@ -601,17 +764,41 @@ def build_expected(manifest_dir: Path, limits_path: Path, label_map: Path) -> di
     contract = verify_contract(manifest_dir)
     images, eval_keys = load_manifest(manifest_dir)
     index, dropped = load_annotations(manifest_dir, images, eval_keys, load_label_codes(label_map))
+    edition = limits_edition(limits_path)
     limits = load_limits(limits_path)
-    records = [expected_record(images[i], index.get(i, []), limits) for i in sorted(images)]
+    records = [expected_record(images[i], index.get(i, []), limits, edition) for i in sorted(images)]
     assert_isolated([images[r["image_id"]] for r in records], eval_keys)
     return {"records": records, "eval_ids": eval_keys["image_id"], "eval_groups": eval_keys["group_id"],
             "group_of": {i: images[i].group_id for i in images}, "contract": contract,
             "input_digest": {"computed": recompute_snapshot_digest(contract),
                              "declared": snapshot_digest(contract), "rule": DIGEST_RULE},
-            "n_eval_annotation_rows_dropped": dropped, "limits_sha256": hashlib.sha256(limits_path.read_bytes()).hexdigest()}
+            "n_eval_annotation_rows_dropped": dropped, "limits_sha256": hashlib.sha256(limits_path.read_bytes()).hexdigest(),
+            "edition": edition, "limits_path": Path(limits_path)}
 
 
 # ---------------------------------------------------------------- 대조기
+
+
+def pairs_snapshot(pairs_dir: Path) -> dict | None:
+    """페어 폴더의 `SNAPSHOT.sha256` — 적힌 digest 와, 적힌 구성원의 **실제 바이트**에서 다시 낸 digest(구성원 해시 문자열을 적힌
+    차례로 이은 것의 sha256). 계약서가 없으면 None."""
+    f = Path(pairs_dir) / "SNAPSHOT.sha256"
+    if not f.is_file():
+        return None
+    declared, members = None, []
+    for line in f.read_text(encoding="utf-8").splitlines():
+        if line.startswith(DIGEST_LINE_PREFIX):
+            declared = line[len(DIGEST_LINE_PREFIX):].strip()
+        elif line.strip() and not line.startswith("#"):
+            recorded, _, name = line.partition("  ")
+            members.append((recorded, name.strip()))
+    actual = []
+    for _recorded, name in members:
+        p = Path(pairs_dir) / name
+        actual.append(hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else "")
+    return {"declared": declared, "computed": hashlib.sha256("".join(actual).encode()).hexdigest(),
+            "members": [name for _, name in members],
+            "members_match": bool(members) and all(a == r for a, (r, _) in zip(actual, members))}
 
 
 def _find(rec: dict, name: str):
@@ -799,6 +986,8 @@ def compare(expected: dict, pairs_dir: Path) -> dict:
         if not isinstance(g.get("target_text"), str):  # 문장은 보지 않지만 **필드의 존재**는 본다(검토 12번 I-1)
             hit("field_absent:target_text", image_id, got=type(g.get("target_text")).__name__)
         nv = narrative_check(e, g.get("target_text"))
+        if expected.get("edition") == "v2":
+            nv = nv + narrative_check_v2(e, g.get("target_text"))
         for kind in nv:
             mism[kind] += 1
             detail.append({"kind": kind, "image_id": image_id})
@@ -911,6 +1100,27 @@ def compare(expected: dict, pairs_dir: Path) -> dict:
         got_limits = limits.get("sha256") if isinstance(limits, dict) else None
         if got_limits != expected["limits_sha256"]:
             hit(f"meta:{META_LIMITS}.sha256", expected=expected["limits_sha256"], got=got_limits)
+        # 표의 자리 — 메타가 가리킨 표가 내가 받은 `--limits` 와 같은 파일인가. 해시만 보면 같은 바이트의 다른 판 이름을 못 가른다.
+        lt_path = limits.get("path") if isinstance(limits, dict) else None
+        if not isinstance(lt_path, str) or (ROOT / lt_path).resolve() != Path(expected["limits_path"]).resolve():
+            hit(f"meta:{META_LIMITS}.path", got=lt_path)
+        if expected.get("edition") == "v2":
+            # 2 판 메타의 신원(C 08 2 판 §9-4) — 표의 두 칸 추출(221 I-02) · 조건 표지 · 문장 계약 판. 묶음 칸(로더 · 생성 경로)의
+            # 실제 바이트 대조는 산출물 검사(H 축)와 평가 쪽 학습 전 계약 대조가 맡는다 — 여기서는 표만 직접 읽는다.
+            if meta.get(META_TEXT_CONTRACT) != "v2":
+                hit(f"meta:{META_TEXT_CONTRACT}", got=meta.get(META_TEXT_CONTRACT))
+            ident = meta.get(META_IDENTITY)
+            if not isinstance(ident, dict) or set(ident) != IDENTITY_KEYS:
+                hit(f"meta:{META_IDENTITY}", got=sorted(ident) if isinstance(ident, dict) else ident)
+            else:
+                if type(ident["contract_version"]) is not int or ident["contract_version"] != 1:
+                    hit(f"meta:{META_IDENTITY}.contract_version", got=ident["contract_version"])
+                if ident["limits"] != {"path": lt_path, "sha256": expected["limits_sha256"]}:
+                    hit(f"meta:{META_IDENTITY}.limits", got=ident["limits"])
+                if ident["conditions"] != {"in_table": True}:
+                    hit(f"meta:{META_IDENTITY}.conditions", got=ident["conditions"])
+        elif META_IDENTITY in meta or META_TEXT_CONTRACT in meta:
+            hit(f"meta:{META_IDENTITY}_unexpected", got=sorted(k for k in (META_IDENTITY, META_TEXT_CONTRACT) if k in meta))
 
         got_by = meta.get(META_VALIDATED_BY)
         if got_by not in KNOWN_VALIDATED_BY:
@@ -931,8 +1141,17 @@ def compare(expected: dict, pairs_dir: Path) -> dict:
         skipped.extend(["meta.counts_by_split", f"meta.{SKIP_COUNT_FIELD}", f"meta.{META_SKIP_IN_RECORDS}",
                         f"meta.{META_PATHS_CHECKED}", f"meta.{META_SNAPSHOT}.snapshot_digest",
                         f"meta.{META_LIMITS}.sha256", f"meta.{META_VALIDATED_BY}"])
+        if expected.get("edition") == "v2":
+            skipped.extend([f"meta.{META_IDENTITY}", f"meta.{META_TEXT_CONTRACT}"])
+
+    # 대조한 페어의 스냅샷 계약(D 07 §18-4 — 독립 대조의 영수증이 가리키는 입력). 적힌 digest 를 그대로 옮기지 않고 구성원의 실제
+    # 바이트에서 다시 낸다. 계약서가 없는 산출(시험의 합성 산출 · 옛 파일럿)은 null 이다 — 계약서 자체의 대조는 산출물 검사(G 축)가 맡는다.
+    snap = pairs_snapshot(pairs_dir)
+    if snap is not None and (snap["declared"] != snap["computed"] or not snap["members_match"]):
+        hit("pairs_snapshot", declared=snap["declared"], computed=snap["computed"])
 
     return {"mismatch": dict(sorted(mism.items())), "detail": detail, "notes": dict(sorted(notes.items())),
+            "pairs_snapshot": snap,
             "expected_table": exp_table, "got_table": got_table, "n_expected_keep": len(exp_keep),
             "n_expected_discard": len(exp_drop), "n_got": len(got), "counts_note": counts_note,
             "meta_note": meta_note, "not_compared": sorted(set(skipped)), "expected_counts_by_split": per_split,
@@ -978,6 +1197,83 @@ def narrative_check(e: dict, text) -> list[str]:
     return out
 
 
+def _pieces(text: str) -> list[tuple[str | None, str | None]]:
+    """서술을 '. ' 에서 나눈 조각마다 (문장 꼴, 잡은 값). 꼴은 C 08 2 판 §4 의 표 — 밖이면 None.
+
+    C3 은 머리와 띠 목록이 '. ' 로 나뉜다. 띠 목록(`BAND`)은 머리(C3a · C3b) 바로 뒤에서만 받는다."""
+    fixed = {v: k for k, v in V2_FIXED.items()}
+    out: list[tuple[str | None, str | None]] = []
+    for piece in re.split(r"(?<=\.) ", text):
+        prev = out[-1][0] if out else None
+        if piece in fixed:
+            out.append((fixed[piece], None))
+        elif _C1.fullmatch(piece):
+            out.append(("C1", None))
+        elif m := _C2.fullmatch(piece):
+            out.append(("C2", m.group(1)))
+        elif m := _C3A.fullmatch(piece):
+            out.append(("C3a", m.group(1)))
+        elif _C10.fullmatch(piece):
+            out.append(("C10", None))
+        elif prev in ("C3a", "C3b") and piece.endswith(".") and _BANDS.fullmatch(piece[:-1]):
+            out.append(("BAND", piece))
+        else:
+            out.append((None, piece))
+    return out
+
+
+def _seed_hit(text: str) -> bool:
+    for seeds in N7_SEEDS.values():
+        for seed in seeds:
+            pattern = ".*?".join(re.escape(part) for part in seed.split(" … "))
+            if re.search(pattern, text):
+                return True
+    return False
+
+
+def narrative_check_v2(e: dict, text) -> list[str]:
+    """2 판 서술의 뜻 검사(D 07 §4 · §16 의 N1 ~ N7, C 08 2 판 §9-2 의 규칙) — 기대는 표의 고른 행 · 레코드의 코드 · 재질에서 낸다.
+
+    | 범주 | 어긋나면 |
+    |---|---|
+    | `narrative_measure` | N1 — 덩이마다 기준 목록의 머리가 그 조항 행의 측정량(빈칸이면 불허 머리)이 아니다 · 띠에 측정량 낱말이 있다 |
+    | `narrative_aggregation` | N2 — 합계 조건 문장의 수가 기대(0 · 1)와 다르다 |
+    | `narrative_mixture` | N3 — 혼재 문장의 수가 기대와 다르다 |
+    | `narrative_distinction` | N4 — 종별 구별 곤란 문장의 수가 기대와 다르다 |
+    | `narrative_premise` | N5 — 전제 미확인 문장의 수가 기대와 다르다 |
+    | `narrative_correspondence` | N6 — 대응 문구(C2)의 조항이 기대의 차례 · 수와 다르다 · 1 판 대응 문구가 있다 |
+    | `narrative_forbidden_form` | N7 — (가) 계약 표 밖의 문장 꼴, (나) 씨앗 문구 |
+
+    N8(수 다중집합 · '미만' 의 수)은 `narrative_check` 가 그대로 맡는다. 정상 레코드에는 N7 만 붙는다(C13 두 조각만 있어야 한다)."""
+    if not isinstance(text, str):
+        return []
+    pieces = _pieces(text)
+    kinds = [k for k, _ in pieces]
+    out: list[str] = []
+    exp = e.get("narrative_v2")
+    defect = bool(e["defects"])
+    if (None in kinds or _seed_hit(text)
+            or (not defect and kinds != ["C13a", "C13b"])
+            or (defect and ("C13a" in kinds or "C13b" in kinds))):
+        out.append("narrative_forbidden_form")
+    if not defect:
+        return out
+    got_cl = [v for k, v in pieces if k == "C2"]
+    want_cl = exp["clauses"] if exp else []
+    if got_cl != want_cl or _V1_CORRESPOND in text:
+        out.append("narrative_correspondence")
+    heads = [(v if k == "C3a" else None) for k, v in pieces if k in ("C3a", "C3b")]
+    want_heads = exp["measures"] if exp else []
+    bands = [v for k, v in pieces if k == "BAND"]
+    if heads != want_heads or any(word in b for b in bands for word in MEASURES):
+        out.append("narrative_measure")
+    for key, kind in (("C5", "narrative_aggregation"), ("C6", "narrative_mixture"), ("C7", "narrative_distinction"),
+                      ("C8", "narrative_premise")):
+        if kinds.count(key) != (exp[key] if exp else 0):
+            out.append(kind)
+    return out
+
+
 # ---------------------------------------------------------------- 실행
 
 
@@ -1014,7 +1310,10 @@ def main(argv: list[str] | None = None) -> int:
            "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in expected["records"]))
 
     summary = {"manifest_contract": expected["contract"], "input_digest": expected["input_digest"],
-               "limits_sha256": expected["limits_sha256"],
+               "limits_sha256": expected["limits_sha256"], "edition": expected["edition"],
+               # 2 판 영수증의 입력(D 07 §18-4) — 조건 자료는 표 안(안 1)이라 표의 원시 해시가 덮는다. 문장 상수의 출처 문서.
+               "conditions": {"in_table": True} if expected["edition"] == "v2" else None,
+               "text_contract_doc": TEXT_CONTRACT_DOC if expected["edition"] == "v2" else None,
                "n_trainval_images": len(expected["records"]), "n_eval_ids": len(expected["eval_ids"]),
                "n_eval_annotation_rows_dropped": expected["n_eval_annotation_rows_dropped"]}
     if args.pairs:

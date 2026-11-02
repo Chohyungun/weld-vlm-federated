@@ -119,10 +119,25 @@ JUDGE_V7_FINISH_REASONS = ("eos", "json_closed")
 #: `reason` 이 이 글자 수를 넘으면 표지 `reason_long`(기각이 아니다). 글자 수는 받은 글 그대로의 `len`(코드 포인트 —
 #: 앞뒤 공백을 떼거나 유니코드 정규화를 하지 않는다)
 JUDGE_V7_REASON_MAX_CHARS = 40
+#: 구조화 판정 v8 의 출력 계약 — 결함 행에만 부르고, 물음 둘(주석 밖 속성 · 근거 없는 관계)에 "있음" · "없음" 으로 답한다.
+#: v8 은 v7 을 대체하지 않는다 — v7 의 원문 · 영수증은 v7 파서로만 읽는다
+JUDGE_V8_SCHEMA_VERSION = "judge_structured_v8"
+#: v8 파서의 판
+JUDGE_V8_PARSER_VERSION = "parse_judge_v8"
+#: 결함 행의 답 키 → 판정값 키. 판정값은 v7 의 같은 두 키 · 같은 극성("참 = 문제 없음")이다
+JUDGE_V8_VERDICT_KEYS = {"attribute": "no_unannotated_attributes", "relation": "no_unsupported_relation"}
+#: 받는 답 글(앞뒤 공백을 뗀 뒤 정확히 이 둘) → 판정값. "있음" 은 그런 문장이 있다는 답이라 기각이다
+JUDGE_V8_ANSWERS = {"없음": True, "있음": False}
+#: 생성이 끝까지 간 것으로 받는 종료 — v7 과 같다. 그 밖은 잘림이다
+JUDGE_V8_FINISH_REASONS = ("eos", "json_closed")
+#: v8 이 걷어 내거나 본체로 보지 않은 것 — 적용한 것만 이 순서로 `format_normalized` 에 남는다(기각 사유가 아니다)
+JUDGE_V8_FORMAT_NORMALIZATIONS = ("text_outside_object", "other_keys_ignored", "repeated_key_same_value")
 #: 판정 출력의 꼴 → 그 꼴을 읽은 파서의 판. 옛 네 키는 파서 판이 없다. 품질 집계가 읽는 구조화 판정의 꼴도 이 표다.
 #: v7 은 정상 행에 판정 행이 없다 — 집계는 판정 신원의 결정적 영수증으로 정상 행을 가른다(`_v7_receipts`)
 JUDGE_PARSER_VERSIONS = {JUDGE_V5_SCHEMA_VERSION: JUDGE_V5_PARSER_VERSION, JUDGE_V6_SCHEMA_VERSION: JUDGE_V6_PARSER_VERSION,
-                         JUDGE_V7_SCHEMA_VERSION: JUDGE_V7_PARSER_VERSION}
+                         JUDGE_V7_SCHEMA_VERSION: JUDGE_V7_PARSER_VERSION, JUDGE_V8_SCHEMA_VERSION: JUDGE_V8_PARSER_VERSION}
+#: 정상 행에 판정 모델을 부르지 않고 결정적 영수증으로 가르는 판정 계약 — 출력 계약 → 판(판정 신원의 `policy_version`)
+V7_FAMILY_CONTRACTS = {JUDGE_V7_SCHEMA_VERSION: "v7", JUDGE_V8_SCHEMA_VERSION: "v8"}
 #: 판정 신원 읽기를 부른 호출자의 외부 핀 — 다시 읽을 때 원값(None 포함)을 그대로 넘긴다
 JUDGE_SOURCE_PIN_KEYS = ("expected_judge_identity_sha256", "expected_probe_approval_sha256")
 #: 결정적 정책을 거는 작업 종류 — 원문 QA 에는 걸지 않는다(영상 규칙 · 단위 검사가 원문의 허용치를 떨어뜨린다)
@@ -131,6 +146,8 @@ POLICY_KINDS = frozenset({"image_report"})
 POLICY_API = ("deterministic_reasons", "deterministic_flags", "policy_identity")
 #: v7 판정 출처에 거는 정책이 내야 하는 것 — 행마다의 결정적 판단과 판정 신원에 묶인 정책 지문
 POLICY_API_V7 = ("evaluate_v7", "policy_identity_v7")
+#: v8 판정 출처에 거는 정책이 내야 하는 것 — v7 과 같은 자리의 v8 판
+POLICY_API_V8 = ("evaluate_v8", "policy_identity_v8")
 #: v7 판정 신원 읽기가 영수증마다 붙이는 출처 칸 — 영수증 본문(다시 계산해 맞대는 것)에 들지 않는다
 V7_RECEIPT_SOURCE_KEYS = ("_judge_identity_sha256", "_shard_sha256")
 #: 집계가 영수증에서 읽는 칸 — 다시 계산한 값과 통째로 맞댄 뒤 이 칸의 꼴을 본다
@@ -810,6 +827,110 @@ def parse_judge_v7(task: Any, row: Any) -> dict:
     return out
 
 
+def _first_json_object_v8(text: str) -> tuple[str, bool] | None:
+    """글에서 처음 여는 `{` 부터 짝이 맞는 `}` 까지와, 그 앞뒤에 공백 아닌 글이 있었는지. 문자열 안의 괄호와 이스케이프는
+    따로 센다. 닫히지 않으면(잘린 객체 · 객체 없음) None."""
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth, in_string, escaped = 0, False, False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1], bool(text[:start].strip() or text[i + 1:].strip())
+    return None
+
+
+def _reject_json_constant_v8(value: str) -> None:
+    raise ValueError(f"JSON constant {value} is not allowed")
+
+
+def _json_pairs_v8(obj: str) -> list | None:
+    """맨 위 객체의 (키, 값) 쌍을 나온 순서대로 — 같은 키가 거듭 나와도 모두 남긴다. JSON 이 아니거나 NaN · Infinity 면 None."""
+    try:
+        pairs = json.loads(obj, object_pairs_hook=list, parse_constant=_reject_json_constant_v8)
+    except (ValueError, RecursionError):
+        return None
+    return pairs if isinstance(pairs, list) else None
+
+
+def parse_judge_v8(task: Any, row: Any) -> dict:
+    """구조화 판정 v8 한 행의 판독 — `{schema, parser, row_class, errors, rejected, verdict, flags, answers,
+    format_normalized}`(v7 과 같은 꼴). v5 · v6 · v7 파서를 부르지 않는다.
+
+    결함 행만 읽는다 — 정상 행 · 원문 QA 는 판정 모델을 부르지 않는 행이라 `judge_not_applicable` 이다. 생성의 종료는
+    `eos` 나 `json_closed` 여야 한다(그 밖은 `judge_truncated`). 글에서 처음 닫히는 JSON 객체 하나만 읽고 그 앞뒤의
+    글(코드 울타리 · 설명 · 뒤따르는 객체)은 걷어 낸다. 그 객체에서 `attribute` · `relation` 두 키만 읽고 다른 키는 본체로
+    보지 않는다. 두 키 가운데 하나가 거듭 나오면 값이 모두 같을 때만 받는다. 값은 앞뒤 공백을 뗀 "없음" · "있음" 둘뿐이다.
+    어기면 `errors` 에 사유 하나가 남고 `verdict` · `answers` 는 None 이다. 사유는 이 순서로 본다 — `judge_task_unsupported` ·
+    `judge_not_applicable` · `judge_row_invalid` · `judge_truncated` · `judge_unparsable`(닫힌 객체가 없거나 JSON 이 아님) ·
+    `judge_keys`(두 키 가운데 빠진 것) · `judge_key_conflict`(거듭 나온 키의 값이 다름) · `judge_value_type`.
+
+    판정값(`verdict`)은 v7 의 같은 두 키(`no_unannotated_attributes` · `no_unsupported_relation`, "참 = 문제 없음")이고
+    `rejected` 는 거짓인 키(`judge_<키>_false`)다. 이유 칸이 없으므로 `flags` 는 늘 비었다. 걷어 낸 것은
+    `format_normalized` 에 남는다(`JUDGE_V8_FORMAT_NORMALIZATIONS` 의 순서로, 기각 사유가 아니다).
+    """
+    cls = _judge_row_class(task)
+    normalized: list[str] = []
+    out = {"schema": JUDGE_V8_SCHEMA_VERSION, "parser": JUDGE_V8_PARSER_VERSION, "row_class": cls, "errors": [],
+           "rejected": [], "verdict": None, "flags": [], "answers": None, "format_normalized": normalized}
+    if cls is None:
+        out["errors"] = ["judge_task_unsupported"]
+        return out
+    if cls != "defect":
+        out["errors"] = ["judge_not_applicable"]
+        return out
+    if not isinstance(row, dict) or not isinstance(row.get("text"), str):
+        out["errors"] = ["judge_row_invalid"]
+        return out
+    if row.get("finish_reason") not in JUDGE_V8_FINISH_REASONS:
+        out["errors"] = ["judge_truncated"]
+        return out
+    found = _first_json_object_v8(row["text"])
+    pairs = None if found is None else _json_pairs_v8(found[0])
+    if pairs is None:
+        out["errors"] = ["judge_unparsable"]
+        return out
+    if found[1]:
+        normalized.append(JUDGE_V8_FORMAT_NORMALIZATIONS[0])
+    if any(key not in JUDGE_V8_VERDICT_KEYS for key, _ in pairs):
+        normalized.append(JUDGE_V8_FORMAT_NORMALIZATIONS[1])
+    seen: dict = {}
+    for key, value in pairs:
+        if key in JUDGE_V8_VERDICT_KEYS:
+            seen.setdefault(key, []).append(value)
+    if any(key not in seen for key in JUDGE_V8_VERDICT_KEYS):
+        out["errors"] = ["judge_keys"]
+        return out
+    if any(len(values) > 1 for values in seen.values()):
+        if any(len({(type(v).__name__, v.strip() if type(v) is str else repr(v)) for v in values}) > 1
+               for values in seen.values()):
+            out["errors"] = ["judge_key_conflict"]
+            return out
+        normalized.append(JUDGE_V8_FORMAT_NORMALIZATIONS[2])
+    answers = {key: seen[key][0] for key in JUDGE_V8_VERDICT_KEYS}
+    if not all(type(value) is str and value.strip() in JUDGE_V8_ANSWERS for value in answers.values()):
+        out["errors"] = ["judge_value_type"]
+        return out
+    verdict = {JUDGE_V8_VERDICT_KEYS[key]: JUDGE_V8_ANSWERS[value.strip()] for key, value in answers.items()}
+    out["verdict"], out["answers"] = verdict, answers
+    out["rejected"] = [f"judge_{key}_false" for key in verdict if verdict[key] is not True]
+    return out
+
+
 def _read_judge(task: Mapping[str, Any], row: Mapping[str, Any] | None,
                 schema: str) -> tuple[list[str], list[str], dict | None, list[str], dict | None, list[str]]:
     """(오류 사유, 기각 사유, 세 판정값, 모델 표지, 구조화 답, 형식 정규화). 판정 출처가 정한 꼴 하나로만 읽는다 —
@@ -820,7 +941,9 @@ def _read_judge(task: Mapping[str, Any], row: Mapping[str, Any] | None,
     if schema == JUDGE_LEGACY_SCHEMA:
         errors, rejected, verdict = _judge(row)
         return errors, rejected, verdict, [], None, []
-    if schema == JUDGE_V7_SCHEMA_VERSION:
+    if schema == JUDGE_V8_SCHEMA_VERSION:
+        parsed = parse_judge_v8(task, row)
+    elif schema == JUDGE_V7_SCHEMA_VERSION:
         parsed = parse_judge_v7(task, row)
     elif schema == JUDGE_V6_SCHEMA_VERSION:
         parsed = parse_judge_v6(task, row)
@@ -853,35 +976,42 @@ def _resolve_policy(policy: Any) -> tuple[Any, dict]:
     return policy, identity
 
 
-def _declares_v7(judge_source: Any) -> bool:
-    """주어진 판정 출처가 v7 이라고 적었는가 — 맨 위 칸이든 신원 근거든 한 곳이라도. 둘이 엇갈리면 `_judge_input` 이 거부한다."""
+def _declared_contract(judge_source: Any) -> str | None:
+    """주어진 판정 출처가 적은 v7 계열 판(`v7` · `v8`) — 맨 위 칸이든 신원 근거든. 둘 다 적혀 있으면 v8 이 아니라 거부할 일이라
+    여기서는 먼저 맞는 것을 내고 엇갈림은 `_judge_input` 이 거부한다. v7 계열이 아니면 None."""
     if not isinstance(judge_source, Mapping):
-        return False
+        return None
     basis = judge_source.get("identity_basis")
-    return JUDGE_V7_SCHEMA_VERSION in (judge_source.get("output_schema"),
-                                       basis.get("output_schema") if isinstance(basis, Mapping) else None)
+    declared = (judge_source.get("output_schema"), basis.get("output_schema") if isinstance(basis, Mapping) else None)
+    for schema, contract in V7_FAMILY_CONTRACTS.items():
+        if schema in declared:
+            return contract
+    return None
 
 
-def _resolve_policy_v7(policy: Any) -> tuple[Any, dict]:
+def _resolve_policy_v7(policy: Any, contract: str = "v7") -> tuple[Any, dict]:
     """v7 판정 출처에 거는 정책과 그 지문(`policy_identity_v7`). `None` 이면 지금의 판정 정책 모듈. 지문은 판정 신원의
     근거에 묶인 것과 같아야 하고(`_judge_input`), 행마다의 결정적 판단은 영수증을 다시 계산하는 데만 쓴다(`_v7_receipts`)."""
     if policy is None:
         from . import judge_policy as policy
-    missing = [name for name in POLICY_API_V7 if not callable(getattr(policy, name, None))]
+    api = POLICY_API_V8 if contract == "v8" else POLICY_API_V7
+    schema_expected = JUDGE_V8_SCHEMA_VERSION if contract == "v8" else JUDGE_V7_SCHEMA_VERSION
+    missing = [name for name in api if not callable(getattr(policy, name, None))]
     if missing:
         raise AuditRefused(f"policy_interface: v7 판정 출처에 거는 정책에 {missing} 가 없다")
     try:
-        identity = policy.policy_identity_v7()
+        identity = getattr(policy, api[1])()
         identity = json.loads(canonical_bytes(identity)) if isinstance(identity, Mapping) else None
     except Exception as exc:  # 지문을 못 내는 정책으로는 집계하지 않는다
         raise AuditRefused(f"policy_identity: v7 정책 지문을 낼 수 없다 — {type(exc).__name__}: {exc}") from exc
-    if not identity or identity.get("output_schema") != JUDGE_V7_SCHEMA_VERSION:
-        raise AuditRefused(f"policy_identity: v7 정책 지문의 출력 계약이 {JUDGE_V7_SCHEMA_VERSION!r} 가 아니다")
+    if not identity or identity.get("output_schema") != schema_expected:
+        raise AuditRefused(f"policy_identity: {contract} 정책 지문의 출력 계약이 {schema_expected!r} 가 아니다")
     return policy, identity
 
 
 def _v7_receipts(tasks: Sequence[dict], gen: Mapping[str, dict], judge_rows: Sequence[dict],
-                 judge_info: Mapping[str, Any], policy: Any, policy_id: Mapping[str, Any]) -> dict[str, dict]:
+                 judge_info: Mapping[str, Any], policy: Any, policy_id: Mapping[str, Any],
+                 contract: str = "v7") -> dict[str, dict]:
     """v7 판정 신원의 결정적 영수증 — 작업 id → 영수증. 정상 행은 판정 모델을 부르지 않으므로 이것이 그 행의 유일한 판단이다.
 
     판정 신원 읽기는 판정을 마친 샤드(명부의 앞부분)의 영수증만 낸다. 영수증을 그대로 믿지 않는다 — 행마다 생성문 지문 ·
@@ -911,7 +1041,8 @@ def _v7_receipts(tasks: Sequence[dict], gen: Mapping[str, dict], judge_rows: Seq
         if r.get("_judge_identity_sha256") != ident or not _HEX64.fullmatch(str(r.get("_shard_sha256", ""))):
             raise AuditRefused(f"judge_receipt_identity: {tid} 의 영수증이 이 판정 신원 · 샤드에 묶이지 않았다")
         try:
-            evaluated = policy.evaluate_v7(copy.deepcopy(dict(t)), g["text"], generation_contract=True)
+            evaluate = policy.evaluate_v8 if contract == "v8" else policy.evaluate_v7
+            evaluated = evaluate(copy.deepcopy(dict(t)), g["text"], generation_contract=True)
             expected = _digest({"id": tid, "candidate_sha256": _sha_bytes(g["text"].encode("utf-8")),
                                 "candidate_finish_reason": g["finish_reason"], "policy_identity_sha256": policy_sha,
                                 **evaluated})
@@ -1102,7 +1233,7 @@ def _judge_input(run_dir: Path, config: Mapping[str, Any], run: Mapping[str, Any
         raise AuditRefused(f"judge_schema_unsupported: 판정 신원에 묶인 출력 계약 {schema!r} 를 읽는 파서가 없다")
     # 출처가 적은 꼴(맨 위 · 신원 근거) — 아래의 다시 읽기가 주어진 객체와 바이트로 같음을 보므로 다시 읽은 것의 꼴과 같다
     declared = {v for v in (judge_source.get("output_schema"), basis.get("output_schema")) if isinstance(v, str)}
-    if (schema == JUDGE_V7_SCHEMA_VERSION) != (JUDGE_V7_SCHEMA_VERSION in declared):
+    if any((schema == family) != (family in declared) for family in V7_FAMILY_CONTRACTS):
         raise AuditRefused(f"judge_schema_mixed: 판정 출처가 적은 꼴 {sorted(declared)} 와 묶인 출력 계약 {schema!r} 가 다르다")
     ids = {t["id"] for t in tasks}
     seen: set[str] = set()
@@ -1122,11 +1253,11 @@ def _judge_input(run_dir: Path, config: Mapping[str, Any], run: Mapping[str, Any
     if not same:
         raise AuditRefused("judge_source_unverified: 주어진 판정 객체가 판정 경로를 다시 읽은 것과 다르다")
     v7 = None
-    if schema == JUDGE_V7_SCHEMA_VERSION:
-        # v7 — 정상 행은 판정 행 없이 결정적 영수증만 있다. 칸의 꼴만 여기서 보고 대조는 `_v7_receipts` 가 한다
+    if schema in V7_FAMILY_CONTRACTS:
+        # v7 · v8 — 정상 행은 판정 행 없이 결정적 영수증만 있다. 칸의 꼴만 여기서 보고 대조는 `_v7_receipts` 가 한다
         v7 = {k: verified.get(k) for k in ("all_task_ids", "model_task_ids", "deterministic_receipts")}
-        if (verified.get("output_schema") != JUDGE_V7_SCHEMA_VERSION or basis.get("output_schema") != JUDGE_V7_SCHEMA_VERSION
-                or verified.get("policy_version") != "v7"
+        if (verified.get("output_schema") != schema or basis.get("output_schema") != schema
+                or verified.get("policy_version") != V7_FAMILY_CONTRACTS[schema]
                 or not all(isinstance(v7[k], list) for k in v7)
                 or not all(isinstance(x, str) for k in ("all_task_ids", "model_task_ids") for x in v7[k])):
             raise AuditRefused("judge_source_v7: v7 판정 출처에 policy_version · all_task_ids · model_task_ids · "
@@ -1234,8 +1365,9 @@ def audit_run(run_dir, config: Mapping[str, Any], output_dir, *, judge_source: M
     행에만 붙는다."""
     run_dir, output_dir = Path(run_dir), Path(output_dir)
     q = _quality_config(config)
-    is_v7 = _declares_v7(judge_source)
-    policy, policy_id = _resolve_policy_v7(policy) if is_v7 else _resolve_policy(policy)
+    contract = _declared_contract(judge_source)
+    is_v7 = contract is not None                       # v7 계열(v7 · v8) — 정상 행은 결정적 영수증으로만 가른다
+    policy, policy_id = _resolve_policy_v7(policy, contract) if is_v7 else _resolve_policy(policy)
     policy_sha = _digest(policy_id)
     gen_rows = read_stage_rows(run_dir, "generate", dict(config))
     run, tasks, tasks_sha = _read_tasks(run_dir)
@@ -1243,7 +1375,7 @@ def audit_run(run_dir, config: Mapping[str, Any], output_dir, *, judge_source: M
     if is_v7 != (judge_info["v7"] is not None):
         raise AuditRefused("judge_schema_mixed: v7 정책과 v7 판정 출처는 함께만 건다")
     gen = {r["id"]: r for r in gen_rows}
-    receipts = _v7_receipts(tasks, gen, judge_rows, judge_info, policy, policy_id) if is_v7 else {}
+    receipts = _v7_receipts(tasks, gen, judge_rows, judge_info, policy, policy_id, contract) if is_v7 else {}
     #: 판정 모델을 부르는 행 — v7 은 명부의 행 종류가 정상이 아닌 행(판정 전 샤드 포함), 그 밖의 꼴은 모든 행
     model_target = {t["id"] for t in tasks if not is_v7 or _judge_row_class(t) != "defect_free"}
     _prepare_output(output_dir)

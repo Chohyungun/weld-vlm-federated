@@ -20,6 +20,19 @@ from fl.uni_fed import UniFedRejected
 from fl.uni_run_config import UNI_RUN_DEFAULTS, UNI_SERVER_DEFAULTS, down_config
 
 
+@pytest.fixture(autouse=True)
+def _budget_fraction_one(monkeypatch, tmp_path):
+    """예산 비율은 저장소 등록 파일(지금 1/8)이 아니라 1.0 으로 — 합성 페어가 행별 토큰 표와 맞지 않는다(배선은 tests/test_budget_fraction.py ·
+    tests/test_main_uni.py 가 본다)."""
+    import vlm.registration as reg
+    from tests.registration_history import legacy_default
+
+    # 이 파일의 합성 설정은 1차 프롬프트·레시피다. 운영 2차 등록과 섞지 않는다.
+    legacy_default(monkeypatch, tmp_path)
+
+    monkeypatch.setattr(reg, "registered_budget_fraction", lambda path=None: 1.0)
+
+
 def test_학습_루트가_있으면_연합_칸은_그_아래_uni_fed_s_n_에_쓴다(tmp_path):
     cfg = {"project": str(tmp_path / "p"), "uni-train-root": str(tmp_path / "train"), "uni-seed-index": "2",
            "purpose": "rehearsal"}

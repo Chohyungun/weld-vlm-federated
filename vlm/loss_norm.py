@@ -57,6 +57,11 @@ __all__ = [
 IGNORE_INDEX = -100
 
 
+#: 학습 중 손실 관찰자(`vlm.midrun_loss.observe` 가 건다) — 감독 토큰이 있는 호출마다 (떼어 낸 ce 총합, 감독 토큰 수)를 받는다.
+#: 돌려주는 값 · 기울기 그래프는 바꾸지 않는다. 비어 있으면 아무 일도 없다.
+_OBSERVERS: list = []
+
+
 def supervised_ce_sum(
     logits: torch.Tensor,
     targets: torch.Tensor,
@@ -93,6 +98,8 @@ def supervised_ce_sum(
     ce = torch.nn.functional.cross_entropy(
         logits[mask].float(), targets[mask], reduction="sum"
     )
+    for observer in _OBSERVERS:
+        observer(ce.detach(), n_tokens)
     return ce, n_tokens
 
 

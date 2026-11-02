@@ -26,6 +26,7 @@ from pydantic import ValidationError
 
 from corpus.rules.limit_eval import effective_limit
 from corpus.rules.schema import (
+    CONDITION_PAIR_KINDS,
     ISO5817_LEVEL_ORDER,
     InspectionMethod,
     LimitRow,
@@ -37,10 +38,13 @@ from corpus.rules.schema import (
     RatioBasis,
     Scope,
     Unit,
+    parse_condition_token,
     quantize,
+    v12_problems,
 )
 
-__all__ = ["load_limits", "coverage_report", "LimitsValidationError", "Violation", "EXPECTED_COLUMNS"]
+__all__ = ["EXPECTED_COLUMNS", "EXPECTED_COLUMNS_V2", "NEW_COLUMNS_V2", "LimitsValidationError", "Violation",
+           "coverage_report", "load_limits"]
 
 logger = logging.getLogger("corpus.rules.limits_loader")
 
@@ -55,6 +59,11 @@ EXPECTED_COLUMNS: tuple[str, ...] = (
     "note", "restated_from", "filled_h", "filled_v", "extraction_path",
     "verified_by", "verified_date",
 )
+
+#: 2 판(부분 B) 칸 넷 — 1 판 31 칸 **뒤**에 붙는다(C 08 2 판 §1-3, 09 §6 Q1). 머리에 하나라도 있으면 2 판으로 읽고
+#: 2 판 칸 집합과 맞댄다. 없으면 1 판 그대로다 — 1 판 머리 · 검사 · 메시지는 바뀌지 않는다.
+NEW_COLUMNS_V2: tuple[str, ...] = ("measure", "aggregation", "defect_class", "conditions")
+EXPECTED_COLUMNS_V2: tuple[str, ...] = EXPECTED_COLUMNS + NEW_COLUMNS_V2
 
 # 공란('') → None 으로 해석하는 컬럼. 나머지는 필수값 (공란이면 행 검증 실패).
 _OPTIONAL_COLUMNS = frozenset({
@@ -118,19 +127,19 @@ def _normalize_cell(col: str, raw: str) -> str:
     return v
 
 
-def _row_kwargs(rowdict: dict[str, str]) -> dict[str, Any]:
+def _row_kwargs(rowdict: dict[str, str], columns: tuple[str, ...] = EXPECTED_COLUMNS) -> dict[str, Any]:
     kwargs: dict[str, Any] = {}
-    for col in EXPECTED_COLUMNS:
+    for col in columns:
         v = _normalize_cell(col, rowdict.get(col) or "")
-        if v == "" and col in _OPTIONAL_COLUMNS:
-            kwargs[col] = None
+        if v == "" and (col in _OPTIONAL_COLUMNS or col in NEW_COLUMNS_V2):
+            kwargs[col] = None        # 2 판 칸의 빈칸은 행 단위로 허용하고, 필수 · 짝은 V12 가 본다
         else:
             kwargs[col] = v
     return kwargs
 
 
 def _parse_rows(
-    reader: csv.DictReader, violations: list[Violation]
+    reader: csv.DictReader, violations: list[Violation], columns: tuple[str, ...] = EXPECTED_COLUMNS
 ) -> list[tuple[int, LimitRow]]:
     parsed: list[tuple[int, LimitRow]] = []
     seen_rule_ids: dict[str, int] = {}
@@ -140,7 +149,7 @@ def _parse_rows(
             violations.append(Violation(line_no, "V1", "필드 수가 헤더보다 많음 (래그드 행)"))
             continue
         try:
-            row = LimitRow(**_row_kwargs(rowdict))
+            row = LimitRow(**_row_kwargs(rowdict, columns))
         except (ValidationError, ValueError, InvalidOperation) as e:
             for msg in _error_messages(e):
                 check = _check_tag(msg)
@@ -509,6 +518,70 @@ def _check_v10(rows: list[LimitRow], skipped: list[str]) -> list[str]:
     return flags
 
 
+def _check_v12(parsed: list[tuple[int, LimitRow]], violations: list[Violation]) -> None:
+    """V12 — 2 판 행 단위의 필수 · 짝(`schema.v12_problems`). 칸의 꼴은 행 파싱에서 이미 봤다."""
+    for line_no, r in parsed:
+        for msg in v12_problems(r):
+            violations.append(Violation(line_no, "V12", msg))
+
+
+def _check_v13(parsed: list[tuple[int, LimitRow]], violations: list[Violation], skipped: list[str]) -> None:
+    """V13 — 2 판 표 단위(C 08 2 판 §1-3): 종별 하나 · 짝 종별의 행 · 짝 대칭 · 조항 안 일관 · VT 행 생략 기록.
+
+    짝(`혼재:X` · `구별곤란:X`)은 **표기 그대로 같은** (재질, 검사 방식)의 X 종별 행과 맞댄다. 그 행이 하나라도 있어야 하고,
+    그 행 모두가 거꾸로 같은 종류의 짝 토큰(`종류:<제 종별>`)을 들어야 한다. 짝 토큰을 든 행의 재질 · 검사 방식이 ALL 이면
+    짝을 어느 재질에서 찾는지 계약에 없다 — 추측하지 않고 거부한다(지금 표에 그런 행은 없다).
+    """
+    rows = [r for _, r in parsed]
+    line_of = {r.rule_id: n for n, r in parsed}
+    # 종별 하나 — 같은 (재질, 검사 방식, 코드)
+    classes: dict[tuple, set[str]] = {}
+    for r in rows:
+        if r.defect_class is not None:
+            classes.setdefault((r.material, r.inspection_method, r.defect_code), set()).add(r.defect_class.value)
+    for key, cls in sorted(classes.items(), key=lambda kv: str(kv[0])):
+        if len(cls) > 1:
+            violations.append(Violation(None, "V13", f"한 (재질, 검사 방식, 코드) {tuple(getattr(k, 'value', k) for k in key)}"
+                                                     f" 에 종별이 둘 이상이다: {sorted(cls)}"))
+    # 짝 종별의 행 · 대칭
+    for r in rows:
+        for tok in r.conditions:
+            kind, cls = parse_condition_token(tok)
+            if kind not in CONDITION_PAIR_KINDS:
+                continue
+            if r.material is Material.ALL or r.inspection_method is InspectionMethod.ALL:
+                violations.append(Violation(line_of[r.rule_id], "V13",
+                                            f"{r.rule_id}: 짝 토큰 {tok} 을 든 행의 재질 · 검사 방식이 ALL 이다 — 짝을 찾을 자리가"
+                                            " 계약에 없다"))
+                continue
+            mates = [s for s in rows if s.material is r.material and s.inspection_method is r.inspection_method
+                     and s.defect_class is not None and s.defect_class.value == cls]
+            if not mates:
+                violations.append(Violation(line_of[r.rule_id], "V13",
+                                            f"{r.rule_id}: 짝 토큰 {tok} 의 종별 행이 같은 재질 · 검사 방식에 없다"))
+                continue
+            back = f"{kind}:{r.defect_class.value}" if r.defect_class is not None else None
+            for s in mates:
+                if back is None or back not in s.conditions:
+                    violations.append(Violation(line_of[s.rule_id], "V13",
+                                                f"{s.rule_id}: {r.rule_id} 의 짝 토큰 {tok} 에 대한 대칭 토큰 {back} 이 없다"))
+    # 조항 안 일관 — 생성기가 조항 단위로 문장을 붙인다
+    by_clause: dict[str, list[LimitRow]] = {}
+    for r in rows:
+        by_clause.setdefault(r.clause_id, []).append(r)
+    for cid, grp in sorted(by_clause.items()):
+        vals = {(getattr(r.measure, "value", None), getattr(r.aggregation, "value", None),
+                 getattr(r.defect_class, "value", None), r.conditions) for r in grp}
+        if len(vals) > 1:
+            violations.append(Violation(None, "V13", f"조항 {cid} 의 행들이 새 칸 넷의 값이 다르다: "
+                                                     f"{sorted(map(str, vals))}"))
+    # VT 행 — 부분 B 범위 밖이라 네 칸을 비운다. 검사를 건너뛴 것이 아니라 대상이 아니라는 사실을 남긴다
+    blank_vt = sorted(r.rule_id for r in rows if r.inspection_method is InspectionMethod.VT
+                      and r.measure is None and r.aggregation is None and r.defect_class is None and not r.conditions)
+    if blank_vt:
+        skipped.append(f"V12-V13(VT 행 — 부분 B 범위 밖, 새 칸 넷 빈칸): {blank_vt}")
+
+
 # ---------------------------------------------------------------------------
 # 공식 로더
 # ---------------------------------------------------------------------------
@@ -533,11 +606,13 @@ def load_limits(
     violations: list[Violation] = []
     skipped: list[str] = []
 
-    # --- 헤더 (V1 컬럼 전수) ---
+    # --- 헤더 (V1 컬럼 전수) — 2 판 칸이 하나라도 있으면 2 판 집합과 맞댄다(일부만 있으면 누락으로 거부) ---
     reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
     fields = tuple(reader.fieldnames or ())
-    missing = [c for c in EXPECTED_COLUMNS if c not in fields]
-    unknown = [c for c in fields if c not in EXPECTED_COLUMNS]
+    edition = "v2" if any(c in fields for c in NEW_COLUMNS_V2) else "v1"
+    columns = EXPECTED_COLUMNS_V2 if edition == "v2" else EXPECTED_COLUMNS
+    missing = [c for c in columns if c not in fields]
+    unknown = [c for c in fields if c not in columns]
     if missing:
         violations.append(Violation(1, "V1", f"컬럼 누락: {missing}"))
     if unknown:
@@ -546,7 +621,7 @@ def load_limits(
         raise LimitsValidationError(violations)
 
     # --- 행 파싱 (V1 타입·enum·필수값 + V2 + V7 은 스키마 validator 가 수행) ---
-    parsed = _parse_rows(reader, violations)
+    parsed = _parse_rows(reader, violations, columns)
     rows = [r for _, r in parsed]
 
     # --- 외부 참조: 사상표 (V1 defect_code ∈ 사상표) ---
@@ -625,6 +700,10 @@ def load_limits(
     v4_warnings = _check_v4(rows)
     v9_resolved = _check_v9(rows, violations)
     v10_flags = _check_v10(rows, skipped)
+    if edition == "v2":
+        # 2 판의 새 검사는 pilot 에서도 면제하지 않는다(09 §6 Q10 — 면제 목록 · 사유는 그대로 보존).
+        _check_v12(parsed, violations)
+        _check_v13(parsed, violations, skipped)
 
     if violations:
         raise LimitsValidationError(violations)
@@ -648,6 +727,7 @@ def load_limits(
         v9_conflicts=tuple(v9_resolved),
         v10_flags=tuple(v10_flags),
         checks_skipped=tuple(skipped),
+        edition=edition,
     )
 
 

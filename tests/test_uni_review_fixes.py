@@ -32,8 +32,12 @@ PROMPT = "vlm/prompts/unified_v2_absorig.txt"
 
 
 @pytest.fixture(autouse=True)
-def _no_cuda(monkeypatch):
+def _no_cuda(monkeypatch, tmp_path):
     import torch
+
+    from tests.registration_history import legacy_default
+
+    legacy_default(monkeypatch, tmp_path)
 
     was = torch.cuda.is_initialized()
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)

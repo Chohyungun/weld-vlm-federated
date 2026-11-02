@@ -35,8 +35,11 @@ _SUFFIXES = (".exe", "-script.py", ".py")
 
 
 def venv_scripts() -> Path:
-    """이 실행의 venv `Scripts` — 이 인터프리터의 폴더다(`_flwr_run` 이 flwr 실행 파일을 찾는 자리와 같다)."""
-    return Path(sys.executable).resolve().parent
+    """이 실행의 venv 실행 파일 폴더 — `sys.prefix` 의 `Scripts`(Windows) · `bin`(그 밖). 없으면 인터프리터 경로의 폴더다.
+    `_flwr_run` 이 flwr 실행 파일을 먼저 찾는 자리와 같다. **인터프리터 경로의 링크를 풀지 않는다** — Linux venv 의
+    `bin/python` 은 base 인터프리터로 가는 심볼릭 링크라 `resolve()` 하면 venv 밖이 된다(서버 선제 발견 2026-10-17)."""
+    d = Path(sys.prefix) / ("Scripts" if os.name == "nt" else "bin")
+    return d if d.is_dir() else Path(sys.executable).parent
 
 
 def _base(path: str) -> str:

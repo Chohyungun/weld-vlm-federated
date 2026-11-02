@@ -176,17 +176,15 @@ fixed_before_main_runs:
     # 파일럿 · 프로세서 설정 확인 · 감독 토큰 계측이 모두 이 판으로 쟀다 — 다른 판으로 바꾸면 감독 토큰 기대값을 다시 잰다
     revision: 851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a
   uni_pairs:
-    # 봉인 페어(동결 명부 data/processed/pairs_main_v1). digest 는 계약서 SNAPSHOT.sha256 의 `# snapshot_digest` 줄에서
-    # 읽어 넣었다(손으로 옮기지 않았다 — 총괄 결정 19 의 계약서 지문과 같다). path 는 넣는 스크립트에 적은 리터럴이고,
-    # 그 파일 이름이 계약서의 구성원인지를 넣을 때 검사했다. path 가 폴더가 아니라 페어 파일인 것은 학습 쪽 판독기
-    # (vlm/uni_config.pairs_snapshot_problems)가 그 파일을 열고 부모 폴더의 계약서를 맞대기 때문이다
-    path: data/processed/pairs_main_v1/pairs.jsonl
-    digest: 456ea6151d502b3d44113f983f412d71a92c3db12383a93a5c4ce33ee3c0ff9d
+    # 2026-10-27 봉인 페어 2판. S10_SEAL.json과 SNAPSHOT.sha256의 digest를 스크립트로 대조해 넣었다.
+    # 파일 경로의 부모 폴더에서 명부와 스냅샷을 검증한다(vlm.narrative_inputs, vlm.uni_config).
+    path: data/processed/pairs_main_v2/pairs.jsonl
+    digest: 9a77978ec62ffab58762ed8d1dbbe012d02b21d1283e3dba2b19e6e63309d139
   uni_prompt_sha256: null      # 두지 않는다 — 등록 단계가 프롬프트 문자열의 UTF-8 해시로 낸다
   uni_chat_template_kwargs:
     enable_thinking: false
-  uni_max_new_tokens: 512      # 의사결정로그 2026-10-13 13:5x — 평가 생성 한도 L = 512(조기 좌표 점검과 같은 값)
-  uni_batch_size: 1
+  uni_max_new_tokens: 1280      # 봉인 페어 S13 계측 outputs/diag_20261027/02a_sealed.json의 권고 한도
+  uni_batch_size: 1            # 2026-11-01 8 → 1: 누적 8 A3 어댑터(r3c)의 묶음 확인에서 1 장 대 8 장 토큰 열 일치 10/21(batch_equivalence_r3.json aa80c1f5…) — 묶음 동치가 깨져 등록 기준 생성(1 장)으로 돌린다. 앞 판 8 의 근거: 묶음 생성 1 판(10-29) 탐침 80/80 · 10-31 central 21/21(r2 어댑터)
   uni_processor_kwargs:
     # 파일럿이 실제로 받은 해상도를 글자로 고정한다 — 모델 판이 바뀌어도 등록이 기본값을 조용히 따라가지 않게.
     # 파일럿은 프로세서를 인자 없이 열었고(그때의 vlm/pilot_vlm.py 의 AutoProcessor.from_pretrained(mid)),
@@ -198,15 +196,14 @@ fixed_before_main_runs:
     min_pixels: 65536
     max_pixels: 16777216
   uni_expected_supervised_tokens:
-    # 학습 쪽 계측 산출 파일에서 읽어 넣었다(손으로 옮기지 않았다) — outputs/B_seal_20261001/tokens/
-    # supervised_tokens.json sha256 10e62663b0297557832d290ea04f7a3c9a7d49156b9fe9ef7df2b11071f9c190.
-    # 봉인 페어 pairs_main_v1(pairs.jsonl f4e44131fee61a6f…)의 학습 행 합계다.
-    # 그때 uni_model.revision 은 null 이었고 캐시 판 851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a 의 토크나이저로 쟀다(지금 그 판으로 고정됐다) —
-    # revision 을 다른 판으로 고정하면 다시 잰다(학습기는 한 토큰만 달라도 멈춘다)
-    C1: 2211295
-    C2: 854010
-    C3: 336841
-  uni_prompt_path: vlm/prompts/unified_v2_absorig.txt
+    # outputs/target_tokens_v3_20261027/per_row.csv.provenance.json
+    # sha256 40cbc43da0377d95dce03fc227abe7e782c441e1f51c0997997f3ca7fa2605f3 — per_client 값을 스크립트로 읽었다.
+    # 캐시 판 851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a; S13의 새 레시피 전량 합과 같다.
+    # 1차 회귀 기대값은 b16e2306의 base.yaml 원문으로 별도 보존한다.
+    C1: 6611656
+    C2: 2361542
+    C3: 691848
+  uni_prompt_path: vlm/prompts/unified_v3_1_basis.txt
   uni_coord_space: ABS_ORIG
 
   # ====================================================================================

@@ -138,7 +138,8 @@ def registration(w, *, edit=None):
     g.eval_list_set_sha256 = g.echo_list_set_sha256 = w.elist.set_sha256
     g.prompt_sha256, g.chat_template_kwargs = prompt_sha(), {"enable_thinking": False}
     g.gen_prefix_sha256 = MEASURED["gen_prefix_sha256"]
-    g.max_new_tokens, g.decoding, g.batch_size, g.padding_side = 512, {"do_sample": False, "num_beams": 1}, 1, "left"
+    g.max_new_tokens, g.decoding, g.padding_side = 512, {"do_sample": False, "num_beams": 1}, "left"
+    g.batch_size = int(getattr(w, "batch_size", 1))
     for k in ("processor_config_sha256", "processor_min_pixels", "processor_max_pixels", "patch_size", "merge_size",
               "transformers_version"):
         setattr(g, k, MEASURED[k])
@@ -154,6 +155,53 @@ def registration(w, *, edit=None):
     r.seeds = {"1": 7}
     if edit is not None:
         edit(r)
+    return r
+
+
+#: 판 6 의 확인 자료 셋(검사기 벡터 · 확인 사례 · 학습 전 계약) — **시험용 합성 내용의 실제 파일**이다(`to_v6` 가 `inputs_dir` 에 쓴다).
+#: 평가 쪽 작성기가 그 바이트의 sha256 을 받는다 — 실제 확인 사례 · 검사기 벡터 · 계약이 아니다. 학습 전 계약 인자(`inputs_contract_path`)는
+#: 평가 쪽 2 단계에서 작성기에 생긴다(07e §4 · §7) — `to_v6` 는 작성기가 받는 인자만 넘긴다. 계약은 07e §2-1 의 정규형으로 짓는다.
+V6_SYNTHETIC_FILES = {"checker_vectors_path": "synthetic_checker_vectors.json",
+                      "confirmation_path": "synthetic_confirmation_cases.json",
+                      "inputs_contract_path": "synthetic_narrative_inputs.json"}
+
+
+def synthetic_contract(NR) -> bytes:
+    """시험용 합성 학습 전 계약 — 평가 쪽 작성기(`narrative_inputs_block`)가 지금 트리의 표 · 묶음 바이트에서 재고 정규형
+    (`dump_narrative_inputs`)으로 쓴다. 페어 칸은 합성 값이다(실제 봉인 페어가 아니다)."""
+    return NR.dump_narrative_inputs(NR.narrative_inputs_block(
+        ROOT, limits_rel="corpus/rules/limits_v2_pilot.csv", pairs_path="data/processed/pairs_main_v2",
+        snapshot_digest=hx("pairs"), pairs_meta_raw=b'{"synthetic": true}\n'))
+
+
+def to_v6(r, *, inputs_dir: Path):
+    """판 6 으로 — 서술 · 조항 축 블록을 평가 쪽 작성기(`evaluation.narrative_registration.narrative_block` · `clause_axis_block`)가
+    짓는다. 신원 칸은 지금 트리의 실제 바이트, 잔여 한계(`open_holes`) · 탐색적 종류(`exploratory_kinds`)는 작성기가 채우는 검사기 판의
+    정본 그대로, 학습 쪽 추출기는 작성기의 기본(트리의 `vlm/narrative.py`)이다. 확인 자료 둘은 `inputs_dir` 에 쓰는 시험용 합성 파일
+    (`V6_SYNTHETIC_FILES`)이고 작성기가 그 바이트의 sha256 을 받는다.
+
+    본 등록 짓기(`vlm.main_registration`)의 판 6 발급 연결은 2 차 등록 묶음이다(지시 1023d) — 그때까지 시험이 작성기를 부른다.
+    1023c 에는 평가 쪽에 작성기가 없어 시험이 `actual_identity` 와 어휘로 블록을 조립하고 평가 쪽 칸 셋을 합성 값으로 두었다(02 §9-14)."""
+    import inspect
+
+    from evaluation import narrative_registration as NR
+    from evaluation import prereg_unified as P
+
+    d = Path(inputs_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    files = {}
+    accepted = inspect.signature(NR.narrative_block).parameters
+    for arg, name in V6_SYNTHETIC_FILES.items():
+        if arg not in accepted:
+            continue                         # 작성기에 그 인자가 아직 없다(평가 쪽 2 단계 전) — 넘기면 작성기가 거부한다
+        files[arg] = d / name
+        files[arg].write_bytes(synthetic_contract(NR) if arg == "inputs_contract_path" else
+                               json.dumps({"synthetic": True, "for": arg.removesuffix("_path"),
+                                           "note": "시험용 합성 자료 — 실제 검사기 벡터 · 확인 사례가 아니다"},
+                                          ensure_ascii=False).encode("utf-8"))
+    r.version = P.REGISTRATION_VERSION_V6
+    r.narrative = NR.narrative_block(ROOT, **files)
+    r.clause_axis = NR.clause_axis_block(ROOT)
     return r
 
 
@@ -223,8 +271,8 @@ def write_adapter(w, *, tag="uni_local_C1", step=12, purpose="rehearsal", close=
     return d
 
 
-def build(tmp: Path, *, ids=IDS) -> SimpleNamespace:
-    """합성 세계 하나. 영수증 · 학습 산출물까지 만든다."""
+def build(tmp: Path, *, ids=IDS, batch_size: int = 1) -> SimpleNamespace:
+    """합성 세계 하나. 영수증 · 학습 산출물까지 만든다. `batch_size` 는 설정(`uni_batch_size`)과 등록(`generation.batch_size`)에 같이 든다."""
     import pandas as pd
     from PIL import Image
 
@@ -254,7 +302,7 @@ def build(tmp: Path, *, ids=IDS) -> SimpleNamespace:
         f"  snapshot_digest: {digest}\n  uni_processor_kwargs: {{max_pixels: {MAX_PIXELS}}}\n"
         "  uni_model: {id: Qwen/Qwen3.5-4B, revision: " + "a" * 40 + "}\n"
         f"  uni_prompt_path: {PROMPT_REL}\n  uni_coord_space: ABS_ORIG\n"
-        "  uni_chat_template_kwargs: {enable_thinking: false}\n  uni_batch_size: 1\n  uni_max_new_tokens: null\n",
+        f"  uni_chat_template_kwargs: {{enable_thinking: false}}\n  uni_batch_size: {int(batch_size)}\n  uni_max_new_tokens: null\n",
         encoding="utf-8")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "설정")
@@ -288,6 +336,7 @@ def build(tmp: Path, *, ids=IDS) -> SimpleNamespace:
 
     w = SimpleNamespace(tmp=tmp, repo=repo, head=head, snap=snap, digest=digest, parent=parent, root=root,
                         lists=lists, elist=elist, plan=plan, exposure=exposure, images=images, code=code)
+    w.batch_size = int(batch_size)
     w.reg = registration(w)
     w.receipt = write_registration(w, w.reg)
     w.adapter = write_adapter(w)

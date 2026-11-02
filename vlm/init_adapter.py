@@ -23,21 +23,22 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
-import torch
 
-from detection import serialize
+if TYPE_CHECKING:
+    import torch
 
 __all__ = [
-    "build_initial_adapter",
-    "read_initial_cache",
-    "init_adapter_digest",
     "InitCacheRejected",
-    "assert_same_start",
-    "assert_injected_matches",
-    "adapter_proof",
     "InitProof",
+    "adapter_proof",
+    "assert_injected_matches",
+    "assert_same_start",
+    "build_initial_adapter",
+    "init_adapter_digest",
+    "read_initial_cache",
 ]
 
 
@@ -88,6 +89,8 @@ def _check_proof_binding(proof: dict, arrays: list[np.ndarray], keys: list[str],
 
 def adapter_proof(arrays: list[np.ndarray], keys: list[str]) -> InitProof:
     """어댑터 한 벌에서 증빙을 뽑는다. 주입 전후·클라이언트 간 대조의 단위다."""
+    from detection import serialize
+
     return InitProof(
         keys_digest=serialize.keys_digest(keys),
         tensor_digest=serialize.tensor_digest(arrays),
@@ -133,7 +136,10 @@ def build_initial_adapter(
         arrays, keys = read_initial_cache(cache_path, model_id=mid, seed=seed, revision=revision, purpose=purpose)
         return arrays, keys, {}
 
+    import torch
     from peft import get_peft_model_state_dict
+
+    from detection import serialize
 
     model, _ = loader(mid, init_seed=seed, revision=revision)
     sd = get_peft_model_state_dict(model)

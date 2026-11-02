@@ -199,8 +199,9 @@ def _drive_server(monkeypatch):
         def __init__(self, **kw):
             pass
 
-        def start(self, *, grid, initial_arrays, num_rounds, train_config):
+        def start(self, *, grid, initial_arrays, num_rounds, train_config, timeout):    # flwr Strategy.start 의 꼴
             calls["start"] = dict(train_config)
+            calls["timeout"] = timeout
 
     def fake_finalize(**kw):
         calls["finalize"] += 1
@@ -220,6 +221,7 @@ def test_서버는_빈_out_dir_에서_통과하고_run_stamp_가_그대로다(mo
     server_app.main(object(), SimpleNamespace(run_config=_server_cfg(tmp_path)))
     assert calls["load_initial"] == 1 and calls["finalize"] == 1
     assert calls["start"]["run-stamp"] == "main_s1"
+    assert calls["timeout"] == server_app.ROUND_TIMEOUT_MAX            # 응답 대기 상한을 늘 넘긴다(06 §8)
     ledger = tmp_path / "fl" / "sep_fed" / "atomic_log.csv"
     assert ledger.read_text(encoding="utf-8").splitlines() == [",".join(FIELDS)]
     assert _ledger_run_id(calls["atomic"]) == SEED1_RUN_ID.replace("s20260828", "s7")
@@ -320,8 +322,9 @@ def _drive_pilot(monkeypatch, cfg):
         def __init__(self, **kw):
             pass
 
-        def start(self, *, grid, initial_arrays, num_rounds, train_config):
+        def start(self, *, grid, initial_arrays, num_rounds, train_config, timeout):    # flwr Strategy.start 의 꼴
             calls["start"] = dict(train_config)
+            calls["timeout"] = timeout
 
     monkeypatch.setattr(pilot_sim, "WeldFedAvg", FakeStrategy)
     monkeypatch.setattr(pilot_sim, "finalize_accounting",

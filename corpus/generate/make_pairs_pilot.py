@@ -376,6 +376,8 @@ DISCARD_REASONS: frozenset[str] = frozenset({
     "material_missing", "material_unknown", "clause_set_mismatch", "candidate_rules_mismatch",
     "uncited_codes_mismatch", "text_unparsable", "observation_mismatch", "clause_text_mismatch",
     "criterion_mismatch", "note_mismatch", "uncited_text_mismatch", "closing_mismatch",
+    # 게이트 ③ 의 2 판 갈래(C 08 2 판 §5-1) — 측정량 · 집계 조건 · 혼재 · 종별 구별 곤란 · 전제 미확인
+    "measure_mismatch", "aggregation_mismatch", "mixture_mismatch", "distinction_mismatch", "premise_mismatch",
 })
 #: 키 이름이 뒤에 붙는 사유의 접두.
 DISCARD_PREFIXES: tuple[str, ...] = ("schema:",)
@@ -407,8 +409,26 @@ def index_annotations(annotations) -> dict[str, list[dict]]:
     return out
 
 
-def assemble_record(row, anns, names: dict[str, str], base: dict[str, dict]) -> tuple[dict | None, int]:
+#: 서술 계약의 판 — 1 판은 이 모듈의 `defect_target_text`, 2 판(부분 B)은 `pairs_text_v2.defect_target_text` 다. 골격은 같다(T4).
+TEXT_EDITIONS = ("v1", "v2")
+
+
+def _text_fn(edition: str):
+    if edition == "v1":
+        return defect_target_text
+    if edition == "v2":
+        from corpus.generate import pairs_text_v2
+
+        return pairs_text_v2.defect_target_text
+    raise PairInputError(f"모르는 서술 판 {edition!r} — 아는 것 {list(TEXT_EDITIONS)}")
+
+
+def assemble_record(row, anns, names: dict[str, str], base: dict[str, dict], *,
+                    edition: str = "v1") -> tuple[dict | None, int]:
     """매니페스트 행 하나와 그 이미지의 어노테이션 → `(레코드, 기하 무효로 뺀 어노테이션 수)`.
+
+    `edition` 은 서술 계약의 판이다. 2 판이면 `base` 는 `pairs_text_v2.augment_basis` 의 출력이고 서술만 2 판 문장이다 —
+    골격(JSON 쪽)은 같은 코드로 만든다(T4).
 
     빌더·계측·독립 검산이 **이 함수 하나**를 부른다. `main()` 안에 있을 때는 import 할 수 없어서
     계측 스크립트가 조립을 복제해야 했다 — "판정 논리는 한 곳" 은 이것이 돼야 성립한다(06번 §2-나).
@@ -464,7 +484,7 @@ def assemble_record(row, anns, names: dict[str, str], base: dict[str, dict]) -> 
             "candidate_rules": [dict(r) for r in candidate_rules],
             "uncited_codes": [{"code": c, "reason": why} for c in codes if c not in base],
         },
-        "target_text": (defect_target_text(defects, names, base)
+        "target_text": (_text_fn(edition)(defects, names, base)
                         if defects else NORMAL_TEXT),
     }
     if skipped:
@@ -493,8 +513,11 @@ class BuildResult:
 
 
 def build_pairs(manifest, annotations, table, names: dict[str, str], lexicon: frozenset[str], *,
-                root: Path | None = None, check_paths: bool = False) -> BuildResult:
+                root: Path | None = None, check_paths: bool = False, edition: str = "v1") -> BuildResult:
     """train·val 행에서 페어를 조립하고 검증한다. eval 은 만들지 않는다(개발규약 1-4).
+
+    `edition` 은 서술 계약의 판(`TEXT_EDITIONS`)이다. 표의 판(`LimitsTable.edition`)과 같아야 한다 — 1 판 표로 2 판 서술을 지으면 조건
+    문장이 조용히 빠지고, 2 판 표로 1 판 서술을 지으면 새 계약을 어긴 페어가 나온다.
 
     입력 계약을 먼저 본다 — 어기면 `PairInputError` 로 멈춘다.
       · `split` 어휘가 train·val·eval 뿐이고 eval 이 비어 있지 않다 (표기가 어긋난 행이 조용히 빠지면
@@ -512,6 +535,9 @@ def build_pairs(manifest, annotations, table, names: dict[str, str], lexicon: fr
     from corpus.validate.pair_criteria_gate import PairRules
 
     res = BuildResult()
+    _text_fn(edition)                                   # 모르는 판이면 입력을 보기 전에 멈춘다
+    if getattr(table, "edition", "v1") != edition:
+        raise PairInputError(f"표의 판 {getattr(table, 'edition', 'v1')!r} 이 서술 계약의 판 {edition!r} 과 다르다")
     m = manifest
     odd = sorted(set(map(str, m["split"])) - {"train", "val", "eval"})
     if odd:
@@ -575,9 +601,13 @@ def build_pairs(manifest, annotations, table, names: dict[str, str], lexicon: fr
     # 조항을 특정하지 않는다 (§4 안 B — 격리하면 C3 결함 페어가 0건이 되어
     # RQ2 가 인위적으로 바뀐다).
     bases = {mat: clause_basis(table, mat) for mat in res.materials}
+    if edition == "v2":
+        from corpus.generate.pairs_text_v2 import augment_basis
+
+        bases = {mat: augment_basis(b, table, mat) for mat, b in bases.items()}
     res.covered = covered_materials(table)
     res.uncovered = sorted(set(res.materials) - res.covered)
-    rules = PairRules(table.rows, names)      # 게이트의 기대값 — 생성 경로(`bases`)와 따로 만든다
+    rules = PairRules(table.rows, names, edition=edition)      # 게이트의 기대값 — 생성 경로(`bases`)와 따로 만든다
     ann_tv = annotations[annotations["image_id"].isin(set(tv["image_id"]))]
     if ann_tv["ann_id"].duplicated().any():
         # 정렬 키가 겹치면 행 순서가 산출 바이트를 정한다 — 같은 입력에서 결함 순서가 갈린다(검토 11).
@@ -595,7 +625,9 @@ def build_pairs(manifest, annotations, table, names: dict[str, str], lexicon: fr
     for tup in tv.sort_values("image_id").itertuples(index=False):
         row = tup._asdict()
         iid = row["image_id"]
-        rec, skipped = assemble_record(row, anns.get(iid, []), names, bases[str(row["material"])])
+        # 1 판 호출은 예전 꼴 그대로다(판 인자는 2 판에서만 넘긴다 — 1 판 경로의 호출 바이트를 바꾸지 않는다).
+        rec, skipped = assemble_record(row, anns.get(iid, []), names, bases[str(row["material"])],
+                                       **({} if edition == "v1" else {"edition": edition}))
         res.n_geom_skipped += skipped
         n_valid = len(rec["skeleton"]["defects"]) if rec is not None else 0
         if n_valid + skipped != int(row["n_defects"]):

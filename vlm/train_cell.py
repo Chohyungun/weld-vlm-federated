@@ -46,7 +46,9 @@ from detection import serialize
 from detection.round_runner import derive_seed
 from fl.atomic_log import END_METRIC, AtomicLog, last_data_row, new_run_id
 from fl.uni_run_config import PURPOSES
+from vlm.budget import apply_budget, budget_identity
 from vlm.coords import CoordCfg, coord_cfg_hash
+from vlm.midrun_loss import observe as observe_midrun_loss
 
 __all__ = [
     "LOCAL_TAGS", "CENTRAL_TAG", "CLIENT_ORDER", "cell_of", "client_of",
@@ -140,6 +142,18 @@ class UniRunSpec:
     pin_path: Path | None = None
     #: 조기 좌표 점검의 통과 파일(평가 쪽 `early_coord_check.json`, 10번 §14-3) — 본실험 칸의 착수 허가 키. 비워 둘 수 없다.
     ecc_permit_path: Path | None = None
+    #: 공통 학습 예산 비율(`vlm.budget`, 등록 `budget_fraction`). 1.0 이면 참여자 학습 행 전체 — 지금과 같다. 1 보다 작으면 칸이
+    #: 참여자마다 그 몫의 행만 1 epoch 돈다(사전 고정 예산 — 조기 종료가 아니다). 기대 토큰은 실행기가 그 몫으로 낸다.
+    budget_fraction: float = 1.0
+    #: 착수 허가 면제 파일(1017a, 사용자 결정) — 주면 시작 문이 통과 파일 대신 이것을 맞댄다(`vlm.ecc.check_waiver`).
+    #: 통과 파일과 함께는 받지 않는다. 신원 밖이다 — 학습 신원 · 재개 신원 · 등록 바이트에 들지 않는다.
+    ecc_permit_waiver_path: Path | None = None
+    #: 학습 등록 파일(1017b) — 비면 `configs/train_registration.yaml`(본실험). 민감도 실행은 그 벌을 준다. 착수 고정의 `common`
+    #: 이 그 바이트를 묶는다(시작 · 재개마다 같은 파일로 다시 낸다). 신원에는 그 등록이 정한 값(예산 비율)이 든다.
+    train_registration_path: Path | None = None
+    #: 학습 레시피(등록의 `recipe` — 실행기가 그 등록에서 읽는다). 타깃과 신원 · 학습 설정 원문의 계약 해시가 이 값에서 나온다.
+    #: 본실험은 착수 고정에 든 등록값과 같아야 시작한다(`main_start_gate`). 기본 `json_only` 은 1 차 레시피 — 신원이 지금과 같다.
+    recipe: str = "json_only"
 
     def __post_init__(self) -> None:
         if self.purpose not in PURPOSES:
@@ -155,6 +169,16 @@ class UniRunSpec:
                                          f"local_epochs {self.local_epochs}")
         if not isinstance(self.chat_template_kwargs, Mapping):
             raise CellRejected("spec_type", "chat_template_kwargs 가 사전이 아니다")
+        from vlm.budget import BudgetRejected, check_fraction
+
+        try:
+            check_fraction(self.budget_fraction)
+        except BudgetRejected as exc:
+            raise CellRejected("budget_fraction", str(exc)) from None
+        from vlm.registration import TRAIN_RECIPES
+
+        if self.recipe not in TRAIN_RECIPES:
+            raise CellRejected("recipe_unknown", f"학습 레시피 {self.recipe!r} 는 학습 코드가 구현한 {list(TRAIN_RECIPES)} 가 아니다")
         for name in ("run_stamp", "snapshot_digest", "model_id", "pairs_path", "pairs_digest"):
             if not isinstance(getattr(self, name), str) or not getattr(self, name):
                 raise CellRejected("spec_value", f"{name} 이 비어 있다")
@@ -216,8 +240,7 @@ def _run_identity(spec: UniRunSpec, tag: str, *, client_idx: int, rows_digest: s
     (리허설 2판 §2-7). 멱등 판정과 원장 복구는 모델을 올리기 전에 돌므로 `_verify_prior` 가 이 블록과 재개 신원의
     적재 전 필드(`_expected_resume`)를 맞댄다. 재개 사슬은 적재 뒤에 전체 해시를 맞댄다.
     """
-    from vlm.pilot_vlm import (GRAD_ACCUM, LR, MICRO_BATCH, SHUFFLE_POLICY,
-                               TARGET_CONTRACT_SHA256, template_mode_of)
+    from vlm.pilot_vlm import GRAD_ACCUM, LR, MICRO_BATCH, SHUFFLE_POLICY, target_contract_sha256, template_mode_of
     from vlm.schedule import LRF
 
     return {
@@ -234,7 +257,7 @@ def _run_identity(spec: UniRunSpec, tag: str, *, client_idx: int, rows_digest: s
         "template_mode": template_mode_of(spec.chat_template_kwargs),
         "shuffle_policy": SHUFFLE_POLICY,
         "coord_cfg_hash": coord_cfg_hash(CoordCfg(coord_space=spec.coord_space)),
-        "target_contract_sha256": TARGET_CONTRACT_SHA256,
+        "target_contract_sha256": target_contract_sha256(spec.recipe),
         "init_adapter_digest": init_digest,
         "train_rows_digest": rows_digest, "n_train_rows": int(n_rows),
         "micro_batch": MICRO_BATCH, "grad_accum": GRAD_ACCUM, "lr0": LR, "lrf": LRF,
@@ -245,6 +268,8 @@ def _run_identity(spec: UniRunSpec, tag: str, *, client_idx: int, rows_digest: s
         # 감독 토큰 기대값 — 기대값만 바꿔 다시 요청하면 완료 산출물을 건너뛰지 않고 신원이 어긋난다.
         "expected_supervised_tokens": (None if spec.expected_supervised_tokens is None
                                        else {str(k): int(v) for k, v in spec.expected_supervised_tokens.items()}),
+        # 예산 비율 — 1.0 이면 칸이 없다(지금 신원과 바이트가 같다).
+        **budget_identity(spec.budget_fraction),
     }
 
 
@@ -260,8 +285,7 @@ def _expected_resume(spec: UniRunSpec, tag: str, *, client_idx: int, prompt_sha2
     이것과 맞댄다. 프로세서 쪽 두 필드(`RESUME_POST_LOAD`)는 다시 낼 수 없어 보지 않는다 — 그 둘은 모델 판 ·
     프로세서 설정(둘 다 앞 블록에 있다)에서 정해진다.
     """
-    from vlm.pilot_vlm import (GRAD_ACCUM, LR, MICRO_BATCH, SHUFFLE_POLICY,
-                               TARGET_CONTRACT_SHA256, template_mode_of)
+    from vlm.pilot_vlm import GRAD_ACCUM, LR, MICRO_BATCH, SHUFFLE_POLICY, target_contract_sha256, template_mode_of
     from vlm.schedule import LRF
 
     return {
@@ -274,7 +298,7 @@ def _expected_resume(spec: UniRunSpec, tag: str, *, client_idx: int, prompt_sha2
         "cell": tag, "client_tag": client_of(tag), "num_rounds": 1,
         "pairs_digest": str(spec.pairs_digest), "prompt_sha256": prompt_sha256,
         "coord_cfg_hash": coord_cfg_hash(CoordCfg(coord_space=spec.coord_space)),
-        "target_contract_sha256": TARGET_CONTRACT_SHA256, "input_adapter_digest": init_digest,
+        "target_contract_sha256": target_contract_sha256(spec.recipe), "input_adapter_digest": init_digest,
         "micro_batch": int(MICRO_BATCH), "grad_accum": int(GRAD_ACCUM), "lr0": float(LR), "lrf": float(LRF),
     }
 
@@ -289,20 +313,21 @@ def build_train_config(spec: UniRunSpec, *, prompt_sha256: str, init_digest: str
         model_id=spec.model_id, model_revision=spec.model_revision, pairs_digest=spec.pairs_digest,
         chat_template_kwargs=spec.chat_template_kwargs, coord_space=spec.coord_space,
         num_rounds=spec.num_rounds, local_epochs=spec.local_epochs, total_epochs=spec.total_epochs,
-        prompt_sha256=prompt_sha256, init_digest=init_digest, metrics=metrics)
+        prompt_sha256=prompt_sha256, init_digest=init_digest, metrics=metrics, recipe=spec.recipe)
 
 
 def train_config_object(*, model_id: str, model_revision: str | None, pairs_digest: str | None,
                         chat_template_kwargs: Mapping[str, Any], coord_space: str,
                         num_rounds: int, local_epochs: int, total_epochs: int,
-                        prompt_sha256: str, init_digest: str, metrics: Mapping[str, Any]) -> dict[str, Any]:
+                        prompt_sha256: str, init_digest: str, metrics: Mapping[str, Any],
+                        recipe: str = "json_only") -> dict[str, Any]:
     """`build_train_config` 의 본체 — 연합 서버도 같은 함수로 낸다(칸마다 따로 짜면 값이 갈린다).
 
     `metrics` 는 학습이 실제로 쓴 값이다 — `processor_config_sha256` · `config_blocks` 와 대조용
-    `prompt_sha256` · `template_mode` · `coord_cfg_hash` · `target_contract_sha256`.
+    `prompt_sha256` · `template_mode` · `coord_cfg_hash` · `target_contract_sha256`. `recipe` 는 설정(등록)의 레시피다 — 그 계약 해시가
+    학습이 실제로 쓴 계약 해시와 같아야 원문이 선다(지표만 새 계약을 말하고 타깃은 옛것인 길을 막는다).
     """
-    from vlm.pilot_vlm import (GRAD_ACCUM, LR, MICRO_BATCH, SHUFFLE_POLICY,
-                               TARGET_CONTRACT_SHA256, template_mode_of)
+    from vlm.pilot_vlm import GRAD_ACCUM, LR, MICRO_BATCH, SHUFFLE_POLICY, target_contract_sha256, template_mode_of
     from vlm.schedule import LRF
 
     cfg = {
@@ -314,7 +339,7 @@ def train_config_object(*, model_id: str, model_revision: str | None, pairs_dige
         "micro_batch": MICRO_BATCH, "grad_accum": GRAD_ACCUM, "lr0": LR, "lrf": LRF,
         "init_adapter_digest": init_digest, "shuffle_policy": SHUFFLE_POLICY,
         "processor_config_sha256": metrics["processor_config_sha256"],
-        "target_contract_sha256": TARGET_CONTRACT_SHA256,
+        "target_contract_sha256": target_contract_sha256(recipe),
     }
     blocks = dict(metrics["config_blocks"])
     if set(blocks) != {"lora", "quant", "optimizer", "loss", "lr_schedule"}:
@@ -548,6 +573,8 @@ def _run_cell(spec: UniRunSpec, tag: str, *, client_idx: int, rows: list[dict],
     init_arrays, init_keys, init_info = init
     d = cell_dir(spec, tag)
     _, prompt_sha256 = load_prompt(spec.prompt_path)
+    # 예산 몫 — 참여자마다 고정 시드로 고른 행만(로컬 · 중앙 · 연합이 같은 행). 1.0 이면 받은 행 그대로.
+    rows = apply_budget(rows, fraction=spec.budget_fraction, seed_value=spec.seed_value, pairs_path=spec.pairs_path)
     rows_digest = train_rows_digest(rows)
     identity = _run_identity(spec, tag, client_idx=client_idx, rows_digest=rows_digest, n_rows=len(rows),
                              prompt_sha256=prompt_sha256, init_digest=init_info["init_adapter_digest"])
@@ -624,21 +651,22 @@ def _run_cell(spec: UniRunSpec, tag: str, *, client_idx: int, rows: list[dict],
                 armed.fire(ctx, point=_point, tag=tag, k=int(ep), run_id=run_id)
 
             hooks[point] = _hook
-    arrays, keys, m, _ = train_rounds(
-        rows=rows, epochs=spec.total_epochs, round_idx=0, client_idx=int(client_idx),
-        base_seed=spec.seed_value, adapter_in=list(init_arrays), adapter_keys=list(init_keys),
-        model_id=spec.model_id, resume_dir=(str(Path(spec.resume_root) / f"{tag}_s{spec.seed_index}")
-                                            if spec.resume_root is not None else None),
-        run_id=run_id, init_seed=spec.seed_value, num_rounds=1,
-        model_revision=spec.model_revision, pairs_path=spec.pairs_path, prompt_path=spec.prompt_path,
-        chat_template_kwargs=dict(spec.chat_template_kwargs),
-        coord_cfg=CoordCfg(coord_space=spec.coord_space), processor_kwargs=spec.processor_kwargs,
-        model_loader=model_loader, purpose=spec.purpose, standin_allowed=spec.standin_allowed,
-        tag=tag, seed_index=spec.seed_index,
-        on_identity_ok=on_identity_ok, ledger_cb=ledger_cb,
-        before_ckpt_cb=hooks.get("before_ckpt"), after_ckpt_cb=hooks.get("after_ckpt"),
-        resume_extra=extra, pairs_digest=spec.pairs_digest, client_tag=client,
-    )
+    with observe_midrun_loss(f"{tag}_s{spec.seed_index}"):   # 학습 중 창 손실(환경 변수가 있을 때만, 값을 바꾸지 않는다)
+        arrays, keys, m, _ = train_rounds(
+            rows=rows, epochs=spec.total_epochs, round_idx=0, client_idx=int(client_idx),
+            base_seed=spec.seed_value, adapter_in=list(init_arrays), adapter_keys=list(init_keys),
+            model_id=spec.model_id, resume_dir=(str(Path(spec.resume_root) / f"{tag}_s{spec.seed_index}")
+                                                if spec.resume_root is not None else None),
+            run_id=run_id, init_seed=spec.seed_value, num_rounds=1,
+            model_revision=spec.model_revision, pairs_path=spec.pairs_path, prompt_path=spec.prompt_path,
+            chat_template_kwargs=dict(spec.chat_template_kwargs),
+            coord_cfg=CoordCfg(coord_space=spec.coord_space), processor_kwargs=spec.processor_kwargs,
+            model_loader=model_loader, purpose=spec.purpose, standin_allowed=spec.standin_allowed,
+            tag=tag, seed_index=spec.seed_index,
+            on_identity_ok=on_identity_ok, ledger_cb=ledger_cb,
+            before_ckpt_cb=hooks.get("before_ckpt"), after_ckpt_cb=hooks.get("after_ckpt"),
+            resume_extra=extra, pairs_digest=spec.pairs_digest, client_tag=client, recipe=spec.recipe,
+        )
 
     # -- 대조: 주입 · 키 · 예산 ------------------------------------------------
     if keys != list(init_keys):
@@ -707,13 +735,19 @@ PERMIT_EXPECTED_KEYS = ("start_adapter_digest", "pin_sha256", "check_run_id", "s
 
 def main_start_gate(spec: UniRunSpec, *, init_digest: str,
                     pin_probes: Mapping[str, Callable[[], dict[str, Any]]] | None = None,
-                    rule_path: Path | None = None) -> dict[str, Any]:
+                    rule_path: Path | None = None, substitute_repo: Path | None = None) -> dict[str, Any]:
     """본실험 칸의 시작 · 재개 문 — (1) 착수 고정을 지금 값으로 다시 내 맞대고, (2) 조기 좌표 점검의 통과 파일을 평가 쪽
     `verify_permit`(2판)으로 대조한다(10번 §14-3 — 검증은 평가 쪽, 부르는 자리는 학습 쪽). 하나라도 어긋나면 `CellRejected`.
+    명세에 면제 파일(`ecc_permit_waiver_path`, 1017a)이 있으면 (2) 대신 `vlm.ecc.check_waiver` 를 지나고, 돌려주는 값에
+    `ecc_permit_sha256` 대신 `ecc_permit_waiver_sha256` · `ecc_permit_waiver`(요약)를 싣는다(칸 meta 의 `start_gate`).
 
     넘기는 것: 통과 파일 **밖**의 키 기록(`ECC_PERMIT_KEY.json`, 점검 통과 때 `ecc-accept` 가 쓴다)의 sha256 과 점검 실행 신원,
     평가 쪽 규칙 객체, 그리고 이 칸이 잰 출발 어댑터(`init_digest` — 실제로 읽은 공통 초기 어댑터) · 착수 고정 · 시드 번호.
     `pin_probes` 는 시험의 이음새다. 연합 실행기도 같은 함수를 부른다.
+
+    2 차 레시피(`evaluation.ecc_substitute.SUBSTITUTE_RECIPES`)의 면제 자리에는 **A3 대체 승인서**(D7, 사용자 결정 10-31)만 받는다 —
+    `vlm.ecc.check_a3_substitute`(검증은 평가 쪽 `verify_substitute`, 저장소는 `substitute_repo` — 비면 이 체크아웃). 돌려주는 값에
+    `ecc_a3_substitute_sha256` · `ecc_a3_substitute`(요약)를 싣는다. 1 차 꼴 면제 파일 · 없는 파일은 종전처럼 `ecc_waiver_regime`.
     """
     from vlm.ecc import EccRefused, check_permit, load_check_rules, read_permit_key
     from vlm.pin import PinMismatch, build_pin, check_pin
@@ -721,12 +755,49 @@ def main_start_gate(spec: UniRunSpec, *, init_digest: str,
     if spec.pin_path is None or not Path(spec.pin_path).is_file():
         raise CellRejected("pin_missing", f"착수 고정 파일이 없다: {spec.pin_path}")
     try:
-        current = build_pin(init_adapter_path=spec.init_adapter_path, config_path=spec.config_path, probes=pin_probes)
+        current = build_pin(init_adapter_path=spec.init_adapter_path, config_path=spec.config_path, probes=pin_probes,
+                            registration_path=getattr(spec, "train_registration_path", None))
         pin_sha = check_pin(Path(spec.pin_path), current)
     except PinMismatch as exc:
         raise CellRejected("pin_mismatch", str(exc)) from None
     if (current.get("init_adapter") or {}).get("init_adapter_digest") != init_digest:
         raise CellRejected("pin_mismatch", "이 칸이 읽은 공통 초기 어댑터가 착수 고정의 것과 다르다")
+    # 등록과의 결속(§137 M-01 · M-02) — 착수 고정의 공통 칸에 든 등록값으로. 실물 측정(`common_probe`)은 등록값을 늘 싣는다.
+    # 공통 칸을 이음새로 갈아 끼운 시험만 등록값이 없을 수 있다.
+    from vlm.registration import binding_problems
+
+    reg = (current.get("common") or {}).get("registration")
+    if reg is None and not (pin_probes and "common" in pin_probes):
+        raise CellRejected("registration_missing", "착수 고정의 공통 칸에 등록값이 없다")
+    if reg is not None:
+        bad = binding_problems(reg, seed_index=int(spec.seed_index), init_digest=init_digest, recipe=spec.recipe)
+        if bad:
+            raise CellRejected("registration_binding", " · ".join(bad))
+    waiver = getattr(spec, "ecc_permit_waiver_path", None)
+    if waiver is not None:                                       # 사용자 결정의 면제(1017a) — 통과 파일 대신
+        from evaluation.ecc_substitute import SUBSTITUTE_RECIPES
+        from vlm.ecc import WAIVER_RECIPES, check_a3_substitute, check_waiver, is_a3_substitute_file
+
+        seed_dir = Path(spec.ecc_permit_path).parent if spec.ecc_permit_path is not None else Path(spec.pin_path).parent
+        # 2 차 체제는 A3 대체 승인서만 받는다(D7, 사용자 결정 10-31) — 1 차 꼴 면제 파일은 키 기록 전에 거부한다(지시 1022c,
+        # 외부 검토 200 C-01: 다섯 칸 꼴에는 승인 대상 착수 고정이 없어 과거 결정이 새 착수 고정에 결속된다).
+        if spec.recipe in SUBSTITUTE_RECIPES and is_a3_substitute_file(Path(waiver)):
+            try:
+                s = check_a3_substitute(Path(waiver), seed_dir=seed_dir, permit_path=spec.ecc_permit_path, pin_sha256=pin_sha,
+                                        seed=int(spec.seed_index), start_adapter_digest=init_digest,
+                                        repo=Path(substitute_repo) if substitute_repo is not None else REPO_ROOT)
+            except EccRefused as exc:
+                raise CellRejected(exc.code, str(exc)) from None
+            return {"pin_sha256": pin_sha, "ecc_a3_substitute_sha256": s["approval_sha256"], "ecc_a3_substitute": s["summary"]}
+        if spec.recipe not in WAIVER_RECIPES:
+            raise CellRejected("ecc_waiver_regime", f"학습 레시피 {spec.recipe!r} 의 착수 고정은 1 차 꼴 면제를 받지 않는다 — "
+                                                    "새 체제는 착수 허가(통과 파일) 또는 A3 대체 승인서를 받는다")
+        try:
+            w = check_waiver(Path(waiver), seed_dir=seed_dir, permit_path=spec.ecc_permit_path, pin_sha256=pin_sha,
+                             seed=int(spec.seed_index), start_adapter_digest=init_digest, recipe=spec.recipe)
+        except EccRefused as exc:
+            raise CellRejected(exc.code, str(exc)) from None
+        return {"pin_sha256": pin_sha, "ecc_permit_waiver_sha256": w["waiver_sha256"], "ecc_permit_waiver": w["summary"]}
     if spec.ecc_permit_path is None or not Path(spec.ecc_permit_path).is_file():
         raise CellRejected("ecc_permit_missing", f"조기 좌표 점검의 통과 파일이 없다: {spec.ecc_permit_path}")
     try:
@@ -813,9 +884,10 @@ def _preflight(spec: UniRunSpec, *, model_loader: Callable | None, rows_given: b
             local_epochs=spec.local_epochs, total_epochs=spec.total_epochs, seed_index=spec.seed_index,
             seed_value=spec.seed_value, snapshot_digest=spec.snapshot_digest, prompt_path=spec.prompt_path,
             coord_space=spec.coord_space, processor_kwargs=spec.processor_kwargs,
-            expected_supervised_tokens=spec.expected_supervised_tokens,
+            expected_supervised_tokens=spec.expected_supervised_tokens, budget_fraction=spec.budget_fraction,
             output_paths=[Path(spec.train_root), Path(spec.init_adapter_path)]
-            + ([Path(spec.resume_root)] if spec.resume_root is not None else []))
+            + ([Path(spec.resume_root)] if spec.resume_root is not None else []), recipe=spec.recipe,
+            registration_path=getattr(spec, "train_registration_path", None))
         if bad:
             raise CellRejected("main_config_mismatch", "본실험 설정과 다르다: " + " · ".join(bad))
         # 착수 고정 · 착수 허가의 자리 — 값의 대조는 초기 어댑터를 읽은 뒤 `main_start_gate` 가 한다(시작 · 재개마다).

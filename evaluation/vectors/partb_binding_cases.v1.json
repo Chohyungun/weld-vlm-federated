@@ -1,0 +1,168 @@
+{
+ "kind": "partb_binding_cases",
+ "version": 1,
+ "status": "통합 병합(030ced8b) 뒤 평가 쪽 결합 시험의 기대 — 시험을 돌리기 전에 고정했다. 1 단계 사례 셋(v1)은 그대로다. 결합 시험은 생성 쪽의 실제 표 · 로더 · 역할 파생 · 착수 고정 작성기를 부른다(대역 없음).",
+ "sources": {
+  "dispatch_1024g": {
+   "path": "docs/dev_log/2026-10-20-설계복구/dispatch_D_20261024g.md(본체 체크아웃)",
+   "sha256": "695290da2270b0784a5bc10287a577c4a0f04a67c9a4091a7fb9168803da04df"
+  },
+  "check_224": {
+   "path": "_workspace/2026-10-20-design-recovery/D_IMPL_REVIEW_224.md(본체 체크아웃)",
+   "sha256": "0a87e65381527d22808ec49d26775d9acccc51eee5d324da289631106d3471a8",
+   "section": "§6 의 2 · 5"
+  },
+  "roles_cases_v1": {
+   "path": "evaluation/vectors/clause_axis_roles.v1.json",
+   "sha256": "78d297adf7f61f2c1e2eca25a51d8c6b86acf018a098c3bfe10a0786a4a12a8b"
+  },
+  "inputs_cases_v1": {
+   "path": "evaluation/vectors/narrative_inputs_cases.v1.json",
+   "sha256": "4d06a076fc52fed0f96408d0b7923eed4dfe12e3ac3d46bed18af15b09f764b5"
+  },
+  "builder": {
+   "path": "docs/dev_log/2026-10-20-설계복구/07h_결합사례고정_D.py",
+   "lf_sha256": "1b60556acb1e132b11cff820dedd8f5d4f4609e84186e0efaf516f964c6aa147"
+  },
+  "tree_at_build": "dcfb5ab05e530b2cacd8717f8a9e0585e1ba1b64"
+ },
+ "roles_binding": {
+  "what": "생성 쪽의 실제 신판 표를 생성 쪽 로더로 읽어 역할을 파생하고, 평가 쪽 함수의 결과를 사례 v1 의 신판 세계(edition2)와 맞댄다",
+  "table": {
+   "path": "corpus/rules/limits_v2_pilot.csv",
+   "sha256": "0c76b6a639fc2d617115122fbc10204fcc0ccf665e9b4c6d27f679057294ef4d"
+  },
+  "loader": "corpus.rules.limits_loader.load_limits(path, pilot=True)",
+  "derive": "corpus.rules.limit_eval.derive_clause_roles(table, method='RT')",
+  "against": {
+   "cases": "evaluation/vectors/clause_axis_roles.v1.json",
+   "world": "edition2"
+  },
+  "expect": {
+   "nonempty_roles_equal_world": true,
+   "index_equal_world": true,
+   "materials_without_rows": [
+    "AL"
+   ],
+   "primary_none_with_auxiliary": 0,
+   "every_code_subset_equal_world": true,
+   "edition2_cases_equal_expect": true,
+   "baseline_edition2_equal_expect": true
+  },
+  "expect_meaning": {
+   "nonempty_roles_equal_world": "주 조항이나 보조가 있는 (재질, 코드)의 역할이 사례 v1 의 edition2 역할과 같다",
+   "index_equal_world": "표의 조항 ID 집합이 edition2 의 색인과 같다",
+   "materials_without_rows": "그 재질의 열쇠는 모두 주 없음 · 보조 없음이다",
+   "primary_none_with_auxiliary": "주 없음 · 보조 있음 역할의 수 — 현 표에서는 나지 않는다(사례 v1 의 rule3a 는 합성으로 남는다)",
+   "every_code_subset_equal_world": "재질마다 표의 코드 집합의 빈 아닌 부분집합 전부에서 정답 쌍 · 제외 사유 · 보조 전용 · 대조선 인용이 edition2 역할과 같다",
+   "edition2_cases_equal_expect": "사례 v1 의 edition2 이미지가 있는 사례 전부 — 실제 역할로 낸 수가 사례의 expect 와 같다",
+   "baseline_edition2_equal_expect": "사례 v1 의 대조선 사례 — 실제 역할로 낸 인용이 사례의 expect 와 같다"
+  }
+ },
+ "meta_binding": {
+  "status": "미룸",
+  "until": "생성 쪽 1024i 의 b1′ — 커밋된 영수증의 PAIRS_META.json 경로 · sha256",
+  "why": "지시 1024g 의 2 — 실제 메타가 없으면 그 뒤로 미루고 보고한다. 지을 때는 경로 · sha 를 시험 안에 고정하고, 없으면 건너뜀이 아니라 실패다"
+ },
+ "v6_function_level": {
+  "what": "평가 쪽 작성기(narrative_block · clause_axis_block)에 실제 계약 파일을 주고 지은 판 6 을, 생성 쪽 착수 고정 작성기(vlm.pin.write_pin — 실제 직렬화 · 판, 내용은 합성)가 쓴 바이트와 v6_contract_problems 로 맞댄다(224 §6 의 5 의 함수 수준)",
+  "contract": {
+   "limits_rel": "corpus/rules/limits_v2_pilot.csv",
+   "pairs_path": "outputs/partb_binding_synthetic_pairs",
+   "snapshot_label": "결합 시험 합성 스냅샷 갑",
+   "other_snapshot_label": "결합 시험 합성 스냅샷 을",
+   "pairs_meta_label": "결합 시험 합성 PAIRS_META"
+  },
+  "align_identity": "판 6 의 신원 칸(narrative.limits_sha256 · narrative.limits_loader_sha256 · narrative.generator_sha256 · clause_axis.limits_sha256)을 계약의 값으로 바꾼다 — 2 차 등록 묶음의 작성기가 할 일을 이 시험이 대신한다(224 I2)",
+  "cases": [
+   {
+    "id": "writer_as_is",
+    "ops": [],
+    "expect": [
+     "hash_rule",
+     "v6_identity"
+    ],
+    "labels": [
+     "narrative.limits_sha256",
+     "clause_axis.limits_sha256",
+     "narrative.generator_sha256"
+    ],
+    "why": "지금 작성기는 구판 표의 sha(07e §8 의 4)와 생성기 한 파일의 LF sha(07e §8 의 2)를 적는다 — 한 파일이 계약 생성 묶음의 파일이므로 hash_rule, 표는 v6_identity(07e §4 의 ⑤). 로더 묶음은 같은 파일 목록이라 맞는다. 2 차 등록 묶음에서 바뀔 기대다"
+   },
+   {
+    "id": "aligned_positive",
+    "ops": [
+     "align_identity"
+    ],
+    "expect": [],
+    "why": "신원 칸을 계약에 맞추면 판 6 · 계약 · 착수 고정 · 어댑터 다섯 칸이 모두 맞는다"
+   },
+   {
+    "id": "contract_swapped_after_training",
+    "ops": [
+     "align_identity",
+     "reissue_with_other_contract"
+    ],
+    "expect": [
+     "pin_contract"
+    ],
+    "why": "학습은 계약 갑에 묶였는데 판 6 과 넘긴 계약은 을이다 — 착수 고정의 계약 sha 가 다르다(07e §4 의 ③)"
+   },
+   {
+    "id": "contract_swapped_at_check",
+    "ops": [
+     "align_identity",
+     "pass_other_contract"
+    ],
+    "expect": [
+     "pin_contract",
+     "v6_contract_sha"
+    ],
+    "why": "판 6 · 착수 고정은 갑인데 대조에 을을 넘겼다 — ③ · ④ 가 함께 걸린다"
+   },
+   {
+    "id": "pin_swapped",
+    "ops": [
+     "align_identity",
+     "other_pin"
+    ],
+    "expect": [
+     "pin_bytes"
+    ],
+    "why": "같은 계약을 적은 다른 착수 고정 바이트 — 어댑터 meta 의 sha 와 다르다(③)"
+   },
+   {
+    "id": "adapter_missing",
+    "ops": [
+     "align_identity",
+     "no_adapters"
+    ],
+    "expect": [
+     "pin_bytes"
+    ],
+    "why": "어댑터 meta 의 start_gate.pin_sha256 을 하나도 받지 않았다"
+   },
+   {
+    "id": "adapter_one_mismatch",
+    "ops": [
+     "align_identity",
+     "one_adapter_other"
+    ],
+    "expect": [
+     "pin_bytes"
+    ],
+    "why": "다섯 칸 가운데 한 칸의 sha 가 다르다 — 칸 수를 다섯으로 강제하는 것은 부르는 쪽의 일이다(224 §3)"
+   }
+  ],
+  "ops_meaning": {
+   "align_identity": "위 align_identity",
+   "reissue_with_other_contract": "계약 을(다른 스냅샷 이름표)로 판 6 을 다시 짓고(작성기에 을의 파일) 을을 넘긴다 — 착수 고정은 갑",
+   "pass_other_contract": "판 6 · 착수 고정은 갑 그대로, 넘기는 계약 바이트만 을",
+   "other_pin": "같은 계약 갑을 적되 env 칸 하나가 다른 착수 고정을 따로 쓰고 그 바이트를 넘긴다 — 어댑터는 처음 착수 고정의 sha",
+   "no_adapters": "어댑터 sha 목록을 비운다",
+   "one_adapter_other": "다섯 칸 가운데 마지막 한 칸만 다른 sha"
+  },
+  "codes_rule": "사유 코드는 줄마다 ': ' 앞 — 집합을 정렬해 맞댄다(사례 v1 의 시험과 같은 규칙)"
+ },
+ "written_at_utc": "2026-10-24T13:18:20Z"
+}

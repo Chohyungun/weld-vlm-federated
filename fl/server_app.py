@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from flwr.app import DEFAULT_TTL
     from flwr.common import ArrayRecord, ConfigRecord, Context, MetricRecord
     from flwr.serverapp import Grid, ServerApp
 except ModuleNotFoundError as exc:  # pragma: no cover
@@ -29,9 +30,45 @@ from fl.round_wiring import (ALL_CELLS, CANONICAL_KEYS_KEY, FED_CELLS,
                              finalize_accounting, make_round_recorder)
 from fl.strategy import METRICS_KEY, RoundFailure, WeldFedAvg
 
-__all__ = ["app", "build_accounting", "cell_to_client_ids"]
+__all__ = ["ROUND_TIMEOUT_MAX", "RoundTimeoutRejected", "app", "build_accounting", "cell_to_client_ids", "round_timeout",
+           "start_rounds"]
 
 app = ServerApp()
+
+#: 라운드 응답 대기 상한(초)의 최대이자 기본 — flwr 메시지 TTL(`flwr.app.DEFAULT_TTL`, 12 h). flwr 의 `Strategy.start` 기본
+#: `timeout=3600` 을 쓰지 않는다: 2026-10-17 본실험 연합이 한 GPU 에서 클라이언트 셋을 차례로 돌다 C1(약 2.1 h)이 끝나기 전에
+#: 서버가 1 시간 만에 응답 0/3 으로 집계에 들어가 죽었다(06 §8). 지시 메시지가 TTL 뒤 만료되고 응답 TTL 도 그 남은 시간으로
+#: 묶이므로(flwr `_limit_reply_ttl`) 이보다 길게 기다리는 것은 뜻이 없다. 학습 신원 · 등록 밖이다.
+ROUND_TIMEOUT_MAX = float(DEFAULT_TTL)
+
+
+class RoundTimeoutRejected(ValueError):
+    """`round-timeout` 이 틀렸다 — `ValueError` 하위라 SuperLink 가 run 을 FAILED 로 적는다."""
+
+    def __init__(self, message: str):
+        self.code = "round_timeout"
+        super().__init__(f"round_timeout: {message}")
+
+
+def round_timeout(cfg: Any) -> float:
+    """실행 설정 `round-timeout`(초) — 비면 `ROUND_TIMEOUT_MAX`. 0 보다 크고 그 값 이하인 수만 받는다."""
+    raw = cfg.get("round-timeout", "")
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return ROUND_TIMEOUT_MAX
+    try:
+        v = float(raw)
+    except (TypeError, ValueError):
+        raise RoundTimeoutRejected(f"수가 아니다: {raw!r}") from None
+    if isinstance(raw, bool) or not 0 < v <= ROUND_TIMEOUT_MAX:
+        raise RoundTimeoutRejected(f"0 보다 크고 메시지 TTL {ROUND_TIMEOUT_MAX:.0f} 초 이하여야 한다: {raw!r}")
+    return v
+
+
+def start_rounds(strategy: Any, *, grid: Any, initial_arrays: Any, num_rounds: int, train_config: Any,
+                 timeout: float) -> Any:
+    """라운드 루프 — 응답 대기 상한을 늘 넘긴다(flwr 기본 3600 초에 기대지 않는다)."""
+    return strategy.start(grid=grid, initial_arrays=initial_arrays, num_rounds=num_rounds,
+                          train_config=train_config, timeout=float(timeout))
 
 def cell_to_client_ids(cell: str, num_clients: int = 3) -> tuple[int, ...]:
     """칸 검증 + 클라이언트 id. 스모크 칸도 받는다 — `flwr run` 진입점 자체를 더미로
@@ -117,6 +154,7 @@ def cell_out_dir(cell: str, cfg: Any) -> Path:
 def main(grid: "Grid", context: "Context") -> None:
     cfg = context.run_config
     cell = str(cfg["cell"])
+    timeout = round_timeout(cfg)                       # 원장 · 초기 가중치를 보기 전에 — 틀리면 바로 FAILED
     num_rounds = int(cfg["num-server-rounds"])
     local_epochs = int(cfg["local-epochs"])
     total_epochs = int(cfg["total-epochs"])
@@ -211,11 +249,13 @@ def main(grid: "Grid", context: "Context") -> None:
         **_cell_train_config(cell, cfg, out_dir),
     })
     try:
-        strategy.start(
+        start_rounds(
+            strategy,
             grid=grid,
             initial_arrays=initial_arrays,
             num_rounds=num_rounds,
             train_config=train_cfg,
+            timeout=timeout,
         )
     finally:
         # **`finally` 여야 한다.** 학습 밖 단계(요약 출력 등)가 죽어도 회계는 디스크에

@@ -58,7 +58,10 @@ from typing import get_type_hints
 from evaluation.recovery_interval import REGISTERED_CI as _REGISTERED_CI
 
 REGISTRATION_VERSION = "5"
-"""판 5 추기(2026-10-13): 목적 `early_coord_check`(기준 분할 `train`)를 더했다 — 칸은 바뀌지 않았고 기존 등록의 지문도 그대로다.
+"""판 5 추기(2026-10-17): 목적 `main` 의 `canary.frame_diag_sha256` 은 조기 좌표 점검 허가 산출의 sha256 을 가리킨다
+(`MAIN_FRAME_DIAG_MEANING`, 의사결정로그 10-07) — 허가가 사용자 결정으로 면제되면 모델 없는 통과 산출 · 면제 파일의 묶음 sha256
+(`MAIN_FRAME_DIAG_MODEL_FREE`)이다. 칸 · 꼴 · 완결 규칙은 바뀌지 않았고 기존 등록의 지문도 그대로다.
+판 5 추기(2026-10-13): 목적 `early_coord_check`(기준 분할 `train`)를 더했다 — 칸은 바뀌지 않았고 기존 등록의 지문도 그대로다.
 판 5(2026-10-05): 본실험 평가는 동결 분할의 평가 행 전량이다 — 부표본이 없다. 모집단의 표본 설계 칸
 (`subsample_design`)과 총계 오차표 칸(`totals_error_table`)을 뺐다. 가중은 `"none"` 하나다. 07번 §39.
 판 4(2026-10-01): 구간 규약의 채택(의사결정로그 10-01 · 결정표 11행). `ci` 의 규약 칸은 **채택값만** 받는다 —
@@ -68,6 +71,14 @@ REGISTRATION_VERSION = "5"
 `plan_sha256` · 진단 규칙의 경로와 digest) · 채점 쪽 칸 둘(`canary.coord_fixture_sha256` · `canary.frame_diag_sha256`) ·
 목적별 완결 규칙 · 영수증의 `registration_file_sha256`. 07번 §31 · §32.
 판 2 까지는 영수증을 낸 적이 없다 — 지문이 쓰이기 전에 꼴을 바꿨다."""
+
+REGISTRATION_VERSION_V6 = "6"
+"""판 6(2026-10-22, 지시 1022b · 03 2판 §5a · 04 §7-5): 채점 쪽에 서술 블록 `narrative` 와 조항 축 블록 `clause_axis` 를 더한다.
+**아직 발행 전이다** — 두 번째 보기 칸(03 복구준비 §3)을 발행 전에 같은 판에 더할 수 있다. 기본으로 쓰는 판은 여전히
+`REGISTRATION_VERSION`(5)이다 — 2 차 등록이 판 6 을 명시해 만든다. 판 5 는 그대로 읽고 쓴다: 판 5 의 생성 · 채점 지문과 등록 파일
+바이트는 바뀌지 않고, 판 5 에 두 블록이 있으면 무효다."""
+READABLE_VERSIONS = (REGISTRATION_VERSION, REGISTRATION_VERSION_V6)
+"""`load_registration` 이 받는 판."""
 
 
 class RegistrationIncomplete(RuntimeError):
@@ -278,7 +289,11 @@ class CanarySpec:
     coord_fixture_sha256: str | None = None
     """골든 픽스처 지문(`coord_fixture_digest` 의 값). 에코 관문이 이 칸을 본다(§31-6)."""
     frame_diag_sha256: str | None = None
-    """통과한 진단 산출물 파일의 sha256. 본실험 등록에만 쓴다 — 진단 통과의 효력이 이 칸으로 선다(§31-7 · §32-1)."""
+    """통과한 진단 산출물 파일의 sha256. 본실험 등록에만 쓴다 — 진단 통과의 효력이 이 칸으로 선다(§31-7 · §32-1).
+    **목적 `main` 에서는 둘 중 하나다** — 조기 좌표 점검(ECC) 허가 산출의 sha256(`MAIN_FRAME_DIAG_MEANING`, 의사결정로그 10-07 —
+    점검이 진단을 대신한다), 또는 허가가 사용자 결정으로 면제됐을 때 모델 없는 네 검사 통과 산출과 면제 파일의 묶음 sha256
+    (`MAIN_FRAME_DIAG_MODEL_FREE`, 의사결정로그 2026-10-17). 이름 · 꼴 · 완결 규칙은 그대로다 — null 이면 본실험 등록이 서지 않는다.
+    본채점이 그 파일(들)을 다시 본다(`evaluation.ecc_frame_check`)."""
 
 
 @dataclass
@@ -332,6 +347,100 @@ class CoordCfgRecord:
                 "frozen_exports_keep_old": self.frozen_exports_keep_old,
                 "note": ("재고정하지 않고 병기한다. 동결 export 는 옛 값을 기록하므로 "
                          "관문은 등록된 값 가운데 하나와 맞는지로 본다")}
+
+
+NARRATIVE_LAYOUT = "json_line + separator + basis"
+"""C 계약 v2 의 `layout` 정본 문자열 — 판 6 `narrative.layout` 은 이것과 같아야 한다(04 §7-5 ④, `json_then_text` 폐기 · 대응표 없음)."""
+NARRATIVE_SEPARATOR = "\n"
+"""C 계약 v2 의 `separator`."""
+NARRATIVE_SCOPE = ('학습 · 평가 범위 = "현 허용치 표 기준의 조항 대응과 기준 서술 재현". '
+                   "원천 규정의 적용 타당성은 검증 대상 아님.")
+"""04 §7-1 의 범위 문장 — 글자 그대로(03 2판 §4a · 04 §7-3)."""
+NARRATIVE_KINDS = ("가", "나", "다", "라", "마")
+NARRATIVE_REASONS = ("r_dim", "r_note", "r_scope", "r_uncov")
+CLAUSE_AXIS_METRICS = ("citation_match_rate", "citation_precision", "ungrounded_rate")
+
+
+@dataclass
+class NarrativeSpec:
+    """서술 지표 블록(판 6) — 추출기 · 검사기 · 허용치 표 · 로더 · 벡터 · 범위를 한 블록에 묶는다(03 2판 §5a · 04 §0 · 195 M5).
+
+    해시 칸은 실제 파일과 `evaluation.narrative_registration.identity_problems` 가 맞댄다 — 블록에 적었다고 묶인 것이 아니다.
+    """
+
+    layout: str | None = None
+    separator: str | None = None
+    extractor_id: str | None = None
+    extractor_sha256: str | None = None
+    """채점 쪽 추출기(`evaluation/narrative_extract.py`)의 LF 정규화 sha256."""
+    train_extractor_id: str | None = None
+    train_extractor_sha256: str | None = None
+    """학습 쪽 점검(C)의 추출 구현 — 같은 벡터에서 같은 값을 낸다(04 §1-6)."""
+    extract_vectors_sha256: str | None = None
+    checker_id: str | None = None
+    checker_sha256: str | None = None
+    checker_vectors_sha256: str | None = None
+    """회귀 사례와 확인 사례(구현 전 고정)를 담은 검사기 벡터."""
+    lists_sha256: str | None = None
+    """닫힌 낱말 목록(03h)의 정본 사본."""
+    confirmation_cases_sha256: str | None = None
+    limits_sha256: str | None = None
+    """허용치 CSV 의 원시 바이트 sha256."""
+    limits_loader_sha256: str | None = None
+    """로더 묶음 — 파일마다 LF 정규화 sha256 을 `경로 + 탭 + sha256 + LF` 줄로, 경로 정렬로 이은 바이트의 sha256(04 §7-5 ⑧)."""
+    generator_sha256: str | None = None
+    """정답 서술을 만든 생성 경로의 LF sha256 — 정답 꼴의 출처(192 의 원문 대조 §5-1)."""
+    inputs_contract_sha256: str | None = None
+    """학습 전 계약 묶음(`configs/narrative_inputs.v1.json`)의 원시 바이트 sha256 — 학습 착수 고정의
+    `common.registration.narrative_inputs.sha256` 과 같아야 한다(`narrative_registration.v6_contract_problems`). 지금 학습 등록
+    파일을 다시 읽은 값으로 대신하지 않는다."""
+    label_map_version: int | None = None
+    scope: str | None = None
+    kinds: tuple[str, ...] | None = None
+    reasons: tuple[str, ...] | None = None
+    denominators: str | None = None
+    empty_denominator: str | None = None
+    requirement_codes: str | None = None
+    ra_basis: str | None = None
+    ra_conditional: str | None = None
+    contradiction_unit: str | None = None
+    pixel_values: str | None = None
+    paraphrase_rule: str | None = None
+    weighting: str | None = None
+    ci: str | None = None
+    open_holes: tuple[str, ...] | None = None
+    """닫지 못한 구멍(잔여 한계)의 목록 — 없으면 빈 목록(04 §2 의 5). 검사기 판의 정본(`narrative_registration.OPEN_HOLES`)과
+    같아야 한다(신원 대조)."""
+    exploratory_kinds: tuple[str, ...] | None = None
+    """확인 사례에 음성 오탐이 남아 금지 주장률을 **탐색적**으로 보고하는 종류(03 2판 §6a 결정 5 · 199 결정 문서 §2) — `kinds` 의
+    부분, 그 차례. 없으면 빈 목록."""
+
+
+@dataclass
+class ClauseAxisSpec:
+    """조항 축 블록(판 6) — 점수는 구조 필드 `cited_clauses` 에서만 낸다(04 §1-7)."""
+
+    source: str | None = None
+    gold_derivation: str | None = None
+    unit: str | None = None
+    metrics: tuple[str, ...] | None = None
+    axis_role: str | None = None
+    """조항 축 **안에서의** 역할 — 서술 검사기의 (라) · (마)를 끄라는 뜻이 아니다(03 2판 §5 정정)."""
+    empty_gold: str | None = None
+    baseline: str | None = None
+    limits_sha256: str | None = None
+    weighting: str | None = None
+    """대표표 = 설계 가중(이미지 수준 — M1 · 서술 지표와 같은 가중), 부표 = 무가중(04 §7-10 ①)."""
+    multi_clause: str | None = None
+    """복수 조항 정책 — 주 조항 하나 + 보조 조항의 분해. (재질, 결함 코드)마다 조건 없이 대응되는 조항 하나가 정답이고, 조건이 있을 때만
+    대응되는 조항은 무관한 인용 안에서 따로 센다. 주 조항이 둘 이상이면 채점을 멈춘다(`clause_axis.MultipleMainClauses`)."""
+    ci: str | None = None
+    """대응 구간 = 같은 W — M1 · 서술 지표와 같은 추첨 행렬에서 두 갈래: 서술 지표와 같은 모델 짝과 모델 − 무화소 조항 대조선
+    (설계 가중 · 무가중, 지시 1023d · 03 §9-19 열린 질문 14)."""
+
+
+_SPECS_V6 = {"narrative": NarrativeSpec, "clause_axis": ClauseAxisSpec}
+"""판 6 이 더하는 채점 쪽 블록."""
 
 
 class EchoGateFailed(RuntimeError):
@@ -458,6 +567,17 @@ PURPOSE_OPTIONAL: dict[str, frozenset[str]] = {
 }
 """목적마다 **비어 있어도 되는** 생성 쪽 칸. 값이면 곁 파일 · 어댑터 meta 와 같아야 한다 — 대조는 읽는 쪽의 일이다."""
 PROBE_SCORING_REQUIRED = ("canary.coord_cfg", "canary.coord_fixture_sha256")
+MAIN_FRAME_DIAG_MEANING = "ecc_permit_sha256"
+"""목적 `main` 에서 `canary.frame_diag_sha256` 이 가리키는 것 — `ecc-accept` 가 시드 폴더에 둔 허가 파일(`ecc_permit.json`)의
+sha256(의사결정로그 10-07). 리허설 · 진단 목적의 뜻(통과한 진단 산출물)은 그대로다. 본채점 산출이 이 값을 싣는다."""
+MAIN_FRAME_DIAG_A3_SUBSTITUTE = "ecc_a3_substitute_sha256"
+"""목적 `main` · 2 차 체제에서 조기 좌표 점검을 A3 대체 승인서로 대신했을 때(D7, 사용자 결정 2026-10-31) 이 칸이 가리키는 것 — 승인서
+(`ecc_a3_substitute.json`) 바이트의 sha256(`evaluation.ecc_frame_check.frame_check_by_a3_substitute`). 본학습 성능 · 비노출 일반화는
+이 값이 확인하지 않는다."""
+MAIN_FRAME_DIAG_MODEL_FREE = "model_free_admission_waiver_bundle_sha256"
+"""목적 `main` 에서 허가가 사용자 결정으로 면제됐을 때(의사결정로그 2026-10-17) 이 칸이 가리키는 것 — 모델 없는 네 검사 통과 산출
+(`ECC_MODEL_FREE_ADMISSION.json`)과 면제 파일의 묶음 sha256(`evaluation.ecc_frame_check.model_free_bundle_sha256`). 미세조정 뒤
+생성 좌표의 틀은 이 값이 확인하지 않는다."""
 """리허설 · 진단이 채점 쪽에서 요구하는 칸 — 에코 관문 둘. 나머지 빈 칸은 이름을 산출에 싣는다."""
 _RULES_PATH = re.compile(r"^configs/registration/frame_diag_rules-[0-9]{8}-[1-9][0-9]*\.json$")
 """진단 규칙 파일의 자리와 이름(§31-1 의 1)."""
@@ -491,6 +611,31 @@ VOCAB: dict[str, tuple[str, ...]] = {
 }
 """칸 → 허용 어휘. 여기 없는 문자열 칸은 **비지 않은 문자열**인지만 본다 — 계약이 선택지를 적지 않은 칸이다."""
 
+VOCAB.update({                                           # 판 6 — 서술 · 조항 축 블록(03 2판 §5a)
+    "narrative.layout": (NARRATIVE_LAYOUT,),
+    "narrative.separator": (NARRATIVE_SEPARATOR,),
+    "narrative.scope": (NARRATIVE_SCOPE,),
+    "narrative.denominators": ("forbidden=truncated+complete;reservation=complete_with_reason",),
+    "narrative.empty_denominator": ("not_applicable_with_count",),
+    "narrative.requirement_codes": ("structured_union_narrative_observation",),
+    "narrative.ra_basis": ("gold_clause_set",),
+    "narrative.ra_conditional": ("sublabel_kept_in_numerator",),
+    "narrative.contradiction_unit": ("narrative",),
+    "narrative.pixel_values": ("not_forbidden_not_certified",),
+    "narrative.paraphrase_rule": ("v3",),
+    "narrative.weighting": ("design_and_unweighted",),
+    "narrative.ci": ("paired_cluster_bootstrap_aux",),
+    "clause_axis.source": ("structured_cited_clauses",),
+    "clause_axis.gold_derivation": ("derive_gold_clauses_rt_without_thickness",),
+    "clause_axis.unit": ("gold_image_code_pairs_image_level_citations",),
+    "clause_axis.axis_role": ("consistency_only",),
+    "clause_axis.empty_gold": ("exclude_from_match_rate_keep_citations",),
+    "clause_axis.baseline": ("registered_baseline_codes_to_clauses",),
+    "clause_axis.weighting": ("design_and_unweighted",),
+    "clause_axis.ci": ("paired_cluster_bootstrap_aux_cells_and_baseline",),
+    "clause_axis.multi_clause": ("primary_one_auxiliary_breakdown",),
+})
+
 HEX64_FIELDS: frozenset[str] = frozenset({
     "baseline.prediction_sha256",
     "population.exclusion_list_sha256", "population.duplicate_pairs_sha256",
@@ -504,6 +649,16 @@ HEX64_FIELDS: frozenset[str] = frozenset({
     "canary.coord_fixture_sha256", "canary.frame_diag_sha256",
 })
 """소문자 16진 64자리여야 하는 칸. 한 글자짜리도 받으면 "해시를 적었다" 가 아무 뜻이 없다."""
+
+HEX64_FIELDS = HEX64_FIELDS | frozenset({                 # 판 6
+    "narrative.extractor_sha256", "narrative.train_extractor_sha256", "narrative.extract_vectors_sha256",
+    "narrative.checker_sha256", "narrative.checker_vectors_sha256", "narrative.lists_sha256",
+    "narrative.confirmation_cases_sha256", "narrative.limits_sha256", "narrative.limits_loader_sha256",
+    "narrative.generator_sha256", "narrative.inputs_contract_sha256", "clause_axis.limits_sha256",
+})
+
+_EMPTY_TUPLE_OK = frozenset({"narrative.open_holes", "narrative.exploratory_kinds"})
+"""빈 목록이 뜻을 갖는 칸 — 구멍이 없다 · 탐색적 종류가 없다(04 §2 의 5)."""
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
@@ -556,7 +711,7 @@ def _kind(hint) -> str:
 @lru_cache(maxsize=1)
 def _kinds() -> dict[str, str]:
     out: dict[str, str] = {}
-    for area, cls in _SPECS.items():
+    for area, cls in {**_SPECS, **_SPECS_V6}.items():
         hints = get_type_hints(cls, globalns={**globals(), "CoordCfgRecord": CoordCfgRecord})
         for f in fields(cls):
             out[f"{area}.{f.name}"] = _kind(hints[f.name])
@@ -603,6 +758,8 @@ def _check_value(name: str, kind: str, v) -> str | None:
             return "`configs/registration/frame_diag_rules-{YYYYMMDD}-{n}.json` 꼴이 아니다"
         return None
     if kind == "str_tuple":
+        if name in _EMPTY_TUPLE_OK and isinstance(v, (tuple, list)) and not v:
+            return None
         if not isinstance(v, (tuple, list)) or not v:
             return "비지 않은 문자열 목록이어야 한다"
         if not all(isinstance(x, str) and x for x in v):
@@ -649,6 +806,10 @@ class UnifiedRegistration:
     planned_seed_count: int | None = None
     adoption_anchor: str | None = None
     """의사결정로그에서 이 등록을 가리키는 **미리 정한 앵커 문자열**. 서로 가리키면 닫히지 않는다."""
+    narrative: NarrativeSpec | None = None
+    """판 6 의 서술 블록. 판 5 에서는 None 이어야 한다."""
+    clause_axis: ClauseAxisSpec | None = None
+    """판 6 의 조항 축 블록. 판 5 에서는 None 이어야 한다."""
 
     # ── 지문 ────────────────────────────────────────────────────────────────
     def _canonical(self, part) -> str:
@@ -658,11 +819,14 @@ class UnifiedRegistration:
         return {"version": self.version, "generation": asdict(self.generation)}
 
     def scoring_payload(self) -> dict:
-        return {"version": self.version, "metric": asdict(self.metric),
-                "baseline": asdict(self.baseline), "ci": asdict(self.ci),
-                "population": asdict(self.population), "canary": asdict(self.canary),
-                "seeds": self.seeds, "planned_seed_count": self.planned_seed_count,
-                "adoption_anchor": self.adoption_anchor}
+        out = {"version": self.version, "metric": asdict(self.metric),
+               "baseline": asdict(self.baseline), "ci": asdict(self.ci),
+               "population": asdict(self.population), "canary": asdict(self.canary),
+               "seeds": self.seeds, "planned_seed_count": self.planned_seed_count,
+               "adoption_anchor": self.adoption_anchor}
+        if self.version == REGISTRATION_VERSION_V6:     # 판 5 의 지문 바이트는 그대로다 — 두 블록은 판 6 에만 든다
+            out.update(_v6_blocks(self))
+        return out
 
     def generation_sha256(self) -> str:
         return hashlib.sha256(self._canonical(self.generation_payload()).encode("utf-8")).hexdigest()
@@ -682,7 +846,7 @@ class UnifiedRegistration:
         def walk(prefix: str, obj) -> None:
             for key, value in obj.items():
                 name = f"{prefix}.{key}" if prefix else key
-                if isinstance(value, dict) and key in _SPECS:
+                if isinstance(value, dict) and (key in _SPECS or key in _SPECS_V6):
                     walk(name, value)
                 elif value is None:
                     out.append(name)
@@ -710,6 +874,8 @@ class UnifiedRegistration:
         _check_side(side)
         areas = {"generation": _GENERATION_AREAS, "scoring": _SCORING_AREAS,
                  "all": _GENERATION_AREAS + _SCORING_AREAS}[side]
+        if side in ("scoring", "all") and self.version == REGISTRATION_VERSION_V6:
+            areas = areas + tuple(a for a in _SPECS_V6 if getattr(self, a) is not None)
         kinds = _kinds()
         out: list[str] = []
         for area in areas:
@@ -723,10 +889,36 @@ class UnifiedRegistration:
                     out.append(f"{area}.{f.name}: {why}")
         if side in ("scoring", "all"):
             out += self._invalid_scoring_top()
+            out += self._invalid_v6()
         if side in ("generation", "all"):
             out += self._invalid_generation_relations()
         if side in ("scoring", "all"):
             out += self._invalid_scoring_relations()
+        return out
+
+    def _invalid_v6(self) -> list[str]:
+        """판과 두 블록의 관계 — 판 5 에 블록이 있으면 무효, 판 6 의 정해진 목록 · 같은 허용치 표."""
+        out: list[str] = []
+        if self.version not in READABLE_VERSIONS:
+            out.append(f"version: 이 코드가 아는 판이 아니다 — {list(READABLE_VERSIONS)}")
+        if self.version != REGISTRATION_VERSION_V6:
+            out += [f"{a}: 판 {self.version} 에는 이 블록이 없다 — 판 6 에만 든다" for a in _SPECS_V6
+                    if getattr(self, a) is not None]
+            return out
+        n, c = self.narrative, self.clause_axis
+        if n is not None:
+            for name, want in (("kinds", NARRATIVE_KINDS), ("reasons", NARRATIVE_REASONS)):
+                v = getattr(n, name)
+                if v is not None and tuple(v) != want:
+                    out.append(f"narrative.{name}: {list(want)} 이어야 한다")
+            ek = n.exploratory_kinds
+            if ek is not None and tuple(ek) != tuple(k for k in NARRATIVE_KINDS if k in set(ek)):
+                out.append(f"narrative.exploratory_kinds: {list(NARRATIVE_KINDS)} 의 부분을 그 차례로 적어야 한다")
+        if c is not None and c.metrics is not None and tuple(c.metrics) != CLAUSE_AXIS_METRICS:
+            out.append(f"clause_axis.metrics: {list(CLAUSE_AXIS_METRICS)} 이어야 한다")
+        if n is not None and c is not None and None not in (n.limits_sha256, c.limits_sha256) \
+                and n.limits_sha256 != c.limits_sha256:
+            out.append("clause_axis.limits_sha256: narrative.limits_sha256 과 다르다 — 같은 허용치 표여야 한다")
         return out
 
     def _invalid_scoring_top(self) -> list[str]:
@@ -819,6 +1011,12 @@ class UnifiedRegistration:
         return sorted(out)
 
 
+def _v6_blocks(registration: UnifiedRegistration) -> dict:
+    """판 6 의 두 블록을 지문 · 파일의 꼴로 — 비었으면 null."""
+    return {area: None if getattr(registration, area) is None else asdict(getattr(registration, area))
+            for area in _SPECS_V6}
+
+
 def _check_side(side: str) -> None:
     if side not in _SIDES:
         raise ValueError(f"영역은 {_SIDES} 가운데 하나다 — 받은 값 {side!r}")
@@ -876,6 +1074,8 @@ def dump_registration(registration: UnifiedRegistration) -> bytes:
             **{area: asdict(getattr(registration, area)) for area in _SPECS},
             "seeds": registration.seeds, "planned_seed_count": registration.planned_seed_count,
             "adoption_anchor": registration.adoption_anchor}
+    if registration.version == REGISTRATION_VERSION_V6:
+        body.update(_v6_blocks(registration))
     return (json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
             + "\n").encode("utf-8")
 
@@ -899,16 +1099,21 @@ def load_registration(raw: bytes) -> UnifiedRegistration:
         raise RegistrationFileError(f"JSON 이 아니다 ({type(exc).__name__})") from None
     if not isinstance(body, dict):
         raise RegistrationFileError("객체가 아니다")
-    top = {"version", *_SPECS, "seeds", "planned_seed_count", "adoption_anchor"}
+    version = body.get("version")
+    if version not in READABLE_VERSIONS:
+        raise RegistrationFileError(f"등록 판이 {version!r} 다 — 이 코드는 {list(READABLE_VERSIONS)} 를 읽는다")
+    specs = {**_SPECS, **(_SPECS_V6 if version == REGISTRATION_VERSION_V6 else {})}
+    top = {"version", *specs, "seeds", "planned_seed_count", "adoption_anchor"}
     if set(body) != top:
         raise RegistrationFileError(f"최상위 키가 다르다 — 모르는 키 {sorted(set(body) - top)}, "
                                     f"빠진 키 {sorted(top - set(body))}")
-    if body["version"] != REGISTRATION_VERSION:
-        raise RegistrationFileError(f"등록 판이 {body['version']!r} 다 — 이 코드는 {REGISTRATION_VERSION!r} 를 읽는다")
     kinds = _kinds()
     parts = {}
-    for area, cls in _SPECS.items():
+    for area, cls in specs.items():
         got = body[area]
+        if got is None and area in _SPECS_V6:
+            parts[area] = None
+            continue
         names = {f.name for f in fields(cls)}
         if not isinstance(got, dict) or set(got) != names:
             raise RegistrationFileError(f"{area}: 칸이 등록 판과 다르다")
