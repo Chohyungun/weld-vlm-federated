@@ -13,6 +13,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -126,10 +127,12 @@ def _repo(tmp: Path, files: dict[str, bytes]) -> tuple[Path, str]:
 
 
 def test_학습_등록의_비율은_영수증_커밋의_바이트에서_읽는다(tmp_path):
-    repo, head = _repo(tmp_path, {"configs/train_registration.yaml": REG_BYTES})
-    assert XP._train_budget_fraction_at(repo, head) == _registered_fraction() != 1.0
-    (repo / "configs/train_registration.yaml").write_bytes(REG_BYTES.replace(b"budget_fraction: 0.125", b"budget_fraction: 0.5"))
-    assert XP._train_budget_fraction_at(repo, head) == _registered_fraction()                 # 작업 트리가 아니라 커밋
+    reg = re.sub(rb"(?m)^budget_fraction: .*$", b"budget_fraction: 0.125", REG_BYTES)   # 등록의 현재 값(1.0 일 수도)과 무관하게 0.125 로 둔 바이트
+    assert b"budget_fraction: 0.125" in reg
+    repo, head = _repo(tmp_path, {"configs/train_registration.yaml": reg})
+    assert XP._train_budget_fraction_at(repo, head) == 0.125
+    (repo / "configs/train_registration.yaml").write_bytes(reg.replace(b"budget_fraction: 0.125", b"budget_fraction: 0.5"))
+    assert XP._train_budget_fraction_at(repo, head) == 0.125                                   # 작업 트리가 아니라 커밋
     empty, h2 = _repo(tmp_path / "e", {})
     assert XP._train_budget_fraction_at(empty, h2) == 1.0                                     # 그 커밋에 등록이 없으면 전체 행
     bad, h3 = _repo(tmp_path / "b", {"configs/train_registration.yaml": b"kind: other\n"})

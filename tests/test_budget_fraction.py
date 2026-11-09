@@ -346,6 +346,7 @@ def _real_v2():
     return cfg, table, digest
 
 
+@pytest.mark.private_assets
 def test_새_표는_고정_지문이고_참여자_합이_02a_의_독립_계측과_같다():
     """표 바이트의 지문 = 고정값, 표에서 직접 더한 참여자 합 = 출처 파일의 합 = 02a 의 (나) 계측(`shares_by_fraction.na`, 세 갈래
     대조를 지난 셈) — 같은 입력에서 두 구현이 같은 값을 낸다."""
@@ -367,6 +368,7 @@ def test_새_표는_고정_지문이고_참여자_합이_02a_의_독립_계측�
 
 
 @pytest.mark.parametrize("key", ["0.031250", "0.125000", "0.500000", "1.000000"])
+@pytest.mark.private_assets
 def test_새_레시피의_예산_몫_기대값이_02a_와_같다(key, monkeypatch):
     """`expected_tokens`(행 고르기 · 표 합) 와 02a 의 따로 짠 몫 계산(같은 시드 20260828)이 같은 값을 낸다.
 

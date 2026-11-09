@@ -424,6 +424,7 @@ FIXTURES = (e2e, approved, _no_cuda)
 """가져온 fixture — pytest 는 모듈 이름 공간의 fixture 를 이름으로 모은다."""
 
 
+@pytest.mark.private_assets
 def test_v6_link_recipe_version_mismatch(world, e2e):
     """R1 — 옛 json_only 에 새 판 6 입력(프로필 · PIN 바이트 · 계약)을 주거나, 새 레시피에 구판 프로필을 주면 `regime_version`. 파일 쓰기 0."""
     with pytest.raises(MR.MainRegistrationRefused) as exc:
@@ -438,6 +439,7 @@ def test_v6_link_recipe_version_mismatch(world, e2e):
     assert not (e2e.w.repo / REG_REL).exists()
 
 
+@pytest.mark.private_assets
 def test_v6_link_required_blocks_closed(e2e, tmp_path):
     """R2 — 신규의 계약 · 프로필 · PIN 바이트 누락은 `v6_form`, 블록을 입력으로 덮으려 하면 `scoring_conflict`, 모르는 키는 `scoring_keys`,
     판 6 에 곁 파일 없는 쓰기는 `v6_form`. 작성기의 빈 반환을 통과로 쓰지 않는다."""
@@ -474,6 +476,7 @@ def _kw_v5_raw(e, reg) -> bytes:
     return dump_registration(replace(reg, version=REGISTRATION_VERSION, narrative=None, clause_axis=None))
 
 
+@pytest.mark.private_assets
 def test_v6_link_five_cells_identity(e2e):
     """R3 — 한 태그 누락 · 같은 meta 재사용(원문 차이) · 다른 목적 · 다른 시드는 기존 `cells` · `adapter_identity` · `adapter_seed` ·
     `train_config_differs` 로 멈추고 여섯 파일은 0 이다."""
@@ -491,6 +494,7 @@ def test_v6_link_five_cells_identity(e2e):
     assert not list((e.w.repo / "configs" / "registration").glob(f"{STEM}*"))
 
 
+@pytest.mark.private_assets
 def test_v6_link_meta_pin_bytes(e2e):
     """R16 — 한 메타의 `start_gate.pin_sha256` 이 없거나 다르면 `pin_bytes`; 넘긴 PIN 바이트가 PIN 객체와 다르면 `pin_bytes`. 발행은
     다섯 메타의 sha 가 모두 착수 고정 바이트의 sha 일 때만."""
@@ -506,6 +510,7 @@ def test_v6_link_meta_pin_bytes(e2e):
     assert exc2.value.code == "pin_bytes"
 
 
+@pytest.mark.private_assets
 def test_v6_link_write_once_and_receipt_order(e2e, tmp_path):
     """R20 — 여섯 가운데 하나가 미리 있으면 `name_taken`(덮어쓰기 0), 영수증이 든 커밋은 `receipt_same_commit`, 본줄기 밖 커밋은
     `receipt_not_ancestor`. 검사 실패 때 여섯 파일 · 영수증 새 생성 0."""
