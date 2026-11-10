@@ -80,7 +80,7 @@ FORBIDDEN_SEGMENTS = frozenset({
 })
 #: 값을 정하지 않아 `null` 로 둔 자리. 채우는 것은 의도한 변경이어야 하므로 여기도 함께 고친다.
 PLAN_NULLS = {"exclude.near_dup_edges"}
-#: 채운 자리 — 리허설 계획의 간선은 판본 neardup_edges_v1 이다(총괄 결정 19 의 R-2). 진단 계획은 아직 비어 있다
+#: 채운 자리 — 리허설 계획의 간선은 판본 neardup_edges_v1 이다(연구 책임자 결정 19 의 R-2). 진단 계획은 아직 비어 있다
 FILLED_BY_KIND = {"rehearsal": {"exclude.near_dup_edges"}}
 EDGES_DIR = "data/interim/neardup_edges_v1"
 REHEARSAL_ONLY_NULLS = {"gen.max_target_tokens"}
@@ -93,7 +93,7 @@ UNI_DICT_VALUED = frozenset({"uni_processor_kwargs", "uni_expected_supervised_to
 #: 감독 토큰 기대값의 출처 — 학습 쪽 계측 산출 파일. 설정의 주석이 이 경로와 해시를 적는다.
 TOKENS_SOURCE = "outputs/target_tokens_v3_20261027/per_row.csv.provenance.json"
 TOKENS_SOURCE_SHA256 = "40cbc43da0377d95dce03fc227abe7e782c441e1f51c0997997f3ca7fa2605f3"
-#: 총괄 결정 19 로 채운 키 — 모델 판과 봉인 페어. 값은 결정 원문 · 봉인 계약서에서 읽어 넣었다.
+#: 연구 책임자 결정 19 로 채운 키 — 모델 판과 봉인 페어. 값은 결정 원문 · 봉인 계약서에서 읽어 넣었다.
 UNI_DECIDED = frozenset({"uni_model.revision", "uni_pairs.path", "uni_pairs.digest"})
 #: 결정 19 가 승인한 모델 판(파일럿 · 프로세서 확인 · 감독 토큰 계측이 쓴 캐시 판)
 UNI_REVISION = "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"
@@ -514,5 +514,5 @@ def test_학습_등록_파일은_출처_지문과_같고_기본_설정_평가_�
     assert reg["seed_indices"] == ev["seeds"]
     rules = reg["early_coord_check_rules"]
     assert type(rules["version"]) is int and rules["version"] >= 4 and re.fullmatch(r"[0-9a-f]{64}", rules["sha256"])
-    f = reg["budget_fraction"]  # N = 1/8 — 의사결정로그 2026-10-17 01:0x, 다섯 칸 같은 비율. 뜻과 식은 vlm/budget.py
+    f = reg["budget_fraction"]  # N = 1/8 — 설계 결정 기록 2026-10-17 01:0x, 다섯 칸 같은 비율. 뜻과 식은 vlm/budget.py
     assert type(f) is float and 0 < f <= 1 and f == 0.125, f

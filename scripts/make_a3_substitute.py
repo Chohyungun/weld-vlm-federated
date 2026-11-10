@@ -4,9 +4,9 @@
 (`evaluation.ecc_substitute.verify_substitute`)로 0 건을 확인하고서야 승인서를 배타 생성한다. 덮지 않는다.
 
     .venv/Scripts/python.exe -X utf8 -B scripts/make_a3_substitute.py --decision "<사용자 결정 문구>" \
-        --decision-log-section "<의사결정로그 절 제목>" --decided-at 2026-10-31T09:00:00+09:00 [--out-dir outputs/main2/ecc_substitute]
+        --decision-log-section "<설계 결정 기록 절 제목>" --decided-at 2026-10-31T09:00:00+09:00 [--out-dir outputs/main2/ecc_substitute]
 
-증거의 기본 경로는 A3 재시도 회수본 · 양식 · 로컬 묶음 탐침이다(인자로 바꿀 수 있다). 의사결정로그 절은 HEAD 에 커밋돼 있어야 한다.
+증거의 기본 경로는 A3 재시도 회수본 · 양식 · 로컬 묶음 탐침이다(인자로 바꿀 수 있다). 설계 결정 기록 절은 HEAD 에 커밋돼 있어야 한다.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""묶음 탐침 소비자 — `scripts/probe/batch_equivalence.py` 의 JSON 을 읽어 **허용 · 차단**을 정한다(Codex 10-31 F5 · P1-2).
+"""묶음 탐침 소비자 — `scripts/probe/batch_equivalence.py` 의 JSON 을 읽어 **허용 · 차단**을 정한다.
 
 탐침은 보고 도구라 메모리 부족(`status=oom`) · 토큰 불일치에도 종료 코드 0 으로 끝난다. 실행 감싸개는 종료 코드가 아니라 이 소비자의
 판정으로 다음 단계를 연다. 판정은 아래가 **모두** 맞을 때만 통과다.

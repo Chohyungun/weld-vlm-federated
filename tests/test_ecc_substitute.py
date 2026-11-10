@@ -1,7 +1,7 @@
 """A3 대체 승인(D7, 미니스펙 `_workspace/2026-10-31-main2/MINISPEC_a3_substitute.md` §7) — 학습 쪽 시작 문과 채점 쪽 프레임 표지가
 **같은 검증 함수**로 같은 판정을 내는지, 코드 · 증거가 다르면 둘 다 거부하는지 본다.
 
-합성 git 저장소에 두 커밋을 둔다 — "A3 커밋"(동일성 파일 · 설정, 배치 1)과 "지금"(같은 동일성, 배치 8, 의사결정로그 절 추가).
+합성 git 저장소에 두 커밋을 둔다 — "A3 커밋"(동일성 파일 · 설정, 배치 1)과 "지금"(같은 동일성, 배치 8, 설계 결정 기록 절 추가).
 증거 넷은 합성 JSON · 문서다(실제 A3 산출이 아니다).
 """
 
@@ -167,7 +167,7 @@ def test_substitute_evidence_sha_missing_content(tmp_path):
     {"check_over": {"execution_commit": "e" * 40}},
     {"check_over": {"a3_values": {"precision": 0.8, "recall": 1.0, "threshold": 0.9, "scope": "train_box.class_aware_iou50"}}},
     {"check_over": {"a3_values": {"precision": 1.0, "recall": 1.0, "threshold": 0.5, "scope": "train_box.class_aware_iou50"}}},
-    # 비유한 · 범위 밖(Codex VAL-01) — json.dumps 는 NaN · Infinity 를 그대로 쓰고 json.loads 는 그것을 읽는다
+    # 비유한 · 범위 밖 — json.dumps 는 NaN · Infinity 를 그대로 쓰고 json.loads 는 그것을 읽는다
     {"check_over": {"a3_values": {"precision": float("nan"), "recall": 1.0, "threshold": 0.9, "scope": "train_box.class_aware_iou50"}}},
     {"check_over": {"a3_values": {"precision": 1.0, "recall": float("nan"), "threshold": 0.9, "scope": "train_box.class_aware_iou50"}}},
     {"check_over": {"a3_values": {"precision": 1.0, "recall": 1.0, "threshold": float("nan"), "scope": "train_box.class_aware_iou50"}}},

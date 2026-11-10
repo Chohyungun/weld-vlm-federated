@@ -48,7 +48,7 @@ from data.frozen_guard import EXPECTED_SEALED
 
 REPO = Path(__file__).resolve().parents[2]
 
-#: 드라이브 보관으로 판정된 봉인 자산 전부 (09-08, 의사결정로그 abdafe8).
+#: 드라이브 보관으로 판정된 봉인 자산 전부 (09-08, 설계 결정 기록 abdafe8).
 #: pairs 는 AI허브 파생이라 애초에 git 이 불가였고, cycle_pilot* 는 공개 검수에서
 #: 재배포 478건이 걸려 추적 전환이 기각됐다. 그래서 **한 벌로 묶어** 같이 옮긴다.
 #: 09-16 부터 본실험 매니페스트 계약 `data/interim/manifest_v1`(A)도 명부에 들어와 함께

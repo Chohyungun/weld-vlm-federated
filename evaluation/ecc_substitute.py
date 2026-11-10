@@ -206,7 +206,7 @@ def _evidence_problems(doc: dict, evidence_dir: Path, expect: dict) -> tuple[str
         bad.append("a3_check — pass 참 · 실행 커밋 = a3_commit · 범위 train_box.class_aware_iou50 이어야 한다")
     else:
         th, pr, rc = vals.get("threshold"), vals.get("precision"), vals.get("recall")
-        # 유한한 수 · 범위 — json 은 NaN · Infinity 를 읽고, NaN 과의 비교는 늘 거짓이라 하한 비교만으로는 지나간다(Codex VAL-01)
+        # 유한한 수 · 범위 — json 은 NaN · Infinity 를 읽고, NaN 과의 비교는 늘 거짓이라 하한 비교만으로는 지나간다
         nums = all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in (th, pr, rc))
         if not nums or not (MIN_THRESHOLD <= th <= 1) or not (th <= pr <= 1) or not (th <= rc <= 1):
             bad.append(f"a3_check — 정밀도 · 재현율 · 문턱이 유한한 수이고 문턱 ∈ [{MIN_THRESHOLD}, 1] · 지표 ∈ [문턱, 1] 이어야 한다")
@@ -241,7 +241,7 @@ def _evidence_problems(doc: dict, evidence_dir: Path, expect: dict) -> tuple[str
 def verify_substitute(approval_raw: bytes, *, evidence_dir: Path, repo: Path, rev: str) -> dict[str, Any]:
     """대체 승인서를 검증 자리(`repo` 의 `rev`)와 A3 커밋 · 증거 폴더로 본다 — 학습 · 채점이 같은 함수를 부른다(C3).
 
-    순서: 꼴 → 레시피 → 등록값(프롬프트 · 한도) → A3 커밋 → 동일성(승인서 = rev = A3 커밋) → 증거(sha · 내용) → 의사결정로그 절.
+    순서: 꼴 → 레시피 → 등록값(프롬프트 · 한도) → A3 커밋 → 동일성(승인서 = rev = A3 커밋) → 증거(sha · 내용) → 설계 결정 기록 절.
     통과면 요약을, 아니면 `SubstituteRefused(사유 코드, 문제)`.
     """
     doc = _json(approval_raw)

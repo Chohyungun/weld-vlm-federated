@@ -1,4 +1,4 @@
-"""corpus 후보 문서 전량 추출 — 텍스트·표·그림 + 메타데이터 (작업지시서 7~9절).
+"""corpus 후보 문서 전량 추출 — 텍스트·표·그림 + 메타데이터 (작업 명세 7~9절).
 
 배제는 색인·학습 투입 단계의 판정이고 추출은 전량 한다. 검사 방식이 달라도 결함 종류
 정의·발생 원인·조치는 공통이라, 판정 축이 원인·조치로 옮겨가면 그대로 재료가 된다.
@@ -72,7 +72,7 @@ FIGURE_DEFECT_PAT = re.compile(
     r"discontinuit|radiograph|macrograph|appearance)", re.I)
 
 # ---- 저작권 등급 (6절 전수 판정 결과를 그대로 옮긴다) -------------------------
-# 공개가 아니면 usable_for 는 참고전용으로 고정한다 (작업지시서 7절).
+# 공개가 아니면 usable_for 는 참고전용으로 고정한다 (작업 명세 7절).
 COPYRIGHT = {
     "applsci-10-08629-v2.pdf": ("공개", "MDPI Applied Sciences 2020, CC BY 오픈액세스 명시"),
     "Shipyard_Industry_Standards.pdf": ("공개", "OSHA 2268-11R 2015, 미국 정부간행물"),

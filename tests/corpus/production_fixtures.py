@@ -233,7 +233,7 @@ class FakeBackend:
 
 
 def make_judge_source(run_dir: Path, config: dict, judge_dir: Path, *, model_id: str = "local/judge-v2") -> dict:
-    """따로 둔 판정을 Codex 의 판정 신원 쓰기(`infer.run_judge`, 가짜 백엔드)로 실제 폴더에 돌리고, 판정 신원 읽기로 객체를 받는다(시험 전용)."""
+    """따로 둔 판정을 판정 신원 쓰기(`infer.run_judge`, 가짜 백엔드)로 실제 폴더에 돌리고, 판정 신원 읽기로 객체를 받는다(시험 전용)."""
     from corpus.production import infer
 
     # 판정 신원 쓰기는 주입한 백엔드로 시험용(fake)만 받는다 — 그래서 이 판정의 행은 릴리스되지 않는다(릴리스는 transformers 만)

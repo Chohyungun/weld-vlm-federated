@@ -125,7 +125,7 @@ def device_form_ok(value: Any) -> bool:
 def check_new_device(device: Any) -> str:
     """새 시작(도장을 새로 쓰는 시도)의 장비 — 채점기의 꼴이 아니면 `export_device_form` 으로 시작하지 않는다.
 
-    2026-10-18 다섯 칸 평가가 `--device` 를 꼴 검사 없이 도장 · 시작 줄에 적어 채점기 `_device_ok` 가 전부 거부했다(의사결정로그
+    2026-10-18 다섯 칸 평가가 `--device` 를 꼴 검사 없이 도장 · 시작 줄에 적어 채점기 `_device_ok` 가 전부 거부했다(설계 결정 기록
     2026-10-18 22:2x). 쓰는 쪽이 읽는 쪽과 같은 규칙으로 먼저 본다."""
     if not device_form_ok(device):
         raise ExportRefused("export_device_form", "장비는 채점기의 꼴 {이름}:{인덱스} 로 적는다(예 NVIDIA-A100-80GB-PCIe:0) — "
@@ -139,7 +139,7 @@ def resume_device(given: Any, stamp_device: Any) -> str:
     - 도장이 채점기의 꼴이면 새 값도 그 꼴이어야 한다(`export_device_form`). 값이 달라도 된다 — 다른 장비로 이어 가기는
       채점기가 `devices_spanned` 로 적는다(종전과 같다).
     - 도장이 그 꼴이 아니면(꼴 검사 전에 시작한 묶음) **도장의 문자열을 그대로 잇는다** — `--device` 와 다르더라도. 채점기는 비정본
-      문자열을 도장 · 시작 줄 · 곁 파일에서 서로 같을 때만 표지로 받는다(의사결정로그 2026-10-18 22:2x 결정 (2) · (3)).
+      문자열을 도장 · 시작 줄 · 곁 파일에서 서로 같을 때만 표지로 받는다(설계 결정 기록 2026-10-18 22:2x 결정 (2) · (3)).
     - 도장의 값이 비었거나 문자열이 아니면 이어 쓰지 않는다(`export_device_form`)."""
     if device_form_ok(stamp_device):
         return check_new_device(given)

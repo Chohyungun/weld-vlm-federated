@@ -48,7 +48,7 @@ def _all_stages(root: Path, rows, loader, *, epochs=3, die_after=1):
     V.run_stage("resume", root, **kw)
 
 
-@pytest.mark.parametrize("n_rows", [40, 44])                # 44 — 누적 8 에서도 마지막 부분 창(4 행)이 남는다(Codex TEST-03)
+@pytest.mark.parametrize("n_rows", [40, 44])                # 44 — 누적 8 에서도 마지막 부분 창(4 행)이 남는다
 def test_죽였다_이어_간_학습이_중단_없는_학습과_비트_동일하다(tmp_path, n_rows):
     from vlm.pilot_vlm import GRAD_ACCUM
 

@@ -22,7 +22,7 @@ from tests.test_uni_review_fixes import pairs_snapshot  # noqa: E402
 
 #: 칸 학습의 실물 — 저장소 설정 시험이 되돌려 쓴다(모델 적재 함수는 `_no_model` 이 막은 채로 둔다)
 _REAL_LOCAL, _REAL_CENTRAL = _tc.run_uni_local_cell, _tc.run_uni_central_cell
-#: 의사결정로그 2026-10-13 13:5x「본실험 등록 조건 확정」 — N = E = R = 1 · 평가 생성 한도 L = 512. 데이터 쪽이
+#: 설계 결정 기록 2026-10-13 13:5x「본실험 등록 조건 확정」 — N = E = R = 1 · 평가 생성 한도 L = 512. 데이터 쪽이
 #: configs/base.yaml 에 적었다(wt/A 8318844). 시험은 그 결정을 고정한다 — 설정을 바꾸면 이 시험이 먼저 안다.
 DECIDED_BUDGET = (1, 1, 1)
 DECIDED_GEN_LIMIT = 512

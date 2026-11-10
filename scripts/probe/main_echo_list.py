@@ -1,4 +1,4 @@
-"""본실험 에코 목록을 만든다 — 정의 안(1016l, 총괄 결정에 올린다): ECC 대상과 같은 규칙을 val 분할에 건 목록.
+"""본실험 에코 목록을 만든다 — 정의 안(1016l, 연구 책임자 결정에 올린다): ECC 대상과 같은 규칙을 val 분할에 건 목록.
 
 규칙은 `vlm.main_registration.echo_list_ids`(정본 `evaluation.early_coord_check.target_ids` 와 같은 식 — 봉인 페어의 그 분할 행 가운데
 골격 결함이 하나 이상인 장에서 R0 가 뺀 장을 뺀 것, 정렬)다. 입력과 대조는 ECC 대상 빌더(`scripts/probe/early_coord_check_targets.py`)와

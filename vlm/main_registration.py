@@ -153,7 +153,7 @@ def train_config_from_metas(metas: Mapping[str, Mapping[str, Any]], *, seed_inde
 
 
 def echo_list_ids(pair_rows: Iterable[Mapping[str, Any]], removed: Iterable[str], *, split: str = ECHO_SPLIT) -> list[str]:
-    """에코 목록의 정의 안 — ECC 대상과 **같은 규칙**을 val 분할에 건다(총괄 결정에 올린다).
+    """에코 목록의 정의 안 — ECC 대상과 **같은 규칙**을 val 분할에 건다(연구 책임자 결정에 올린다).
 
     규칙의 정본은 `evaluation.early_coord_check.target_ids`(규칙 파일 4 판 · 미니스펙 10번 13-1 의 m-4): 봉인 페어의 그 분할 행
     가운데 골격 결함이 하나 이상인 장에서 R0 가 뺀 장을 뺀 것, 정렬. 그 함수는 분할이 상수(`SPLIT = "train"`)라 val 에 부를 수

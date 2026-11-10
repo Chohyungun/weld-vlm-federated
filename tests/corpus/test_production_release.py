@@ -467,7 +467,7 @@ def test_실행_설정_판정인데_따로_둔_판정을_섞으면_거부(case, 
 
 
 def test_기본으로는_따로_둔_판정만_받는다(case):
-    case.release_kw = {}                                        # 기본값 — 실행 안의 구판정은 명시 인자로만(총괄 결정 10-12)
+    case.release_kw = {}                                        # 기본값 — 실행 안의 구판정은 명시 인자로만(연구 책임자 결정 10-12)
     case.refused("judge_source_not_allowed")
 
 

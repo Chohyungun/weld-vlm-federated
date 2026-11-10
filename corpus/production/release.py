@@ -1,6 +1,6 @@
 """학습 릴리스 — 품질 집계 · 사람 승인 · 자료 이용 확인을 모두 다시 검사한 뒤에만 `RELEASE.json` 을 발행한다.
 
-파일 계약은 `docs/dev_log/2026-10-07-본실험코퍼스/01_Claude_실행분담.md` 의 "파일 계약" 이 정본이다. 그 문서가 정하지 않은
+파일 계약은 별도로 보관한 실행 명세의 "파일 계약" 이 정본이다. 그 문서가 정하지 않은
 `AUDIT.json` · 검수용 `dataset.jsonl` · 검수 파일 · 이용 확인 파일의 필드는 보고 `05_prepare_release_A.md` 의 "공유 계약(안)" 에 적었다
 (B 의 `quality.audit_run` 과 파일로 맞춘다).
 
@@ -67,7 +67,7 @@ def _template_provenance(stage_row: dict) -> dict:
 MODEL_OPTIONAL_SCHEMAS = ("judge_structured_v7", "judge_structured_v8")
 #: 구조화 판정의 행 출처에서 판정 샤드를 다시 읽은 값과 맞대는 칸(B 05k · 05j R-9 · 05l)
 STRUCTURED_FIELDS = ("schema", "parser", "answers", "flags", "format_normalized")
-#: 판정 신원 읽기에 넘기는 외부 기대 핀(Codex 최종 API) — 운영 원천은 하나 이상 필요하다
+#: 판정 신원 읽기에 넘기는 외부 기대 핀(검증 API) — 운영 원천은 하나 이상 필요하다
 JUDGE_PINS = ("expected_judge_identity_sha256", "expected_probe_approval_sha256")
 #: 데이터셋 행이 작업 행과 같아야 하는 필드
 TASK_FIELDS = ("kind", "split", "client", "lineage_group_id", "image_path", "source_ids")
@@ -433,7 +433,7 @@ def _check_all(audit: dict, dataset_path: Path, review: dict, rights: dict) -> t
 # 실행 디렉터리 대조 — release_run 만
 # ------------------------------------------------------------------------------------------
 def _reread_judge_source(run_dir: Path, config: dict, judge_source: dict, pins: dict) -> dict:
-    """판정 객체의 `judge_dir` 를 Codex 의 판정 신원 읽기(`infer.read_judge_source`)로 다시 읽는다 — 샤드 바이트 · 신원 ·
+    """판정 객체의 `judge_dir` 를 판정 신원 읽기(`infer.read_judge_source`)로 다시 읽는다 — 샤드 바이트 · 신원 ·
     생성 샤드 목록 · 실제 판정 모델은 그 읽기가 검사한다. 경로는 신원이 아니라 찾는 자리다(B 05i I-1, 05h 6-2 R-3b)."""
     from . import infer
 
@@ -528,7 +528,7 @@ def _v7_source_receipts(audit: dict, ji: dict, verified: dict, tasks: list[dict]
 
 def check_against_run(audit: dict, audit_dir: Path, rows: list[dict], texts: list[dict], judge_source: dict | None = None,
                       pins: dict | None = None) -> None:
-    """AUDIT 가 가리키는 실행 디렉터리를 Codex 의 검증 읽기로 다시 읽어 행마다 대조한다.
+    """AUDIT 가 가리키는 실행 디렉터리를 검증 읽기로 다시 읽어 행마다 대조한다.
 
     판정 행은 AUDIT 의 판정 출처에서만 읽는다(B 05h R-3). separate 이면 `judge_source`(B 의 `audit_run` 과 같은 꼴 —
     `identity_sha256` · `identity_basis` · `rows`)의 행만 쓰고 실행 디렉터리의 옛 판정은 읽지 않는다."""
@@ -686,9 +686,9 @@ def release_run(audit_dir, review_path, rights_path, output_dir, *, judge_source
                 allowed_judge_sources: tuple[str, ...] = ("separate",), expected_judge_identity_sha256: str | None = None,
                 expected_probe_approval_sha256: str | None = None) -> dict:
     """`judge_source` — separate 판정의 객체(`infer.read_judge_source` 의 꼴, `judge_dir` 필수 — 릴리스가 폴더를 다시 읽는다).
-    `allowed_judge_sources` — 받을 판정 출처. 기본은 separate 만(총괄 결정 10-12, R-5): 실행 안의 구판정(run_config)은 명시 인자로만.
+    `allowed_judge_sources` — 받을 판정 출처. 기본은 separate 만(연구 책임자 결정 10-12, R-5): 실행 안의 구판정(run_config)은 명시 인자로만.
     `expected_judge_identity_sha256` · `expected_probe_approval_sha256` — 릴리스 호출자가 따로 기록한 기대 핀. separate 이면 하나 이상이
-    필요하고, release 가 그대로 판정 신원 읽기에 넘긴다(Codex 최종 API — 핀은 JUDGE.json 에서 추정하지 않는다)."""
+    필요하고, release 가 그대로 판정 신원 읽기에 넘긴다(검증 API — 핀은 JUDGE.json 에서 추정하지 않는다)."""
     pins = {"expected_judge_identity_sha256": expected_judge_identity_sha256,
             "expected_probe_approval_sha256": expected_probe_approval_sha256}
     audit_dir, output_dir = Path(audit_dir), Path(output_dir)

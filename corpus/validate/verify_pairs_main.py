@@ -335,7 +335,7 @@ def verify(build: Path, snap: Path = SNAP, root: Path = REPO) -> dict:
                 fail("F_meta_input_digest", src["snapshot_digest"])
     # 검수 주체. **`rule` 만 받는다.** 파일이 있다는 것은 아무것도 뒷받침하지 않는다 — `README.md` 를 가리켜도
     # 지나갔다(교차 검수 I-3). 사람 검수라는 이름은 규약(대상 빌드 digest·표본 수·서명)이 선 뒤에 코드가 받는다.
-    # 개발규약 3-4 와 봉인 절차 §7 이 그 이름을 함부로 쓰지 말라고 한 자리다. 총괄 판정으로 E 안에 맞춘다.
+    # 개발규약 3-4 와 봉인 절차 §7 이 그 이름을 함부로 쓰지 말라고 한 자리다. 설계 결정으로 E 안에 맞춘다.
     if meta.get("validated_by") != "rule":
         fail("F_meta_validated_by_unsupported", meta.get("validated_by"))
     if meta.get("eval_isolation", {}).get("n_eval_groups") != len(eval_groups):

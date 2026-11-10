@@ -1,6 +1,6 @@
 """본실험 본채점의 프레임 표지 — 등록 `canary.frame_diag_sha256` 이 가리키는 조기 좌표 점검 통과 파일을 본다.
 
-의사결정로그 10-07: 조기 좌표 점검(ECC)이 착수 전 프레임 진단을 대신한다. 그래서 목적 `main` 에서 이 칸은 **ECC 허가 산출**
+설계 결정 기록 10-07: 조기 좌표 점검(ECC)이 착수 전 프레임 진단을 대신한다. 그래서 목적 `main` 에서 이 칸은 **ECC 허가 산출**
 (`scripts/main_uni.py ecc-accept` 가 시드 폴더에 둔 `ecc_permit.json` — 평가 쪽 통과 파일 `early_coord_check.json` 의 바이트)의
 sha256 이다(`evaluation.prereg_unified.MAIN_FRAME_DIAG_MEANING`). 리허설 · 진단 목적의 뜻은 그대로다.
 
@@ -60,7 +60,7 @@ FRAME_CHECKED_BY_A3_SUBSTITUTE = "FRAME_CHECKED_BY_A3_SUBSTITUTE"
 def frame_check_by_a3_substitute(approval_raw: bytes, *, evidence_dir: Path, registered_sha256: str, repo: Path,
                                  rev: str) -> dict:
     """A3 대체 승인서 바이트 → 산출에 싣는 표지. 학습 쪽 시작 문과 **같은 함수**(`ecc_substitute.verify_substitute`)를 영수증 커밋
-    (`rev`)으로 부른다 — 동일성(승인서 = 영수증 커밋 = A3 커밋) · 증거 sha · 내용 · 의사결정로그 절. 등록 `canary.frame_diag_sha256` 은
+    (`rev`)으로 부른다 — 동일성(승인서 = 영수증 커밋 = A3 커밋) · 증거 sha · 내용 · 설계 결정 기록 절. 등록 `canary.frame_diag_sha256` 은
     승인서 바이트의 sha256 이다. 어긋나면 `EarlyCheckRejected`(사유 코드 `FRAME_SUBSTITUTE_*`)."""
     from evaluation import ecc_substitute as S
 
@@ -105,7 +105,7 @@ def frame_check_by_model_free(admission_raw: bytes, waiver_raw: bytes, *, regist
 
     (1) 두 파일의 묶음 sha 가 등록과 같다 (2) 통과 산출: 네 검사가 모두 있고 통과 · 불량 0 · `passed` 참, 규칙 · 대상 지문이 영수증
     커밋의 규칙과 같다 (3) 면제 파일: 칸 다섯이 정확히 있고 결정 문구 · 절 제목이 비지 않았으며, 그 통과 산출의 sha 를 가리키고, 절 제목이
-    영수증 커밋의 의사결정로그에 있다.
+    영수증 커밋의 설계 결정 기록에 있다.
     """
     from datetime import datetime
 

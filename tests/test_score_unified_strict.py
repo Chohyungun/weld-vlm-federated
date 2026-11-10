@@ -226,7 +226,7 @@ def build(tmp, *, sample_ids=None, side_edit=None, baseline_edit=None, doc_edit=
     permit = _permit_raw(rules_raw, step_status=permit_step)
     (inputs / "ecc_permit.json").write_bytes(permit)
     r.canary.frame_diag_sha256 = hashlib.sha256(permit).hexdigest()
-    if frame_mode == "model_free":                      # 허가 면제 — 모델 없는 통과 산출 · 면제 파일 · 의사결정로그(영수증 커밋)
+    if frame_mode == "model_free":                      # 허가 면제 — 모델 없는 통과 산출 · 면제 파일 · 설계 결정 기록(영수증 커밋)
         adm = TFC._admission(E.load_rules(rules_raw))
         wv = TFC._waiver(adm)
         (inputs / "admission.json").write_bytes(adm)
@@ -344,7 +344,7 @@ def ledger(w):
 # ---------------------------------------------------------------- 1 승인된 표본 실행
 
 def test_허가_면제면_통과_산출과_면제_파일의_묶음으로_서고_모델_없는_검사만이라고_표지한다(tmp_path, view, capsys) -> None:
-    """사용자 결정(의사결정로그 2026-10-17)으로 모델 점검 허가가 면제되면 등록 칸은 두 파일의 묶음 sha 다."""
+    """사용자 결정(설계 결정 기록 2026-10-17)으로 모델 점검 허가가 면제되면 등록 칸은 두 파일의 묶음 sha 다."""
     w = build(tmp_path, frame_mode="model_free")
     assert run(w, ecc=False, admission=True) == SU.EXIT_OK, capsys.readouterr().err
     body = json.loads(out_path(w).read_text(encoding="utf-8"))
@@ -359,7 +359,7 @@ def test_허가_면제면_통과_산출과_면제_파일의_묶음으로_서고_
 
 
 def test_산출은_조기_점검_허가로_프레임을_표지하고_기지답을_재현한_기록을_싣는다(tmp_path, view, capsys) -> None:
-    """목적 main 의 `canary.frame_diag_sha256` 은 조기 좌표 점검 허가 파일의 sha256 이다(의사결정로그 10-07 · 등록 판 5 추기)."""
+    """목적 main 의 `canary.frame_diag_sha256` 은 조기 좌표 점검 허가 파일의 sha256 이다(설계 결정 기록 10-07 · 등록 판 5 추기)."""
     w = build(tmp_path)
     assert run(w) == SU.EXIT_OK, capsys.readouterr().err
     c = json.loads(out_path(w).read_text(encoding="utf-8"))["canaries"]

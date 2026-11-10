@@ -373,7 +373,7 @@ def test_리허설_목적은_val_분할과_선다() -> None:
 
 
 def test_구간_규약_칸은_채택값만_받는다() -> None:
-    """판 4 — 2026-10-01 에 채택했다(의사결정로그 10-01 · 결정표 11행). 판 3 까지의 이 시험은 "어휘는 고른 값이 아니라
+    """판 4 — 2026-10-01 에 채택했다(설계 결정 기록 10-01 · 결정표 11행). 판 3 까지의 이 시험은 "어휘는 고른 값이 아니라
     선택지다" 였다 — 고르기 전이었다. 선택지 기록은 남기되 검사에 쓰지 않는다."""
     from evaluation import percentile_rule as PR
     from evaluation import recovery_interval as RI

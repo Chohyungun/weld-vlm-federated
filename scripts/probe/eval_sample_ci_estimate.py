@@ -61,7 +61,7 @@ def group_bucket(n_def: int, n_img: int) -> str:
 
 
 def stratum_of(g: dict, design: str) -> str:
-    if design == "P":                              # 지시서 문자 그대로: 재질 × 결함 수 구간
+    if design == "P":                              # 명세 문자 그대로: 재질 × 결함 수 구간
         return f"{g['material']}|{group_bucket(g['n_def'], g['n_img'])}"
     if g["rare"]:                                  # S: 희소 클래스 보유 묶음은 재질별 한 층
         return f"{g['material']}|rare"

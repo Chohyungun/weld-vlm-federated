@@ -146,7 +146,7 @@ def test_키_집합은_등록_짓기가_알리는_빈_칸과_같고_v2_는_빈_�
     from evaluation.ecc_frame_check import model_free_bundle_sha256
     from tests.test_ecc_frame_check import LOG, _admission, _waiver
 
-    adm = _admission(load_rules(rules_raw))                          # 허가 면제 갈래 — 통과 산출 · 면제 파일 · 의사결정로그(대역)
+    adm = _admission(load_rules(rules_raw))                          # 허가 면제 갈래 — 통과 산출 · 면제 파일 · 설계 결정 기록(대역)
     wv = _waiver(adm)
     (tmp_path / "admission.json").write_bytes(adm)
     (tmp_path / "waiver.json").write_bytes(wv)

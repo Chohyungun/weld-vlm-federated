@@ -1,6 +1,6 @@
 """본실험 검출 3칸 실행기 — ② 분리·로컬 / ③ 분리·중앙 / ④ 분리·연합 (R=50·E=2·N=100).
 
-2026-09-03 총괄 착수 승인(의사결정로그). 파일럿·게이트에서 산 규칙 전부를 배선한다:
+2026-09-03 연구 책임자 착수 승인(설계 결정 기록). 파일럿·게이트에서 산 규칙 전부를 배선한다:
 
 - **분리 실행 + epoch 경계 재개.** 모든 스테이지가 완료 마커로 멱등이라, 죽으면
   같은 명령을 다시 띄우는 것이 곧 재개다(`detection/resume.py` 경유).
@@ -55,7 +55,7 @@ VIEWS = OUT / "views"
 
 MODEL = "yolo11s.pt"
 PROFILE = "main"
-#: 총괄 확정(의사결정로그 2026-09-03). configs 에 `experiment` 블록이 등록되면 대조한다.
+#: 연구 책임자 확정(설계 결정 기록 2026-09-03). configs 에 `experiment` 블록이 등록되면 대조한다.
 R, E = 50, 2
 N = R * E
 CLIENTS = ("C1", "C2", "C3")
@@ -225,7 +225,7 @@ def _num_examples(sn) -> dict[int, int]:
 
 
 def _assert_gates_recorded(meta_path: Path) -> None:
-    """첫 칸 완료 직후 게이트 평가 기록을 확인하고서만 진행한다(지시서 요구)."""
+    """첫 칸 완료 직후 게이트 평가 기록을 확인하고서만 진행한다(명세 요구)."""
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     ge = meta.get("gates_evaluated") or []
     gr = meta.get("gate_results") or {}

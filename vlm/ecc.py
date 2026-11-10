@@ -114,7 +114,7 @@ PERMIT_KEY_FIELDS = ("permit_sha256", "check_run_id", "seed", "pin_sha256", "sta
                      "rules_sha256", "attempt", "ecc_root", "accepted_at")
 #: 착수 허가를 사용자 결정으로 비운 기록(1017a) — 처음 받은 면제 파일의 sha256 과 그때의 착수 고정 · 시드 · 출발 어댑터. 덮지 않는다.
 WAIVER_KEY_FILE = "ECC_PERMIT_WAIVER_KEY.json"
-#: 면제 파일(총괄이 쓰는 JSON)의 칸 — 정확히 이 다섯이다. `step100_geometry_sha256` 은 산출이 아직 없으면 null 이다.
+#: 면제 파일(연구 책임자가 쓰는 JSON)의 칸 — 정확히 이 다섯이다. `step100_geometry_sha256` 은 산출이 아직 없으면 null 이다.
 WAIVER_FIELDS = ("decision", "decision_log_section", "model_free_admission_sha256", "step100_geometry_sha256",
                  "decided_at")
 #: 다섯 칸 꼴 면제를 받는 학습 레시피 — 1 차뿐이다(지시 1022c, 외부 검토 200 C-01). 그 꼴에는 승인 대상 착수 고정이 없다.
@@ -678,7 +678,7 @@ def check_waiver(waiver_path: Path, *, seed_dir: Path, permit_path: Path | None,
       외부 검토 200 C-01). 다섯 칸 꼴에는 승인 대상 착수 고정이 없어, 새 체제의 새 시드 폴더에 처음 주면 과거 결정이 새 착수 고정에
       결속되기 때문이다. 새 체제의 면제 꼴은 사용자 결정 뒤 별도 지시다.
     - 허가와 면제를 함께 받지 않는다 — 시드 폴더에 통과 파일 사본이나 허가 키(`ECC_PERMIT_KEY.json`)가 있으면 거부한다.
-    - 면제 파일은 칸 다섯(`WAIVER_FIELDS`)이 정확히 있는 JSON 객체다 — 결정 문구 · 의사결정로그 절 제목(비지 않은 문자열),
+    - 면제 파일은 칸 다섯(`WAIVER_FIELDS`)이 정확히 있는 JSON 객체다 — 결정 문구 · 설계 결정 기록 절 제목(비지 않은 문자열),
       모델 없는 통과 산출의 sha256(16 진 64 자리), step 100 기하 판정 산출의 sha256(16 진 64 자리 또는 null), 시각(ISO 8601).
     - 처음 받은 때 시드 폴더에 키 기록(`WAIVER_KEY_FILE` — 면제 파일 sha256 · 착수 고정 · 시드 번호 · 출발 어댑터)을 원자적으로
       한 번 쓴다(동시에 켜진 칸들이 겨뤄도 하나만 쓴다). 그 뒤에는 지금 값이 그 기록과 같아야 한다 — 면제 파일 바이트가 바뀌면 거부.

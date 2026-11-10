@@ -271,7 +271,7 @@ def test_v6_link_writer_checks_contract_files(world2) -> None:
 
 
 def test_v6_link_decision_and_evidence_pins_are_real_blobs() -> None:
-    """출처 운반 파일이 가리키는 아홉 원본은 이 트리의 실제 바이트이고, 결정 blob 은 그 커밋의 의사결정로그다(커밋이 없는 체크아웃은
+    """출처 운반 파일이 가리키는 아홉 원본은 이 트리의 실제 바이트이고, 결정 blob 은 그 커밋의 설계 결정 기록다(커밋이 없는 체크아웃은
     건너뛴다 — 통과로 세지 않는다)."""
     from evaluation.entry_gate import EntryRejected, blob_at
 

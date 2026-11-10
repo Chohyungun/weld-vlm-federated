@@ -434,7 +434,7 @@ def decide(statuses: Sequence[str], n_steps: int, rule: str) -> dict:
 
 
 def opens_four_cells(model_free: Sequence[Mapping], decision: Mapping) -> bool:
-    """네 칸을 여는 기준(의사결정로그 10-07): 모델 없는 네 검사가 모두 통과이고 이 점검이 통과다."""
+    """네 칸을 여는 기준(설계 결정 기록 10-07): 모델 없는 네 검사가 모두 통과이고 이 점검이 통과다."""
     return model_free_ok(model_free) and decision.get("outcome") == PASS
 
 

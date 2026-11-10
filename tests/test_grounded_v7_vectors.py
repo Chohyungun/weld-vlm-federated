@@ -1,7 +1,7 @@
 """판정 v7 결정적 grounded 의 시험 벡터와 동치 하니스(`scripts/probe/check_grounded_v7_equivalence.py`).
 
 벡터는 G150 합성 사례와 구조 사례(구역별 수 · 합 — `scripts/probe/grounded_v7_structural_cases.py`, 실물 id 없음)에서 평가 쪽 참조
-구현(`evaluation/grounded_v7_ref.py`)으로 만든 것이다. 정식 구현이 같은 벡터를 다시 내야 한다(총괄 계약 5).
+구현(`evaluation/grounded_v7_ref.py`)으로 만든 것이다. 정식 구현이 같은 벡터를 다시 내야 한다(연구 책임자 계약 5).
 보강 7 에서 배분 서술 사례(`evaluation/vectors/grounded_v7_each_cases.json` — 합성 EA-xx 와 생성 v2 회수본 감사 행에서 글 · 주석만
 옮긴 GV-xx, 실물 id 없음)를 `extend` 로 더했다.
 """
