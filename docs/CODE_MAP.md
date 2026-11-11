@@ -45,4 +45,4 @@ python -m pytest -q -m "not private_assets" tests/test_export_main_eval.py tests
 
 대시보드는 2026년 10월 코퍼스 준비 기록을 읽는 도구이며 현재 포스터 결과를 표시하지 않는다. [평가 코드 안내](../evaluation/README.md)에서도 현재 Qwen 경로와 이전 YOLO 절차를 구분한다.
 
-상세 조건은 [재현 정보](paper/재현정보.md), 자료 이용 범위는 [관리 원칙](개발규약.md)을 따른다.
+상세 조건은 [README 재현 범위](../README.md#재현-범위), 자료 이용 범위는 [관리 원칙](개발규약.md)을 따른다.
